@@ -1,0 +1,169 @@
+/* Agent-Hub theme. Values come from DESIGN.md; change them there first. */
+
+:root {
+  --bg: #fff1e3;
+  --glass: rgba(255, 232, 208, 0.62);
+  --glass-border: rgba(255, 255, 255, 0.55);
+  --field: rgba(255, 205, 165, 0.38);
+  --text: #3a2a20;
+  --muted: #7a6455;
+  --accent: #e8845a;
+  --on-accent: #2b1d14;
+  --error: #a63a1f;
+  --shadow: 0 8px 32px rgba(120, 70, 30, 0.16), 0 1px 0 rgba(255, 255, 255, 0.6) inset;
+  --blob-a: #ffc9a0;
+  --blob-b: #ffe0b8;
+  --radius-button: 16px;
+  --radius-card: 24px;
+  --space: 8px;
+}
+
+/* Dark: explicit choice, or system preference when nothing is chosen. */
+:root[data-theme="dark"] {
+  --bg: #1f1713;
+  --glass: rgba(66, 46, 36, 0.55);
+  --glass-border: rgba(255, 210, 170, 0.14);
+  --field: rgba(20, 12, 8, 0.4);
+  --text: #f6e6d8;
+  --muted: #bda591;
+  --accent: #f29a72;
+  --error: #ff9b7e;
+  --shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 220, 190, 0.1) inset;
+  --blob-a: #5a3623;
+  --blob-b: #3a2519;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #1f1713;
+    --glass: rgba(66, 46, 36, 0.55);
+    --glass-border: rgba(255, 210, 170, 0.14);
+    --field: rgba(20, 12, 8, 0.4);
+    --text: #f6e6d8;
+    --muted: #bda591;
+    --accent: #f29a72;
+    --error: #ff9b7e;
+    --shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 220, 190, 0.1) inset;
+    --blob-a: #5a3623;
+    --blob-b: #3a2519;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  color: var(--text);
+  background-color: var(--bg);
+  /* Soft colour fields so the glass has something to blur. */
+  background-image:
+    radial-gradient(60vmax 60vmax at 15% 10%, var(--blob-a), transparent 60%),
+    radial-gradient(50vmax 50vmax at 90% 90%, var(--blob-b), transparent 60%);
+  background-attachment: fixed;
+  display: flex;
+  flex-direction: column;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(var(--space) * 2) calc(var(--space) * 3);
+}
+.brand { font-weight: 650; font-size: 1.1rem; letter-spacing: -0.01em; }
+
+main {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: calc(var(--space) * 3);
+}
+
+.glass {
+  width: 100%;
+  max-width: 420px;
+  padding: calc(var(--space) * 5);
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
+}
+/* No glass when the system asks for less transparency or lacks support. */
+@media (prefers-reduced-transparency: reduce) {
+  .glass { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: var(--bg); }
+}
+
+h1 { margin: 0 0 calc(var(--space) * 3); font-size: 1.8rem; letter-spacing: -0.02em; }
+
+label { display: block; margin-bottom: calc(var(--space) * 2); color: var(--muted); font-size: 0.9rem; }
+
+input {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  margin-top: var(--space);
+  padding: 0 calc(var(--space) * 2);
+  font: inherit;
+  font-size: 1rem;
+  color: var(--text);
+  background: var(--field);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-button);
+  box-shadow: inset 0 1px 3px rgba(120, 70, 30, 0.12);
+}
+
+button, .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  cursor: pointer;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-button);
+  background: var(--glass);
+  box-shadow: var(--shadow);
+  transition: transform 0.18s cubic-bezier(0.3, 1.4, 0.5, 1), filter 0.18s;
+}
+button:active { transform: scale(0.97); }
+
+/* One primary button per view. */
+.primary {
+  width: 100%;
+  min-height: 52px;
+  margin-top: var(--space);
+  font-size: 1.05rem;
+  color: var(--on-accent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, white), var(--accent));
+  border-color: rgba(255, 255, 255, 0.35);
+}
+.primary:hover { filter: brightness(1.04); }
+
+.icon-button { width: 44px; padding: 0; border-radius: 50%; }
+.icon-button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Show the icon of the theme you would switch to. */
+.i-sun { display: none; }
+:root[data-theme="dark"] .i-sun { display: block; }
+:root[data-theme="dark"] .i-moon { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .i-sun { display: block; }
+  :root:not([data-theme="light"]) .i-moon { display: none; }
+}
+
+.error { margin: 0 0 calc(var(--space) * 2); color: var(--error); font-weight: 600; }
+
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
