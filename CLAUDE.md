@@ -23,7 +23,7 @@ Ziel, Entscheidungen und Reihenfolge der Umsetzung: PROJEKT.md (dort zuerst nach
 
 ## Coding-Regeln
 - Code, Klassen, Variablen, Dateinamen und Kommentare auf Englisch. Oberfläche und Doku auf Deutsch.
-- Für Oberfläche und Swift/iOS-Teile gelten die Apple Human Interface Guidelines (Bedienung, Layout, Typografie, Farben, Barrierefreiheit) und die Apple-Richtlinien für Swift und die App Review. Bei Zielkonflikten mit dem Projektsheet fragt Claude nach.
+- Für Oberfläche und Swift/iOS-Teile gelten die Apple Human Interface Guidelines (Bedienung, Layout, Typografie, Farben, Barrierefreiheit) und die Apple-Richtlinien für Swift und die App Review. Bei Zielkonflikten mit dem Projektsheet fragt Claude nach. Das konkrete Design (Farben, Glas, Knöpfe, Hell/Dunkel) steht in DESIGN.md und ist für jede Oberfläche verbindlich.
 - Nur ein Thema pro Commit, kurze Commit-Nachrichten.
 - Backups und Rückrollen sind Teil jeder Änderung, die Daten betrifft.
 
