@@ -9,6 +9,7 @@ Stand: 06.11.2026 · Autor: Janis (mit Claude) · Zweck: Philosophie, Ziel, Ents
 - Janis baut es per Vibe-Coding mit Claude. Die Basics (Website, Datenmodell, Sicherheit, Rollenablauf) will er selbst verstehen und lernen.
 - Kein Verkauf geplant. Keine Mehrkosten über das Pro-Abo hinaus.
 - Regel für Claude: kleinste Lösung, die die Anforderung erfüllt; erst die Schnittstelle zeigen, dann die Implementierung; ein Modul pro Auftrag; Entscheidungen kurz begründen.
+- Allgemeines Ziel: effizient arbeiten. Das Pro-Kontingent ist begrenzt, also verbraucht jede Aufgabe nur so viel wie nötig: kleine, klar umrissene Aufträge, das passende Modell je Aufgabe, nur der nötige Kontext (kurze CLAUDE.md, nur die relevanten Dateien), Limits für Durchläufe und Zeit und ein sichtbarer Verbrauch pro Lauf, um Verschwendung zu erkennen.
 
 ## 2. Getroffene Entscheidungen
 
@@ -21,6 +22,7 @@ Stand: 06.11.2026 · Autor: Janis (mit Claude) · Zweck: Philosophie, Ziel, Ents
 - Tägliches Backup auf eine externe SSD mit restic (verschlüsselt, nur Änderungen), zusätzlich Git-Spiegel auf GitHub. Struktur, Doku und offene Punkte haben höchste Priorität. Zurückrollen von Versionen gehört von Anfang an dazu.
 - Zunächst ein bis zwei weitere Nutzer; bei Problemen wird reguliert.
 - GitHub: privater Spiegel der Projekte, später auch zum Teilen mit Freunden.
+- Modellwahl: Standard ist Sonnet 5.5 (gut genug für den Alltag, schont das Pro-Limit). Opus 5.5 nur gezielt für schwierige Aufgaben (Architektur, hartnäckige Fehlersuche, Prüfer), Haiku 5.5 für einfache, häufige Aufgaben (Dokumentator, Zusammenfassungen, Commit-Texte). Umschalten in Claude Code mit /model.
 
 ## 3. Offener Kernpunkt: Anbindung des Abos
 
@@ -28,7 +30,7 @@ Soweit bekannt, lässt sich ein Abo nicht über Benutzername und Passwort an ein
 
 - Auf dem Pi läuft Claude Code (Kommandozeile) eigenständig und unabhängig vom Mac, angemeldet mit dem eigenen Konto. Die Website startet es für die Agenten-Aufgaben und liest dessen Ausgabe.
 - Jeder Nutzer meldet sein eigenes Claude Code an. Daten und Limits bleiben getrennt.
-- Die Token-Anzeige auf der Startseite ist dann kein Abo-Restwert, sondern eine eigene Zählung (Läufe, Dauer, grobe Verbrauchsschätzung). Der echte Stand steht in den Claude-Einstellungen unter Nutzung.
+- Die Token-Anzeige auf der Startseite ist dann kein Abo-Restwert, sondern eine eigene Zählung: Der Verbrauch pro Lauf (Tokens, Dauer) wird aus der Ausgabe von Claude Code gelesen und pro Projekt summiert (Format in Phase 2 prüfen). Der Abo-Rest bleibt in den Claude-Einstellungen unter Nutzung; ob Claude Code ihn über einen Befehl wie /usage anzeigt, wird getestet.
 - Vor dem Bau prüfen: Nutzungsbedingungen für den Einsatz in eigenen Tools, Verfügbarkeit im Pro-Plan, Betrieb auf dem Pi (Pi 4/5, 64-Bit-OS, Node.js-Anforderung).
 
 Sonderregel für Swift (Entwurf): Swift-Code braucht Xcode und den Simulator und lässt sich nur am Mac bauen und testen. Der Pi bleibt Zentrale für Board, Rollen und Git. Für Swift-Aufgaben arbeitet Claude Code auf dem Mac im selben Git-Repo, der Pi übernimmt das Ergebnis per Git. Tests mit echtem iPhone und Pi meldet der Tester als „nicht prüfbar“. Die genaue Aufteilung wird vor Phase 2 festgelegt.
@@ -142,6 +144,7 @@ Sonderregel für Swift (Entwurf): Swift-Code braucht Xcode und den Simulator und
 - Prüfer: kontrolliert die Einhaltung der Code-Richtlinien.
 - Dokumentator: hält nach jeder freigegebenen Änderung knapp fest, was geändert wurde, wie es funktioniert und wie das Projekt aufgebaut ist.
 - Konfiguration pro Rolle: Testtiefe und Testumfang (Tester), Richtlinien (Prüfer), Projektkontext für alle (wie eine CLAUDE.md).
+- Modell pro Rolle einstellbar, Vorschlag: Programmierer und Tester auf Sonnet, Prüfer und Chef bei Bedarf auf Opus, Dokumentator auf Haiku. Standard ist Sonnet, damit das Kontingent lange reicht.
 - Pro Agent ein Fenster mit Live-Status und technischen Daten.
 
 ### Ablauf
@@ -203,10 +206,11 @@ Sonderregel für Swift (Entwurf): Swift-Code braucht Xcode und den Simulator und
 
 ## 8. Offene Punkte
 
-- Anbindung des Abos: Janis testet früh, direkt nach dem Docker-Setup, ob sich Claude Code auf dem Pi ohne Bildschirm anmelden lässt (per Link und Code oder per Token). Nutzungsbedingungen prüfen.
+- Anbindung des Abos: Getestet am 06.11.2026: Claude Code lässt sich auf dem Pi (Debian trixie, arm64) installieren, starten und per Link und Code ohne Bildschirm mit dem Claude-Konto anmelden. Offen: Nutzungsbedingungen prüfen und ob die Anmeldung dauerhaft hält (Erneuerung).
 - Vorlagen für Janis’ Freigaben und die Tester-Checklisten: welche Klick-Aussagen, welche Felder.
 - Domain janis-home.de kaufen: Registrar mit .de-Unterstützung wählen, Nameserver auf Cloudflare.
 - GitHub-Konto anlegen (privat).
 - SSD kaufen (120–240 GB) und Umzug von der SD-Karte planen.
 - E-Mail-Versand für Passwort-Reset: Absender und Dienst festlegen.
 - Wie viele Nutzer langfristig (bestimmt Leistung des Pi und Rechtekonzept).
+- Arbeitsspeicher: Der Pi 4B hat nur 1 GB (905 MiB nutzbar), Claude Code verlangt laut Anleitung 4 GB. Belastungstest mit einem echten Projekt und Docker steht aus. Fällt er schlecht aus: Runner auf Mac oder PC (Variante B) oder Pi mit 4–8 GB (Variante C).
