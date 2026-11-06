@@ -46,9 +46,9 @@ LOGIN_BODY = """<section class="glass">
   <h1>Anmelden</h1>
   <p class="subtitle">Willkommen zurück.</p>
   %ERROR%
-  <form method="post" action="/login">
-    <label>E-Mail<input type="email" name="email" required autofocus autocomplete="username"></label>
-    <label>Passwort<input type="password" name="password" required autocomplete="current-password"></label>
+  <form method="post" action="/login" novalidate>
+    <label>E-Mail<input type="email" name="email" required autofocus autocomplete="username" placeholder="name@beispiel.de"></label>
+    <label>Passwort<input type="password" name="password" required autocomplete="current-password" placeholder="••••••••"></label>
     <button class="primary" type="submit">Anmelden</button>
   </form>
   <!-- Placeholder: password reset by e-mail is a later module. -->
@@ -85,7 +85,7 @@ def login_form() -> str:
 
 
 @app.post("/login", response_class=HTMLResponse)
-def login(email: str = Form(...), password: str = Form(...)):
+def login(email: str = Form(""), password: str = Form("")):
     user = users.check_login(email, password)
     if user is None:
         return HTMLResponse(login_page("E-Mail oder Passwort falsch."), status_code=401)
