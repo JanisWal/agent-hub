@@ -10,6 +10,7 @@ Ziel, Entscheidungen und Reihenfolge der Umsetzung: PROJEKT.md (dort zuerst nach
 - Janis will den Code verstehen und lernen: nach größeren Änderungen zwei Verständnisfragen stellen.
 - Zugangsdaten, Schlüssel und Tokens nie ausgeben, nie ins Git, nie raten. Sie liegen im Tresor oder in der `.env`.
 - Destruktive oder systemweite Befehle (Löschen, Docker-Volumes entfernen, `sudo`, Änderungen am Netzwerk) vorher von Janis bestätigen lassen.
+- Routine (Commit, Merge, Push fertiger Änderungen) ohne Rückfrage, danach kurz berichten. Nachfragen nur bei Berechtigungen, Sicherheit sowie Design- und Feature-Entscheidungen.
 - Hardware am Fahrzeug (Roadster, Heizung, Relais, Bordnetz) nie autonom schalten oder testen; das macht Janis vor Ort.
 
 ## Architektur (Stand, Details in PROJEKT.md)
@@ -22,6 +23,7 @@ Ziel, Entscheidungen und Reihenfolge der Umsetzung: PROJEKT.md (dort zuerst nach
 
 ## Coding-Regeln
 - Code, Klassen, Variablen, Dateinamen und Kommentare auf Englisch. Oberfläche und Doku auf Deutsch.
+- Für Oberfläche und Swift/iOS-Teile gelten die Apple Human Interface Guidelines (Bedienung, Layout, Typografie, Farben, Barrierefreiheit) und die Apple-Richtlinien für Swift und die App Review. Bei Zielkonflikten mit dem Projektsheet fragt Claude nach.
 - Nur ein Thema pro Commit, kurze Commit-Nachrichten.
 - Backups und Rückrollen sind Teil jeder Änderung, die Daten betrifft.
 
