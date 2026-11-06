@@ -214,3 +214,17 @@ Sonderregel für Swift (Entwurf): Swift-Code braucht Xcode und den Simulator und
 - E-Mail-Versand für Passwort-Reset: Absender und Dienst festlegen.
 - Wie viele Nutzer langfristig (bestimmt Leistung des Pi und Rechtekonzept).
 - Arbeitsspeicher: Der Pi 4B hat nur 1 GB (905 MiB nutzbar), Claude Code verlangt laut Anleitung 4 GB. Belastungstest mit einem echten Projekt und Docker steht aus. Fällt er schlecht aus: Runner auf Mac oder PC (Variante B) oder Pi mit 4–8 GB (Variante C).
+
+### Checkliste vor dem Livegang
+
+- [ ] Cloudflare Tunnel mit HTTPS eingerichtet, Port nur auf 127.0.0.1 gebunden
+- [ ] Cookie mit Secure-Merkmal, per Einstellung umschaltbar (Test per HTTP, Betrieb per HTTPS)
+- [ ] Versionen von fastapi, uvicorn und python-multipart festgenagelt
+- [ ] Web-Container läuft als eigener Benutzer ohne Sonderrechte, mit Speicherlimit
+- [ ] Geheimnisse nur in .env, nicht im Git
+- [ ] Tägliches Backup (restic) läuft, Wiederherstellung einmal getestet
+- [ ] Update-Ablauf festgelegt: Backup, git pull, docker compose up -d --build, Rückweg per Git
+- [ ] Gesundheitsprüfung über /health in compose eingetragen
+- [ ] System von SD-Karte auf SSD umgezogen
+- [ ] Nur noch eine Codekopie (Doppelung /opt/agent-hub/web und Klon in workspaces aufgelöst)
+- [ ] Erster Admin angelegt, Login getestet, Begrenzung falscher Anmeldeversuche aktiv
