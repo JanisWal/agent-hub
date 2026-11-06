@@ -28,6 +28,7 @@ SHELL = """<!doctype html>
 <script src="/static/theme.js" defer></script>
 </head>
 <body>
+<div class="orbs" aria-hidden="true"><i></i><i></i><i></i></div>
 <header class="topbar">
   <span class="brand">Agent-Hub</span>
   <button id="theme-toggle" class="icon-button" type="button" aria-label="Hell oder Dunkel umschalten">
@@ -43,12 +44,15 @@ SHELL = """<!doctype html>
 
 LOGIN_BODY = """<section class="glass">
   <h1>Anmelden</h1>
+  <p class="subtitle">Willkommen zurück.</p>
   %ERROR%
   <form method="post" action="/login">
     <label>E-Mail<input type="email" name="email" required autofocus autocomplete="username"></label>
     <label>Passwort<input type="password" name="password" required autocomplete="current-password"></label>
     <button class="primary" type="submit">Anmelden</button>
   </form>
+  <!-- Placeholder: password reset by e-mail is a later module. -->
+  <button class="link" type="button" disabled title="Kommt später">Passwort vergessen?</button>
 </section>"""
 
 HOME_BODY = """<section class="glass">

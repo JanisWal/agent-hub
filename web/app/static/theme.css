@@ -1,50 +1,59 @@
 /* Agent-Hub theme. Values come from DESIGN.md; change them there first. */
 
 :root {
-  --bg: #fff1e3;
-  --glass: rgba(255, 232, 208, 0.62);
-  --glass-border: rgba(255, 255, 255, 0.55);
-  --field: rgba(255, 205, 165, 0.38);
+  --bg: #efdcc6;
+  --glass: rgba(247, 221, 196, 0.5);
+  --glass-border: rgba(255, 255, 255, 0.4);
+  --field: rgba(222, 170, 125, 0.28);
   --text: #3a2a20;
-  --muted: #7a6455;
+  --muted: #6f5848;
   --accent: #e8845a;
   --on-accent: #2b1d14;
   --error: #a63a1f;
-  --shadow: 0 8px 32px rgba(120, 70, 30, 0.16), 0 1px 0 rgba(255, 255, 255, 0.6) inset;
-  --blob-a: #ffc9a0;
-  --blob-b: #ffe0b8;
+  --shadow: 0 18px 50px rgba(110, 65, 28, 0.22), 0 2px 8px rgba(110, 65, 28, 0.12);
+  --highlight: rgba(255, 255, 255, 0.45);
+  --orb-a: #f0a878;
+  --orb-b: #e6bf8c;
+  --orb-c: #e8845a;
+  --orb-opacity: 0.6;
   --radius-button: 16px;
-  --radius-card: 24px;
+  --radius-card: 28px;
   --space: 8px;
 }
 
 /* Dark: explicit choice, or system preference when nothing is chosen. */
 :root[data-theme="dark"] {
   --bg: #1f1713;
-  --glass: rgba(66, 46, 36, 0.55);
+  --glass: rgba(66, 46, 36, 0.45);
   --glass-border: rgba(255, 210, 170, 0.14);
   --field: rgba(20, 12, 8, 0.4);
   --text: #f6e6d8;
   --muted: #bda591;
   --accent: #f29a72;
   --error: #ff9b7e;
-  --shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 220, 190, 0.1) inset;
-  --blob-a: #5a3623;
-  --blob-b: #3a2519;
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
+  --highlight: rgba(255, 220, 190, 0.28);
+  --orb-a: #8a4f2e;
+  --orb-b: #6b3a22;
+  --orb-c: #c8683f;
+  --orb-opacity: 0.5;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #1f1713;
-    --glass: rgba(66, 46, 36, 0.55);
+    --glass: rgba(66, 46, 36, 0.45);
     --glass-border: rgba(255, 210, 170, 0.14);
     --field: rgba(20, 12, 8, 0.4);
     --text: #f6e6d8;
     --muted: #bda591;
     --accent: #f29a72;
     --error: #ff9b7e;
-    --shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 1px 0 rgba(255, 220, 190, 0.1) inset;
-    --blob-a: #5a3623;
-    --blob-b: #3a2519;
+    --shadow: 0 18px 50px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
+    --highlight: rgba(255, 220, 190, 0.28);
+    --orb-a: #8a4f2e;
+    --orb-b: #6b3a22;
+    --orb-c: #c8683f;
+    --orb-opacity: 0.5;
   }
 }
 
@@ -56,14 +65,37 @@ body {
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   color: var(--text);
   background-color: var(--bg);
-  /* Soft colour fields so the glass has something to blur. */
-  background-image:
-    radial-gradient(60vmax 60vmax at 15% 10%, var(--blob-a), transparent 60%),
-    radial-gradient(50vmax 50vmax at 90% 90%, var(--blob-b), transparent 60%);
-  background-attachment: fixed;
   display: flex;
   flex-direction: column;
 }
+
+/* Slow colour fields behind the glass, so the blur has something to refract. */
+.orbs { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.orbs i {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(48px);
+  opacity: var(--orb-opacity);
+}
+.orbs i:nth-child(1) {
+  width: 42vmax; height: 42vmax; left: -10vmax; top: -12vmax;
+  background: var(--orb-a);
+  animation: drift-a 30s ease-in-out infinite alternate;
+}
+.orbs i:nth-child(2) {
+  width: 46vmax; height: 46vmax; right: -14vmax; bottom: -16vmax;
+  background: var(--orb-b);
+  animation: drift-b 38s ease-in-out infinite alternate;
+}
+.orbs i:nth-child(3) {
+  width: 16vmax; height: 16vmax; left: calc(50% + 6vmax); top: 52%;
+  background: var(--orb-c);
+  opacity: calc(var(--orb-opacity) * 0.8);
+  animation: drift-c 24s ease-in-out infinite alternate;
+}
+@keyframes drift-a { to { transform: translate(14vmax, 10vmax) scale(1.1); } }
+@keyframes drift-b { to { transform: translate(-12vmax, -8vmax) scale(1.08); } }
+@keyframes drift-c { to { transform: translate(-10vmax, -6vmax) scale(1.2); } }
 
 .topbar {
   display: flex;
@@ -81,15 +113,33 @@ main {
 }
 
 .glass {
+  position: relative;
   width: 100%;
   max-width: 420px;
   padding: calc(var(--space) * 5);
   background: var(--glass);
-  border: 1px solid var(--glass-border);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow);
-  -webkit-backdrop-filter: blur(20px) saturate(1.4);
-  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(28px) saturate(1.6);
+  backdrop-filter: blur(28px) saturate(1.6);
+  animation: rise 0.7s cubic-bezier(0.3, 1.25, 0.5, 1) both;
+}
+/* Specular edge: light catches the top-left and bottom-right rim, like Apple glass. */
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1.5px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, var(--highlight), transparent 38%, transparent 62%, var(--highlight));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
+}
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px) scale(0.97); }
+  to { opacity: 1; transform: none; }
 }
 /* No glass when the system asks for less transparency or lacks support. */
 @media (prefers-reduced-transparency: reduce) {
@@ -99,14 +149,15 @@ main {
   .glass { background: var(--bg); }
 }
 
-h1 { margin: 0 0 calc(var(--space) * 3); font-size: 1.8rem; letter-spacing: -0.02em; }
+h1 { margin: 0; font-size: 2rem; letter-spacing: -0.03em; }
+.subtitle { margin: var(--space) 0 calc(var(--space) * 3); color: var(--muted); }
 
 label { display: block; margin-bottom: calc(var(--space) * 2); color: var(--muted); font-size: 0.9rem; }
 
 input {
   display: block;
   width: 100%;
-  min-height: 48px;
+  min-height: 50px;
   margin-top: var(--space);
   padding: 0 calc(var(--space) * 2);
   font: inherit;
@@ -115,7 +166,13 @@ input {
   background: var(--field);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-button);
-  box-shadow: inset 0 1px 3px rgba(120, 70, 30, 0.12);
+  box-shadow: inset 0 1px 3px rgba(80, 40, 10, 0.14);
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: inset 0 1px 3px rgba(80, 40, 10, 0.14), 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 button, .btn {
@@ -132,21 +189,45 @@ button, .btn {
   border-radius: var(--radius-button);
   background: var(--glass);
   box-shadow: var(--shadow);
-  transition: transform 0.18s cubic-bezier(0.3, 1.4, 0.5, 1), filter 0.18s;
+  transition: transform 0.25s cubic-bezier(0.3, 1.5, 0.5, 1), filter 0.2s;
 }
+button:hover { transform: translateY(-1px); }
 button:active { transform: scale(0.97); }
 
-/* One primary button per view. */
+/* One primary button per view: glossy accent with a soft sheen on top. */
 .primary {
   width: 100%;
-  min-height: 52px;
+  min-height: 54px;
   margin-top: var(--space);
   font-size: 1.05rem;
   color: var(--on-accent);
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 88%, white), var(--accent));
-  border-color: rgba(255, 255, 255, 0.35);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.38), rgba(255, 255, 255, 0) 55%),
+    var(--accent);
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--accent) 38%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.55);
 }
-.primary:hover { filter: brightness(1.04); }
+.primary:hover { filter: brightness(1.05); }
+
+/* Quiet text link for secondary actions, e.g. password reset. */
+.link {
+  display: flex;
+  margin: calc(var(--space) * 2) auto 0;
+  min-height: 44px;
+  padding: 0 calc(var(--space) * 2);
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 0.92rem;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: transparent;
+  transition: color 0.2s, text-decoration-color 0.2s;
+}
+.link:disabled { cursor: default; }
+.link:hover { color: var(--text); text-decoration-color: currentColor; transform: none; }
 
 .icon-button { width: 44px; padding: 0; border-radius: 50%; }
 .icon-button svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -165,5 +246,5 @@ button:active { transform: scale(0.97); }
 :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 
 @media (prefers-reduced-motion: reduce) {
-  * { transition: none !important; }
+  *, *::before { transition: none !important; animation: none !important; }
 }
