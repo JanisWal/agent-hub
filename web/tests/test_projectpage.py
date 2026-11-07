@@ -218,7 +218,7 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn("createTextNode", script)
         self.assertIn("fillBlocks(body, text)", script)
         self.assertIn("line(\"claude\", box.dataset.claude, m.answer, true)", script)   # only Claude answers, not the questions
-        self.assertIn("web search", __import__("app.i18n", fromlist=["t"]).t("en", "chat_hint"))
+        self.assertIn("With Web it searches", __import__("app.i18n", fromlist=["t"]).t("en", "chat_hint"))
 
     def test_chat_has_the_web_and_code_switches(self):
         page = self.html()
