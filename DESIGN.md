@@ -221,6 +221,8 @@ Stand 07.11.2026, von Janis beauftragt, in Chrome mit Testkonten geprüft (Hell 
 
 Stand 07.11.2026, von Janis beauftragt. Gleiche Glaskarte wie die Anmeldung. `/password`: Felder „Aktuelles Passwort“, „Neues Passwort“, „wiederholen“; wer ein Startpasswort hat, sieht nur die letzten beiden. Unter dem Hauptknopf steht als Textlink **Abbrechen** (normal zum Dashboard, bei Startpasswort Abmelden). `/reset/{token}` (Link aus der Mail) und `/forgot` haben ebenfalls einen Textlink zurück zur Anmeldung. Die Benutzerverwaltung hat oben links den Textlink **Zurück** (zum Dashboard), nicht „Alle Projekte“.
 
+**Owner übergeben (Benutzerverwaltung, nur für den Owner):** Pro Konto ein runder Symbolknopf mit Krone (Titel „Zum Owner machen“), vor Schlüssel und Mülleimer; er fehlt bei Konten ohne eigenes Passwort. Der Dialog ist ein normaler (nicht roter) Dialog, weil nichts gelöscht wird: Titel „Owner-Rechte übergeben?“, darunter die E-Mail-Adresse, ein Satz zur Folge (die Person wird Owner, du wirst Admin), das Passwortfeld, **Abbrechen** (Standardfokus) und der Hauptknopf **Übergeben**.
+
 ## 10c. Mails
 
 Stand 07.11.2026, von Janis beauftragt (Passwort-Reset und Einladung). Code: `web/app/mailtext.py`, Texte in `i18n.py` (`mail_*`).
