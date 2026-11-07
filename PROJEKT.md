@@ -125,10 +125,12 @@ Sonderregel für Swift (Entwurf): Swift-Code braucht Xcode und den Simulator und
 
 ### Benutzerverwaltung (nur Admin)
 
-- Keine Selbstregistrierung: Neue Konten legt ausschließlich der Admin an.
-- In den Einstellungen des Admins: „Neuen Benutzer hinzufügen“ mit E-Mail-Adresse und vom Admin vergebenem Passwort.
-- Liste der Benutzer, Admin kann Passwörter zurücksetzen und Konten löschen.
-- Das Admin-Konto selbst entsteht bei der Installation (bisher per `python -m app.create_admin` auf dem Pi).
+- Drei Rollen: Owner (genau einer, Janis), Admin, Nutzer. Der Owner hat alle Admin-Rechte.
+- Keine Selbstregistrierung: Neue Konten legen nur Owner und Admins an.
+- In den Einstellungen: „Neuen Benutzer hinzufügen“ mit E-Mail-Adresse und vergebenem Passwort.
+- Liste der Benutzer: Passwörter zurücksetzen und Konten löschen (Owner und Admins).
+- Nur der Owner kann Admin-Rechte per Schalter in der Benutzerliste vergeben oder entziehen. Das Owner-Konto kann niemand löschen oder herabstufen.
+- Das Owner-Konto entsteht bei der Installation (bisher per `python -m app.create_admin` auf dem Pi, wird zum Owner umgebaut).
 
 ### Projektansicht
 
