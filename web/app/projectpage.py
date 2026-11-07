@@ -36,7 +36,7 @@ def _card(item: Item, lang: str) -> str:
         )
         return f'<article class="card proposed" data-id="{item.id}">{title}<div class="card-actions">{buttons}</div></article>'
     discard = _action_button("discard", i18n.t(lang, "discard"), TRASH, "quiet")
-    return f'<article class="card" draggable="true" data-id="{item.id}">{title}{discard}</article>'
+    return f'<article class="card" data-id="{item.id}">{title}{discard}</article>'
 
 
 def _column(kind: str, label_key: str, items: list[Item], lang: str) -> str:
