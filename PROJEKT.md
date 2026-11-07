@@ -129,6 +129,9 @@ Sonderregel für Swift (Entwurf): Swift-Code braucht Xcode und den Simulator und
 - Keine Selbstregistrierung: Neue Konten legen nur Owner und Admins an.
 - In den Einstellungen: „Neuen Benutzer hinzufügen“ mit E-Mail-Adresse und vergebenem Passwort.
 - Liste der Benutzer: Passwörter zurücksetzen und Konten löschen (Owner und Admins).
+- Philosophie: Der Admin kennt die Passwörter der Nutzer nicht und muss sich keine ausdenken. Er vergibt beim Anlegen ein einfaches Startpasswort (z. B. „Start1234“). Der Nutzer erfährt davon und setzt über „Passwort vergessen?“ per E-Mail sein eigenes Passwort. Deshalb ist der Passwort-Reset per E-Mail Pflicht.
+- Absicherung dazu: Ein Startpasswort gilt nur bis zur ersten Änderung. Beim ersten Login mit dem Startpasswort muss der Nutzer ein eigenes Passwort setzen.
+- Offen: Statt Startpasswort könnte der Hub beim Anlegen direkt eine Einladungs-Mail mit Link zum Passwort-Setzen schicken (gleicher Baustein wie der Reset). Der Admin gäbe dann nur die E-Mail-Adresse ein.
 - Nur der Owner kann Admin-Rechte per Schalter in der Benutzerliste vergeben oder entziehen. Das Owner-Konto kann niemand löschen oder herabstufen.
 - Das Owner-Konto entsteht bei der Installation (bisher per `docker compose exec web python -m app.create_admin` im Ordner der `compose.yml`, wird zum Owner umgebaut).
 
@@ -319,7 +322,7 @@ Eine laufende Claude-Code-Sitzung zieht nicht um; der PC muss an bleiben, bis ei
 - Vorlagen für Janis’ Freigaben und die Tester-Checklisten: welche Klick-Aussagen, welche Felder.
 - Domain `janis-home.de` ist im Einsatz (Subdomain `hub`); Registrar und Cloudflare-Konditionen bei Gelegenheit prüfen. Optional Cloudflare Access (Code per E-Mail) als zusätzliche Hürde vor der Seite, bis eine Begrenzung der Anmeldeversuche gebaut ist.
 - SSD kaufen (120–240 GB) und Umzug von der SD-Karte planen.
-- E-Mail-Versand für Passwort-Reset: Dienst festlegen. Eigener Mailserver zu Hause scheidet aus (Privat-IPs landen im Spam oder auf Sperrlisten, Port 25 oft gesperrt). Gmail funktioniert, ist aber nicht sauber. Kandidaten: Versanddienst mit eigener Absender-Domain (z. B. noreply@janis-home.de) wie Brevo oder Resend im kostenlosen Tarif. Alternative für wenige Nutzer: kein Mailversand, der Admin setzt Passwörter zurück.
+- E-Mail-Versand für Passwort-Reset: Dienst festlegen. Eigener Mailserver zu Hause scheidet aus (Privat-IPs landen im Spam oder auf Sperrlisten, Port 25 oft gesperrt). Gmail funktioniert, ist aber nicht sauber. Kandidaten: Versanddienst mit eigener Absender-Domain (z. B. noreply@janis-home.de) wie Brevo oder Resend im kostenlosen Tarif. Der Reset per E-Mail ist gesetzt (siehe Benutzerverwaltung), Favorit: Resend.
 - Wie viele Nutzer langfristig (bestimmt Leistung des Pi und Rechtekonzept).
 - Arbeitsspeicher: Der Pi 4B hat nur 1 GB (905 MiB nutzbar), Claude Code verlangt laut Anleitung 4 GB. Belastungstest mit einem echten Projekt und Docker steht aus. Fällt er schlecht aus: Runner auf Mac oder PC (Variante B) oder Pi mit 4–8 GB (Variante C).
 - Aufräumen auf dem Pi: Codekopie `/opt/agent-hub/web` und alte Branches, doppelte `docker-compose.yml` unter `/home/admin/cloudflared`.
