@@ -2,9 +2,16 @@
 (function () {
   function $(selector, root) { return (root || document).querySelector(selector); }
   function reloadQuietly(url) {
-    try { sessionStorage.setItem("noanim", "1"); } catch (e) {}  // no entrance animation again
+    try {
+      sessionStorage.setItem("noanim", "1");  // no entrance animation again
+      sessionStorage.setItem("scrollY", String(window.scrollY));  // and stay where you were (lists scroll)
+    } catch (e) {}
     if (url) location.assign(url); else location.reload();
   }
+  try {
+    var savedScroll = sessionStorage.getItem("scrollY");
+    if (savedScroll !== null) { sessionStorage.removeItem("scrollY"); window.scrollTo(0, Number(savedScroll)); }
+  } catch (e) {}
 
   // Greeting by the visitor's local time: 5-11 morning, 11-17 midday, otherwise evening.
   var greeting = $("#greeting");
@@ -115,6 +122,8 @@
       left: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-8 6 8 6z"/></svg>',
       right: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l8 6-8 6z"/></svg>'
     };
+    // On a phone held upright the pages do not sit side by side: one column, scroll down (CSS).
+    var compact = window.matchMedia("(max-width: 560px)");
     var index = Number(pagesBox.dataset.current) - 1;  // 0-based page that is shown
     var before = "";
     var startGrid = null;
@@ -153,13 +162,20 @@
     });
     pageX.set(-index * stride());
 
+    // A tile plays its entrance animation once. Moving it in the DOM would restart it (smaller and
+    // see-through again), so a tile that has entered, or is about to be carried, never animates again.
+    track.addEventListener("animationend", function (event) {
+      if (event.target.classList.contains("tile")) event.target.classList.add("entered");
+    });
+
     // Tabbing must not scroll the clipped track sideways, and hidden pages are not reachable.
     pagesBox.addEventListener("scroll", function () { pagesBox.scrollLeft = 0; });
     var markInert = function () {
-      grids().forEach(function (grid, i) { grid.inert = i !== index; });
+      grids().forEach(function (grid, i) { grid.inert = !compact.matches && i !== index; });
     };
     markInert();
     window.addEventListener("resize", function () { pageX.set(-index * stride()); });
+    compact.addEventListener("change", markInert);
     renderPager();
 
     function arrowElement(target, count, side, label) {
@@ -280,7 +296,7 @@
     });
 
     document.addEventListener("keydown", function (event) {
-      if (event.target.closest("input, textarea, select, dialog") || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (compact.matches || event.target.closest("input, textarea, select, dialog") || event.altKey || event.ctrlKey || event.metaKey) return;
       if (event.key === "ArrowLeft") goTo(index - 1);
       else if (event.key === "ArrowRight") goTo(index + 1);
     });
@@ -288,7 +304,7 @@
     // Swiping with a finger: the track follows 1:1 (with rubber-banding at both ends), and on
     // release the flick's velocity decides where it comes to rest.
     pagesBox.addEventListener("pointerdown", function (event) {
-      if (event.pointerType === "mouse" || sorter.dragging()) return;
+      if (event.pointerType === "mouse" || compact.matches || sorter.dragging()) return;
       pageX.stop();  // grab the track while it is still moving
       swipe = {
         id: event.pointerId, x: event.clientX, y: event.clientY, base: pageX.value,
@@ -351,6 +367,7 @@
     }
 
     function checkEdges(x) {
+      if (compact.matches) return;  // one column: no page edges
       var zone = Math.min(96, window.innerWidth * 0.08);
       var dir = x > window.innerWidth - zone ? 1 : x < zone ? -1 : 0;
       edges[0].classList.toggle("hot", dir === -1);
@@ -365,11 +382,17 @@
     var sorter = Motion.sortable({
       itemSelector: ".tile[data-id]",
       items: function () { return track.querySelectorAll(".tile[data-id]"); },
-      containerFor: function (el) { return el.closest("#track .grid"); },
-      axis: "xy",
+      containerFor: function (el) {
+        var grid = el.closest("#track .grid");
+        // Upright phone: below the last tile still counts as the end of the list.
+        if (!grid && compact.matches && el.closest("#pages")) { var all = grids(); return all[all.length - 1]; }
+        return grid;
+      },
+      axis: function () { return compact.matches ? "y" : "xy"; },
       endSelector: ".tile.plus, .tile.ghost",
       ignore: ".tile-delete",
       onPick: function (tile) {
+        Array.prototype.forEach.call(track.querySelectorAll(".tile"), function (t) { t.classList.add("entered"); });
         before = order();
         startGrid = tile.closest(".grid");
         pageX.stop();
@@ -388,7 +411,7 @@
         var tile = info.item;
         var endGrid = tile.closest(".grid");
         var all = grids();
-        goTo(all.indexOf(endGrid));
+        if (!compact.matches) goTo(all.indexOf(endGrid));
         if (order() === before && endGrid === startGrid) return;
         fetch("/projects/move", {
           method: "POST",
