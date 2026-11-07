@@ -660,7 +660,7 @@ html.dragging-active, html.dragging-active * { -webkit-user-select: none !import
 @media (max-width: 560px) { :root { --bleed: 16px; } } /* main has 16 px side padding on phones */
 
 /* ===== Shadows, pager physics ===== */
-main { overflow-x: clip; } /* shadows may reach to the window edge, but nothing makes the page scroll sideways */
+main { overflow: clip; } /* shadows may reach to the window edge, but their empty margins never make the page scroll */
 
 /* The current page is a worm hanging on the track position (dashboard.js drawWorm). */
 .worm { position: absolute; top: 50%; left: 0; width: 10px; height: 10px; margin-top: -5px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent); pointer-events: none; will-change: transform, width; }
@@ -673,3 +673,66 @@ a.pager-arrow:active { scale: 0.75; }
   /* Less room beside the grid on phones, so a softer, tighter shadow. */
   .tile.glass { box-shadow: 0 8px 22px rgba(60, 30, 10, 0.24), 0 1px 4px rgba(60, 30, 10, 0.16); }
 }
+
+/* ===== The dashboard fits the window and follows its size ===== */
+/* The two rows (or three, when narrow) of tiles share the height that is left after the
+   greeting, the page dots and the quota bar. A tile has the same size on every page, so it
+   never changes size when it is moved. At 16:9 nothing scrolls. */
+:root { --cols: 3; --rows: 2; --grid-gap: 24px; --row-min: clamp(84px, 15vh, 130px); --row-max: 250px; }
+@media (max-width: 699px) { :root { --cols: 2; --rows: 3; --grid-gap: 16px; } }
+
+body.fit { height: 100dvh; }
+body.fit main { flex: 1 1 0; min-height: 0; display: flex; justify-content: center; align-items: stretch; padding: 0 24px 20px; }
+body.fit .dash { flex: 1 1 auto; min-height: 0; gap: clamp(8px, 2.2vh, 28px); }
+body.fit .greeting { font-size: clamp(1.6rem, min(5.5vw, 6.5vh), 3.6rem); }
+body.fit .pages { flex: 1 1 0; min-height: calc(var(--row-min) * var(--rows) + var(--grid-gap) * (var(--rows) - 1) + 144px); }
+body.fit .track { height: 100%; align-items: center; }
+body.fit .grid {
+  height: 100%;
+  min-height: 0;
+  max-height: calc(var(--row-max) * var(--rows) + var(--grid-gap) * (var(--rows) - 1));
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--rows), minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: var(--grid-gap);
+}
+body.fit .tile { min-height: 0; }
+body.fit .tile-name { font-size: clamp(1.05rem, 2.7vh, 1.5rem); }
+body.fit .plus-sign { width: clamp(36px, 6.5vh, 56px); height: clamp(36px, 6.5vh, 56px); }
+@media (min-width: 561px) {
+  /* A page holds six: while a tile is carried onto a full page the last one is pushed off it. */
+  body.fit .grid > :nth-child(n+7) { display: none; }
+}
+
+/* Phone held upright: one column of tiles, all pages one after the other, scroll down. */
+@media (max-width: 560px) {
+  body.fit { height: auto; min-height: 100dvh; }
+  body.fit main { display: block; flex: 1 0 auto; padding: 8px 16px 96px; } /* grows with the list, so the page scrolls */
+  body.fit .dash { flex: none; }
+  body.fit .greeting { font-size: clamp(1.8rem, 9vw, 2.4rem); }
+  body.fit .pages { flex: none; min-height: 0; }
+  body.fit .track { display: flex; flex-direction: column; align-items: stretch; height: auto; gap: 14px; transform: none !important; touch-action: pan-y; }
+  body.fit .track > .grid { display: contents; }
+  body.fit .tile { height: 112px; padding: 16px; border-radius: 22px; }
+  body.fit .tile.ghost { display: none; }
+  body.fit .tile.plus { order: 9999; } /* the "+" always closes the list */
+  body.fit .tile-name { font-size: 1.15rem; }
+  #pager, .edge { display: none; }
+}
+
+/* Low windows (phone held sideways): trim the chrome around the tiles so that nothing scrolls. */
+@media (max-height: 480px) and (min-width: 561px) {
+  :root { --row-min: 66px; --grid-gap: 12px; }
+  .topbar { padding-top: 6px; padding-bottom: 2px; }
+  body.fit main { padding-bottom: 8px; }
+  body.fit .dash { gap: 6px; }
+  body.fit .greeting { font-size: 1.4rem; }
+  body.fit .pager-arrow { height: 30px; }
+  body.fit .quota-label { margin-bottom: 2px; font-size: 0.7rem; }
+  body.fit .quota-bar { height: 8px; }
+  body.fit .tile { padding: 12px 14px; }
+  body.fit .tile-delete { top: 8px; right: 8px; }
+}
+
+/* A tile that has entered (or is carried) does not animate again, even if it is moved in the DOM. */
+.tile.entered { animation: none; }

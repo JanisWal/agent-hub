@@ -39,10 +39,10 @@ def _user(request: Request) -> users.User | None:
     return users.get_user(request.cookies.get(COOKIE_NAME))
 
 
-def _logged_in_page(user: users.User, title: str, body: str, scripts=None) -> str:
+def _logged_in_page(user: users.User, title: str, body: str, scripts=None, body_class: str = "") -> str:
     return layout.page(
         title, body, user.language, top_right=dashboard.settings_bar(user),
-        scripts=scripts or LOGGED_IN_SCRIPTS,
+        scripts=scripts or LOGGED_IN_SCRIPTS, body_class=body_class,
     )
 
 
@@ -54,7 +54,7 @@ def index(request: Request, page: str = "1"):
     pages = projects.layout(user.id)
     first_project = not user.had_project and not pages
     body = dashboard.render(user, pages, int(page) if page.isdigit() else 1, first_project)
-    return _logged_in_page(user, i18n.t(user.language, "home"), body)
+    return _logged_in_page(user, i18n.t(user.language, "home"), body, body_class="fit")  # fits the window
 
 
 @app.get("/login", response_class=HTMLResponse)

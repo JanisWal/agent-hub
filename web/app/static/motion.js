@@ -166,7 +166,7 @@ var Motion = (function () {
   //   itemSelector   what can be picked up
   //   items()        all items (for the gliding of the others)
   //   containerFor(el)  the list element under an element, or null
-  //   axis           "xy" for grids, "y" for vertical lists
+  //   axis           "xy" for grids, "y" for vertical lists (or a function that answers it now)
   //   endSelector    elements (free slots) that mean "put it at the end"
   //   ignore         presses on these never start a drag (buttons)
   //   onPick(item), onMove(x, y), onDrop(info)
@@ -276,7 +276,25 @@ var Motion = (function () {
       clearTimeout(d.idle);
       if (Math.hypot(v.x, v.y) <= 700) place(d);
       else d.idle = setTimeout(function () { place(d); }, 130);
+      autoscroll(d, y);
       if (o.onMove) o.onMove(x, y);
+    }
+
+    function axisNow() { return typeof o.axis === "function" ? o.axis() : o.axis; }
+
+    // Near the top or bottom edge of the window a carried item scrolls the page (lists that scroll).
+    function autoscroll(d, y) {
+      var zone = 90;
+      var edge = y < zone ? -(zone - y) / zone : y > window.innerHeight - zone ? (y - (window.innerHeight - zone)) / zone : 0;
+      var scrolls = document.documentElement.scrollHeight > window.innerHeight + 2;
+      d.scrollSpeed = scrolls ? edge * 18 : 0;
+      if (d.scrollSpeed && !d.scroller) {
+        d.scroller = setInterval(function () {
+          if (drag !== d || !d.scrollSpeed) { clearInterval(d.scroller); d.scroller = null; return; }
+          window.scrollBy(0, d.scrollSpeed);
+          place(d);  // the items moved under the finger
+        }, 16);
+      }
     }
 
     function endAnchor(container, others) {
@@ -299,7 +317,7 @@ var Motion = (function () {
       if (over) {
         // Only the middle of a target counts, so grazing its edge swaps nothing.
         var r = over.getBoundingClientRect();
-        var zoneX = o.axis === "y" ? 0 : r.width * 0.2;
+        var zoneX = axisNow() === "y" ? 0 : r.width * 0.2;
         var zoneY = r.height * 0.22;
         if (x < r.left + zoneX || x > r.right - zoneX || y < r.top + zoneY || y > r.bottom - zoneY) return;
       }
@@ -311,7 +329,7 @@ var Motion = (function () {
         anchor = before ? over.nextSibling : over;
       } else if (item.parentNode !== container) {
         anchor = endAnchor(container, others);
-      } else if (o.axis === "y"
+      } else if (axisNow() === "y"
           ? others.length && y > others[others.length - 1].getBoundingClientRect().bottom
           : o.endSelector && el.closest(o.endSelector)) {
         anchor = endAnchor(container, others);
@@ -329,6 +347,7 @@ var Motion = (function () {
       var velocity = velocityOf(d.history);
       clearTimeout(d.idle);
       clearTimeout(d.rest);
+      clearInterval(d.scroller);
       var slot = d.item.getBoundingClientRect();
       var glide = d.item.__offset;  // the slot may still be gliding into place: aim at where it ends up
       d.clone.classList.remove("lifted");

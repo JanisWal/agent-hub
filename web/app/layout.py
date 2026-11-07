@@ -19,7 +19,7 @@ SHELL = """<!doctype html>
 <script src="/static/theme.js" defer></script>
 %SCRIPTS%
 </head>
-<body>
+<body class="%BODY_CLASS%">
 <div class="orbs" aria-hidden="true"><i></i><i></i><i></i></div>
 <header class="topbar">
   <a class="brand" href="%REPO_URL%" target="_blank" rel="noopener noreferrer" aria-label="%BRAND_LABEL%">Agent-Hub</a>
@@ -52,7 +52,7 @@ def fill(template: str, **values: str) -> str:
     )
 
 
-def page(title: str, body: str, lang: str = "de", top_right: str = "", scripts=()) -> str:
+def page(title: str, body: str, lang: str = "de", top_right: str = "", scripts=(), body_class: str = "") -> str:
     """Wrap a body in the shell. `title` is plain text, `body` and `top_right` are HTML."""
     script_tags = "\n".join(f'<script src="{src}" defer></script>' for src in scripts)
     return fill(
@@ -61,6 +61,7 @@ def page(title: str, body: str, lang: str = "de", top_right: str = "", scripts=(
         TITLE=html.escape(title),
         SCRIPTS=script_tags,
         TOP_RIGHT=top_right,
+        BODY_CLASS=html.escape(body_class),
         BODY=body,
         TOGGLE_LABEL=html.escape(i18n.t(lang, "theme_toggle")),
         REPO_URL=REPO_URL,

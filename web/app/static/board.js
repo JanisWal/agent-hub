@@ -6,7 +6,10 @@
 
   function $(selector, root) { return (root || document).querySelector(selector); }
   function reload() {
-    try { sessionStorage.setItem("noanim", "1"); } catch (e) {}  // no entrance animation again
+    try {
+      sessionStorage.setItem("noanim", "1");  // no entrance animation again
+      sessionStorage.setItem("scrollY", String(window.scrollY));  // stay where you were
+    } catch (e) {}
     location.reload();
   }
   function post(url) { return fetch(url, { method: "POST" }); }
