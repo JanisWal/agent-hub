@@ -335,7 +335,7 @@ Eine laufende Claude-Code-Sitzung zieht nicht um; der PC muss an bleiben, bis ei
 - SSD kaufen (120–240 GB) und Umzug von der SD-Karte planen.
 - E-Mail-Versand für Passwort-Reset: Dienst festlegen. Eigener Mailserver zu Hause scheidet aus (Privat-IPs landen im Spam oder auf Sperrlisten, Port 25 oft gesperrt). Gmail funktioniert, ist aber nicht sauber. Kandidaten: Versanddienst mit eigener Absender-Domain (z. B. noreply@janis-home.de) wie Brevo oder Resend im kostenlosen Tarif. Der Reset per E-Mail ist gesetzt (siehe Benutzerverwaltung), Favorit: Resend.
 - Wie viele Nutzer langfristig (bestimmt Leistung des Pi und Rechtekonzept).
-- Arbeitsspeicher: Der Pi 4B hat nur 1 GB (905 MiB nutzbar), Claude Code verlangt laut Anleitung 4 GB. Belastungstest mit einem echten Projekt und Docker steht aus. Fällt er schlecht aus: Runner auf Mac oder PC (Variante B) oder Pi mit 4–8 GB (Variante C).
+- Arbeitsspeicher: Der Pi 4B hat nur 1 GB (905 MiB nutzbar), Claude Code verlangt laut Anleitung 4 GB. Erster Test am 07.11.2026: Claude Code (`claude -p`, Haiku) lief im Runner-Container mit hartem Limit von 480 MB ohne Swap zweimal fehlerfrei durch (je 11 s, Spitze mindestens 225 MiB, im Sekundentakt gemessen), danach waren weiter etwa 580 MiB frei und die Seite blieb erreichbar. Offen: lange Läufe, Sonnet, parallel laufende Tests und Git-Worktrees. Fällt er schlecht aus: Runner auf Mac oder PC (Variante B) oder Pi mit 4–8 GB (Variante C).
 - Aufräumen auf dem Pi: Codekopie `/opt/agent-hub/web` und alte Branches, doppelte `docker-compose.yml` unter `/home/admin/cloudflared`.
 - Oberfläche: siehe DESIGN.md, Abschnitt „Noch offen“.
 
