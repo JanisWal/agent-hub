@@ -109,7 +109,45 @@ def complete(user_id: int, ok: bool, now: int | None = None) -> bool:
         if status_in(conn, user_id, now) != "connecting":
             return False
         _save(conn, user_id, "connected" if ok else "none", None, now)
+    _codes.pop(user_id, None)
     return True
+
+
+def pending_logins(now: int | None = None) -> list[tuple[int, str | None]]:
+    """Runner: users who are in the middle of a login, as (user_id, login_url or None).
+    The runner starts Claude Code for those without a link and reports the link back."""
+    now = int(now if now is not None else time.time())
+    with db.connect() as conn:
+        rows = conn.execute("SELECT * FROM claude_connections WHERE status = 'connecting'").fetchall()
+    return [(r["user_id"], r["login_url"]) for r in rows if _effective(r, now) == "connecting"]
+
+
+# The code the user types after confirming the login. It is a credential: it stays in the memory of
+# this process for a few minutes, is never written to the database or a log, and is handed over once.
+_codes: dict[int, tuple[str, int]] = {}
+CODE_SECONDS = 300
+MAX_CODE = 2000
+
+
+def submit_code(user_id: int, code: str, now: int | None = None) -> bool:
+    """The user typed the code. Only accepted while his login waits for it (a link was shown)."""
+    code = code.strip()
+    now = int(now if now is not None else time.time())
+    if not code or len(code) > MAX_CODE:
+        raise ValueError("Ungueltiger Code")
+    with db.connect() as conn:
+        row = _row(conn, user_id)
+        if status_in(conn, user_id, now) != "connecting" or not row["login_url"]:
+            return False
+    _codes[user_id] = (code, now + CODE_SECONDS)
+    return True
+
+
+def take_code(user_id: int, now: int | None = None) -> str | None:
+    """Runner: fetch the code once (it is forgotten right away)."""
+    now = int(now if now is not None else time.time())
+    code, expires = _codes.pop(user_id, (None, 0))
+    return code if code is not None and expires >= now else None
 
 
 def mark_expired(user_id: int) -> bool:
@@ -127,4 +165,5 @@ def disconnect(user_id: int) -> bool:
         if _row(conn, user_id) is None:
             return False
         conn.execute("DELETE FROM claude_connections WHERE user_id = ?", (user_id,))
+    _codes.pop(user_id, None)
     return True

@@ -18,8 +18,8 @@ STAGE_ROLE = {"coding": "programmer", "testing": "tester", "reviewing": "reviewe
               "documenting": "documenter"}
 RESULTS = {
     "programmer": ("done", "failed"),
-    "tester": ("pass", "fail", "not_testable", "skipped"),
-    "reviewer": ("ok", "objections"),
+    "tester": ("pass", "fail", "not_testable", "skipped", "failed"),
+    "reviewer": ("ok", "objections", "failed"),
     "documenter": ("done", "failed"),
 }
 MAX_ROUNDS = 3
@@ -66,9 +66,11 @@ def advance(status: str, round_: int, manual_check: bool, result: str,
         raise ValueError("Stufe hat keinen Agenten")
     if result not in RESULTS[role]:
         raise ValueError("Ergebnis passt nicht zur Rolle")
+    if result == "failed" and status != "documenting":
+        # The agent crashed or gave no usable answer (the runner reports that as "failed"):
+        # nothing can be trusted, the user decides.
+        return Step("escalated", round_, manual_check)
     if status == "coding":
-        if result == "failed":
-            return Step("escalated", round_, manual_check)
         nxt = _first_enabled("testing", enabled, manual_check)
     elif status == "testing":
         if result == "fail":

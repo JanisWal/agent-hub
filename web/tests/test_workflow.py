@@ -25,8 +25,10 @@ class AdvanceTest(unittest.TestCase):
         self.assertEqual(w.advance("testing", 3, False, "fail", ALL).status, "escalated")
         self.assertEqual(w.advance("reviewing", 3, False, "objections", ALL).status, "escalated")
 
-    def test_programmer_failure_goes_to_the_user(self):
-        self.assertEqual(w.advance("coding", 1, False, "failed", ALL).status, "escalated")
+    def test_a_failed_agent_goes_to_the_user(self):
+        for stage in ("coding", "testing", "reviewing"):
+            self.assertEqual(w.advance(stage, 1, False, "failed", ALL).status, "escalated", stage)
+        self.assertEqual(w.advance("documenting", 1, False, "failed", ALL).status, "done")
 
     def test_not_testable_continues_but_marks_a_manual_check(self):
         for result in ("not_testable", "skipped"):

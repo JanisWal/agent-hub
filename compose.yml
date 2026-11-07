@@ -11,6 +11,8 @@ services:
       RESEND_API_KEY: "${RESEND_API_KEY:-}"
       MAIL_FROM: "${MAIL_FROM:-}"
       HUB_BASE_URL: "${HUB_BASE_URL:-}"
+      # SHA-256 of the runner's token (the runner itself holds the token). Empty = runner interface off.
+      HUB_RUNNER_TOKEN_HASH: "${HUB_RUNNER_TOKEN_HASH:-}"
     restart: unless-stopped
     networks:
       default: {}
