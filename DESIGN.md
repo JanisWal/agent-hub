@@ -27,6 +27,8 @@ Nie reines Weiß (`#FFFFFF`) oder reines Schwarz. Alle Flächen sind warm getön
 | `--accent` | Hauptknopf, Fokus | `#E8845A` | `#F29A72` |
 | `--on-accent` | Text auf dem Hauptknopf | `#2B1D14` | `#2B1D14` |
 | `--error` | Fehler | `#A63A1F` | `#FF9B7E` |
+| `--danger` | Löschen: Dialograhmen, Titel, Knopf | `#C03A20` | `#FF7457` |
+| `--on-danger` | Text auf dem Löschknopf | `#FFF3EA` | `#2A0E07` |
 | `--shadow` | Schatten (zweilagig) | `0 18px 50px rgba(110,65,28,0.22), 0 2px 8px rgba(110,65,28,0.12)` | `0 18px 50px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35)` |
 | `--highlight` | Lichtkante | `rgba(255, 255, 255, 0.45)` | `rgba(255, 220, 190, 0.28)` |
 | `--orb-a` | Farbfläche oben links | `#F0A878` | `#8A4F2E` |
@@ -66,11 +68,11 @@ Regeln:
 - **Normaler Knopf:** Schrift 600, Füllung `--glass`, Rand 1 px `--glass-border`, Schatten `--shadow`, Hover hebt um 1 px an, Klick skaliert auf 0,97. Übergang 0,25 s `cubic-bezier(0.3, 1.5, 0.5, 1)` (federnd).
 - **Hauptknopf (`.primary`):** volle Breite, Höhe mindestens 54 px, Schrift 1,05 rem, Text `--on-accent`, Füllung `--accent` mit hellem Glanz oben (Verlauf von `rgba(255,255,255,0.38)` zu transparent bei 55 %), Rand `rgba(255,255,255,0.4)`, Schatten `0 10px 24px` in 38 % Akzent plus innere Lichtlinie `inset 0 1px 0 rgba(255,255,255,0.55)`, Hover `brightness(1.05)`, Abstand oben 8 px.
 - **Nebenaktion als Textlink (`.link`):** ohne Kasten, ohne Schatten, zentriert, Höhe mindestens 44 px, Schrift 0,92 rem Gewicht 500, Farbe `--muted`, Abstand oben 16 px. Beim Darüberfahren Farbe `--text` und Unterstreichung (Abstand 4 px, vorher transparent, Übergang 0,2 s). Noch nicht gebaute Funktionen: `disabled`, Cursor normal, `title="Kommt später"` (Beispiel: „Passwort vergessen?“).
-- **Umschalter Hell/Dunkel (`.icon-button`):** 44 px rund, nur Symbol (Linien 2 px, runde Enden, 22 px), `aria-label="Hell oder Dunkel umschalten"`. Zeigt das Symbol des Stils, **zu dem man wechseln würde**: im hellen Stil den Mond, im dunklen die Sonne.
+- **Umschalter Hell/Dunkel (`.theme-fab`):** 52 px rund, nur Symbol (Linien 2 px, runde Enden, 24 px), **fest unten rechts** (24 px Abstand zu Rand und Boden, über allem), `aria-label` übersetzt. Zeigt das Symbol des Stils, **zu dem man wechseln würde**: im hellen Stil den Mond, im dunklen die Sonne.
 
 ## 5. Hell und Dunkel
 
-- Umschalter **in der Kopfleiste jeder Seite**, auch auf Login, ein Klick, immer sichtbar.
+- Umschalter **fest unten rechts auf jeder Seite**, auch auf Login und in jedem Menü, ein Klick, immer sichtbar. (Früher in der Kopfleiste, am 07.11.2026 nach unten rechts verschoben.)
 - Erster Besuch: Stil der Geräteeinstellung (`prefers-color-scheme`). Danach gilt die Wahl, gespeichert im Browser (`localStorage`, Schlüssel `theme`, Werte `light` / `dark`), für alle Seiten.
 - Kein Aufblitzen: Ein kleines Inline-Skript im `<head>` setzt `data-theme` vor dem ersten Zeichnen. `theme.js` übernimmt nur den Klick.
 - `localStorage` kann blockiert sein (private Fenster): jeder Zugriff steht in `try/catch`, die Seite funktioniert dann ohne Speichern.
@@ -95,9 +97,9 @@ Regeln:
 ## 8. Raster und Layout
 
 - Abstände im 8-px-Raster; gleiche Abstände links/rechts und oben/unten innerhalb einer Fläche (Symmetrie).
-- Kopfleiste: Marke links, Umschalter rechts, Innenabstand 16 px oben/unten und 24 px seitlich.
-- Inhalt: `main` füllt den Rest der Höhe, Inhalt zentriert, Außenabstand 24 px. Meta-Tag `viewport` ist gesetzt.
-- **Ziel:** Für breite Seiten (Kacheln, Board) ein Inhaltsbereich mit begrenzter Breite von etwa 1200 px, auf kleinen Bildschirmen eine Spalte. Noch nicht gebaut.
+- Kopfleiste: Marke links, auf angemeldeten Seiten rechts die Einstellungsleiste (Login: nur die Marke), Innenabstand 16 px oben/unten und 24 px seitlich.
+- Inhalt: `main` füllt den Rest der Höhe, Inhalt zentriert, Außenabstand 24 px, unten 96 px Platz für den Umschalter. Meta-Tag `viewport` ist gesetzt.
+- Breite Seiten (Dashboard): Inhaltsbereich `.dash` mit höchstens 1100 px Breite, Abstand zwischen Blöcken 32 px. Auf kleinen Bildschirmen weniger Spalten (siehe Abschnitt 10).
 - **Ungeprüft:** Handy-Ansicht (Layout wurde nur am großen Bildschirm angesehen).
 
 ## 9. Formulare
@@ -114,17 +116,64 @@ Regeln:
 - Attribute: E-Mail `autofocus`, `autocomplete="username"`; Passwort `autocomplete="current-password"`.
 - Abstände: Label 16 px unten, Feld 8 px unter dem Label, Meldung 6 px unter dem Feld.
 
-## 10. Umsetzung
+## 10. Dashboard (Startseite nach dem Login)
+
+Stand 07.11.2026, von Janis beauftragt, mit Testkonten im Browser geprüft (Dunkel und Hell, Deutsch und Englisch).
+
+**Begrüßung**
+- Große Überschrift `.greeting`: Größe `clamp(2.2rem, 5.5vw, 3.6rem)`, Laufweite −0,035 em. Text „Guten Morgen / Guten Mittag / Guten Abend, Name“, bestimmt im Browser nach der **lokalen Uhrzeit** des Besuchers: 5–11 Uhr Morgen, 11–17 Uhr Mittag, sonst Abend. Ohne JavaScript steht „Hallo, Name“.
+- Name: der gewählte Nutzername, sonst der Teil der E-Mail vor dem `@`.
+
+**Einstellungsleiste (oben rechts, auf jeder angemeldeten Seite)**
+- Dezente Pille (`.settings-toggle`): Nutzername (höchstens 14 Zeichen sichtbar) und ein Pfeil, Schrift 0,92 rem in `--muted`, Fläche nur 60 % Glas, kein Schatten. Der Pfeil dreht sich beim Aufklappen um 180°.
+- Aufgeklapptes Panel (`.settings-panel`, Glas, 300 px, Rundung 24 px, 16 px unter der Pille): Feld **Nutzername** (höchstens 40 Zeichen), Auswahl **Sprache** (zwei große Schalter „Deutsch“ / „English“, der gewählte mit Akzentrand), **Speichern**, dann „Claude verknüpfen“ und „ChatGPT verknüpfen“ (ausgegraut, „Kommt später“), darunter **Abmelden**.
+- Schließt bei Klick daneben und mit Escape.
+
+**Projektkacheln (Mitte)**
+- Raster 3 Spalten × 2 Reihen, Abstand 24 px, Reihenhöhe mindestens 190 px, **6 Kacheln pro Seite**. Unter 900 px Breite 2 Spalten, unter 560 px eine Spalte.
+- Projektkachel: Glas, Innenabstand 24 px, Projektname groß unten links (1,5 rem, Gewicht 650, höchstens 3 Zeilen), weitere Infos folgen später. Die ganze Kachel ist ein Link zum Projekt (**ohne** Anmeldeabfrage). Beim Darüberfahren hebt sie sich um 3 px. Beim Laden blenden die Kacheln gestaffelt ein (70 ms Versatz).
+- **Löschknopf:** kleiner runder Knopf oben rechts in der Kachel (sichtbar 36 px, Klickfläche 44 px), Mülleimer-Symbol, Farbe `--muted`, beim Darüberfahren `--danger`.
+- **Plus-Kachel:** Der nächste freie Platz zeigt ein großes Plus (56 px, Akzentfarbe, 70 % Deckkraft, gestrichelter Rand, helle Fläche). Beim Darüberfahren wird sie kräftiger und das Plus dreht sich um 90°. Klick öffnet „Neues Projekt“ (Name, Anlegen, Abbrechen).
+- **Einstiegstext:** Auf der Plus-Kachel oben links steht „Beginne mit deinem ersten Projekt“, solange der Nutzer noch nie ein Projekt hatte (`users.had_project`). Er kommt nach dem Löschen des letzten Projekts **nicht** zurück.
+- **Leere Plätze** sind nur zarte gestrichelte Umrisse (55 % Deckkraft), damit das Raster bestehen bleibt. Sie sind nicht klickbar.
+- **Drag and Drop:** Nur belegte Kacheln lassen sich umordnen. Plus und leere Plätze bleiben stehen. Die gezogene Kachel wird halbtransparent (45 %) und etwas kleiner. Die neue Reihenfolge wird sofort gespeichert; die Reihenfolge anderer Seiten bleibt erhalten.
+- **Mehrere Seiten:** Ab dem siebten Projekt entsteht Seite 2 usw. Ist die letzte Seite voll, kommt das Plus auf eine neue Seite. Unter dem Raster: kleine Punkte (10 px, aktiver Punkt als 26-px-Pille in Akzentfarbe, Klick springt zur Seite) und links/rechts je ein dezentes Dreieck (44 px Klickfläche, am Rand ausgegraut).
+
+**Löschen (zweistufig, bewusst deutlich)**
+- Mülleimer → Dialog 1: „Sind Sie sicher, dass Sie dieses Projekt löschen möchten?“, darunter der Projektname, Knöpfe **Abbrechen** (Standardfokus) und **Ja**.
+- „Ja“ → Dialog 2 im selben Fenster: „Bitte bestätigen Sie mit Ihren Zugangsdaten.“, die E-Mail steht schreibgeschützt da, darunter das Passwortfeld. Knöpfe **Abbrechen** und **Endgültig löschen**. Ein falsches Passwort zeigt „Passwort falsch.“ im Dialog, das Projekt bleibt.
+- „Abbrechen“ geht auf beiden Stufen; beim erneuten Öffnen beginnt der Dialog wieder bei Stufe 1, Passwort und Meldung sind geleert.
+- Rot, aber warm: Fläche 22 % `--danger` in `--bg` gemischt, Rahmen 2 px `--danger` (70 %) mit Leuchten (48 px, 35 %), Titel in `--danger` (1,55 rem), Löschknopf in `--danger` mit Glanz und farbigem Schatten. Hintergrund hinter dem Dialog abgedunkelt und unscharf.
+- Gelöscht wird endgültig (kein Papierkorb für Projekte). Der Server verlangt immer das Passwort und prüft, dass das Projekt dem Nutzer gehört.
+
+**Token-Anzeige (unten)**
+- Balken (10 px hoch, voll rund, Akzentverlauf), darüber links „Geschätztes Token-Kontingent“, rechts „Noch keine Messdaten“. Breite höchstens 560 px, mittig.
+- **Ist:** Der Balken ist leer, es gibt noch keine Messung. Angebunden wird er mit dem Runner (Phase 2).
+
+**Dialoge allgemein (`.dialog`):** höchstens 440 px, Rundung 28 px, Fläche 82 % `--bg` mit Weichzeichner, gleiche Lichtkante wie Glas, federnde Einblendung (0,45 s). Knöpfe in Dialogen sind gleich breit nebeneinander (Höhe 48 px). Pro Dialog genau ein Hauptknopf.
+
+**Sprache**
+- Deutsch und Englisch, pro Nutzer gespeichert (`users.language`). Alle Texte stehen in `web/app/i18n.py`. **Jeder neue Text kommt in beide Sprachen.** Ein Test prüft, dass beide Wörterbücher dieselben Schlüssel haben. Die Login-Seite ist noch nur Deutsch.
+
+**Projektseite:** Platzhalter mit Projektname und „Hier entsteht das Kanban-Board.“, darunter „← Zurück“.
+
+## 11. Umsetzung
 
 - `web/app/static/theme.css`: alle Werte als Variablen, alle Komponenten.
-- `web/app/static/theme.js`: Umschalter und Formularmeldungen. Keine Abhängigkeit, kein Framework.
-- `page(title, body)` in `web/app/main.py`: gemeinsame Hülle mit `lang="de"`, Meta-Tags, Inline-Skript für das Theme, Farbflächen, Kopfleiste mit Umschalter. **Neue Seiten nutzen `page()`**, damit der Umschalter überall da ist.
+- `web/app/static/theme.js`: Umschalter und Formularmeldungen (Texte kommen vom Server über `data-msg-*`). Keine Abhängigkeit, kein Framework.
+- `web/app/static/dashboard.js`: Begrüßung, Einstellungsleiste, Dialoge, Löschablauf, Drag and Drop.
+- `web/app/layout.py`: `page(title, body, lang, top_right, scripts)` ist die gemeinsame Hülle mit Meta-Tags, Inline-Skript für das Theme, Farbflächen, Kopfleiste und Umschalter. **Neue Seiten nutzen `page()`**, damit der Umschalter überall da ist. `fill()` setzt `%NAME%`-Platzhalter in einem Durchgang ein (Nutzertext kann so nichts einschleusen).
+- `web/app/dashboard.py`: HTML von Dashboard, Einstellungsleiste und Projektseite. `web/app/i18n.py`: Texte. `web/app/projects.py`: Projekte in SQLite.
 - Reines CSS und JavaScript ohne Bibliotheken (Standardbibliothek zuerst, siehe CLAUDE.md), neue Abhängigkeiten nur nach Begründung.
 - Einbindung: `/static` wird von FastAPI (`StaticFiles`) ausgeliefert; nach Änderungen an Dateien im Ordner `static` muss der Web-Container neu gebaut werden (`docker compose up -d --build web`).
 
-## 11. Noch offen (Janis entscheidet bei Bedarf)
+## 12. Noch offen (Janis entscheidet bei Bedarf)
 
-- Handy-Layout prüfen (Abschnitt 8).
+- Handy-Layout prüfen (Abschnitt 8). Drag and Drop nutzt die Browser-Funktion und geht auf Touchgeräten noch nicht; per Tastatur lässt sich auch noch nicht umordnen.
+- Kacheln übers Seitenende hinaus ziehen (auf eine andere Seite) ist nicht vorgesehen.
+- Begrenzung falscher Passworteingaben (Anmeldung und Löschen), steht auch in der Checkliste vor dem Livegang.
+- Login-Seite auf Englisch (erst nach der Anmeldung ist die Sprache bekannt).
+- Inhalt der Kacheln („weitere Infos“) wird später festgelegt.
 - Kontrastmessung aller Farbpaare (Abschnitt 2).
 - Schriftcharakter: reine Systemschrift oder eine warme Serifenschrift für Überschriften.
 - Hauptgerät (Mac/PC oder Handy) bestimmt, wie viel Aufwand das Handy-Layout bekommt.

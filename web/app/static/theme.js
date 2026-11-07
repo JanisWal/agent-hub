@@ -17,12 +17,14 @@
   });
 
   // Forms marked novalidate get our own messages instead of the browser bubble.
+  // The texts come from data-msg-required / data-msg-email on the form (translated by the server).
   function problem(input) {
+    var texts = input.form ? input.form.dataset : {};
     if (input.value === "" || (input.type !== "password" && input.value.trim() === "")) {
-      return "Bitte ausfüllen.";
+      return texts.msgRequired || "Bitte ausfüllen.";
     }
     if (input.type === "email" && !input.checkValidity()) {
-      return "Bitte eine gültige E-Mail-Adresse eingeben.";
+      return texts.msgEmail || "Bitte eine gültige E-Mail-Adresse eingeben.";
     }
     return "";
   }
@@ -47,19 +49,30 @@
     input.setAttribute("aria-invalid", "true");
   }
 
-  document.addEventListener("submit", function (event) {
-    var form = event.target;
-    if (!form.hasAttribute("novalidate")) return;
+  // Checks all required fields, shows messages, focuses the first bad one. True if all fine.
+  function validate(form) {
     var first = null;
     form.querySelectorAll("input[required]").forEach(function (input) {
       var text = problem(input);
       show(input, text);
       if (text && !first) first = input;
     });
-    if (first) {
-      event.preventDefault();
-      first.focus();
-    }
+    if (first) first.focus();
+    return !first;
+  }
+
+  function clear(form) {
+    form.querySelectorAll("input").forEach(function (input) {
+      if (input.closest("label")) show(input, "");
+    });
+  }
+
+  window.AgentHub = { validate: validate, clear: clear };
+
+  document.addEventListener("submit", function (event) {
+    var form = event.target;
+    if (!form.hasAttribute("novalidate")) return;
+    if (!validate(form)) event.preventDefault();
   });
 
   document.addEventListener("input", function (event) {

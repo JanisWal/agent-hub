@@ -1,12 +1,12 @@
-import html
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import users
+from . import dashboard, i18n, layout, projects, users
+from .dashboard import PAGE_SIZE
 
 app = FastAPI(title="Agent-Hub")
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
@@ -14,33 +14,7 @@ app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), na
 COOKIE_NAME = "session"
 # Set HUB_SECURE_COOKIE=1 in production (HTTPS via Cloudflare Tunnel).
 COOKIE_SECURE = os.environ.get("HUB_SECURE_COOKIE") == "1"
-
-# Shared page shell: top bar with the always-visible theme toggle (see DESIGN.md).
-# The inline script applies the saved theme before first paint to avoid a flash.
-SHELL = """<!doctype html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>%TITLE% – Agent-Hub</title>
-<script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
-<link rel="stylesheet" href="/static/theme.css">
-<script src="/static/theme.js" defer></script>
-</head>
-<body>
-<div class="orbs" aria-hidden="true"><i></i><i></i><i></i></div>
-<header class="topbar">
-  <span class="brand">Agent-Hub</span>
-  <button id="theme-toggle" class="icon-button" type="button" aria-label="Hell oder Dunkel umschalten">
-    <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
-    <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
-  </button>
-</header>
-<main>
-%BODY%
-</main>
-</body>
-</html>"""
+LOGGED_IN_SCRIPTS = ["/static/dashboard.js"]
 
 LOGIN_BODY = """<section class="glass">
   <h1>Anmelden</h1>
@@ -55,28 +29,35 @@ LOGIN_BODY = """<section class="glass">
   <button class="link" type="button" disabled title="Kommt später">Passwort vergessen?</button>
 </section>"""
 
-HOME_BODY = """<section class="glass">
-  <h1>Agent-Hub läuft</h1>
-  <p>Angemeldet als %EMAIL%</p>
-  <form method="post" action="/logout"><button class="primary" type="submit">Abmelden</button></form>
-</section>"""
-
-
-def page(title: str, body: str) -> str:
-    return SHELL.replace("%TITLE%", title).replace("%BODY%", body)
-
 
 def login_page(error: str = "") -> str:
     message = f'<p class="error" role="alert">{error}</p>' if error else ""
-    return page("Anmelden", LOGIN_BODY.replace("%ERROR%", message))
+    return layout.page("Anmelden", layout.fill(LOGIN_BODY, ERROR=message))
+
+
+def _user(request: Request) -> users.User | None:
+    return users.get_user(request.cookies.get(COOKIE_NAME))
+
+
+def _logged_in_page(user: users.User, title: str, body: str) -> str:
+    return layout.page(
+        title, body, user.language, top_right=dashboard.settings_bar(user),
+        scripts=LOGGED_IN_SCRIPTS,
+    )
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request):
-    user = users.get_user(request.cookies.get(COOKIE_NAME))
+def index(request: Request, page: str = "1"):
+    user = _user(request)
     if user is None:
         return RedirectResponse("/login", status_code=303)
-    return page("Start", HOME_BODY.replace("%EMAIL%", html.escape(user.email)))
+    all_projects = projects.list_projects(user.id)
+    pages = len(all_projects) // PAGE_SIZE + 1  # the free "+" tile may need a new page
+    number = min(max(int(page) if page.isdigit() else 1, 1), pages)
+    shown = all_projects[(number - 1) * PAGE_SIZE : number * PAGE_SIZE]
+    first_project = not user.had_project and not all_projects
+    body = dashboard.render(user, shown, number, pages, first_project)
+    return _logged_in_page(user, i18n.t(user.language, "home"), body)
 
 
 @app.get("/login", response_class=HTMLResponse)
@@ -109,6 +90,69 @@ def logout(request: Request):
     response = RedirectResponse("/login", status_code=303)
     response.delete_cookie(COOKIE_NAME)
     return response
+
+
+@app.post("/settings")
+def save_settings(request: Request, display_name: str = Form(""), language: str = Form("de")):
+    user = _user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    if language not in i18n.LANGS:
+        language = user.language
+    try:
+        users.set_profile(user.id, display_name, language)
+    except ValueError:
+        pass  # name too long: keep the old settings
+    return RedirectResponse("/", status_code=303)
+
+
+@app.post("/projects")
+def create_project(request: Request, name: str = Form("")):
+    user = _user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    try:
+        projects.create_project(user.id, name)
+    except ValueError:
+        return RedirectResponse("/", status_code=303)
+    count = len(projects.list_projects(user.id))
+    return RedirectResponse(f"/?page={(count - 1) // PAGE_SIZE + 1}", status_code=303)
+
+
+@app.post("/projects/reorder")
+async def reorder_projects(request: Request):
+    user = _user(request)
+    if user is None:
+        return JSONResponse({"ok": False}, status_code=401)
+    try:
+        ids = [int(i) for i in (await request.json())["ids"]]
+        projects.reorder(user.id, ids)
+    except (ValueError, KeyError, TypeError):
+        return JSONResponse({"ok": False}, status_code=400)
+    return {"ok": True}
+
+
+@app.get("/projects/{project_id}", response_class=HTMLResponse)
+def project_view(project_id: int, request: Request):
+    user = _user(request)
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    project = projects.get_project(user.id, project_id)
+    if project is None:
+        raise HTTPException(status_code=404)
+    return _logged_in_page(user, project.name, dashboard.project_page(user, project))
+
+
+@app.post("/projects/{project_id}/delete")
+def delete_project(project_id: int, request: Request, password: str = Form("")):
+    user = _user(request)
+    if user is None:
+        return JSONResponse({"ok": False}, status_code=401)
+    if not users.verify_password(user.id, password):
+        return JSONResponse({"ok": False}, status_code=403)
+    if not projects.delete_project(user.id, project_id):
+        return JSONResponse({"ok": False}, status_code=404)
+    return {"ok": True}
 
 
 @app.get("/health")
