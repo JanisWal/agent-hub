@@ -36,6 +36,18 @@ CREATE TABLE IF NOT EXISTS projects (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS projects_by_user ON projects (user_id, position);
+CREATE TABLE IF NOT EXISTS board_items (
+    id         INTEGER PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    kind       TEXT NOT NULL,
+    title      TEXT NOT NULL,
+    source     TEXT NOT NULL DEFAULT 'user',
+    status     TEXT NOT NULL DEFAULT 'open',
+    position   INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS board_items_by_project
+    ON board_items (project_id, kind, status, position);
 """
 
 # Columns added after the first release; added to existing databases on connect.
