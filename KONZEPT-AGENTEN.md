@@ -131,6 +131,8 @@ Volltext in PROJEKT.md (Abschnitte „Zugriff der Agenten auf Geräte“, „Ger
 6. **Strenge** als Tabelle in Abschnitt 3 ist mein Vorschlag; die drei Stufen aus PROJEKT.md waren bisher nicht ausgeführt.
 7. ~~**Rechte pro Rolle (Web und Code)**~~ entschieden (Janis, 07.11.2026): **alle Agenten dürfen ins Internet** in den besprochenen Grenzen (nur über `egress`, nie Heimnetz, Geräte nur über Vermittler). Bei Code im selben Lauf geht Web nur zu einer Liste von Seiten (PyPI, npm, GitHub, Dokumentation); das ist Claudes Auslegung von „wie besprochen“ und noch zu bestätigen. Der Chat bleibt „Web oder Code“. Die genaue Seitenliste und eine dritte Proxy-Richtlinie („Liste“) entstehen beim Bau der Läufe.
 8. ~~**VPN-Technik**~~ entschieden: Tailscale (Abschnitt 6b). Vor dem Bau zu prüfen: Nutzungsbedingungen (nicht gewerblich), Etiketten im kostenlosen Tarif.
+9. **Manager legt Projektstand in Git ab** (PROJEKT.md, Manager-Tab): Der Hub committet und pusht für ihn, nur in einen Bereich für Projektdokumente und Aufgaben, nie in den Code. Offen: ob die Rolle Dokumentator dadurch entfällt oder nur Code-Doku nach Freigabe schreibt.
+10. **Eingriffstiefe des Managers** (vollautomatisch, Rückfrage bei Großem, Rückfrage auch bei Kleinem; der Manager entscheidet fallweise, ob eine Frage nötig ist) und das Fenster „Wartet auf dich“ (Ort offen). Details in PROJEKT.md.
 
 ## 7a. Ausrollen der Verknüpfung (erledigt am 07.11.2026 mit Janis’ Ja)
 
