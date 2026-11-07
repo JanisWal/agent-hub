@@ -1,13 +1,14 @@
-"""Shared page shell: top bar, background colour fields and the theme toggle (see DESIGN.md)."""
+"""Page shell and the small template engine used by every view (see DESIGN.md)."""
 import html
 import re
 
 from . import i18n
+from .icons import icon
 
 REPO_URL = "https://github.com/JanisWal/agent-hub"
 
-# The inline script applies the saved theme before first paint to avoid a flash, and
-# switches off the entrance animation after a reload we triggered ourselves ("noanim").
+# The inline script applies the saved theme before first paint (no flash) and switches off the
+# entrance animation after a reload we triggered ourselves ("noanim", see core.js).
 SHELL = """<!doctype html>
 <html lang="%LANG%">
 <head>
@@ -15,25 +16,28 @@ SHELL = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>%TITLE% – Agent-Hub</title>
 <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t;if(sessionStorage.getItem("noanim")){document.documentElement.classList.add("noanim");sessionStorage.removeItem("noanim")}}catch(e){}</script>
-<link rel="stylesheet" href="/static/theme.css">
-<script src="/static/theme.js" defer></script>
+<link rel="stylesheet" href="/static/app.css">
+%STYLES%
+<script src="/static/core.js" defer></script>
 %SCRIPTS%
 </head>
 <body class="%BODY_CLASS%">
 <div class="orbs" aria-hidden="true"><i></i><i></i><i></i></div>
 <header class="topbar">
-  <a class="brand" href="%REPO_URL%" target="_blank" rel="noopener noreferrer" aria-label="%BRAND_LABEL%">Agent-Hub</a>
+  <a class="brand" href="%REPO_URL%" target="_blank" rel="noopener noreferrer" aria-label="%t.brand_link%">Agent-Hub</a>
   %TOP_RIGHT%
 </header>
 <main>
 %BODY%
 </main>
-<button id="theme-toggle" class="icon-button theme-fab" type="button" aria-label="%TOGGLE_LABEL%">
-  <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
-  <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+<button id="theme-toggle" class="icon-button theme-fab" type="button" aria-label="%t.theme_toggle%">
+  %MOON%
+  %SUN%
 </button>
 </body>
 </html>"""
+
+_PLACEHOLDER = re.compile(r"%(t\.[a-z_]+|[A-Z_]+)%")
 
 
 def esc(text: str) -> str:
@@ -41,29 +45,49 @@ def esc(text: str) -> str:
     return html.escape(text, quote=True)
 
 
-def fill(template: str, **values: str) -> str:
-    """Replace %NAME% placeholders in one pass.
+def fill(template: str, lang: str = "de", **values: str) -> str:
+    """Replace placeholders in one pass.
 
-    Inserted values are not scanned again, so user text such as a project
-    named "%BODY%" cannot inject anything. Unknown placeholders stay as they are.
+    `%NAME%` is replaced by the keyword value of that name (HTML as given, escape user text
+    yourself), `%t.key%` by the escaped translation of `key` in `lang`. Inserted values are
+    not scanned again, so user text such as a project named "%BODY%" cannot inject anything.
+    Unknown upper-case placeholders stay as they are, an unknown translation key raises KeyError.
     """
-    return re.sub(
-        r"%([A-Z_]+)%", lambda m: str(values.get(m.group(1), m.group(0))), template
-    )
+
+    def replace(match: re.Match) -> str:
+        name = match.group(1)
+        if name.startswith("t."):
+            return esc(i18n.t(lang, name[2:]))
+        return str(values.get(name, match.group(0)))
+
+    return _PLACEHOLDER.sub(replace, template)
 
 
-def page(title: str, body: str, lang: str = "de", top_right: str = "", scripts=(), body_class: str = "") -> str:
-    """Wrap a body in the shell. `title` is plain text, `body` and `top_right` are HTML."""
-    script_tags = "\n".join(f'<script src="{src}" defer></script>' for src in scripts)
+def page(
+    title: str,
+    body: str,
+    lang: str = "de",
+    *,
+    top_right: str = "",
+    scripts: tuple[str, ...] = (),
+    styles: tuple[str, ...] = (),
+    body_class: str = "",
+) -> str:
+    """Wrap a body in the shell. `title` is plain text, `body` and `top_right` are HTML.
+
+    `styles` and `scripts` are file names in /static (loaded after app.css and core.js).
+    """
     return fill(
         SHELL,
+        lang,
         LANG=lang,
-        TITLE=html.escape(title),
-        SCRIPTS=script_tags,
+        TITLE=esc(title),
+        STYLES="\n".join(f'<link rel="stylesheet" href="/static/{name}">' for name in styles),
+        SCRIPTS="\n".join(f'<script src="/static/{name}" defer></script>' for name in scripts),
+        BODY_CLASS=esc(body_class),
         TOP_RIGHT=top_right,
-        BODY_CLASS=html.escape(body_class),
         BODY=body,
-        TOGGLE_LABEL=html.escape(i18n.t(lang, "theme_toggle")),
         REPO_URL=REPO_URL,
-        BRAND_LABEL=html.escape(i18n.t(lang, "brand_link")),
+        MOON=icon("moon", "i-moon"),
+        SUN=icon("sun", "i-sun"),
     )

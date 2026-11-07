@@ -3,13 +3,13 @@ import re
 import tempfile
 import unittest
 
-from app import board, dashboard, layout, projectpage, projects, users
+from app import board, dashboard, db, layout, projectpage, projects, ui, users
 
 
 class PagesTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        users.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        db.DB_PATH = os.path.join(self.tmp.name, "test.db")
         self.user = users.create_user("me@example.com", "correct horse")
 
     def tearDown(self):
@@ -26,10 +26,9 @@ class PagesTest(unittest.TestCase):
         items = board.list_items(user.id, project.id)
         shown = projects.layout(user.id)
         return [
-            layout.page("Home", dashboard.render(user, shown, 1, False), lang,
-                        dashboard.settings_bar(user)),
-            layout.page("Project", projectpage.render(user, project, items), lang,
-                        dashboard.settings_bar(user)),
+            ui.logged_in_page(user, "Home", dashboard.render(user, shown, 1, False)),
+            ui.logged_in_page(user, "Project", projectpage.render(user, project, items)),
+            ui.login_page(failed=True),
         ]
 
     def test_no_placeholder_is_left_over_and_user_text_is_escaped(self):
@@ -43,10 +42,10 @@ class PagesTest(unittest.TestCase):
 
     def test_settings_show_connection_state(self):
         user = users.check_login("me@example.com", "correct horse")
-        self.assertIn("Nicht verknüpft", dashboard.settings_bar(user))
+        self.assertIn("Nicht verknüpft", ui.settings_bar(user))
         users.set_profile(user.id, "", "en")
         user = users.check_login("me@example.com", "correct horse")
-        self.assertIn("Not connected", dashboard.settings_bar(user))
+        self.assertIn("Not connected", ui.settings_bar(user))
 
     def test_brand_links_to_the_repository(self):
         page = layout.page("Home", "", "de")

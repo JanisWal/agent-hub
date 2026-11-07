@@ -2,13 +2,13 @@ import os
 import tempfile
 import unittest
 
-from app import board, projects, users
+from app import board, db, projects, users
 
 
 class BoardTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        users.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        db.DB_PATH = os.path.join(self.tmp.name, "test.db")
         self.me = users.create_user("me@example.com", "correct horse")
         self.other = users.create_user("other@example.com", "correct horse")
         self.project = projects.create_project(self.me.id, "P")
@@ -115,8 +115,8 @@ class BoardTest(unittest.TestCase):
     def test_deleting_a_project_removes_its_items(self):
         self.add("A")
         projects.delete_project(self.me.id, self.project.id)
-        with users.connect() as db:
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM board_items").fetchone()[0], 0)
+        with db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM board_items").fetchone()[0], 0)
 
 
 if __name__ == "__main__":

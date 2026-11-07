@@ -8,7 +8,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-from . import users
+from . import db
 
 MAX_NAME = 60
 PAGE_SIZE = 6
@@ -26,8 +26,8 @@ def _to_project(row: sqlite3.Row) -> Project:
     return Project(row["id"], row["name"], row["position"], row["page"])
 
 
-def _ordered(db: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:
-    return db.execute(
+def _ordered(conn: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:
+    return conn.execute(
         "SELECT id, name, position, page FROM projects WHERE user_id = ?"
         " ORDER BY page, position, id",
         (user_id,),
@@ -44,8 +44,8 @@ def _pages(rows: list[sqlite3.Row]) -> list[list[sqlite3.Row]]:
 
 def layout(user_id: int) -> list[list[Project]]:
     """The user's projects as pages (display order). Only pages that hold projects."""
-    with users.connect() as db:
-        rows = _ordered(db, user_id)
+    with db.connect() as conn:
+        rows = _ordered(conn, user_id)
     return [[_to_project(r) for r in page] for page in _pages(rows)]
 
 
@@ -56,8 +56,8 @@ def list_projects(user_id: int) -> list[Project]:
 
 def get_project(user_id: int, project_id: int) -> Project | None:
     """One project, only if it belongs to the user."""
-    with users.connect() as db:
-        row = db.execute(
+    with db.connect() as conn:
+        row = conn.execute(
             "SELECT id, name, position, page FROM projects WHERE id = ? AND user_id = ?",
             (project_id, user_id),
         ).fetchone()
@@ -84,26 +84,26 @@ def create_project(user_id: int, name: str) -> Project:
         raise ValueError("Projektname fehlt")
     if len(name) > MAX_NAME:
         raise ValueError("Projektname zu lang")
-    with users.connect() as db:
-        pages = _pages(_ordered(db, user_id))
+    with db.connect() as conn:
+        pages = _pages(_ordered(conn, user_id))
         free = next((p for p in pages if len(p) < PAGE_SIZE), None)
         if free is not None:
             page, position = free[0]["page"], free[-1]["position"] + 1
         else:
             page, position = (pages[-1][0]["page"] + 1 if pages else 1), 0
-        cur = db.execute(
+        cur = conn.execute(
             "INSERT INTO projects (user_id, name, position, page, created_at)"
             " VALUES (?, ?, ?, ?, ?)",
             (user_id, name, position, page, int(time.time())),
         )
-        db.execute("UPDATE users SET had_project = 1 WHERE id = ?", (user_id,))
+        conn.execute("UPDATE users SET had_project = 1 WHERE id = ?", (user_id,))
     return Project(cur.lastrowid, name, position, page)
 
 
 def delete_project(user_id: int, project_id: int) -> bool:
     """Delete for good. False if the project does not exist or is not the user's."""
-    with users.connect() as db:
-        cur = db.execute(
+    with db.connect() as conn:
+        cur = conn.execute(
             "DELETE FROM projects WHERE id = ? AND user_id = ?", (project_id, user_id)
         )
     return cur.rowcount > 0
@@ -128,8 +128,8 @@ def move(user_id: int, project_id: int, page: int, index: int) -> int:
     left empty disappear. Returns the display page the project ends up on.
     Raises ValueError if the project is not the user's.
     """
-    with users.connect() as db:
-        pages = [[r["id"] for r in p] for p in _pages(_ordered(db, user_id))]
+    with db.connect() as conn:
+        pages = [[r["id"] for r in p] for p in _pages(_ordered(conn, user_id))]
         if not any(project_id in p for p in pages):
             raise ValueError("Unbekanntes Projekt")
         for p in pages:
@@ -143,7 +143,7 @@ def move(user_id: int, project_id: int, page: int, index: int) -> int:
         pages = [p for p in pages if p]
         for number, ids in enumerate(pages, start=1):
             for position, pid in enumerate(ids):
-                db.execute(
+                conn.execute(
                     "UPDATE projects SET page = ?, position = ? WHERE id = ? AND user_id = ?",
                     (number, position, pid, user_id),
                 )

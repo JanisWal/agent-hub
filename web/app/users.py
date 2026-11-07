@@ -1,75 +1,19 @@
 """Users and sessions, stored in SQLite. Standard library only."""
 import hashlib
 import hmac
-import os
 import secrets
 import sqlite3
 import time
 from dataclasses import dataclass
 
-DB_PATH = os.environ.get("HUB_DB", "/data/hub.db")
+from . import db
+
 SESSION_SECONDS = 14 * 24 * 3600
 MIN_PASSWORD_LENGTH = 8
 MAX_DISPLAY_NAME = 40
 
 # scrypt cost parameters (about 16 MiB RAM per hash, fine for a Pi 4)
 SCRYPT_N, SCRYPT_R, SCRYPT_P = 2**14, 8, 1
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS users (
-    id            INTEGER PRIMARY KEY,
-    email         TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    is_admin      INTEGER NOT NULL DEFAULT 0,
-    created_at    INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS sessions (
-    token      TEXT PRIMARY KEY,
-    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    expires_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS projects (
-    id         INTEGER PRIMARY KEY,
-    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name       TEXT NOT NULL,
-    position   INTEGER NOT NULL,
-    created_at INTEGER NOT NULL,
-    page       INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS projects_by_user ON projects (user_id, position);
-CREATE TABLE IF NOT EXISTS board_items (
-    id         INTEGER PRIMARY KEY,
-    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    kind       TEXT NOT NULL,
-    title      TEXT NOT NULL,
-    source     TEXT NOT NULL DEFAULT 'user',
-    status     TEXT NOT NULL DEFAULT 'open',
-    position   INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL
-);
-CREATE INDEX IF NOT EXISTS board_items_by_project
-    ON board_items (project_id, kind, status, position);
-"""
-
-# Columns added after the first release; added to existing databases on connect.
-NEW_COLUMNS = {
-    "users": {
-        "display_name": "TEXT",
-        "language": "TEXT NOT NULL DEFAULT 'de'",
-        "had_project": "INTEGER NOT NULL DEFAULT 0",
-    },
-    "projects": {"page": "INTEGER NOT NULL DEFAULT 0"},
-}
-
-# Projects from before pages existed (page = 0) get their page from their order, 6 per page.
-ASSIGN_PAGES = """
-UPDATE projects SET page = 1 + (
-    SELECT COUNT(*) FROM projects q
-    WHERE q.user_id = projects.user_id
-      AND (q.position < projects.position OR (q.position = projects.position AND q.id < projects.id))
-) / 6
-WHERE page = 0
-"""
 
 
 @dataclass
@@ -88,35 +32,10 @@ class User:
         return self.display_name or self.email.split("@")[0]
 
 
-def _add_missing_columns(db: sqlite3.Connection) -> None:
-    for table, columns in NEW_COLUMNS.items():
-        existing = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
-        for name, definition in columns.items():
-            if name not in existing:
-                try:
-                    db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
-                except sqlite3.OperationalError:
-                    pass  # another connection added it first
-    db.execute(ASSIGN_PAGES)
-    db.commit()
-
-
-def connect() -> sqlite3.Connection:
-    """Open the database (path read at call time) and make sure the schema is current."""
-    db = sqlite3.connect(DB_PATH)
-    db.row_factory = sqlite3.Row
-    db.execute("PRAGMA foreign_keys = ON")
-    db.executescript(SCHEMA)
-    _add_missing_columns(db)
-    return db
-
-
 def _hash_password(password: str) -> str:
     """Return 'scrypt$n$r$p$salt$hash' with a fresh random salt."""
     salt = secrets.token_bytes(16)
-    digest = hashlib.scrypt(
-        password.encode(), salt=salt, n=SCRYPT_N, r=SCRYPT_R, p=SCRYPT_P
-    )
+    digest = hashlib.scrypt(password.encode(), salt=salt, n=SCRYPT_N, r=SCRYPT_R, p=SCRYPT_P)
     return f"scrypt${SCRYPT_N}${SCRYPT_R}${SCRYPT_P}${salt.hex()}${digest.hex()}"
 
 
@@ -138,13 +57,8 @@ def _normalize(email: str) -> str:
 
 def _to_user(row: sqlite3.Row) -> User:
     return User(
-        row["id"],
-        row["email"],
-        bool(row["is_admin"]),
-        row["created_at"],
-        row["display_name"],
-        row["language"],
-        bool(row["had_project"]),
+        row["id"], row["email"], bool(row["is_admin"]), row["created_at"],
+        row["display_name"], row["language"], bool(row["had_project"]),
     )
 
 
@@ -155,25 +69,22 @@ def create_user(email: str, password: str, is_admin: bool = False) -> User:
         raise ValueError("Ungültige E-Mail-Adresse")
     if len(password) < MIN_PASSWORD_LENGTH:
         raise ValueError(f"Passwort zu kurz (mindestens {MIN_PASSWORD_LENGTH} Zeichen)")
-    with connect() as db:
+    with db.connect() as conn:
         try:
-            cur = db.execute(
-                "INSERT INTO users (email, password_hash, is_admin, created_at)"
-                " VALUES (?, ?, ?, ?)",
+            cur = conn.execute(
+                "INSERT INTO users (email, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?)",
                 (email, _hash_password(password), int(is_admin), int(time.time())),
             )
         except sqlite3.IntegrityError:
             raise ValueError("E-Mail-Adresse ist schon vergeben") from None
-        row = db.execute("SELECT * FROM users WHERE id = ?", (cur.lastrowid,)).fetchone()
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (cur.lastrowid,)).fetchone()
     return _to_user(row)
 
 
 def check_login(email: str, password: str) -> User | None:
     """Return the user if e-mail and password match, else None."""
-    with connect() as db:
-        row = db.execute(
-            "SELECT * FROM users WHERE email = ?", (_normalize(email),)
-        ).fetchone()
+    with db.connect() as conn:
+        row = conn.execute("SELECT * FROM users WHERE email = ?", (_normalize(email),)).fetchone()
     if row is None:
         _verify_password(password, _DUMMY_HASH)
         return None
@@ -182,10 +93,8 @@ def check_login(email: str, password: str) -> User | None:
 
 def verify_password(user_id: int, password: str) -> bool:
     """Check a password for an already logged-in user (e.g. before deleting)."""
-    with connect() as db:
-        row = db.execute(
-            "SELECT password_hash FROM users WHERE id = ?", (user_id,)
-        ).fetchone()
+    with db.connect() as conn:
+        row = conn.execute("SELECT password_hash FROM users WHERE id = ?", (user_id,)).fetchone()
     return row is not None and _verify_password(password, row["password_hash"])
 
 
@@ -194,8 +103,8 @@ def set_profile(user_id: int, display_name: str, language: str) -> None:
     display_name = display_name.strip()
     if len(display_name) > MAX_DISPLAY_NAME:
         raise ValueError("Nutzername zu lang")
-    with connect() as db:
-        db.execute(
+    with db.connect() as conn:
+        conn.execute(
             "UPDATE users SET display_name = ?, language = ? WHERE id = ?",
             (display_name or None, language, user_id),
         )
@@ -205,9 +114,9 @@ def create_session(user_id: int) -> str:
     """Store a new session for 14 days and return its random token."""
     token = secrets.token_urlsafe(32)
     now = int(time.time())
-    with connect() as db:
-        db.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,))
-        db.execute(
+    with db.connect() as conn:
+        conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,))
+        conn.execute(
             "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
             (token, user_id, now + SESSION_SECONDS),
         )
@@ -218,8 +127,8 @@ def get_user(token: str | None) -> User | None:
     """Return the user of a valid, unexpired session token, else None."""
     if not token:
         return None
-    with connect() as db:
-        row = db.execute(
+    with db.connect() as conn:
+        row = conn.execute(
             "SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id"
             " WHERE s.token = ? AND s.expires_at > ?",
             (token, int(time.time())),
@@ -228,5 +137,5 @@ def get_user(token: str | None) -> User | None:
 
 
 def delete_session(token: str) -> None:
-    with connect() as db:
-        db.execute("DELETE FROM sessions WHERE token = ?", (token,))
+    with db.connect() as conn:
+        conn.execute("DELETE FROM sessions WHERE token = ?", (token,))

@@ -2,13 +2,13 @@ import os
 import tempfile
 import unittest
 
-from app import users
+from app import db, users
 
 
 class UsersTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        users.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        db.DB_PATH = os.path.join(self.tmp.name, "test.db")
         users.create_user("Janis@Example.com", "correct horse")
 
     def tearDown(self):

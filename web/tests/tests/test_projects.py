@@ -3,13 +3,13 @@ import sqlite3
 import tempfile
 import unittest
 
-from app import i18n, projects, users
+from app import db, i18n, projects, users
 
 
 class ProjectsTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        users.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        db.DB_PATH = os.path.join(self.tmp.name, "test.db")
         self.me = users.create_user("me@example.com", "correct horse")
         self.other = users.create_user("other@example.com", "correct horse")
 
@@ -136,8 +136,8 @@ class ProjectsTest(unittest.TestCase):
 class MigrationTest(unittest.TestCase):
     def test_old_database_gets_new_columns_and_keeps_users(self):
         with tempfile.TemporaryDirectory() as tmp:
-            users.DB_PATH = os.path.join(tmp, "old.db")
-            old = sqlite3.connect(users.DB_PATH)
+            db.DB_PATH = os.path.join(tmp, "old.db")
+            old = sqlite3.connect(db.DB_PATH)
             old.executescript(
                 "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE,"
                 " password_hash TEXT NOT NULL, is_admin INTEGER NOT NULL DEFAULT 0,"
@@ -147,16 +147,16 @@ class MigrationTest(unittest.TestCase):
             )
             old.commit()
             old.close()
-            with users.connect() as db:
-                row = db.execute("SELECT * FROM users").fetchone()
+            with db.connect() as conn:
+                row = conn.execute("SELECT * FROM users").fetchone()
             self.assertEqual(row["email"], "old@example.com")
             self.assertEqual((row["language"], row["had_project"]), ("de", 0))
             self.assertIsNone(row["display_name"])
 
     def test_projects_without_pages_are_spread_over_pages_of_six(self):
         with tempfile.TemporaryDirectory() as tmp:
-            users.DB_PATH = os.path.join(tmp, "old.db")
-            old = sqlite3.connect(users.DB_PATH)
+            db.DB_PATH = os.path.join(tmp, "old.db")
+            old = sqlite3.connect(db.DB_PATH)
             old.executescript(
                 "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE,"
                 " password_hash TEXT NOT NULL, is_admin INTEGER NOT NULL DEFAULT 0,"
