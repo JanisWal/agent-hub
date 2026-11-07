@@ -91,6 +91,15 @@ Sonderregel für Swift (Entwurf): Swift-Code braucht Xcode und den Simulator und
 - Ordner auf dem Pi: `/opt/agent-hub/` mit `compose.yml`, `.env` (Geheimnisse, nie im Git), `data/` (SQLite, Dateiablage), `workspaces/` (ein Git-Repo je Projekt), `backups/`.
 - Der Claude-Login des Runners liegt in einem eigenen Container-Volume und nie im Git.
 
+### Zugriff der Agenten auf Geräte (SSH)
+
+- Claude Code läuft als lokales Programm auf dem Pi (bzw. Mac-Runner), nicht als Cloud-Sitzung. Es kann daher alles, was eine Shell auf diesem Rechner kann, auch `ssh` zu anderen Geräten im Heimnetz.
+- Die Einschränkung „kein SSH, nur lokal“ betrifft Claude Code im Web (Sitzungen in Anthropics Cloud). Die nutzt der Hub nicht.
+- Agenten sprechen nicht direkt miteinander: Der Hub reicht Ergebnisse weiter (Branch, Berichte, Datenbank).
+- Im Container nötig: Netzwerkzugang zum Heimnetz, SSH-Schlüssel nur über den Vermittler aus dem Tresor, erlaubte Zielgeräte pro Projekt festlegen.
+- Geräte per USB (z. B. ESP32, Arduino): Runner auf dem Rechner, an dem das Gerät hängt, oder USB an den Container durchreichen.
+- Geräte außerhalb des Heimnetzes: per VPN (z. B. WireGuard oder Tailscale), keine offenen Ports.
+
 ### Mac-Integration: lokaler Runner
 
 - Ein Browser darf keine Programme auf dem Mac starten, und ein offener Mac-Port wäre ein Risiko. Darum läuft auf dem Mac ein kleines Programm, der Runner. Er baut selbst eine Verbindung zum Pi-Server auf (nur ausgehend) und wird einmalig per Code in den Einstellungen gekoppelt.
@@ -131,7 +140,7 @@ Sonderregel für Swift (Entwurf): Swift-Code braucht Xcode und den Simulator und
 - Liste der Benutzer: Passwörter zurücksetzen und Konten löschen (Owner und Admins).
 - Philosophie: Der Admin kennt die Passwörter der Nutzer nicht und muss sich keine ausdenken. Er vergibt beim Anlegen ein einfaches Startpasswort (z. B. „Start1234“). Der Nutzer erfährt davon und setzt über „Passwort vergessen?“ per E-Mail sein eigenes Passwort. Deshalb ist der Passwort-Reset per E-Mail Pflicht.
 - Absicherung dazu: Ein Startpasswort gilt nur bis zur ersten Änderung. Beim ersten Login mit dem Startpasswort muss der Nutzer ein eigenes Passwort setzen.
-- Offen: Statt Startpasswort könnte der Hub beim Anlegen direkt eine Einladungs-Mail mit Link zum Passwort-Setzen schicken (gleicher Baustein wie der Reset). Der Admin gäbe dann nur die E-Mail-Adresse ein.
+- Zusätzlich: Beim Anlegen kann der Hub direkt eine Einladungs-Mail mit Link zum Passwort-Setzen schicken (gleicher Baustein wie der Reset). Dann gibt der Admin nur die E-Mail-Adresse ein.
 - Nur der Owner kann Admin-Rechte per Schalter in der Benutzerliste vergeben oder entziehen. Das Owner-Konto kann niemand löschen oder herabstufen.
 - Das Owner-Konto entsteht bei der Installation (bisher per `docker compose exec web python -m app.create_admin` im Ordner der `compose.yml`, wird zum Owner umgebaut).
 
