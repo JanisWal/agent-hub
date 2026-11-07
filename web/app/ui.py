@@ -50,7 +50,6 @@ SETTINGS = """<div class="drawer" id="settings" data-theme-saved="%THEME%">
       %SERVICES%
       <button class="primary save" type="submit">%t.save%</button>
     </form>
-    <button class="clear-btn" type="button" id="chat-clear-open">%t.chat_clear%</button>
     %ACCOUNT_LINKS%
     <form method="post" action="/logout"><button class="link" type="submit">%t.logout%</button></form>
   </div>
@@ -124,7 +123,10 @@ def _claude_row(lang: str, state: str) -> str:
 
 
 def _service_rows(lang: str, claude_state: str) -> str:
-    rows = [_claude_row(lang, claude_state)]
+    # The chat history button sits directly under the Claude box (type="button": it never submits the form).
+    clear = (f'<button class="clear-btn" type="button" id="chat-clear-open">'
+             f'{esc(i18n.t(lang, "chat_clear"))}</button>')
+    rows = [_claude_row(lang, claude_state), clear]
     for name in PLACEHOLDER_SERVICES:
         rows.append(
             '<div class="setting service">'
