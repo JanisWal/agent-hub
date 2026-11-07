@@ -176,11 +176,13 @@ def pending_wipes() -> list[int]:
     """Runner: users whose folder has to be deleted."""
     with db.connect() as conn:
         return [r["user_id"] for r in conn.execute(
-            "SELECT user_id FROM claude_connections WHERE status = 'wipe'")]
+            "SELECT user_id FROM claude_connections WHERE status = 'wipe'"
+            " UNION SELECT user_id FROM claude_wipes ORDER BY 1")]
 
 
 def wiped(user_id: int) -> bool:
     """Runner: the folder is gone. Forgets the row unless the user has started a new login meanwhile."""
     with db.connect() as conn:
         cur = conn.execute("DELETE FROM claude_connections WHERE user_id = ? AND status = 'wipe'", (user_id,))
-    return cur.rowcount == 1
+        queued = conn.execute("DELETE FROM claude_wipes WHERE user_id = ?", (user_id,))
+    return cur.rowcount + queued.rowcount >= 1

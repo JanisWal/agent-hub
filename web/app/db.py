@@ -111,6 +111,11 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     started_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS chat_by_project ON chat_messages (user_id, project_id, id);
+-- Claude folders still to be deleted after an account was deleted (no foreign key: the user row is gone).
+CREATE TABLE IF NOT EXISTS claude_wipes (
+    user_id    INTEGER PRIMARY KEY,
+    created_at INTEGER NOT NULL
+);
 """
 
 # Columns added after the first release; added to existing databases on first use.
