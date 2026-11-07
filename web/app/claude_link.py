@@ -33,7 +33,7 @@ def _row(conn: sqlite3.Connection, user_id: int) -> sqlite3.Row | None:
 
 
 def _effective(row: sqlite3.Row | None, now: int) -> str:
-    if row is None:
+    if row is None or row["status"] == "wipe":   # "wipe": disconnected, the runner still deletes the folder
         return "none"
     if row["status"] == "connecting" and now - row["updated_at"] > CONNECT_TIMEOUT:
         return "none"  # nobody confirmed the link in time
@@ -159,11 +159,28 @@ def mark_expired(user_id: int) -> bool:
     return True
 
 
-def disconnect(user_id: int) -> bool:
-    """The user removes his connection. The runner deletes `config_dir(user_id)` afterwards."""
+def disconnect(user_id: int, now: int | None = None) -> bool:
+    """The user removes his connection (or cancels a login). For the user it is `none` at once; the
+    row stays as "wipe" until the runner has deleted `config_dir(user_id)` (`wiped`). The web
+    container cannot reach that folder itself, and the saved login must not be left behind."""
+    now = int(now if now is not None else time.time())
     with db.connect() as conn:
         if _row(conn, user_id) is None:
             return False
-        conn.execute("DELETE FROM claude_connections WHERE user_id = ?", (user_id,))
+        _save(conn, user_id, "wipe", None, now)
     _codes.pop(user_id, None)
     return True
+
+
+def pending_wipes() -> list[int]:
+    """Runner: users whose folder has to be deleted."""
+    with db.connect() as conn:
+        return [r["user_id"] for r in conn.execute(
+            "SELECT user_id FROM claude_connections WHERE status = 'wipe'")]
+
+
+def wiped(user_id: int) -> bool:
+    """Runner: the folder is gone. Forgets the row unless the user has started a new login meanwhile."""
+    with db.connect() as conn:
+        cur = conn.execute("DELETE FROM claude_connections WHERE user_id = ? AND status = 'wipe'", (user_id,))
+    return cur.rowcount == 1

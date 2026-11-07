@@ -13,6 +13,7 @@
   --error: #a63a1f;
   --danger: #c03a20;
   --on-danger: #fff3ea;
+  --success: #2c6e3a;
   --shadow: 0 18px 50px rgba(110, 65, 28, 0.22), 0 2px 8px rgba(110, 65, 28, 0.12);
   --highlight: rgba(255, 255, 255, 0.45);
   --orb-a: #f0a878;
@@ -38,6 +39,7 @@
   --error: #ff9b7e;
   --danger: #ff7457;
   --on-danger: #2a0e07;
+  --success: #86d492;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
   --highlight: rgba(255, 220, 190, 0.28);
   --orb-a: #8a4f2e;
@@ -59,6 +61,7 @@
     --error: #ff9b7e;
     --danger: #ff7457;
     --on-danger: #2a0e07;
+    --success: #86d492;
     --shadow: 0 18px 50px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
     --highlight: rgba(255, 220, 190, 0.28);
     --orb-a: #8a4f2e;
@@ -437,6 +440,16 @@ main { padding-bottom: 96px; } /* room for the toggle */
 .status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); opacity: 0.5; }
 .service.on .status { color: var(--text); }
 .service.on .status::before { background: var(--accent); opacity: 1; }
+/* Claude connection: green when linked (the one green of the palette), accent while a login runs, red-brown when expired. */
+.service.ok .status { color: var(--success); }
+.service.ok .status::before { background: var(--success); opacity: 1; box-shadow: 0 0 8px color-mix(in srgb, var(--success) 60%, transparent); }
+.service.pending .status { color: var(--text); }
+.service.pending .status::before { background: var(--accent); opacity: 1; }
+.service.expired .status { color: var(--error); }
+.service.expired .status::before { background: var(--error); opacity: 1; }
+a.primary { display: flex; align-items: center; justify-content: center; text-decoration: none; }
+.dialog .primary + label, .dialog a.primary + label { margin-top: calc(var(--space) * 2); }
+.dialog .error[hidden], .dialog [data-step][hidden] { display: none; }
 .link.inline { display: inline-flex; margin: 0; min-height: 28px; padding: 0 4px; font-size: 0.9rem; text-decoration-color: currentColor; }
 .drawer-box .save { margin-top: 12px; }
 .drawer-box .link { width: 100%; justify-content: center; margin-top: 4px; }

@@ -62,6 +62,22 @@ class ClaudeLinkTest(Base):
         self.assertNotEqual(claude_link.config_dir(self.a.id), claude_link.config_dir(self.b.id))
         self.assertEqual(claude_link.config_dir(self.a.id).parent, claude_link.config_dir(self.b.id).parent)
 
+    def test_disconnect_wipes_before_the_row_is_forgotten(self):
+        self.connect(self.a)
+        self.assertTrue(claude_link.disconnect(self.a.id))
+        self.assertEqual(claude_link.status(self.a.id), "none")        # for the user it is over at once
+        self.assertFalse(claude_link.is_connected(self.a.id))
+        self.assertEqual(claude_link.pending_wipes(), [self.a.id])     # the runner deletes the folder
+        self.assertFalse(claude_link.mark_expired(self.a.id))
+        self.assertTrue(claude_link.wiped(self.a.id))
+        self.assertEqual(claude_link.pending_wipes(), [])
+        self.assertFalse(claude_link.wiped(self.a.id))
+        self.connect(self.a)                                           # a new login started before the wipe
+        claude_link.disconnect(self.a.id)
+        claude_link.begin(self.a.id)
+        self.assertFalse(claude_link.wiped(self.a.id))                 # must not forget the running login
+        self.assertEqual(claude_link.status(self.a.id), "connecting")
+
     def test_deleting_the_user_removes_the_connection(self):
         self.connect(self.a)
         with db.connect() as conn:

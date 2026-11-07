@@ -81,6 +81,17 @@ def login_done(user_id: int, success: str = Form("0")):
     return ok() if claude_link.complete(user_id, success == "1") else fail(409)
 
 
+@router.get("/wipes")
+def wipes():
+    """Users who disconnected: the runner deletes their Claude folders."""
+    return ok(user_ids=claude_link.pending_wipes())
+
+
+@router.post("/wipes/{user_id}/done")
+def wipe_done(user_id: int):
+    return ok() if claude_link.wiped(user_id) else fail(409)
+
+
 @router.post("/logins/{user_id}/expired")
 def login_expired(user_id: int):
     return ok() if claude_link.mark_expired(user_id) else fail(409)
