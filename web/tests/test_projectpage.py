@@ -178,7 +178,11 @@ class ProjectPageTest(unittest.TestCase):
             for word in ("Vorübergehend", "Temporary", "testen", "Testfenster", "chat-badge", "TEMPORARY"):
                 self.assertNotIn(word, chat)
             self.assertIn('<h2>Claude</h2>', chat)
-        self.assertIn("Einzelfragen", self.html("de"))
+        self.assertIn("Kurze Einzelfragen an dein Claude.", self.html("de"))
+        for lang in ("de", "en"):
+            hint = __import__("app.i18n", fromlist=["t"]).t(lang, "chat_hint")
+            self.assertLess(len(hint), 60, hint)                                  # one short sentence, no explanations
+            self.assertEqual(hint.count("."), 1)
         for name in ("project.css", "chat.js"):
             self.assertNotIn("TEMPORARY", css_of(name))
 
@@ -218,7 +222,7 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn("createTextNode", script)
         self.assertIn("fillBlocks(body, text)", script)
         self.assertIn("line(\"claude\", box.dataset.claude, m.answer, true)", script)   # only Claude answers, not the questions
-        self.assertIn("With Web it searches", __import__("app.i18n", fromlist=["t"]).t("en", "chat_hint"))
+        self.assertLess(len(__import__("app.i18n", fromlist=["t"]).t("en", "chat_hint")), 60)       # one short sentence
 
     def test_chat_has_the_web_and_code_switches(self):
         page = self.html()
