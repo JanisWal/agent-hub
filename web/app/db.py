@@ -54,6 +54,50 @@ CREATE TABLE IF NOT EXISTS login_attempts (
     window_start INTEGER NOT NULL,
     locked_until INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS claude_connections (
+    user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    status     TEXT NOT NULL,
+    login_url  TEXT,
+    updated_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS agent_settings (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    key     TEXT NOT NULL,
+    value   TEXT NOT NULL,
+    PRIMARY KEY (user_id, key)
+);
+CREATE TABLE IF NOT EXISTS agent_tasks (
+    id            INTEGER PRIMARY KEY,
+    project_id    INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    item_id       INTEGER REFERENCES board_items(id) ON DELETE SET NULL,
+    title         TEXT NOT NULL,
+    kind          TEXT NOT NULL,
+    needs         TEXT NOT NULL DEFAULT 'any',
+    status        TEXT NOT NULL,
+    round         INTEGER NOT NULL DEFAULT 1,
+    manual_check  INTEGER NOT NULL DEFAULT 0,
+    note          TEXT NOT NULL DEFAULT '',
+    created_at    INTEGER NOT NULL,
+    deadline      INTEGER NOT NULL,
+    finished_at   INTEGER
+);
+CREATE INDEX IF NOT EXISTS agent_tasks_by_project ON agent_tasks (project_id, status);
+CREATE TABLE IF NOT EXISTS agent_runs (
+    id          INTEGER PRIMARY KEY,
+    task_id     INTEGER NOT NULL REFERENCES agent_tasks(id) ON DELETE CASCADE,
+    role        TEXT NOT NULL,
+    model       TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    result      TEXT,
+    report      TEXT NOT NULL DEFAULT '',
+    tokens_in   INTEGER NOT NULL DEFAULT 0,
+    tokens_out  INTEGER NOT NULL DEFAULT 0,
+    seconds     INTEGER NOT NULL DEFAULT 0,
+    created_at  INTEGER NOT NULL,
+    started_at  INTEGER,
+    finished_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS agent_runs_by_status ON agent_runs (status, created_at);
 """
 
 # Columns added after the first release; added to existing databases on first use.

@@ -29,6 +29,7 @@ Nie reines Weiß (`#FFFFFF`) oder reines Schwarz. Alle Flächen sind warm getön
 | `--error` | Fehler | `#A63A1F` | `#FF9B7E` |
 | `--danger` | Löschen: Dialograhmen, Titel, Knopf | `#C03A20` | `#FF7457` |
 | `--on-danger` | Text auf dem Löschknopf | `#FFF3EA` | `#2A0E07` |
+| `--success` | Verknüpft (Janis, 07.11.2026: das eine Grün der Palette, sonst nichts grün) | `#2C6E3A` | `#86D492` |
 | `--shadow` | Schatten (zweilagig) | `0 18px 50px rgba(110,65,28,0.22), 0 2px 8px rgba(110,65,28,0.12)` | `0 18px 50px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.35)` |
 | `--highlight` | Lichtkante | `rgba(255, 255, 255, 0.45)` | `rgba(255, 220, 190, 0.28)` |
 | `--orb-a` | Farbfläche oben links | `#F0A878` | `#8A4F2E` |
@@ -149,7 +150,13 @@ Stand 07.11.2026, von Janis beauftragt, mit Testkonten im Browser geprüft (Dunk
 - **Einheitliche Einträge:** Jeder Eintrag ist derselbe Block (`.setting`): Feldfarbe, Rand 1 px, Rundung 16 px, Innenabstand 10 × 14 px, oben kleine Beschriftung (0,78 rem, `--muted`), darunter der Wert (1 rem, Gewicht 600), 8 px Abstand zwischen Blöcken. Fokus: Rand `--accent` und Ring 4 px am ganzen Block.
   1. **Nutzername** (Textfeld, höchstens 40 Zeichen; als Platzhalter steht der aktuell gezeigte Name).
   2. **Sprache** als Dropdown („Deutsch“ / „English“) mit eigenem Pfeil rechts. Die Auswahl ist eine eigene Glasliste (`core.js`, `.select-menu`), nicht das Auswahlfenster des Browsers; der echte `select` bleibt als Formularfeld. Tastatur: Enter, Leertaste oder Alt+Pfeil unten öffnet, Pfeile wählen, Escape schließt nur die Liste.
-  3. **Claude** und 4. **ChatGPT**: Name als Beschriftung, darunter ein Statuspunkt mit „Nicht verknüpft“ bzw. „Verknüpft“ (Punkt in Akzentfarbe, Text in `--text`). Nicht verknüpft: rechts daneben der Textlink „Verknüpfen“ (ausgegraut, „Kommt später“). Ist ein Dienst verknüpft, steht nur „Verknüpft“ da. **Ist:** Der Zustand ist fest „nicht verknüpft“, echt wird er mit dem Runner (Phase 2).
+  3. **Claude** (echter Zustand, Branch `agent-core`) und 4. **ChatGPT** (Platzhalter): Name als Beschriftung, darunter ein Statuspunkt mit Text und rechts daneben ein Textlink. Vier Zustände von Claude, immer mit Text (nie nur Farbe):
+     - **Nicht verknüpft** (grauer Punkt, Text `--muted`) mit „Verknüpfen“.
+     - **Wird verknüpft** (Punkt `--accent`, Text `--text`) mit „Fortsetzen“.
+     - **Verknüpft** (Punkt und Text in `--success`, Punkt mit weichem Leuchten) mit „Trennen“.
+     - **Abgelaufen** (Punkt und Text in `--error`) mit „Erneuern“.
+     ChatGPT bleibt „Nicht verknüpft“ mit ausgegrautem „Verknüpfen“ („Kommt später“).
+  - **Dialog „Claude verknüpfen“** (`#claude-dialog`, Glas wie alle Dialoge, ein Schritt zur Zeit, alle Texte vom Server): *Vorbereiten* („Die Anmeldung wird vorbereitet …“, Abbrechen) → *Link* (Hauptknopf „Bei Claude anmelden“ öffnet den Link in neuem Tab, darunter das Feld „Code“, „Abbrechen“ und „Bestätigen“) → *Prüfen* → *Fertig* („Claude ist verknüpft.“, Hauptknopf „Schließen“). Dazu *Fehlgeschlagen* und *Runner antwortet nicht* (Meldung in der Fehlerbox, Hinweis nach 45 s ohne Link) sowie *Trennen* (roter Bestätigungsknopf, Abbrechen mit Standardfokus; ohne Passwort, weil man sich jederzeit neu verknüpfen kann). Schließen oder Escape bricht eine laufende Anmeldung ab. **Ungeprüft:** das Aussehen in Hell und Dunkel am Bildschirm, nur Struktur und Texte sind durch Tests belegt.
 - **Besonders bleiben:** **Speichern** (Hauptknopf, volle Breite) und **Abmelden** (dezenter Textlink darunter, mittig). Zwischen beiden stehen als Textlinks **Benutzer verwalten** (nur Owner und Admins, zur Seite `/users`) und **Passwort ändern** (für alle, zur Seite `/password`).
 
 **Projektkacheln (Mitte)**
