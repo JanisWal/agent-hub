@@ -87,6 +87,27 @@ class IsolationTest(unittest.TestCase):
                          ["private question of A"])
 
     # --- the data layer
+    def test_the_manager_of_b_never_sees_the_project_of_a(self):
+        from app import chat, claude_link
+        from pathlib import Path
+        claude_link.BASE_DIR = Path(self.tmp.name) / "claude"
+        for user in (self.a, self.b):
+            claude_link.begin(user.id)
+            claude_link.complete(user.id, True)
+        projects.update_details(self.a.id, self.project.id, "Secret project of A", "Secret description of A")
+        chat.send(self.a.id, self.project.id, "Question of A")
+        job = chat.claim_next()
+        chat.finish(job.chat_id, True, "Secret answer for A")
+        chat.send(self.b.id, self.mine.id, "Question of B")
+        text = chat.claim_next().prompt
+        self.assertIn("Project of B", text)
+        self.assertIn("Item of B", text)
+        for secret in ("Secret project", "Secret description", "Open of A", "Idea of A", "Question of A",
+                       "Secret answer"):
+            self.assertNotIn(secret, text)
+        with self.assertRaises(ValueError):
+            chat.send(self.b.id, self.project.id, "Planted in A")                 # B can not ask in A's project
+
     def test_b_cannot_read_anything_of_a(self):
         self.assertIsNone(projects.get_project(self.b.id, self.project.id))
         self.assertIsNone(projects.display_page(self.b.id, self.project.id))

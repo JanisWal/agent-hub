@@ -20,15 +20,16 @@ def delete_history(user: users.User = Depends(api_user)):
 @router.get("/projects/{project_id}/chat")
 def messages(project_id: int, user: users.User = Depends(api_user)):
     return ok(messages=[
-        {"id": m.id, "prompt": m.prompt, "status": m.status, "answer": m.answer, "mode": m.mode}
+        {"id": m.id, "prompt": m.prompt, "status": m.status, "answer": m.answer, "mode": m.mode, "model": m.model}
         for m in chat.list_messages(user.id, project_id)
     ])
 
 
 @router.post("/projects/{project_id}/chat")
-def ask(project_id: int, prompt: str = Form(""), mode: str = Form("web"), user: users.User = Depends(api_user)):
+def ask(project_id: int, prompt: str = Form(""), mode: str = Form("web"), model: str = Form(chat.DEFAULT_MODEL),
+        user: users.User = Depends(api_user)):
     try:
-        message = chat.send(user.id, project_id, prompt, mode)
+        message = chat.send(user.id, project_id, prompt, mode, model=model)
     except ValueError as problem:
         key, status = _PROBLEMS.get(str(problem), (None, 404))   # "project": not found
         return error(user.language, key, status) if key else fail(404)

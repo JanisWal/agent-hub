@@ -1,4 +1,4 @@
-// The chat window of the project page (see web/app/chat.py). Shows the latest questions and
+// The manager chat in the Manager view (see web/app/chat.py). Shows the latest questions and
 // answers, sends a new question, and asks every 2 seconds while one is still open. Answers are
 // text from Claude: they are only ever put in with textContent. All labels come from data-* attributes.
 (function () {
@@ -119,12 +119,18 @@
     b.addEventListener("click", function () { setMode(currentMode() === b.dataset.mode ? "plain" : b.dataset.mode); });
   });
 
+  // The model for the next question (drop-down next to the switches); the browser remembers the choice.
+  var model = document.getElementById("chat-model");
+  try { var savedModel = localStorage.getItem("chatModel"); if (savedModel && model.querySelector('option[value="' + savedModel + '"]')) model.value = savedModel; } catch (e) {}
+  model.addEventListener("change", function () { try { localStorage.setItem("chatModel", model.value); } catch (e) {} });
+
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     if (!window.AgentHub.validate(form)) return;
     problem("");
     var data = new FormData(form);
     data.append("mode", currentMode());
+    data.append("model", model.value);
     fetch(url, { method: "POST", body: data })
       .then(function (r) { return r.json().catch(function () { return {}; }); })
       .then(function (data) {
@@ -132,19 +138,6 @@
       })
       .catch(function () {});
   });
-
-  // On narrow screens the window is hidden behind a round button (CSS shows it on wide screens always).
-  var toggle = document.getElementById("chat-toggle");
-  function setOpen(open, focus) {
-    document.body.classList.toggle("chat-open", open);
-    toggle.setAttribute("aria-expanded", String(open));
-    try { sessionStorage.setItem("chatOpen", open ? "1" : ""); } catch (e) {}
-    if (open && focus) { var field = form.querySelector("input"); if (field) field.focus(); }
-  }
-  if (toggle) {
-    toggle.addEventListener("click", function () { setOpen(!document.body.classList.contains("chat-open"), true); });
-    try { if (sessionStorage.getItem("chatOpen")) setOpen(true, false); } catch (e) {}
-  }
 
   load();
 })();

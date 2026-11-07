@@ -30,25 +30,6 @@ PROJECT = """<div class="project" data-id="%PID%">
   </div>
   %MANAGER%
 </div>
-<!-- Chat window (web/app/chat.py): a slim window fixed at the right edge, on every tab of the project;
-     on narrow screens the round button opens it. -->
-<aside class="chat glass" id="chat" data-you="%t.chat_you%" data-claude="%t.chat_claude%"
-       data-waiting="%t.chat_waiting%" data-failed="%t.chat_failed%">
-  <header class="chat-head"><h2>%t.chat_title%</h2></header>
-  <p class="muted">%t.chat_hint%</p>
-  <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
-  <p class="error" id="chat-error" role="alert" hidden></p>
-  <div class="chat-modes" id="chat-modes" role="group" aria-label="%t.chat_title%">
-    <button class="chat-mode" type="button" data-mode="web" aria-pressed="true" title="%t.chat_mode_web_title%">%t.chat_mode_web%</button>
-    <button class="chat-mode" type="button" data-mode="code" aria-pressed="false" title="%t.chat_mode_code_title%">%t.chat_mode_code%</button>
-  </div>
-  <form class="chat-form" id="chat-form" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
-    <label><input name="prompt" required maxlength="2000" autocomplete="off" placeholder="%t.chat_placeholder%"></label>
-    <button type="submit" id="chat-send">%t.chat_send%</button>
-  </form>
-</aside>
-<button class="icon-button chat-toggle" id="chat-toggle" type="button" aria-expanded="false" aria-controls="chat"
-        aria-label="%t.chat_title%" title="%t.chat_title%">%CHAT_ICON%</button>
 <dialog class="dialog" id="item-dialog" data-title-new="%t.new_item%" data-title-edit="%t.edit_item%"
         data-btn-new="%t.create%" data-btn-edit="%t.save%">
   <form method="post" action="" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
@@ -230,7 +211,6 @@ def render(user: User, project: Project, items: list[Item]) -> str:
         PID=str(project.id),
         STATIONS=_stations(lang),
         MANAGER=managerpage.render(lang),
-        CHAT_ICON=icon("chat"),
         TRASH=_trash(trashed, lang),
         ARCHIVE=_archive(archived, lang),
         COLUMNS="\n      ".join(_column(kind, live, lang) for kind in KINDS),
