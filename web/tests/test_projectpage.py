@@ -8,6 +8,10 @@ import unittest
 from app import board, db, projectpage, projects, ui, users
 
 
+def css_of(name: str) -> str:
+    return open(os.path.join(os.path.dirname(__file__), "..", "app", "static", name), encoding="utf-8").read()
+
+
 class ProjectPageTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -30,7 +34,7 @@ class ProjectPageTest(unittest.TestCase):
         user = dataclasses.replace(self.user, language=lang)
         body = projectpage.render(user, self.project, board.list_items(user.id, self.project.id))
         return ui.logged_in_page(user, self.project.name, body, scripts=projectpage.SCRIPTS,
-                                 styles=projectpage.STYLES, top_center=projectpage.title_html(self.project),
+                                 styles=projectpage.STYLES, top_center=projectpage.title_html(self.project), top_left=projectpage.back_html(lang),
                                  drawer_extras=projectpage.drawer_buttons(lang), body_class="project-page")
 
     def test_project_name_is_in_the_top_bar_and_escaped(self):
@@ -91,7 +95,9 @@ class ProjectPageTest(unittest.TestCase):
         self.assertEqual(positions, sorted(positions))
         self.assertEqual(nav.count('class="station off"'), 5)                  # only the board exists so far
         self.assertEqual(nav.count('class="station active"'), 1)
-        self.assertIn("Alle Projekte", nav)
+        self.assertNotIn("Alle Projekte", nav)                                # the way back is in the top bar now
+        self.assertNotIn("station-back", page)
+        self.assertNotIn("clip-path", css_of("project.css"))                 # sharp edges, no arrows
 
     def test_english(self):
         page = self.html("en")
@@ -106,6 +112,36 @@ class ProjectPageTest(unittest.TestCase):
         for token in ("--go:", "--on-go:", "--success:"):
             self.assertEqual(css.count(token), 3 if token != "--success:" else 3, token)   # light, dark, dark by system
 
+    def test_back_link_is_in_the_top_bar_right_of_the_brand(self):
+        page = self.html()
+        bar = page[page.index('<header class="topbar">'):page.index("</header>")]
+        self.assertLess(bar.index('class="brand"'), bar.index('class="topbar-back"'))
+        self.assertLess(bar.index('class="topbar-back"'), bar.index('class="project-title"'))
+        self.assertIn('href="/"', bar[bar.index("topbar-back"):])
+        self.assertIn("Alle Projekte", bar)
+
+    def test_chat_is_a_dock_outside_the_board_with_a_button_for_narrow_screens(self):
+        page = self.html()
+        self.assertEqual(page.count('id="chat"'), 1)
+        self.assertGreater(page.index('id="chat"'), page.index('id="board"'))
+        self.assertGreater(page.index('id="chat"'), page.index('class="project"'))
+        board_area = page[page.index('class="boardwrap"'):page.index('id="chat"')]
+        self.assertNotIn('id="chat"', board_area)
+        self.assertIn('id="chat-toggle"', page)
+        css = css_of("project.css")
+        self.assertIn("position: fixed", css[css.index(".chat {"):css.index(".chat-head")])
+        self.assertIn("padding-right", css)                                     # a strip is kept free on wide screens
+
+    def test_scrollbars_are_styled(self):
+        css = css_of("app.css")
+        for part in ("::-webkit-scrollbar-thumb", "::-webkit-scrollbar-track", "scrollbar-color"):
+            self.assertIn(part, css)
+        self.assertIn("@supports not selector(::-webkit-scrollbar)", css)       # standard properties only where no parts
+
+    def test_project_title_is_big_with_air(self):
+        css = css_of("app.css")
+        self.assertIn("clamp(1.8rem, 3.2vw, 2.8rem)", css)
+        self.assertIn(".project-page .topbar { padding-top: 26px; padding-bottom: 26px; }", css)
 
 if __name__ == "__main__":
     unittest.main()

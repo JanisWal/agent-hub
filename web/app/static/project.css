@@ -8,61 +8,56 @@
 [hidden] { display: none !important; }
 .appear { animation: fade 0.3s ease both; }
 
-.project { align-self: start; width: 100%; max-width: 1360px; display: grid; grid-template-columns: 236px minmax(0, 1fr); gap: calc(var(--space) * 3); align-items: start; }
+.project { align-self: start; width: 100%; max-width: none; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: calc(var(--space) * 3.5); align-items: start; }
 
-/* ===== Stations: angular tabs (no tiles) along a cycle ===== */
-.stations { display: flex; flex-direction: column; gap: 18px; padding-top: 6px; }
-.station-back { display: inline-flex; align-items: center; gap: 6px; min-height: 36px; color: var(--muted); font-size: 0.9rem; font-weight: 600; text-decoration: none; transition: color 0.2s; }
-.station-back:hover { color: var(--text); }
-.station-back svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* ===== Stations: sharp bars along the left edge of the window (no tiles, no arrows) ===== */
+/* The list starts at the window edge (main has 24 px padding, taken back here). Each station is a row of
+   text with a thin glowing line under it. The active one is a sharp rectangle that juts out to the right. */
+.stations { display: flex; flex-direction: column; gap: 0; margin-left: calc(var(--space) * -3); padding-top: 6px; }
 .station {
   position: relative;
   isolation: isolate;
   display: flex;
   align-items: center;
-  min-height: 52px;
-  padding: 0 40px 0 26px;
+  min-height: 56px;
+  padding: 0 20px 0 calc(var(--space) * 3);
   color: var(--muted);
   font-weight: 650;
   text-decoration: none;
-  filter: drop-shadow(0 6px 12px rgba(110, 65, 28, 0.14));
-  transition: color 0.2s, filter 0.3s;
+  transition: color 0.2s, translate 0.35s cubic-bezier(0.3, 1.5, 0.5, 1);
 }
-/* The tab itself: a six-cornered shape drawn by the pseudo-element. Only its size changes (transform),
-   so the active tab reaches further to the right than the others. */
+/* The rectangle behind the text: invisible, a faint outline on hover, filled and longer when active. */
 .station::before {
   content: "";
   position: absolute;
-  inset: 0;
+  inset: 5px 0;
   z-index: -1;
-  background: color-mix(in srgb, var(--glass) 90%, transparent);
-  clip-path: polygon(0 0, calc(100% - 20px) 0, 100% 50%, calc(100% - 20px) 100%, 0 100%, 14px 50%);
-  transform: scaleX(0.84);
+  background: transparent;
+  box-shadow: inset 3px 0 0 transparent;
+  transform: scaleX(0.96);
   transform-origin: left center;
-  transition: transform 0.5s cubic-bezier(0.3, 1.25, 0.5, 1), background 0.3s;
+  transition: transform 0.45s cubic-bezier(0.3, 1.25, 0.5, 1), background 0.25s, box-shadow 0.25s;
 }
-/* Thin glowing line under each tab, now thicker, now thinner, never the same length. */
+/* The line under each row: strongest at the window edge, fading to the right, now thicker, now thinner. */
 .station::after {
   content: "";
   position: absolute;
-  left: 6%;
-  right: 14%;
-  bottom: -10px;
+  left: 0;
+  right: var(--cut, 12%);
+  bottom: 0;
   height: var(--h, 1px);
-  background: linear-gradient(90deg, transparent, var(--line-core) 50%, transparent);
+  background: linear-gradient(90deg, var(--line-core), transparent);
   box-shadow: 0 0 10px var(--line-glow);
-  border-radius: 2px;
 }
-.station:nth-child(2n) { --h: 2px; }
-.station:nth-child(3n) { --h: 1px; }
-.station:nth-child(4n) { --h: 2.5px; }
-.station:nth-child(2n)::after { left: 12%; right: 6%; }
+.station:nth-child(2n) { --h: 2px; --cut: 26%; }
+.station:nth-child(3n) { --h: 1px; --cut: 8%; }
+.station:nth-child(4n) { --h: 2.5px; --cut: 34%; }
 .station:last-child::after { display: none; }
 .station-label { position: relative; }
-a.station:hover { color: var(--text); }
-a.station:hover::before { transform: scaleX(0.9); }
-.station.active { color: var(--text); filter: drop-shadow(0 10px 20px rgba(110, 65, 28, 0.24)); }
-.station.active::before { background: color-mix(in srgb, var(--accent) 34%, var(--glass)); transform: scaleX(1.1); }
+a.station:hover { color: var(--text); translate: 5px 0; }
+a.station:hover::before { background: color-mix(in srgb, var(--field) 55%, transparent); box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 60%, transparent); transform: scaleX(1); }
+.station.active { color: var(--text); }
+.station.active::before { background: color-mix(in srgb, var(--accent) 26%, transparent); box-shadow: inset 4px 0 0 var(--accent); transform: scaleX(1.16); }
 .station.off { opacity: 0.55; cursor: default; }
 
 /* ===== Board ===== */
@@ -116,12 +111,13 @@ a.station:hover::before { transform: scaleX(0.9); }
   .project { grid-template-columns: 1fr; }
   .board { grid-template-columns: 1fr; }
   .column, .vault { min-height: 0; }
-  /* The cycle becomes one swipeable row. */
-  .stations { flex-direction: row; align-items: center; gap: 4px; padding: 0 0 12px; overflow-x: auto; scrollbar-width: none; }
+  /* The cycle becomes one swipeable row of sharp rectangles. */
+  .stations { flex-direction: row; align-items: center; margin-left: 0; padding: 0 0 12px; overflow-x: auto; scrollbar-width: none; }
   .stations::-webkit-scrollbar { display: none; }
-  .station-back { flex: none; margin-right: 8px; }
-  .station { flex: none; white-space: nowrap; min-height: 44px; padding: 0 30px 0 22px; }
+  .station { flex: none; white-space: nowrap; min-height: 44px; padding: 0 22px; }
   .station::after { display: none; }
+  a.station:hover { translate: none; }
+  .station.active::before { transform: none; }
 }
 @media (max-width: 560px) {
   .column { padding: 16px; }
@@ -133,24 +129,36 @@ html.dragging-active .open-list .card:not(.drop-target):hover { translate: none;
 html .card.drag-clone { background: color-mix(in srgb, var(--bg) 88%, var(--glass)); border-radius: 14px; }
 html .card.drag-clone::after { display: none; }
 
-/* TEMPORARY test chat (see web/app/chat.py), removed again with the agents. */
-.chat { max-width: none; padding: calc(var(--space) * 2.5); border-radius: 24px; }
+/* TEMPORARY test chat (see web/app/chat.py), removed again with the agents.
+   A slim window fixed at the right edge: on wide screens always there (the page keeps a strip free for it),
+   on narrow ones the round button opens it. The settings drawer (z-index 30) covers it while it is open. */
+.chat { position: fixed; right: 16px; top: 104px; bottom: 24px; z-index: 20; width: 316px; max-width: none; display: flex; flex-direction: column; padding: 18px; border-radius: 28px; }
 .chat-head { display: flex; align-items: center; gap: var(--space); margin-bottom: 4px; }
 .chat-head h2 { margin: 0; font-size: 1.15rem; letter-spacing: -0.01em; }
 .chat-badge { padding: 2px 10px; border-radius: 999px; font-size: 0.74rem; font-weight: 700; color: var(--muted); background: var(--field); }
-.chat .muted { margin: 0 0 calc(var(--space) * 1.5); font-size: 0.9rem; }
-.chat-log { display: flex; flex-direction: column; gap: var(--space); max-height: 320px; margin: 0 0 calc(var(--space) * 1.5); padding: 0; overflow-y: auto; list-style: none; }
-.chat-log:empty { display: none; }
-.chat-msg { display: flex; flex-direction: column; gap: 2px; max-width: 85%; padding: 10px 14px; border-radius: 16px; background: var(--field); border: 1px solid var(--glass-border); }
+.chat .muted { margin: 0 0 calc(var(--space) * 1.5); font-size: 0.85rem; }
+.chat-log { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--space); margin: 0 0 12px; padding: 0; overflow-y: auto; list-style: none; }
+.chat-msg { display: flex; flex-direction: column; gap: 2px; max-width: 92%; padding: 10px 14px; border-radius: 16px; background: var(--field); border: 1px solid var(--glass-border); }
 .chat-msg.you { align-self: flex-end; background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .chat-msg.failed .chat-text { color: var(--error); }
 .chat-msg.wait .chat-text { color: var(--muted); }
 .chat-who { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 .chat-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .chat-form { display: flex; gap: var(--space); align-items: stretch; }
-.chat-form label { flex: 1; margin: 0; }
-.chat-form input { min-height: 48px; }
-.chat-form button { min-width: 96px; padding: 0 calc(var(--space) * 2); }
+.chat-form label { flex: 1; min-width: 0; margin: 0; }
+.chat-form input { min-height: 46px; }
+.chat-form button { min-width: 78px; padding: 0 14px; }
 .chat-form button:disabled { opacity: 0.55; cursor: default; transform: none; }
 .chat .error { margin: 0 0 var(--space); }
-@media (max-width: 560px) { .chat-msg { max-width: 94%; } .chat-form { flex-direction: column; } }
+.chat-toggle { display: none; position: fixed; right: 24px; bottom: 92px; z-index: 21; width: 52px; height: 52px; color: var(--muted); }
+.chat-toggle svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.chat-toggle[aria-expanded="true"] { color: var(--text); border-color: var(--accent); }
+@media (min-width: 1320px) {
+  .project-page main { padding-right: 356px; } /* the strip of the chat window */
+}
+@media (max-width: 1319px) {
+  .chat { opacity: 0; visibility: hidden; translate: 24px 0; transition: opacity 0.25s, translate 0.45s cubic-bezier(0.3, 1.15, 0.5, 1), visibility 0s 0.45s; }
+  body.chat-open .chat { opacity: 1; visibility: visible; translate: none; transition: opacity 0.25s, translate 0.45s cubic-bezier(0.3, 1.15, 0.5, 1), visibility 0s; }
+  .chat-toggle { display: flex; }
+}
+@media (max-width: 560px) { .chat { left: 12px; right: 12px; width: auto; top: 76px; } }

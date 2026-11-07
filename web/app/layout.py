@@ -41,6 +41,7 @@ SHELL = """<!doctype html>
 <div class="orbs" aria-hidden="true"><i></i><i></i><i></i></div>
 <header class="topbar">
   <a class="brand" href="%REPO_URL%" target="_blank" rel="noopener noreferrer" aria-label="%t.brand_link%">Agent-Hub</a>
+  %TOP_LEFT%
   %TOP_CENTER%
   %TOP_RIGHT%
 </header>
@@ -87,6 +88,7 @@ def page(
     *,
     top_right: str = "",
     top_center: str = "",
+    top_left: str = "",
     scripts: tuple[str, ...] = (),
     styles: tuple[str, ...] = (),
     body_class: str = "",
@@ -108,6 +110,7 @@ def page(
         BODY_CLASS=esc(body_class),
         TOP_RIGHT=top_right,
         TOP_CENTER=top_center,
+        TOP_LEFT=top_left,
         BODY=body,
         REPO_URL=REPO_URL,
         MOON=icon("moon", "i-moon"),

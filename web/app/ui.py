@@ -179,11 +179,12 @@ def logged_in_page(
     styles: tuple[str, ...] = (),
     body_class: str = "",
     top_center: str = "",
+    top_left: str = "",
     drawer_extras: str = "",
 ) -> str:
     """A page with the settings drawer in the corner, in the language of the user."""
     return page(
         title, body, user.language,
-        top_right=settings_bar(user, drawer_extras), top_center=top_center,
+        top_right=settings_bar(user, drawer_extras), top_center=top_center, top_left=top_left,
         scripts=("claude.js", *scripts), styles=styles, body_class=body_class,
     )
