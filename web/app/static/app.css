@@ -441,6 +441,7 @@ main { padding-bottom: 96px; } /* room for the toggle */
 .drawer-box .save { margin-top: 12px; }
 .drawer-box .link { width: 100%; justify-content: center; margin-top: 4px; }
 .drawer-box .link.inline { width: auto; margin-top: 0; }
+.drawer-box form + a.link { margin-top: 12px; }
 .count { min-width: 22px; padding: 0 7px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; line-height: 22px; text-align: center; color: var(--muted); background: var(--field); }
 
 /* ===== Dialogs ===== */

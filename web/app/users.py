@@ -1,4 +1,9 @@
-"""Users and sessions, stored in SQLite. Standard library only."""
+"""Users, roles and sessions, stored in SQLite. Standard library only.
+
+Roles: `owner` (exactly one), `admin`, `user`. Rules in short (see `can_manage`):
+the owner manages everybody except himself, an admin manages normal users only, a user nobody.
+Only the owner makes or removes admins. Accounts are never created by the visitor himself.
+"""
 import hashlib
 import hmac
 import secrets
@@ -9,22 +14,35 @@ from dataclasses import dataclass
 from . import db
 
 SESSION_SECONDS = 14 * 24 * 3600
-MIN_PASSWORD_LENGTH = 8
+MIN_PASSWORD_LENGTH = 6      # floor for every password, also a start password given by an admin
+MIN_DIGITS = 2               # extra rule for passwords people choose themselves (password_problem)
 MAX_DISPLAY_NAME = 40
+ROLES = ("owner", "admin", "user")
 
 # scrypt cost parameters (about 16 MiB RAM per hash, fine for a Pi 4)
 SCRYPT_N, SCRYPT_R, SCRYPT_P = 2**14, 8, 1
+
+
+class UserError(ValueError):
+    """Bad input. `code` names the problem so the interface can say it in the user's language:
+    email, taken, short, policy, same, wrong_password, not_found."""
+
+    def __init__(self, code: str, message: str = ""):
+        super().__init__(message or code)
+        self.code = code
 
 
 @dataclass
 class User:
     id: int
     email: str
-    is_admin: bool
+    is_admin: bool          # owner or admin
     created_at: int
     display_name: str | None = None
     language: str = "de"
     had_project: bool = False
+    role: str = "user"
+    must_change: bool = False   # logged in with a start password: has to choose an own one first
 
     @property
     def name(self) -> str:
@@ -56,29 +74,57 @@ def _normalize(email: str) -> str:
 
 
 def _to_user(row: sqlite3.Row) -> User:
+    role = row["role"]
     return User(
-        row["id"], row["email"], bool(row["is_admin"]), row["created_at"],
+        row["id"], row["email"], role != "user", row["created_at"],
         row["display_name"], row["language"], bool(row["had_project"]),
+        role, bool(row["must_change_password"]),
     )
 
 
-def create_user(email: str, password: str, is_admin: bool = False) -> User:
-    """Create a user. Raises ValueError for bad input or a duplicate e-mail."""
+def password_problem(password: str) -> str | None:
+    """Rules for a password somebody chooses himself: at least 6 characters with upper and lower
+    case letters, one special character and two digits. Returns None if fine, else the code
+    "short" or "policy" (the interface shows the rule text for both)."""
+    if len(password) < MIN_PASSWORD_LENGTH:
+        return "short"
+    special = any(not c.isalnum() and not c.isspace() for c in password)
+    digits = sum(c.isdigit() for c in password)
+    if not (any(c.isupper() for c in password) and any(c.islower() for c in password)
+            and special and digits >= MIN_DIGITS):
+        return "policy"
+    return None
+
+
+def create_user(email: str, password: str, role: str = "user", must_change: bool = False) -> User:
+    """Create a user. Raises UserError for bad input or a duplicate e-mail.
+
+    Only the length is checked here (also for start passwords); people choosing their own
+    password go through `password_problem` first.
+    """
     email = _normalize(email)
     if "@" not in email:
-        raise ValueError("Ungültige E-Mail-Adresse")
+        raise UserError("email", "Ungültige E-Mail-Adresse")
     if len(password) < MIN_PASSWORD_LENGTH:
-        raise ValueError(f"Passwort zu kurz (mindestens {MIN_PASSWORD_LENGTH} Zeichen)")
+        raise UserError("short", f"Passwort zu kurz (mindestens {MIN_PASSWORD_LENGTH} Zeichen)")
+    if role not in ROLES:
+        raise ValueError(f"unknown role {role}")
     with db.connect() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO users (email, password_hash, is_admin, created_at) VALUES (?, ?, ?, ?)",
-                (email, _hash_password(password), int(is_admin), int(time.time())),
+                "INSERT INTO users (email, password_hash, is_admin, role, must_change_password, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (email, _hash_password(password), int(role != "user"), role, int(must_change), int(time.time())),
             )
         except sqlite3.IntegrityError:
-            raise ValueError("E-Mail-Adresse ist schon vergeben") from None
+            raise UserError("taken", "E-Mail-Adresse ist schon vergeben") from None
         row = conn.execute("SELECT * FROM users WHERE id = ?", (cur.lastrowid,)).fetchone()
     return _to_user(row)
+
+
+def owner_exists() -> bool:
+    with db.connect() as conn:
+        return conn.execute("SELECT 1 FROM users WHERE role = 'owner'").fetchone() is not None
 
 
 def check_login(email: str, password: str) -> User | None:
@@ -108,6 +154,110 @@ def set_profile(user_id: int, display_name: str, language: str) -> None:
             "UPDATE users SET display_name = ?, language = ? WHERE id = ?",
             (display_name or None, language, user_id),
         )
+
+
+# ----- managing users -----
+
+def get_by_id(user_id: int) -> User | None:
+    with db.connect() as conn:
+        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    return _to_user(row) if row else None
+
+
+def can_manage(actor: User, target: User) -> bool:
+    """May `actor` reset the password of or delete `target`? Nobody touches the owner."""
+    if target.role == "owner" or target.id == actor.id:
+        return False
+    return actor.role == "owner" or (actor.role == "admin" and target.role == "user")
+
+
+def list_users(actor: User) -> list[User]:
+    """All users, owner first. Only for owner and admins (PermissionError otherwise)."""
+    if not actor.is_admin:
+        raise PermissionError
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT * FROM users ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, id"
+        ).fetchall()
+    return [_to_user(row) for row in rows]
+
+
+def add_user(actor: User, email: str, start_password: str) -> User:
+    """Owner or admin creates a normal user with a start password that must be changed at once."""
+    if not actor.is_admin:
+        raise PermissionError
+    return create_user(email, start_password, role="user", must_change=True)
+
+
+def _managed(actor: User, user_id: int) -> User:
+    target = get_by_id(user_id)
+    if target is None:
+        raise UserError("not_found")
+    if not can_manage(actor, target):
+        raise PermissionError
+    return target
+
+
+def set_password(user_id: int, new_password: str, must_change: bool = False) -> None:
+    """Store a new password and end all sessions of that user. Checks only the length: callers
+    that let people choose a password check `password_problem` first (also the future reset by
+    e-mail)."""
+    if len(new_password) < MIN_PASSWORD_LENGTH:
+        raise UserError("short")
+    with db.connect() as conn:
+        conn.execute(
+            "UPDATE users SET password_hash = ?, must_change_password = ? WHERE id = ?",
+            (_hash_password(new_password), int(must_change), user_id),
+        )
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+
+
+def reset_password(actor: User, user_id: int, start_password: str) -> None:
+    """Give a user a new start password (he must change it at the next login)."""
+    target = _managed(actor, user_id)
+    set_password(target.id, start_password, must_change=True)
+
+
+def delete_user(actor: User, user_id: int) -> None:
+    """Delete an account with its projects, board items and sessions (cascade)."""
+    target = _managed(actor, user_id)
+    with db.connect() as conn:
+        conn.execute("DELETE FROM users WHERE id = ?", (target.id,))
+
+
+def set_admin(actor: User, user_id: int, make_admin: bool) -> None:
+    """Only the owner makes or removes admins; the owner himself cannot be changed."""
+    if actor.role != "owner":
+        raise PermissionError
+    target = get_by_id(user_id)
+    if target is None:
+        raise UserError("not_found")
+    if target.role == "owner":
+        raise PermissionError
+    role = "admin" if make_admin else "user"
+    with db.connect() as conn:
+        conn.execute("UPDATE users SET role = ?, is_admin = ? WHERE id = ?", (role, int(make_admin), target.id))
+
+
+def change_own_password(user: User, old_password: str, new_password: str, keep_token: str | None = None) -> None:
+    """The user chooses a new password. Raises UserError: wrong_password, short, policy, same.
+
+    Other sessions end; the one in `keep_token` stays.
+    """
+    if not verify_password(user.id, old_password):
+        raise UserError("wrong_password")
+    problem = password_problem(new_password)
+    if problem:
+        raise UserError(problem)
+    if new_password == old_password:
+        raise UserError("same")
+    set_password(user.id, new_password, must_change=False)
+    if keep_token:
+        with db.connect() as conn:
+            conn.execute(
+                "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
+                (keep_token, user.id, int(time.time()) + SESSION_SECONDS),
+            )
 
 
 def create_session(user_id: int) -> str:

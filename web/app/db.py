@@ -57,6 +57,8 @@ NEW_COLUMNS = {
         "display_name": "TEXT",
         "language": "TEXT NOT NULL DEFAULT 'de'",
         "had_project": "INTEGER NOT NULL DEFAULT 0",
+        "role": "TEXT NOT NULL DEFAULT 'user'",
+        "must_change_password": "INTEGER NOT NULL DEFAULT 0",
     },
     "projects": {"page": "INTEGER NOT NULL DEFAULT 0"},
 }
@@ -70,6 +72,13 @@ UPDATE projects SET page = 1 + (
 ) / 6
 WHERE page = 0
 """
+
+# Users from before roles existed: admins stay admins, and the oldest admin becomes the owner.
+ASSIGN_ROLES = (
+    "UPDATE users SET role = 'admin' WHERE is_admin = 1 AND role = 'user'",
+    "UPDATE users SET role = 'owner' WHERE id = (SELECT MIN(id) FROM users WHERE role = 'admin')"
+    " AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'owner')",
+)
 
 _ready: set[str] = set()  # database files whose schema is already current in this process
 
@@ -85,6 +94,8 @@ def _prepare(conn: sqlite3.Connection) -> None:
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
                 except sqlite3.OperationalError:
                     pass  # another process added it first
+    for statement in ASSIGN_ROLES:
+        conn.execute(statement)
     conn.execute(ASSIGN_PAGES)
     conn.commit()
 

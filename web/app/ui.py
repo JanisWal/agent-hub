@@ -49,6 +49,7 @@ SETTINGS = """<div class="drawer" id="settings">
       %SERVICES%
       <button class="primary save" type="submit">%t.save%</button>
     </form>
+    %ACCOUNT_LINKS%
     <form method="post" action="/logout"><button class="link" type="submit">%t.logout%</button></form>
   </div>
 </div>"""
@@ -70,6 +71,15 @@ def _service_rows(lang: str) -> str:
     return "\n      ".join(rows)
 
 
+def _account_links(user: User) -> str:
+    """Links under the save button: user management (owner and admins) and the own password."""
+    lang = user.language
+    links = [("/password", "change_password")]
+    if user.is_admin:
+        links.insert(0, ("/users", "manage_users"))
+    return "\n    ".join(f'<a class="link" href="{href}">{esc(i18n.t(lang, key))}</a>' for href, key in links)
+
+
 def settings_bar(user: User) -> str:
     """Settings drawer for the top right corner of every logged-in page."""
     lang = user.language
@@ -84,6 +94,7 @@ def settings_bar(user: User) -> str:
         DE="selected" if lang == "de" else "",
         EN="selected" if lang == "en" else "",
         SERVICES=_service_rows(lang),
+        ACCOUNT_LINKS=_account_links(user),
     )
 
 
