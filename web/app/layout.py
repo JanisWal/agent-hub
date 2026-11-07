@@ -1,11 +1,27 @@
 """Page shell and the small template engine used by every view (see DESIGN.md)."""
+import functools
+import hashlib
 import html
 import re
+from pathlib import Path
 
 from . import i18n
 from .icons import icon
 
 REPO_URL = "https://github.com/JanisWal/agent-hub"
+STATIC_DIR = Path(__file__).parent / "static"
+
+
+@functools.lru_cache(maxsize=None)
+def static_url(name: str) -> str:
+    """URL of a file in /static with a content hash, e.g. /static/core.js?v=1a2b3c4d5e.
+
+    Cloudflare and browsers keep static files for hours. A changed file gets a new URL, so a
+    page never mixes old and new scripts (an old dashboard.js next to a new core.js broke the
+    settings drawer). Files do not change while the container runs, so the hash is cached.
+    """
+    digest = hashlib.sha256((STATIC_DIR / name).read_bytes()).hexdigest()[:10]
+    return f"/static/{name}?v={digest}"
 
 # The inline script applies the saved theme before first paint (no flash) and switches off the
 # entrance animation after a reload we triggered ourselves ("noanim", see core.js).
@@ -16,9 +32,9 @@ SHELL = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>%TITLE% – Agent-Hub</title>
 <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t;if(sessionStorage.getItem("noanim")){document.documentElement.classList.add("noanim");sessionStorage.removeItem("noanim")}}catch(e){}</script>
-<link rel="stylesheet" href="/static/app.css">
+<link rel="stylesheet" href="%APP_CSS%">
 %STYLES%
-<script src="/static/core.js" defer></script>
+<script src="%CORE_JS%" defer></script>
 %SCRIPTS%
 </head>
 <body class="%BODY_CLASS%">
@@ -82,8 +98,10 @@ def page(
         lang,
         LANG=lang,
         TITLE=esc(title),
-        STYLES="\n".join(f'<link rel="stylesheet" href="/static/{name}">' for name in styles),
-        SCRIPTS="\n".join(f'<script src="/static/{name}" defer></script>' for name in scripts),
+        APP_CSS=static_url("app.css"),
+        CORE_JS=static_url("core.js"),
+        STYLES="\n".join(f'<link rel="stylesheet" href="{static_url(name)}">' for name in styles),
+        SCRIPTS="\n".join(f'<script src="{static_url(name)}" defer></script>' for name in scripts),
         BODY_CLASS=esc(body_class),
         TOP_RIGHT=top_right,
         BODY=body,
