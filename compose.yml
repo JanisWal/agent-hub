@@ -2,7 +2,17 @@ services:
   web:
     build: ./web
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"   # only the Pi itself; the tunnel reaches the hub over the Docker network
     volumes:
       - ./data:/data
+    environment:
+      HUB_SECURE_COOKIE: "1"     # the site is served over HTTPS by Cloudflare
     restart: unless-stopped
+    networks:
+      default: {}
+      web:
+        aliases: [agent-hub]     # the tunnel's route points to http://agent-hub:8000
+
+networks:
+  web:
+    external: true
