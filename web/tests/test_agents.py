@@ -78,6 +78,19 @@ class ClaudeLinkTest(Base):
         self.assertFalse(claude_link.wiped(self.a.id))                 # must not forget the running login
         self.assertEqual(claude_link.status(self.a.id), "connecting")
 
+    def test_deleting_an_account_queues_the_deletion_of_his_claude_folder(self):
+        owner = users.create_user("o@example.com", "Oooo!pass12", role="owner")
+        self.connect(self.a)
+        self.connect(self.b)
+        users.delete_user(owner, self.a.id)
+        self.assertEqual(claude_link.status(self.a.id), "none")        # row gone with the account ...
+        self.assertEqual(claude_link.pending_wipes(), [self.a.id])     # ... but the folder is still to be deleted
+        self.assertTrue(claude_link.is_connected(self.b.id))           # nobody else is touched
+        self.assertTrue(claude_link.wiped(self.a.id))
+        self.assertEqual(claude_link.pending_wipes(), [])
+        self.assertFalse(claude_link.wiped(self.a.id))
+        self.assertTrue(claude_link.is_connected(self.b.id))
+
     def test_deleting_the_user_removes_the_connection(self):
         self.connect(self.a)
         with db.connect() as conn:

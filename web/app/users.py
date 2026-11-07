@@ -244,6 +244,10 @@ def delete_user(actor: User, user_id: int) -> None:
     """Delete an account with its projects, board items and sessions (cascade)."""
     target = _managed(actor, user_id)
     with db.connect() as conn:
+        # The cascade removes his rows, but not his saved Claude login on the runner's disk: queue the
+        # deletion of that folder (claude_link.pending_wipes), in the same transaction as the deletion.
+        conn.execute("INSERT OR IGNORE INTO claude_wipes (user_id, created_at) VALUES (?, strftime('%s','now'))",
+                     (target.id,))
         conn.execute("DELETE FROM users WHERE id = ?", (target.id,))
 
 
