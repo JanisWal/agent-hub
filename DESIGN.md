@@ -170,7 +170,7 @@ Stand 07.11.2026, von Janis beauftragt, mit Testkonten im Browser geprüft (Dunk
 ## 12. Noch offen (Janis entscheidet bei Bedarf)
 
 - Handy-Layout prüfen (Abschnitt 8). Drag and Drop nutzt die Browser-Funktion und geht auf Touchgeräten noch nicht; per Tastatur lässt sich auch noch nicht umordnen.
-- Kacheln übers Seitenende hinaus ziehen (auf eine andere Seite) ist nicht vorgesehen.
+- **Gewünscht (Janis, 07.11.2026), nach dem Kanban-Board:** Kacheln auf eine andere Seite ziehen, wie Apps auf dem Handy. Zieht man eine Kachel an den rechten Rand, blättert die Ansicht zur nächsten Seite, ist keine da, geht eine neue auf; am linken Rand zurück. Beispiel: Drei Projekte gehören zu einer Kategorie, das vierte soll auf die nächste Seite. Leere Plätze bleiben immer am Ende, sie müssen nicht umgeordnet werden. Bis dahin lassen sich Kacheln nur innerhalb einer Seite ordnen (mit der Maus geprüft, Touch ungeprüft).
 - Begrenzung falscher Passworteingaben (Anmeldung und Löschen), steht auch in der Checkliste vor dem Livegang.
 - Login-Seite auf Englisch (erst nach der Anmeldung ist die Sprache bekannt).
 - Inhalt der Kacheln („weitere Infos“) wird später festgelegt.
