@@ -107,7 +107,7 @@
   var pagesBox = $("#pages");
   if (pagesBox) {
     var SIZE = Number(pagesBox.dataset.size);
-    var GAP = 48;  // distance between pages, must match .track in theme.css
+    var GAP = 128;  // distance between pages, must match .track in theme.css (room for tile shadows)
     var track = $("#track");
     var pager = $("#pager");
     var edges = document.querySelectorAll(".edge");
@@ -135,8 +135,21 @@
       return inner + GAP;
     };
 
+    var lastX = null;
+    var lastT = 0;
+    var leanSpeed = 0;
+    var leanTimer = null;
     var pageX = Motion.spring(0, Motion.MOVE, function (value) {
       track.style.transform = "translate3d(" + value + "px,0,0)";
+      // The pager hangs on the track: its position moves the worm, its speed leans the arrows.
+      var now = performance.now();
+      if (lastX !== null && now > lastT) leanSpeed = leanSpeed * 0.6 + ((value - lastX) / (now - lastT)) * 1000 * 0.4;
+      lastX = value;
+      lastT = now;
+      clearTimeout(leanTimer);
+      leanTimer = setTimeout(function () { leanSpeed = 0; leanArrows(); }, 120);
+      leanArrows();
+      drawWorm();
     });
     pageX.set(-index * stride());
 
@@ -147,6 +160,7 @@
     };
     markInert();
     window.addEventListener("resize", function () { pageX.set(-index * stride()); });
+    renderPager();
 
     function arrowElement(target, count, side, label) {
       var element;
@@ -165,28 +179,84 @@
       return element;
     }
 
-    // Redraw the dots and arrows (the number of pages can change while dragging).
+    // Dots and arrows are built once and then only updated, so a pressed one can spring back.
+    // The current page is a "worm" that hangs on the position of the track (see drawWorm).
+    function dotElements() { return pager.querySelectorAll(".dot"); }
+
+    function syncArrow(side, target, count, label) {
+      var old = side === "left" ? pager.firstElementChild : pager.lastElementChild;
+      var wantLink = target >= 0 && target < count;
+      if (old && old.classList.contains("pager-arrow") && (old.tagName === "A") === wantLink) {
+        if (wantLink) {
+          old.href = "/?page=" + (target + 1);
+          old.dataset.page = target + 1;
+          old.setAttribute("aria-label", label);
+        }
+        return;
+      }
+      var fresh = arrowElement(target, count, side, label);
+      if (old) pager.replaceChild(fresh, old); else pager.appendChild(fresh);
+    }
+
     function renderPager() {
       var count = grids().length;
       var texts = pager.dataset;
       pager.hidden = count < 2;
-      pager.textContent = "";
-      pager.appendChild(arrowElement(index - 1, count, "left", texts.labelPrev));
-      var dots = document.createElement("span");
-      dots.className = "dots";
-      for (var n = 0; n < count; n++) {
-        var dot = document.createElement("a");
-        dot.className = "dot" + (n === index ? " active" : "");
-        dot.href = "/?page=" + (n + 1);
-        dot.dataset.page = n + 1;
-        dot.setAttribute("aria-label", texts.labelPage.replace("{n}", n + 1));
-        if (n === index) dot.setAttribute("aria-current", "page");
-        dots.appendChild(dot);
+      pager.classList.add("live");
+      var dots = $(".dots", pager);
+      if (dotElements().length !== count) {  // the number of pages changed: rebuild the dots
+        dots.textContent = "";
+        for (var n = 0; n < count; n++) {
+          var dot = document.createElement("a");
+          dot.className = "dot";
+          dot.href = "/?page=" + (n + 1);
+          dot.dataset.page = n + 1;
+          dot.setAttribute("aria-label", texts.labelPage.replace("{n}", n + 1));
+          dots.appendChild(dot);
+        }
       }
-      pager.appendChild(dots);
-      pager.appendChild(arrowElement(index + 1, count, "right", texts.labelNext));
+      if (!$(".worm", dots)) {
+        var worm = document.createElement("i");
+        worm.className = "worm";
+        worm.setAttribute("aria-hidden", "true");
+        dots.appendChild(worm);
+      }
+      Array.prototype.forEach.call(dotElements(), function (dot, n) {
+        dot.classList.remove("active");
+        if (n === index) dot.setAttribute("aria-current", "page"); else dot.removeAttribute("aria-current");
+      });
+      syncArrow("left", index - 1, count, texts.labelPrev);
+      syncArrow("right", index + 1, count, texts.labelNext);
+      drawWorm();
     }
 
+    // The current page marker travels with the track, so it follows a finger 1:1, stretches while
+    // it moves from one dot to the next (front end first, then the tail), and overshoots a little
+    // where the track is pulled past its end.
+    function drawWorm() {
+      var worm = $(".worm", pager);
+      var dots = dotElements();
+      if (!worm || !dots.length) return;
+      var pitch = dots.length > 1 ? dots[1].offsetLeft - dots[0].offsetLeft : 24;
+      var position = -pageX.value / stride();
+      var inside = Math.min(Math.max(position, 0), dots.length - 1);
+      var over = position - inside;
+      var whole = Math.floor(inside);
+      var part = inside - whole;
+      var front = part < 0.5 ? 0 : (part - 0.5) * 2;
+      var left = dots[0].offsetLeft + pitch * (whole + front) + over * pitch * 0.5;
+      worm.style.transform = "translateX(" + left + "px)";
+      worm.style.width = 10 + pitch * (part < 0.5 ? part * 2 : (1 - part) * 2) + "px";
+    }
+
+    // The arrows lean into the direction the pages are travelling and settle when they stop.
+    function leanArrows() {
+      var arrows = pager.querySelectorAll(".pager-arrow");
+      if (arrows.length < 2) return;
+      var amount = Math.max(-1, Math.min(1, -leanSpeed / 1800)) * 7;
+      arrows[0].style.transform = amount < -0.2 ? "translateX(" + amount + "px)" : "";
+      arrows[1].style.transform = amount > 0.2 ? "translateX(" + amount + "px)" : "";
+    }
     // Slide to a page. The spring starts from where the track is right now, so a new
     // request while it is still moving continues smoothly. `velocity` is a flick's speed.
     function goTo(n, options) {
