@@ -236,7 +236,7 @@ var Motion = (function () {
       item.classList.add("drag-slot");  // the slot stays reserved, the item travels as a clone
       var state = {
         item: item, clone: clone, id: id, grabX: grabX, grabY: grabY, left: rect.left, top: rect.top,
-        w: rect.width, h: rect.height, idle: null, rest: null,
+        w: rect.width, h: rect.height, rest: null, pending: null, marked: null,
         startContainer: o.containerFor(item), history: [{ t: performance.now(), x: x, y: y }]
       };
       // Every picked item draws itself, so the landing animation still works after `drag` is cleared.
@@ -272,14 +272,10 @@ var Motion = (function () {
       d.rot.to(Math.max(-6, Math.min(6, (v.x / 1000) * 2.4)));
       clearTimeout(d.rest);
       d.rest = setTimeout(function () { d.rot.to(0); }, 140);
-      // Reordering is deliberate: not while flying across other items, only once the movement calms down.
-      clearTimeout(d.idle);
-      if (Math.hypot(v.x, v.y) <= 700) place(d);
-      else d.idle = setTimeout(function () { place(d); }, 130);
+      aim(d);  // nothing is rearranged while carrying: the target below just lifts a little
       autoscroll(d, y);
       if (o.onMove) o.onMove(x, y);
     }
-
     function axisNow() { return typeof o.axis === "function" ? o.axis() : o.axis; }
 
     // Near the top or bottom edge of the window a carried item scrolls the page (lists that scroll).
@@ -292,7 +288,7 @@ var Motion = (function () {
         d.scroller = setInterval(function () {
           if (drag !== d || !d.scrollSpeed) { clearInterval(d.scroller); d.scroller = null; return; }
           window.scrollBy(0, d.scrollSpeed);
-          place(d);  // the items moved under the finger
+          aim(d);  // the items moved under the finger
         }, 16);
       }
     }
@@ -302,24 +298,33 @@ var Motion = (function () {
       return last ? last.nextSibling : container.firstChild;
     }
 
-    // Decide where the slot goes, looking at the middle of the carried item, and let the others glide aside.
-    function place(d) {
+    // The item you carry only chooses a target while you move: the slot stays where it is (the
+    // gap you took it from), and the item under the middle of the carried one lifts a little.
+    // The rearranging happens when you let go.
+    function mark(d, el) {
+      if (d.marked === el) return;
+      if (d.marked) d.marked.classList.remove("drop-target");
+      d.marked = el;
+      if (el) el.classList.add("drop-target");
+    }
+
+    function aim(d) {
       if (drag !== d) return;
       var x = d.left + d.w / 2 + d.xs.value;
       var y = d.top + d.h / 2 + d.ys.value;
+      d.pending = null;
       var el = document.elementFromPoint(x, y);
-      if (!el) return;
-      var container = o.containerFor(el);
-      if (!container) return;
+      var container = el && o.containerFor(el);
+      if (!container) { mark(d, null); return; }
       var item = d.item;
       var over = el.closest(o.itemSelector);
-      if (over === item) return;
+      if (over === item) { mark(d, item); return; }  // back over its own gap: nothing changes
       if (over) {
-        // Only the middle of a target counts, so grazing its edge swaps nothing.
+        // Only the middle of a target counts, so grazing its edge targets nothing.
         var r = over.getBoundingClientRect();
         var zoneX = axisNow() === "y" ? 0 : r.width * 0.2;
         var zoneY = r.height * 0.22;
-        if (x < r.left + zoneX || x > r.right - zoneX || y < r.top + zoneY || y > r.bottom - zoneY) return;
+        if (x < r.left + zoneX || x > r.right - zoneX || y < r.top + zoneY || y > r.bottom - zoneY) { mark(d, null); return; }
       }
       var others = Array.prototype.filter.call(container.querySelectorAll(o.itemSelector), function (i) { return i !== item; });
       var anchor;
@@ -334,20 +339,28 @@ var Motion = (function () {
           : o.endSelector && el.closest(o.endSelector)) {
         anchor = endAnchor(container, others);
       } else {
+        mark(d, null);
         return;
       }
+      mark(d, over || null);
       if (anchor === item || (item.parentNode === container && item.nextSibling === anchor)) return;
-      // The slot glides too, so you see where the item will land.
-      flip(Array.prototype.slice.call(o.items()), function () { container.insertBefore(item, anchor); }, item);
+      d.pending = { container: container, anchor: anchor };
     }
     function end() {
       var d = drag;
       drag = null;
       document.documentElement.classList.remove("dragging-active");
       var velocity = velocityOf(d.history);
-      clearTimeout(d.idle);
       clearTimeout(d.rest);
       clearInterval(d.scroller);
+      mark(d, null);
+      if (d.pending) {
+        // Let go: now the item takes its new place and the others glide to make room.
+        var pending = d.pending;
+        flip(Array.prototype.slice.call(o.items()), function () {
+          pending.container.insertBefore(d.item, pending.anchor);
+        }, d.item);
+      }
       var slot = d.item.getBoundingClientRect();
       var glide = d.item.__offset;  // the slot may still be gliding into place: aim at where it ends up
       d.clone.classList.remove("lifted");

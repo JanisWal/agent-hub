@@ -736,3 +736,10 @@ body.fit .plus-sign { width: clamp(36px, 6.5vh, 56px); height: clamp(36px, 6.5vh
 
 /* A tile that has entered (or is carried) does not animate again, even if it is moved in the DOM. */
 .tile.entered { animation: none; }
+
+/* While an item is carried only its target lifts (3 px), not every tile the pointer passes.
+   The red gap stays where the item was taken from until it is dropped. */
+html.dragging-active .tile[data-id]:not(.drop-target):hover { translate: none; }
+.tile.drop-target { translate: 0 -3px; }
+html.dragging-active .open-list .card:not(.drop-target):hover { translate: none; box-shadow: 0 2px 8px rgba(80, 40, 10, 0.12); }
+.card.drop-target { translate: 0 -3px; box-shadow: 0 6px 16px rgba(80, 40, 10, 0.18); }
