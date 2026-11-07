@@ -199,18 +199,15 @@ class ChatRunTest(unittest.TestCase):
         self.assertEqual(self.api.posted("/chat/5/finish"),
                          [{"success": "1", "answer": "Hi!", "tokens_in": 7, "tokens_out": 2}])
 
-    def test_the_mode_of_the_question_decides_the_container(self):
-        for mode, proxy, readonly in (("code", "egress:3129", True), ("web", "egress:3128", False), ("plain", "egress:3129", False)):
+    def test_every_question_runs_with_search_and_code_behind_the_anthropic_proxy(self):
+        for job in ({"mode": "all"}, {}):                                       # a job without a mode is "all" too
             self.commands.clear()
-            self.api.chat_job = {"chat_id": 5, "user_id": 2, "model": "haiku", "prompt": "x", "mode": mode}
+            self.api.chat_job = {"chat_id": 5, "user_id": 2, "model": "haiku", "prompt": "x", **job}
             self.runner.handle_chat()
             command = " ".join(self.commands[0][0])
-            self.assertIn(proxy, command)
-            self.assertEqual(",readonly" in command, readonly)
-        self.commands.clear()
-        self.api.chat_job = {"chat_id": 5, "user_id": 2, "model": "haiku", "prompt": "x"}      # an old job without a mode
-        self.runner.handle_chat()
-        self.assertIn("egress:3128", " ".join(self.commands[0][0]))
+            self.assertIn("egress:3129", command)
+            self.assertNotIn("egress:3128", command)
+            self.assertIn(",readonly", command)
     def test_nothing_to_do(self):
         self.api.chat_job = None
         self.runner.handle_chat()

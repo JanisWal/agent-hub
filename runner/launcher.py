@@ -14,12 +14,12 @@ import sys
 from pathlib import Path
 
 MODELS = ("haiku", "sonnet", "opus")
-ROLES = ("chef", "programmer", "tester", "reviewer", "documenter")
+ROLES = ("chef", "programmer", "tester", "reviewer")   # same as web/app/workflow.py; the chef also documents
 RESULTS = {
     "programmer": ("done", "failed"),
     "tester": ("pass", "fail", "not_testable", "failed"),
     "reviewer": ("ok", "objections", "failed"),
-    "documenter": ("done", "failed"),
+    "chef": ("done", "failed"),
 }
 IMAGE = "agent-hub-agent"         # built from runner/Dockerfile
 NETWORK = "agent-hub-agents"      # separate from the "web" network: a run cannot reach the hub
@@ -28,11 +28,9 @@ MAX_REPORT = 20000
 # The agent network has no route to the outside: everything goes through the egress proxy (runner/egress.py).
 WEB_PROXY = "http://egress:3128"   # any public host on 443, never the home network or the Pi itself
 API_PROXY = "http://egress:3129"   # only Anthropic: Claude Code can reach its API, code it runs can reach nothing
-# What the chat window may do, per mode: tools, proxy and steps (model turns) per question.
+# What the manager chat may do: tools, proxy and steps (model turns) per question. The single modes "plain",
+# "web" and "code" of the old chat window were removed on 08.11.2026 (WEB_PROXY stays for later agent runs).
 CHAT_MODES = {
-    "plain": {"tools": (), "proxy": API_PROXY, "turns": 3},                              # just answer
-    "web": {"tools": ("WebSearch", "WebFetch"), "proxy": WEB_PROXY, "turns": 8},          # search and read pages
-    "code": {"tools": ("Bash",), "proxy": API_PROXY, "turns": 10},                        # run code, no internet
     # The manager chat (Janis, 07.11.2026): web search and code always, Claude uses them only when needed.
     # Safe together because the web search runs on Anthropic's side (API traffic only) and the container's
     # only way out is still the Anthropic proxy: code reaches no web page, so nothing it reads can leave.
@@ -90,12 +88,11 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, claud
     ]
 
 
-def build_chat_command(*, chat_id: int, user_id: int, model: str, claude_dir: str, mode: str = "web",
+def build_chat_command(*, chat_id: int, user_id: int, model: str, claude_dir: str, mode: str = "all",
                        image: str = IMAGE, network: str = NETWORK, memory: str = "480m") -> list[str]:
-    """The chat window (see web/app/chat.py): one question to Claude, in a container like a run but with no
-    work folder at all (nothing of any project is mounted). `mode` (see CHAT_MODES) decides the tools and the
-    way out: "plain" answers only, "web" may search and read pages (public internet only), "code" may run
-    commands in the container (the internet only reaches Anthropic's API, never a code of its own)."""
+    """The manager chat (see web/app/chat.py): one question to Claude, in a container like a run but with no
+    work folder at all (nothing of any project is mounted; the project context comes on stdin). `mode` (see
+    CHAT_MODES) decides the tools and the way out; "all" = web search and a shell, only Anthropic reachable."""
     chat_id = _number(chat_id, "chat_id")
     uid = run_uid(user_id)
     if model not in MODELS:

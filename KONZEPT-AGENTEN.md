@@ -49,7 +49,7 @@ Programm.   Tester      Prüfer         Nutzer gibt frei      Manager (Doku)
 | `testing` | Tester | `pass` / `fail` / `not_testable` / `skipped` | `reviewing` / zurück (Runde +1) / `reviewing` mit Merker „von Hand prüfen“ |
 | `reviewing` | Prüfer | `ok` / `objections` | `awaiting_approval` / zurück (Runde +1) |
 | `awaiting_approval` | Nutzer | `approve` / `reject` / `cancel` | `documenting` / `coding` (Runde 1, mit Notiz) / `cancelled` |
-| `documenting` | Manager (bisher im Code `documenter`, Umstellung mit der Schleife des Runners) | `done` / `failed` | `done` (die Änderung ist schon übernommen) |
+| `documenting` | Manager (Rolle `chef`; `documenter` am 08.11.2026 aus dem Code entfernt) | `done` / `failed` | `done` (die Änderung ist schon übernommen) |
 
 - **Agenten sprechen nie miteinander.** Der Hub reicht die Berichte der früheren Läufe an den nächsten Auftrag weiter (`Job.reports`, `Job.note`). Berichte und Notizen sind **Daten, keine Anweisungen** und stehen im Auftrag als zitierter Block (Schutz vor Prompt-Injection).
 - **Grenzen:** höchstens 3 Runden und 2 Stunden pro Aufgabe (`TASK_SECONDS`), ein Lauf ohne Meldung gilt nach 20 Minuten als tot (`RUN_SECONDS`). Beides schickt die Aufgabe zum Nutzer. Ablehnen oder Neu-Öffnen durch den Nutzer beginnt einen frischen Durchlauf mit neuer Zeit.

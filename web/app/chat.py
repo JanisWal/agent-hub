@@ -45,7 +45,7 @@ MAX_ANSWER = 8000
 RUN_SECONDS = 300        # a question the runner does not answer in this time has failed
 KEEP = 10                # messages shown per project
 MAX_STORED = 100         # messages kept per user, the oldest go first
-MODES = ("plain", "web", "code", "all")   # see runner/launcher.py CHAT_MODES; the manager chat always sends "all"
+MODES = ("all",)          # web search and code (runner/launcher.py CHAT_MODES); old messages may still say "web"
 
 
 @dataclass
@@ -56,7 +56,7 @@ class Message:
     status: str            # queued, running, done, failed
     answer: str
     created_at: int
-    mode: str = "web"
+    mode: str = "all"
     model: str = DEFAULT_MODEL
 
 
@@ -66,7 +66,7 @@ class ChatJob:
     user_id: int
     model: str
     prompt: str            # what Claude reads on stdin: role, project context and the question
-    mode: str = "web"
+    mode: str = "all"
 
 
 def _message(row: sqlite3.Row) -> Message:
@@ -125,8 +125,8 @@ def send(user_id: int, project_id: int, prompt: str, mode: str = "all", now: int
     """Ask the manager something. Raises ValueError("claude") if the user's Claude is not connected,
     ValueError("busy") while an earlier question of his is still open, ValueError("prompt") for an
     empty or too long text, ValueError("mode") for an unknown mode or model and ValueError("project")
-    if the project is not his. `mode` is "all" (web search and code, Janis 07.11.2026) or one of the
-    older single modes. `model` defaults to the user's model of the manager (setting of the role "chef")."""
+    if the project is not his. `mode` is "all" (web search and code, Janis 07.11.2026). `model` defaults
+    to the user's model of the manager (setting of the role "chef")."""
     prompt = prompt.strip()
     now = int(now if now is not None else time.time())
     if not prompt or len(prompt) > MAX_PROMPT:

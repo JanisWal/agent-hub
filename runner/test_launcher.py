@@ -72,18 +72,15 @@ class CommandTest(unittest.TestCase):
 
 
 class ChatCommandTest(unittest.TestCase):
-    """The chat window: no project files, no tools."""
+    """The manager chat: no project files, web search and a shell without internet."""
 
-    def test_no_work_folder_and_only_the_web_tools(self):
+    def test_no_work_folder_and_no_tool_that_touches_files(self):
         cmd = L.build_chat_command(chat_id=5, user_id=2, model="haiku", claude_dir="/data/claude/2")
         text = " ".join(cmd)
         self.assertEqual(sum(1 for c in cmd if c == "--mount"), 1)            # only the user's Claude folder
         self.assertNotIn("dst=/work", text)
-        self.assertEqual(cmd[cmd.index("--tools") + 1], "WebSearch,WebFetch")   # search and read a page, nothing else
-        self.assertEqual(cmd[cmd.index("--allowedTools") + 1], "WebSearch WebFetch")  # nobody can confirm in -p mode
-        self.assertEqual(cmd[cmd.index("--max-turns") + 1], "8")                 # a search cannot run away
-        for tool in ("Bash", "Edit", "Write", "Read", "Glob", "Grep", "NotebookEdit", "Task"):
-            self.assertNotIn(tool, text)                                          # no tool that touches files or runs commands
+        for tool in ("WebFetch", "Edit", "Write", "Read", "Glob", "Grep", "NotebookEdit", "Task"):
+            self.assertNotIn(tool, text)
         self.assertNotIn("--dangerously-skip-permissions", cmd)
         for flag in ("--read-only", "--cap-drop", "--no-session-persistence", "-i"):
             self.assertIn(flag, cmd)
@@ -91,30 +88,11 @@ class ChatCommandTest(unittest.TestCase):
             self.assertNotIn(bad, text.split())
         self.assertIn("10002:10002", cmd)
 
-    def test_the_three_modes(self):
-        def build(mode):
-            return L.build_chat_command(chat_id=5, user_id=2, model="haiku", claude_dir="/data/claude/2", mode=mode)
-        plain, web, code = build("plain"), build("web"), build("code")
-        self.assertEqual(plain[plain.index("--tools") + 1], "")                    # just answers
-        self.assertNotIn("--allowedTools", plain)
-        self.assertEqual(web[web.index("--tools") + 1], "WebSearch,WebFetch")
-        self.assertEqual(code[code.index("--tools") + 1], "Bash")                  # run commands, nothing else
-        self.assertEqual(code[code.index("--allowedTools") + 1], "Bash")
-        for cmd in (plain, web, code):
-            self.assertNotIn("--dangerously-skip-permissions", cmd)
-            self.assertNotIn("Edit", cmd)
-            self.assertNotIn("Write", cmd)
-        # the way out: web may reach public hosts, plain and code only Anthropic (via the egress proxy, never directly)
-        self.assertIn("HTTPS_PROXY=http://egress:3128", web)
-        self.assertIn("HTTPS_PROXY=http://egress:3129", plain)
-        self.assertIn("HTTPS_PROXY=http://egress:3129", code)
-        self.assertNotIn("HTTPS_PROXY=http://egress:3128", code)
-        # code can not change the saved login of the user: mounted read-only (a hook planted there would run in
-        # later runs that reach the web)
-        self.assertTrue(any(part.endswith(",readonly") for part in code))
-        self.assertFalse(any(part.endswith(",readonly") for part in web))
-        self.assertIn("--read-only", code)                                         # and the container itself is read-only
-        self.assertIn("size=128m", " ".join(code))
+    def test_only_the_manager_mode_exists(self):
+        self.assertEqual(tuple(L.CHAT_MODES), ("all",))                      # the old single modes are gone
+        for old in ("plain", "web", "code", "everything"):
+            with self.assertRaises(ValueError):
+                L.build_chat_command(chat_id=5, user_id=2, model="haiku", claude_dir="/data/claude/2", mode=old)
 
     def test_the_manager_chat_has_search_and_code_but_no_open_web(self):
         cmd = L.build_chat_command(chat_id=6, user_id=2, model="sonnet", claude_dir="/data/claude/2", mode="all")
@@ -197,7 +175,7 @@ class OutputTest(unittest.TestCase):
         self.assertEqual(L.parse_output("programmer", answer("RESULT: done\nand then more text"))[0], "failed")
 
     def test_report_is_capped_and_role_checked(self):
-        self.assertEqual(len(L.parse_output("documenter", answer("x" * 50000 + "\nRESULT: done"))[1]), L.MAX_REPORT)
+        self.assertEqual(len(L.parse_output("chef", answer("x" * 50000 + "\nRESULT: done"))[1]), L.MAX_REPORT)
         with self.assertRaises(ValueError):
             L.parse_output("janitor", answer("x"))
 
