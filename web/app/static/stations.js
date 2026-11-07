@@ -20,6 +20,7 @@
       if (open) open.click();
     }
     current = name;
+    document.body.classList.toggle("view-manager", name === "manager");   // the old chat dock steps aside (project.css)
     Object.keys(panels).forEach(function (key) { panels[key].hidden = key !== name; });
     Array.prototype.forEach.call(links, function (link) {
       var on = link.dataset.station === name;

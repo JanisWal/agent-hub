@@ -1,64 +1,53 @@
 """HTML of the Manager view: the second view of the project page (station "Manager").
 
-Janis, 07.11.2026: a click on "Manager" hides the board; the stations on the left stay and the
-main window shows the manager's things. This first step has the working settings (name and
-description) and shows where the status, the actions waiting for the user, the chat, the files,
-the devices and the regular checks will live. Nothing here talks to an agent yet.
+Janis, 07.11.2026: a click on "Manager" hides the board; the stations on the left stay and the main
+window shows the manager's things. Layout from his sketch, three columns. Left: the status and the
+devices (tall). Middle: the regular checks and the files (they take the free space). Right, where the
+old chat window used to sit: the manager chat (big) above "waiting for you". The project name and
+description are not here but in the drop-down at the pencil next to the title (projectpage.title_html).
+Nothing here talks to an agent yet: only the status and "waiting for you" are empty, the rest is announced.
 """
 from . import i18n
 from .layout import esc, fill
-from .projects import MAX_DESCRIPTION, MAX_NAME, Project
-
-# (key of the title, key of the one-line hint) of the tiles that are not built yet.
-SOON = (
-    ("manager_chat", "manager_chat_hint"),
-    ("manager_files", "manager_files_hint"),
-    ("manager_devices", "manager_devices_hint"),
-    ("manager_checks", "manager_checks_hint"),
-)
 
 MANAGER = """<section class="manager" id="manager-view" aria-label="%t.station_manager%" hidden>
-  <section class="mtile glass m-status">
-    <header><h2>%t.manager_status%</h2><span class="m-lamp" title="%t.manager_status_none%"></span></header>
-    <p class="muted">%t.manager_status_empty%</p>
-  </section>
-  <section class="mtile glass m-waiting">
-    <header><h2>%t.manager_waiting%</h2><span class="count">0</span></header>
-    <p class="muted">%t.manager_waiting_empty%</p>
-  </section>
-  %SOON%
-  <section class="mtile glass m-settings">
-    <header><h2>%t.manager_settings%</h2></header>
-    <form method="post" action="/projects/%PID%/settings" novalidate
-          data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
-      <label>%t.project_name%<input name="name" required maxlength="%MAX_NAME%" autocomplete="off" value="%NAME%"></label>
-      <label>%t.project_description%<textarea name="description" maxlength="%MAX_DESCRIPTION%" rows="4"
-        placeholder="%t.project_description_placeholder%">%DESCRIPTION%</textarea></label>
-      <div class="actions"><button class="primary" type="submit">%t.save%</button></div>
-    </form>
-  </section>
+  <div class="mcol">
+    <section class="mtile glass m-status">
+      <header><h2>%t.manager_status%</h2><span class="m-lamp" title="%t.manager_status_none%"></span></header>
+      <p class="muted">%t.manager_status_empty%</p>
+    </section>
+    %DEVICES%
+  </div>
+  <div class="mcol">
+    %CHECKS%
+    %FILES%
+  </div>
+  <div class="mcol">
+    %CHAT%
+    <section class="mtile glass m-waiting">
+      <header><h2>%t.manager_waiting%</h2><span class="count">0</span></header>
+      <p class="muted">%t.manager_waiting_empty%</p>
+    </section>
+  </div>
 </section>"""
 
 
-def _soon(lang: str) -> str:
+def _soon(lang: str, title: str, hint: str, css: str = "") -> str:
     """A tile that is announced but not built: title, one line, and the "later" tag."""
     later = esc(i18n.t(lang, "coming_soon"))
-    return "".join(
-        f'<section class="mtile glass m-soon"><header><h2>{esc(i18n.t(lang, title))}</h2>'
+    return (
+        f'<section class="mtile glass m-soon {css}"><header><h2>{esc(i18n.t(lang, title))}</h2>'
         f'<span class="m-tag">{later}</span></header>'
         f'<p class="muted">{esc(i18n.t(lang, hint))}</p></section>'
-        for title, hint in SOON
     )
 
 
-def render(project: Project, lang: str) -> str:
+def render(lang: str) -> str:
     return fill(
         MANAGER,
         lang,
-        PID=str(project.id),
-        NAME=esc(project.name),
-        DESCRIPTION=esc(project.description),
-        MAX_NAME=str(MAX_NAME),
-        MAX_DESCRIPTION=str(MAX_DESCRIPTION),
-        SOON=_soon(lang),
+        DEVICES=_soon(lang, "manager_devices", "manager_devices_hint", "m-grow"),
+        CHECKS=_soon(lang, "manager_checks", "manager_checks_hint"),
+        FILES=_soon(lang, "manager_files", "manager_files_hint", "m-grow"),
+        CHAT=_soon(lang, "manager_chat", "manager_chat_hint", "m-chat"),
     )

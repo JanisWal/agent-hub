@@ -131,12 +131,23 @@ body {
    their centres are all on --line. */
 .brand { margin-top: calc(var(--line) - 12px); font-weight: 650; font-size: 1.1rem; line-height: 24px; letter-spacing: -0.01em; }
 /* The name of the project sits in the top bar at the golden section (38.2 % from the left). */
-.project-title {
+.title-wrap {   /* the name and the pencil next to it sit together at the golden section */
   position: absolute;
   left: 38.2%;
   top: 50%;
   translate: -50% -50%;
-  max-width: 32%;
+  max-width: 40%;
+  z-index: 25;   /* above the tiles of the page: the drop-down at the pencil hangs over them */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.title-edit { position: relative; flex: none; width: 36px; height: 36px; min-width: 36px; min-height: 36px; color: var(--muted); }
+.title-edit::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; } /* 44 px hit area */
+.title-edit svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.title-edit:hover, .title-edit[aria-expanded="true"] { color: var(--text); border-color: var(--accent); }
+.project-title {
+  min-width: 0;
   margin: 0;
   overflow: hidden;
   font-size: clamp(1.8rem, 3.2vw, 2.8rem);
@@ -155,13 +166,14 @@ body {
 .project-page .topbar { min-height: 90px; }   /* room for the big name, which is centred in the bar */
 .topbar > .topbar-back { margin-right: auto; }
 @media (max-width: 1100px) {
-  .project-title { position: static; translate: none; align-self: center; flex: 1; min-width: 0; max-width: none; margin: 0 176px 0 14px; } /* room for the gear and its two buttons */
+  .title-wrap { position: relative; left: auto; top: auto; translate: none; align-self: center; flex: 1; min-width: 0; max-width: none; margin: 0 176px 0 14px; } /* room for the gear and its two buttons */
 }
 @media (max-width: 560px) {
   /* Phone: the bar has two rows. Brand and back button on top (the gear floats at the right), the name below, in full. */
   :root { --line: 30px; }
   .topbar { flex-wrap: wrap; row-gap: 6px; }
-  .project-title { order: 3; flex: 0 0 100%; align-self: auto; margin: 0; white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: clamp(1.5rem, 7vw, 1.9rem); }
+  .title-wrap { order: 3; flex: 0 0 100%; align-self: auto; margin: 0; }
+  .project-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: clamp(1.5rem, 7vw, 1.9rem); }
   .project-page .topbar { min-height: 0; padding-bottom: 8px; }
   .topbar-back { margin-left: 10px; }
 }

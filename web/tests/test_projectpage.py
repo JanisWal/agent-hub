@@ -34,7 +34,7 @@ class ProjectPageTest(unittest.TestCase):
         user = dataclasses.replace(self.user, language=lang)
         body = projectpage.render(user, self.project, board.list_items(user.id, self.project.id))
         return ui.logged_in_page(user, self.project.name, body, scripts=projectpage.SCRIPTS,
-                                 styles=projectpage.STYLES, top_center=projectpage.title_html(self.project), top_left=projectpage.back_html(lang),
+                                 styles=projectpage.STYLES, top_center=projectpage.title_html(self.project, lang), top_left=projectpage.back_html(lang),
                                  drawer_extras=projectpage.drawer_buttons(lang), body_class="project-page")
 
     def test_project_name_is_in_the_top_bar_and_escaped(self):
@@ -101,24 +101,56 @@ class ProjectPageTest(unittest.TestCase):
         self.assertNotIn("station-back", page)
         self.assertNotIn("clip-path", css_of("project.css"))                 # sharp edges, no arrows
 
-    def test_manager_view_has_the_settings_and_the_announced_tiles(self):
+    def test_manager_view_has_three_columns_as_sketched(self):
+        page = self.html()
+        manager = page[page.index('<section class="manager" id="manager-view"'):]
+        end = "</section>\n  </div>\n</section>"
+        manager = manager[:manager.index(end) + len(end)]
+        self.assertIn(" hidden>", manager.split("\n")[0])                      # the board is shown first
+        columns = manager.split('<div class="mcol">')[1:]
+        self.assertEqual(len(columns), 3)
+        order = [[t for t in ("Status", "Geräte", "Regelmäßige Prüfungen", "Dateien", "Manager-Chat", "Wartet auf dich")
+                  if f"<h2>{t}</h2>" in column] for column in columns]
+        self.assertEqual(order, [["Status", "Geräte"], ["Regelmäßige Prüfungen", "Dateien"],
+                                 ["Manager-Chat", "Wartet auf dich"]])        # left | middle | right, top to bottom
+        for column in columns:                                                # within a column, in this order
+            titles = [column.index(f"<h2>{t}</h2>") for t in ("Status", "Regelmäßige Prüfungen", "Manager-Chat")
+                      if f"<h2>{t}</h2>" in column]
+            self.assertEqual(titles, sorted(titles))
+        self.assertEqual(manager.count('class="mtile glass m-soon'), 4)
+        for tall in ("m-grow", "m-chat"):
+            self.assertIn(tall, manager)
+        self.assertIn("nicht Teil des Boards", manager)                       # the checks are not board items
+        self.assertNotIn("<form", manager)                                    # name and description moved to the pencil
+        self.assertIn("stations.js", page)
+        self.assertNotIn('id="manager"', page)                                # the hash must not make the page scroll
+
+    def test_pencil_next_to_the_title_opens_the_drop_down_for_name_and_description(self):
         projects.update_details(self.user.id, self.project.id, "My <b>project</b>", "About <script>x</script> %BODY%")
         self.project = projects.get_project(self.user.id, self.project.id)
         page = self.html()
-        manager = page[page.index('<section class="manager" id="manager-view"'):]
-        manager = manager[:manager.index("</section>\n</section>") + 10]
-        self.assertIn(" hidden>", manager.split("\n")[0])                      # the board is shown first
-        self.assertIn(f'action="/projects/{self.project.id}/settings"', manager)
-        self.assertIn('value="My &lt;b&gt;project&lt;/b&gt;"', manager)
-        self.assertIn("About &lt;script&gt;x&lt;/script&gt; %BODY%", manager)  # escaped, not expanded
+        bar = page[page.index('<header class="topbar">'):page.index("</header>")]
+        wrap = bar[bar.index('<div class="title-wrap">'):]
+        self.assertLess(wrap.index('class="project-title"'), wrap.index('id="title-edit"'))
+        self.assertLess(wrap.index('id="title-edit"'), wrap.index('id="title-menu"'))
+        self.assertIn('aria-expanded="false"', wrap)
+        self.assertIn('aria-label="Projekt bearbeiten"', wrap)
+        menu = wrap[wrap.index('<form class="title-menu glass"'):]
+        self.assertIn(" hidden", menu.split(">")[0])                          # closed until the pencil is pressed
+        self.assertIn(f'action="/projects/{self.project.id}/settings"', menu)
+        self.assertIn('value="My &lt;b&gt;project&lt;/b&gt;"', menu)
+        self.assertIn("About &lt;script&gt;x&lt;/script&gt; %BODY%", menu)    # escaped, not expanded
         self.assertNotIn("<script>x", page)
-        for title in ("Status", "Wartet auf dich", "Manager-Chat", "Dateien", "Geräte", "Regelmäßige Prüfungen",
-                      "Einstellungen"):
-            self.assertIn(f"<h2>{title}</h2>", manager)
-        self.assertEqual(manager.count('class="mtile glass m-soon"'), 4)
-        self.assertIn("nicht Teil des Boards", manager)                       # the checks are not board items
-        self.assertIn("stations.js", page)
-        self.assertNotIn('id="manager"', page)                                # the hash must not make the page scroll
+        self.assertIn("Projektbeschreibung", menu)
+        self.assertIn("titlemenu.js", page)
+        self.assertIn("Edit project", self.html("en"))
+        self.assertIn("left: 38.2%", css_of("app.css")[css_of("app.css").index(".title-wrap"):][:200])  # still at the golden section
+
+    def test_the_old_chat_steps_aside_in_the_manager_view(self):
+        css, script = css_of("project.css"), css_of("stations.js")
+        self.assertIn(".view-manager .chat, .view-manager .chat-toggle { display: none; }", css)
+        self.assertIn(".view-manager.project-page main { padding-right: 24px; }", css)
+        self.assertIn('classList.toggle("view-manager"', script)
 
     def test_stations_script_swaps_the_views_by_the_address(self):
         script = css_of("stations.js")
