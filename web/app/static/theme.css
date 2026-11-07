@@ -476,7 +476,7 @@ main { padding-bottom: 96px; } /* room for the toggle */
 .pager-arrow svg { width: 20px; height: 20px; fill: currentColor; }
 a.pager-arrow:hover { color: var(--text); }
 .pager-arrow.off { opacity: 0.25; }
-.dots { display: flex; align-items: center; }
+.dots { position: relative; display: flex; align-items: center; }
 .dot { display: block; position: relative; width: 10px; height: 10px; margin: 0 7px; border-radius: 999px; background: var(--muted); opacity: 0.35; transition: width 0.3s cubic-bezier(0.3, 1.5, 0.5, 1), opacity 0.2s, background 0.2s; }
 .dot::after { content: ""; position: absolute; inset: -17px -7px; }
 .dot:hover { opacity: 0.7; }
@@ -641,18 +641,35 @@ a.station:hover { color: var(--text); background: color-mix(in srgb, var(--field
 }
 
 /* ===== Page track, carried items and their slot ===== */
-:root { --bleed: 24px; }
+:root { --bleed: 72px; } /* room for tile shadows (about 70 px) beside the grid */
 /* Pages sit side by side on a track that slides by spring (dashboard.js). The box reaches a
    little past the grid so tile shadows are not cut off; pages are 48 px apart, so a neighbour
    never shows in that margin. */
-.pages { overflow: hidden; margin: calc(var(--bleed) * -1) calc(var(--bleed) * -1) -40px; padding: var(--bleed) var(--bleed) 40px; }
-.track { display: flex; gap: 48px; touch-action: pan-y; will-change: transform; transform: translate3d(calc(var(--page, 0) * (-100% - 48px)), 0, 0); }
+.pages { overflow: hidden; margin: -48px calc(var(--bleed) * -1) -96px; padding: 48px var(--bleed) 96px; }
+.track { display: flex; gap: 128px; touch-action: pan-y; will-change: transform; transform: translate3d(calc(var(--page, 0) * (-100% - 128px)), 0, 0); }
 .track > .grid { flex: 0 0 100%; min-width: 0; }
 
 /* The item you carry is a clone above everything; its slot stays reserved in the grid. */
 .drag-clone { position: fixed; z-index: 60; margin: 0; max-width: none; pointer-events: none; will-change: transform; animation: none !important; transition: box-shadow 0.25s; }
 .drag-clone.lifted { box-shadow: 0 34px 70px rgba(0, 0, 0, 0.34), 0 10px 22px rgba(0, 0, 0, 0.22), 0 0 0 1px var(--glass-border); }
 .drag-clone.glass { background: color-mix(in srgb, var(--bg) 62%, var(--glass)); } /* denser, so the tile below does not shine through */
-.drag-slot { visibility: hidden; }
+/* The slot shows where the carried item will land. */
+.drag-slot { background: color-mix(in srgb, var(--accent) 9%, transparent); border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, transparent); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.drag-slot::before, .drag-slot > * { visibility: hidden; }
 html.dragging-active, html.dragging-active * { -webkit-user-select: none !important; user-select: none !important; cursor: grabbing !important; }
-@media (max-width: 560px) { :root { --bleed: 8px; } } /* main has 16 px side padding on phones */
+@media (max-width: 560px) { :root { --bleed: 16px; } } /* main has 16 px side padding on phones */
+
+/* ===== Shadows, pager physics ===== */
+main { overflow-x: clip; } /* shadows may reach to the window edge, but nothing makes the page scroll sideways */
+
+/* The current page is a worm hanging on the track position (dashboard.js drawWorm). */
+.worm { position: absolute; top: 50%; left: 0; width: 10px; height: 10px; margin-top: -5px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent); pointer-events: none; will-change: transform, width; }
+.dot { transition: scale 0.4s cubic-bezier(0.3, 1.6, 0.5, 1), opacity 0.2s; }
+.dot:active { scale: 0.65; opacity: 1; }
+.pager-arrow { transition: scale 0.4s cubic-bezier(0.3, 1.6, 0.5, 1), color 0.2s; }
+a.pager-arrow:active { scale: 0.75; }
+
+@media (max-width: 560px) {
+  /* Less room beside the grid on phones, so a softer, tighter shadow. */
+  .tile.glass { box-shadow: 0 8px 22px rgba(60, 30, 10, 0.24), 0 1px 4px rgba(60, 30, 10, 0.16); }
+}

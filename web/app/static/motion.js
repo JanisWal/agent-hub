@@ -16,6 +16,7 @@ var Motion = (function () {
   var MOVE = { response: 0.4, damping: 1 };    // reposition and page change: smooth, no overshoot
   var LIFT = { response: 0.25, damping: 1 };   // a picked-up item grows
   var SNAP = { response: 0.35, damping: 0.85 }; // after a flick: a little bounce, the gesture had momentum
+  var LEAN = { response: 0.35, damping: 0.7 };  // the carried item leans into its direction and sways back
 
   function reduced() { return reducedQuery.matches; }
 
@@ -125,17 +126,32 @@ var Motion = (function () {
 
   // FLIP: remember where the items are, change the DOM, then let every item glide from its old
   // spot to its new one. A running glide is continued from where it is, with its velocity.
-  function flip(items, mutate) {
+  // With `origin` (the element that moved) the change travels outward as a wave: the farther an
+  // item is from the origin, the later it sets off (up to 110 ms).
+  function flip(items, mutate, origin) {
     var before = items.map(function (el) { return el.getBoundingClientRect(); });
     mutate();
+    var from = null;
+    if (origin) {
+      var r = origin.getBoundingClientRect();
+      from = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }
     items.forEach(function (el, i) {
       var after = el.getBoundingClientRect();
       var dx = before[i].left - after.left;
       var dy = before[i].top - after.top;
       if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
       var offset = offsetOf(el);
-      offset.x.jump(offset.x.value + dx).to(0);
-      offset.y.jump(offset.y.value + dy).to(0);
+      clearTimeout(offset.timer);
+      offset.x.stop(); offset.y.stop();
+      offset.x.jump(offset.x.value + dx);
+      offset.y.jump(offset.y.value + dy);
+      var go = function () { offset.x.to(0); offset.y.to(0); };
+      var delay = from
+        ? Math.min(Math.hypot(after.left + after.width / 2 - from.x, after.top + after.height / 2 - from.y) / 10, 110)
+        : 0;
+      if (delay > 8 && !reduced()) offset.timer = setTimeout(go, delay);
+      else go();
     });
   }
 
@@ -220,16 +236,19 @@ var Motion = (function () {
       item.classList.add("drag-slot");  // the slot stays reserved, the item travels as a clone
       var state = {
         item: item, clone: clone, id: id, grabX: grabX, grabY: grabY, left: rect.left, top: rect.top,
+        w: rect.width, h: rect.height, idle: null, rest: null,
         startContainer: o.containerFor(item), history: [{ t: performance.now(), x: x, y: y }]
       };
       // Every picked item draws itself, so the landing animation still works after `drag` is cleared.
       var draw = function () {
         clone.style.transform =
-          "translate3d(" + state.xs.value + "px," + state.ys.value + "px,0) scale(" + state.scale.value + ")";
+          "translate3d(" + state.xs.value + "px," + state.ys.value + "px,0) rotate(" + state.rot.value +
+          "deg) scale(" + state.scale.value + ")";
       };
       state.xs = spring(0, MOVE, draw);
       state.ys = spring(0, MOVE, draw);
       state.scale = spring(1, LIFT, draw, 0.001);
+      state.rot = spring(0, LEAN, draw, 0.01);
       state.xs.set(x - grabX);  // the pointer has already moved a little since it went down
       state.ys.set(y - grabY);
       drag = state;
@@ -243,11 +262,20 @@ var Motion = (function () {
     }
 
     function move(x, y) {
-      drag.xs.set(x - drag.grabX);
-      drag.ys.set(y - drag.grabY);
-      drag.history.push({ t: performance.now(), x: x, y: y });
-      if (drag.history.length > 6) drag.history.shift();
-      place(x, y);
+      var d = drag;
+      d.xs.set(x - d.grabX);
+      d.ys.set(y - d.grabY);
+      d.history.push({ t: performance.now(), x: x, y: y });
+      if (d.history.length > 6) d.history.shift();
+      var v = velocityOf(d.history);
+      // The carried item leans a little into the direction it is moved, and sways back at rest.
+      d.rot.to(Math.max(-6, Math.min(6, (v.x / 1000) * 2.4)));
+      clearTimeout(d.rest);
+      d.rest = setTimeout(function () { d.rot.to(0); }, 140);
+      // Reordering is deliberate: not while flying across other items, only once the movement calms down.
+      clearTimeout(d.idle);
+      if (Math.hypot(v.x, v.y) <= 700) place(d);
+      else d.idle = setTimeout(function () { place(d); }, 130);
       if (o.onMove) o.onMove(x, y);
     }
 
@@ -256,15 +284,25 @@ var Motion = (function () {
       return last ? last.nextSibling : container.firstChild;
     }
 
-    // Decide where the slot goes for this pointer position and let the others glide aside.
-    function place(x, y) {
+    // Decide where the slot goes, looking at the middle of the carried item, and let the others glide aside.
+    function place(d) {
+      if (drag !== d) return;
+      var x = d.left + d.w / 2 + d.xs.value;
+      var y = d.top + d.h / 2 + d.ys.value;
       var el = document.elementFromPoint(x, y);
       if (!el) return;
       var container = o.containerFor(el);
       if (!container) return;
-      var item = drag.item;
+      var item = d.item;
       var over = el.closest(o.itemSelector);
       if (over === item) return;
+      if (over) {
+        // Only the middle of a target counts, so grazing its edge swaps nothing.
+        var r = over.getBoundingClientRect();
+        var zoneX = o.axis === "y" ? 0 : r.width * 0.2;
+        var zoneY = r.height * 0.22;
+        if (x < r.left + zoneX || x > r.right - zoneX || y < r.top + zoneY || y > r.bottom - zoneY) return;
+      }
       var others = Array.prototype.filter.call(container.querySelectorAll(o.itemSelector), function (i) { return i !== item; });
       var anchor;
       if (over && container.contains(over)) {
@@ -281,27 +319,30 @@ var Motion = (function () {
         return;
       }
       if (anchor === item || (item.parentNode === container && item.nextSibling === anchor)) return;
-      var movers = Array.prototype.filter.call(o.items(), function (i) { return i !== item; });
-      flip(movers, function () { container.insertBefore(item, anchor); });
+      // The slot glides too, so you see where the item will land.
+      flip(Array.prototype.slice.call(o.items()), function () { container.insertBefore(item, anchor); }, item);
     }
-
     function end() {
       var d = drag;
       drag = null;
       document.documentElement.classList.remove("dragging-active");
       var velocity = velocityOf(d.history);
+      clearTimeout(d.idle);
+      clearTimeout(d.rest);
       var slot = d.item.getBoundingClientRect();
+      var glide = d.item.__offset;  // the slot may still be gliding into place: aim at where it ends up
       d.clone.classList.remove("lifted");
       d.scale.to(1);
-      d.xs.to(slot.left - d.left, { velocity: velocity.x });
-      d.ys.to(slot.top - d.top, { velocity: velocity.y });
+      d.rot.to(0);
+      d.xs.to(slot.left - (glide ? glide.x.value : 0) - d.left, { velocity: velocity.x });
+      d.ys.to(slot.top - (glide ? glide.y.value : 0) - d.top, { velocity: velocity.y });
       var finish = function () {
         d.clone.remove();
         d.item.classList.remove("drag-slot");
         setTimeout(function () { swallowClick = false; }, 60);
         if (o.onDrop) o.onDrop({ item: d.item, container: o.containerFor(d.item), from: d.startContainer });
       };
-      whenSettled([d.xs, d.ys, d.scale], finish);
+      whenSettled([d.xs, d.ys, d.scale, d.rot], finish);
     }
 
     return {
@@ -311,7 +352,7 @@ var Motion = (function () {
   }
 
   return {
-    MOVE: MOVE, LIFT: LIFT, SNAP: SNAP,
+    MOVE: MOVE, LIFT: LIFT, SNAP: SNAP, LEAN: LEAN,
     reduced: reduced, spring: spring, project: project, rubberband: rubberband,
     velocityOf: velocityOf, flip: flip, sortable: sortable
   };
