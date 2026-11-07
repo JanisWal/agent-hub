@@ -110,7 +110,13 @@ a.station:hover::before { background: color-mix(in srgb, var(--field) 55%, trans
 .trash-title small { display: block; font-size: 0.78rem; font-weight: 500; color: var(--muted); }
 
 /* ===== Manager view: the second view of the page, tiles of the manager (DESIGN.md 10b) ===== */
-.manager { min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: calc(var(--space) * 3); align-content: start; }
+/* Three columns as Janis sketched them: status and devices | checks and files | chat above "waiting for you". The
+   tall tiles (m-grow, m-chat) take the free height, so files and devices are "dynamic". */
+.manager { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.6fr); gap: calc(var(--space) * 3); align-items: stretch; }
+.mcol { min-width: 0; display: flex; flex-direction: column; gap: calc(var(--space) * 3); }
+.mtile.m-grow { flex: 1 1 0; }
+.mtile.m-chat { flex: 3 1 0; }
+.mtile.m-waiting { flex: 2 1 0; }
 .mtile { max-width: none; min-height: 120px; padding: 20px 22px 18px; border-radius: 28px; display: flex; flex-direction: column; gap: 10px; }
 .mtile header { display: flex; align-items: center; gap: 10px; }
 .mtile h2 { flex: 1; margin: 0; font-size: 1.2rem; letter-spacing: -0.01em; }
@@ -119,11 +125,12 @@ a.station:hover::before { background: color-mix(in srgb, var(--field) 55%, trans
 .mtile.m-soon { opacity: 0.78; }
 /* The status lamp: grey until the manager reports (green, amber, red later). */
 .m-lamp { flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); opacity: 0.55; box-shadow: 0 0 0 4px color-mix(in srgb, var(--muted) 18%, transparent); }
-.mtile.m-settings { grid-column: 1 / -1; }
-.mtile.m-settings form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 0 calc(var(--space) * 3); align-items: start; }
-.mtile.m-settings label { margin-bottom: var(--space); }
-.mtile.m-settings .actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
-.mtile.m-settings .actions > * { flex: none; min-width: 180px; }
+/* The drop-down at the pencil next to the title (name and description of the project). */
+.title-menu { position: absolute; top: calc(100% + 10px); left: 50%; translate: -50% 0; z-index: 25; width: min(520px, calc(100vw - 32px)); max-width: none; padding: 20px 22px 18px; border-radius: 28px; }
+.title-menu label { margin-bottom: calc(var(--space) * 1.5); }
+.title-menu .actions { margin-top: var(--space); }
+/* While the manager is open, the old single-question chat steps aside: the manager chat takes its place. */
+.view-manager .chat, .view-manager .chat-toggle { display: none; }
 textarea {
   display: block; width: 100%; min-height: 110px; margin-top: var(--space); padding: 12px calc(var(--space) * 2);
   font: inherit; font-size: 1rem; line-height: 1.45; color: var(--text); caret-color: var(--accent); resize: vertical;
@@ -134,7 +141,11 @@ textarea::placeholder { color: var(--muted); opacity: 0.6; }
 textarea:focus { outline: none; border-color: var(--accent); box-shadow: inset 0 1px 3px rgba(80, 40, 10, 0.14), 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent); }
 
 @media (max-width: 1100px) {
-  .mtile.m-settings form { grid-template-columns: 1fr; }
+  .manager { grid-template-columns: 1fr; }
+  .mtile.m-grow, .mtile.m-chat, .mtile.m-waiting { flex: none; }
+  .mtile.m-grow { min-height: 180px; }
+  .mtile.m-chat { min-height: 280px; }
+  .title-menu { left: 0; translate: none; }
   .project { grid-template-columns: 1fr; }
   .board { grid-template-columns: 1fr; }
   .column, .vault { min-height: 0; }
@@ -191,6 +202,7 @@ html .card.drag-clone::after { display: none; }
 .chat-toggle[aria-expanded="true"] { color: var(--text); border-color: var(--accent); }
 @media (min-width: 1320px) {
   .project-page main { padding-right: 356px; } /* the strip of the chat window */
+  .view-manager.project-page main { padding-right: 24px; } /* no strip while the manager view hides the chat */
 }
 @media (max-width: 1319px) {
   .chat { bottom: 156px; opacity: 0; visibility: hidden; translate: 24px 0; transition: opacity 0.25s, translate 0.45s cubic-bezier(0.3, 1.15, 0.5, 1), visibility 0s 0.45s; }

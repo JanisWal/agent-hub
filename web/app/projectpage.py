@@ -3,10 +3,10 @@ from . import i18n, managerpage
 from .board import KINDS, Item
 from .icons import icon
 from .layout import esc, fill
-from .projects import Project
+from .projects import MAX_DESCRIPTION, MAX_NAME, Project
 from .users import User
 
-SCRIPTS = ("motion.js", "sortable.js", "board.js", "stations.js", "chat.js")
+SCRIPTS = ("motion.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js")
 STYLES = ("project.css",)
 
 COLUMN_LABEL = {"bug": "col_bug", "minor": "col_minor", "major": "col_major"}
@@ -175,9 +175,36 @@ def back_html(lang: str) -> str:
     return f'<a class="topbar-back" href="/" aria-label="{label}" title="{label}">{icon("arrow_left")}</a>'
 
 
-def title_html(project: Project) -> str:
-    """The project name for the top bar (golden section, see layout.page `top_center`)."""
-    return f'<h1 class="project-title" title="{esc(project.name)}">{esc(project.name)}</h1>'
+TITLE_MENU = """<div class="title-wrap">
+  <h1 class="project-title" title="%NAME%">%NAME%</h1>
+  <button class="icon-button title-edit" id="title-edit" type="button" aria-haspopup="true" aria-expanded="false"
+          aria-controls="title-menu" aria-label="%t.edit_project%" title="%t.edit_project%">%PENCIL%</button>
+  <form class="title-menu glass" id="title-menu" method="post" action="/projects/%PID%/settings" novalidate hidden
+        data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
+    <label>%t.project_name%<input name="name" required maxlength="%MAX_NAME%" autocomplete="off" value="%NAME%"></label>
+    <label>%t.project_description%<textarea name="description" maxlength="%MAX_DESCRIPTION%" rows="4"
+      placeholder="%t.project_description_placeholder%">%DESCRIPTION%</textarea></label>
+    <div class="actions">
+      <button type="button" data-close>%t.cancel%</button>
+      <button class="primary" type="submit">%t.save%</button>
+    </div>
+  </form>
+</div>"""
+
+
+def title_html(project: Project, lang: str = "de") -> str:
+    """The project name for the top bar (golden section, see layout.page `top_center`), with the pencil
+    that opens the drop-down for name and description (Janis, 07.11.2026)."""
+    return fill(
+        TITLE_MENU,
+        lang,
+        PID=str(project.id),
+        NAME=esc(project.name),
+        DESCRIPTION=esc(project.description),
+        MAX_NAME=str(MAX_NAME),
+        MAX_DESCRIPTION=str(MAX_DESCRIPTION),
+        PENCIL=icon("pencil"),
+    )
 
 
 def drawer_buttons(lang: str) -> str:
@@ -202,7 +229,7 @@ def render(user: User, project: Project, items: list[Item]) -> str:
         lang,
         PID=str(project.id),
         STATIONS=_stations(lang),
-        MANAGER=managerpage.render(project, lang),
+        MANAGER=managerpage.render(lang),
         CHAT_ICON=icon("chat"),
         TRASH=_trash(trashed, lang),
         ARCHIVE=_archive(archived, lang),

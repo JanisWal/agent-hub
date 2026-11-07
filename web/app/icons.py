@@ -23,6 +23,7 @@ ICONS = {
     "chat": '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20.5l1.4-4.6A8 8 0 1 1 21 12z"/>',
     "done":'<circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/>',
     "plus": '<path d="M12 5v14M5 12h14"/>',
+    "pencil": '<path d="M4 20l1-4L16.5 4.5a2 2 0 0 1 3 3L8 19z"/><path d="M14 7l3 3"/>',
     "check": '<path d="M5 12.5l5 5 9-10"/>',
     "cross": '<path d="M6 6l12 12M18 6L6 18"/>',
     "undo": '<path d="M9 14L4 9l5-5"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>',
