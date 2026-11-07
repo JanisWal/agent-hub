@@ -42,6 +42,36 @@ class IsolationTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    # --- agents and the Claude connection
+    def test_b_cannot_touch_the_agents_of_a(self):
+        from pathlib import Path
+        from app import agents, claude_link
+        claude_link.BASE_DIR = Path(self.tmp.name) / "claude"
+        claude_link.begin(self.a.id)
+        claude_link.complete(self.a.id, True)
+        task = agents.start_task(self.a.id, self.project.id, self.open.id)
+        with self.assertRaises(ValueError):
+            agents.start_task(self.b.id, self.project.id, self.open.id)       # A's item, A's project
+        with self.assertRaises(ValueError):
+            agents.start_task(self.b.id, self.mine.id, self.open.id)          # own project, A's item
+        self.assertIsNone(agents.get_task(self.b.id, task.id))
+        self.assertEqual(agents.list_tasks(self.b.id, self.project.id), [])
+        self.assertEqual(agents.task_runs(self.b.id, task.id), [])
+        self.assertIsNone(agents.pick_next(self.b.id, self.project.id))
+        for decision in ("approve", "reject", "cancel"):
+            self.assertFalse(agents.decide(self.b.id, task.id, decision))
+        self.assertEqual(agents.usage(self.b.id)["runs"], 0)
+        # B is not connected: B's own task would wait, A's connection is never a stand-in
+        mine = agents.start_task(self.b.id, self.mine.id, self.mine_item.id)
+        job = agents.claim_next(can_mac=True)
+        self.assertEqual((job.user_id, job.task_id), (self.a.id, task.id))
+        self.assertTrue(agents.finish_run(job.run_id, "done"))
+        self.assertEqual(agents.claim_next(can_mac=True).task_id, task.id)    # the tester of A, not B's task
+        self.assertEqual(agents.get_task(self.b.id, mine.id).status, "coding")
+        self.assertEqual(claude_link.status(self.b.id), "none")
+        self.assertFalse(claude_link.disconnect(self.b.id))
+        self.assertTrue(claude_link.is_connected(self.a.id))
+
     # --- the data layer
     def test_b_cannot_read_anything_of_a(self):
         self.assertIsNone(projects.get_project(self.b.id, self.project.id))
