@@ -199,6 +199,18 @@ class ChatRunTest(unittest.TestCase):
         self.assertEqual(self.api.posted("/chat/5/finish"),
                          [{"success": "1", "answer": "Hi!", "tokens_in": 7, "tokens_out": 2}])
 
+    def test_the_mode_of_the_question_decides_the_container(self):
+        for mode, proxy, readonly in (("code", "egress:3129", True), ("web", "egress:3128", False), ("plain", "egress:3129", False)):
+            self.commands.clear()
+            self.api.chat_job = {"chat_id": 5, "user_id": 2, "model": "haiku", "prompt": "x", "mode": mode}
+            self.runner.handle_chat()
+            command = " ".join(self.commands[0][0])
+            self.assertIn(proxy, command)
+            self.assertEqual(",readonly" in command, readonly)
+        self.commands.clear()
+        self.api.chat_job = {"chat_id": 5, "user_id": 2, "model": "haiku", "prompt": "x"}      # an old job without a mode
+        self.runner.handle_chat()
+        self.assertIn("egress:3128", " ".join(self.commands[0][0]))
     def test_nothing_to_do(self):
         self.api.chat_job = None
         self.runner.handle_chat()

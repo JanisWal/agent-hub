@@ -103,6 +103,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     prompt     TEXT NOT NULL,
+    mode       TEXT NOT NULL DEFAULT 'web',
     status     TEXT NOT NULL,
     answer     TEXT NOT NULL DEFAULT '',
     tokens_in  INTEGER NOT NULL DEFAULT 0,
@@ -129,6 +130,7 @@ NEW_COLUMNS = {
         "theme": "TEXT NOT NULL DEFAULT 'light'",
     },
     "projects": {"page": "INTEGER NOT NULL DEFAULT 0"},
+    "chat_messages": {"mode": "TEXT NOT NULL DEFAULT 'web'"},
 }
 
 # The three statements below run once, when a database from before the feature is opened for the
@@ -162,7 +164,7 @@ def _prepare(conn: sqlite3.Connection) -> None:
     """Bring a database up to date: create missing tables, add missing columns, and do the
     one-time conversions of old data (roles, pages, session tokens, the old `is_admin` column)."""
     conn.executescript(SCHEMA)
-    before = {table: _columns(conn, table) for table in ("users", "projects", "sessions")}
+    before = {table: _columns(conn, table) for table in {"users", "projects", "sessions", *NEW_COLUMNS}}
     for table, columns in NEW_COLUMNS.items():
         for name, definition in columns.items():
             if name not in before[table]:

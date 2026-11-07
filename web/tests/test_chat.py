@@ -137,6 +137,49 @@ class ChatQueueTest(Base):
                                   (self.a.id,)).fetchone()[0]
             theirs = conn.execute("SELECT COUNT(*) FROM chat_messages WHERE user_id = ?", (self.b.id,)).fetchone()[0]
         self.assertEqual((mine, oldest, theirs), (chat.MAX_STORED, None, 1))   # the oldest are gone, B is untouched
+    def test_modes(self):
+        self.connect(self.a)
+        self.assertEqual(chat.MODES, ("plain", "web", "code"))
+        for mode in chat.MODES:
+            m = chat.send(self.a.id, self.pa.id, f"q {mode}", mode)
+            self.assertEqual(m.mode, mode)
+            job = chat.claim_next()
+            self.assertEqual((job.prompt, job.mode), (f"q {mode}", mode))      # the runner learns the mode from the database
+            chat.finish(job.chat_id, True, "a")
+        self.assertEqual([m.mode for m in chat.list_messages(self.a.id, self.pa.id)], ["plain", "web", "code"])
+        self.assertEqual(chat.send(self.a.id, self.pa.id, "default").mode, "web")   # as before: web is the default
+        for bad in ("", "root", "Code", "web,code", "code; rm -rf /"):
+            with self.assertRaises(ValueError) as problem:
+                chat.send(self.a.id, self.pa.id, "x", bad)
+            self.assertEqual(str(problem.exception), "mode")
+
+    def test_route_takes_the_mode_and_refuses_unknown_ones(self):
+        self.connect(self.a)
+        self.assertTrue(routes.ask(self.pa.id, "run it", "code", user=self.a)["ok"])
+        self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"][0]["mode"], "code")
+        claimed = chat.claim_next()
+        chat.finish(claimed.chat_id, True, "done")
+        self.assertEqual(routes.ask(self.pa.id, "x", "everything", user=self.a).status_code, 400)
+
+    def test_an_existing_database_gets_the_mode_column(self):
+        import sqlite3
+        path = os.path.join(self.tmp.name, "old.db")
+        old = sqlite3.connect(path)
+        old.executescript("""
+            CREATE TABLE chat_messages (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, project_id INTEGER NOT NULL,
+                prompt TEXT NOT NULL, status TEXT NOT NULL, answer TEXT NOT NULL DEFAULT '',
+                tokens_in INTEGER NOT NULL DEFAULT 0, tokens_out INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL, started_at INTEGER);
+            INSERT INTO chat_messages (user_id, project_id, prompt, status, created_at) VALUES (1, 1, 'old question', 'done', 5);
+        """)
+        old.commit()
+        old.close()
+        db.DB_PATH = path
+        with db.connect() as conn:
+            columns = [r["name"] for r in conn.execute("PRAGMA table_info(chat_messages)")]
+            mode = conn.execute("SELECT mode FROM chat_messages").fetchone()["mode"]
+        self.assertIn("mode", columns)
+        self.assertEqual(mode, "web")                                           # old questions count as web questions
     def test_deleting_the_project_removes_the_messages(self):
         self.connect(self.a)
         chat.send(self.a.id, self.pa.id, "q")
@@ -149,25 +192,25 @@ class ChatRoutesTest(Base):
     def test_ask_and_poll(self):
         self.connect(self.a)
         self.assertEqual(routes.messages(self.pa.id, user=self.a), {"ok": True, "messages": []})
-        sent = routes.ask(self.pa.id, "Hello", user=self.a)
+        sent = routes.ask(self.pa.id, "Hello", "web", user=self.a)
         self.assertTrue(sent["ok"])
         got = routes.messages(self.pa.id, user=self.a)["messages"]
         self.assertEqual([(m["prompt"], m["status"]) for m in got], [("Hello", "queued")])
-        busy = routes.ask(self.pa.id, "again", user=self.a)
+        busy = routes.ask(self.pa.id, "again", "web", user=self.a)
         self.assertEqual(busy.status_code, 409)
         self.assertIn("Frage", busy.body.decode())                     # message in the user's language
 
     def test_problems_are_answered_not_raised(self):
-        self.assertEqual(routes.ask(self.pa.id, "x", user=self.a).status_code, 409)      # not connected
+        self.assertEqual(routes.ask(self.pa.id, "x", "web", user=self.a).status_code, 409)      # not connected
         self.connect(self.a)
-        self.assertEqual(routes.ask(self.pa.id, "  ", user=self.a).status_code, 400)
-        self.assertEqual(routes.ask(self.pb.id, "x", user=self.a).status_code, 404)      # B's project
+        self.assertEqual(routes.ask(self.pa.id, "  ", "web", user=self.a).status_code, 400)
+        self.assertEqual(routes.ask(self.pb.id, "x", "web", user=self.a).status_code, 404)      # B's project
         english = dataclasses.replace(self.b, language="en")
-        self.assertIn("not connected", routes.ask(self.pb.id, "x", user=english).body.decode())  # B has no Claude
+        self.assertIn("not connected", routes.ask(self.pb.id, "x", "web", user=english).body.decode())  # B has no Claude
 
     def test_delete_history_route(self):
         self.connect(self.a)
-        routes.ask(self.pa.id, "Hello", user=self.a)
+        routes.ask(self.pa.id, "Hello", "web", user=self.a)
         self.assertEqual(routes.delete_history(user=self.a), {"ok": True, "deleted": 1})
         self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"], [])
         self.assertEqual(routes.delete_history(user=self.b), {"ok": True, "deleted": 0})   # B has nothing, A's is gone
@@ -181,7 +224,7 @@ class ChatRoutesTest(Base):
         self.connect(self.a)
         chat.send(self.a.id, self.pa.id, "Hi")
         job = runner_routes.chat_claim()["job"]
-        self.assertEqual(sorted(job), ["chat_id", "model", "prompt", "user_id"])
+        self.assertEqual(sorted(job), ["chat_id", "mode", "model", "prompt", "user_id"])
         self.assertEqual(runner_routes.chat_finish(job["chat_id"], "1", "Hello back", 3, 4), {"ok": True})
         self.assertEqual(runner_routes.chat_finish(job["chat_id"], "1", "again", 0, 0).status_code, 409)
         self.assertEqual(chat.list_messages(self.a.id, self.pa.id)[0].answer, "Hello back")

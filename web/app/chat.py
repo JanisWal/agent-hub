@@ -18,6 +18,7 @@ MAX_ANSWER = 8000
 RUN_SECONDS = 300        # a question the runner does not answer in this time has failed
 KEEP = 10                # messages shown per project
 MAX_STORED = 100         # messages kept per user, the oldest go first
+MODES = ("plain", "web", "code")   # just answer / search the web / run code without internet (runner/launcher.py)
 
 
 @dataclass
@@ -28,6 +29,7 @@ class Message:
     status: str            # queued, running, done, failed
     answer: str
     created_at: int
+    mode: str = "web"
 
 
 @dataclass
@@ -36,10 +38,12 @@ class ChatJob:
     user_id: int
     model: str
     prompt: str
+    mode: str = "web"
 
 
 def _message(row: sqlite3.Row) -> Message:
-    return Message(row["id"], row["project_id"], row["prompt"], row["status"], row["answer"], row["created_at"])
+    return Message(row["id"], row["project_id"], row["prompt"], row["status"], row["answer"], row["created_at"],
+                   row["mode"])
 
 
 def _drop_stale(conn: sqlite3.Connection, now: int) -> None:
@@ -49,14 +53,17 @@ def _drop_stale(conn: sqlite3.Connection, now: int) -> None:
     )
 
 
-def send(user_id: int, project_id: int, prompt: str, now: int | None = None) -> Message:
+def send(user_id: int, project_id: int, prompt: str, mode: str = "web", now: int | None = None) -> Message:
     """Ask Claude something. Raises ValueError("claude") if the user's Claude is not connected,
     ValueError("busy") while an earlier question of his is still open, ValueError("prompt") for an
-    empty or too long text and ValueError("project") if the project is not his."""
+    empty or too long text, ValueError("mode") for an unknown mode and ValueError("project") if the
+    project is not his. `mode` is "plain", "web" (search) or "code" (run programs, no internet)."""
     prompt = prompt.strip()
     now = int(now if now is not None else time.time())
     if not prompt or len(prompt) > MAX_PROMPT:
         raise ValueError("prompt")
+    if mode not in MODES:
+        raise ValueError("mode")
     with db.connect() as conn:
         if conn.execute("SELECT 1 FROM projects WHERE id = ? AND user_id = ?", (project_id, user_id)).fetchone() is None:
             raise ValueError("project")
@@ -67,8 +74,8 @@ def send(user_id: int, project_id: int, prompt: str, now: int | None = None) -> 
                         (user_id,)).fetchone():
             raise ValueError("busy")
         cur = conn.execute(
-            "INSERT INTO chat_messages (user_id, project_id, prompt, status, created_at)"
-            " VALUES (?, ?, ?, 'queued', ?)", (user_id, project_id, prompt, now),
+            "INSERT INTO chat_messages (user_id, project_id, prompt, mode, status, created_at)"
+            " VALUES (?, ?, ?, ?, 'queued', ?)", (user_id, project_id, prompt, mode, now),
         )
         conn.execute(
             "DELETE FROM chat_messages WHERE user_id = ? AND id NOT IN"
@@ -106,7 +113,7 @@ def claim_next(now: int | None = None) -> ChatJob | None:
         for row in conn.execute("SELECT * FROM chat_messages WHERE status = 'queued' ORDER BY id").fetchall():
             if claude_link.connected_in(conn, row["user_id"]):
                 conn.execute("UPDATE chat_messages SET status = 'running', started_at = ? WHERE id = ?", (now, row["id"]))
-                return ChatJob(row["id"], row["user_id"], MODEL, row["prompt"])
+                return ChatJob(row["id"], row["user_id"], MODEL, row["prompt"], row["mode"])
     return None
 
 

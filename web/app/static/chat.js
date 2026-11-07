@@ -14,7 +14,7 @@
 
   // Answers may contain **bold**, [text](link) and bare links (after a web search). Built from DOM nodes only,
   // never from HTML, and only http(s) links: nothing in an answer can inject markup or a javascript: link.
-  var TOKEN = /\*\*([^*\n]+)\*\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s)<>\]]+)/g;
+  var TOKEN = /\*\*([^*\n]+)\*\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s)<>\]]+)|`([^`\n]+)`/g;
   function fillRich(target, text) {
     var last = 0;
     var m;
@@ -25,6 +25,10 @@
         var strong = document.createElement("strong");
         strong.textContent = m[1];
         target.appendChild(strong);
+      } else if (m[5] !== undefined) {
+        var inline = document.createElement("code");
+        inline.textContent = m[5];
+        target.appendChild(inline);
       } else {
         var link = document.createElement("a");
         link.href = m[3] || m[4];
@@ -38,6 +42,23 @@
     if (last < text.length) target.appendChild(document.createTextNode(text.slice(last)));
   }
 
+  // ```code``` blocks become <pre><code>, the rest goes through fillRich.
+  function fillBlocks(target, text) {
+    var fence = /```[^\n]*\n?([\s\S]*?)```/g;
+    var last = 0;
+    var m;
+    while ((m = fence.exec(text))) {
+      if (m.index > last) fillRich(target, text.slice(last, m.index));
+      var pre = document.createElement("pre");
+      var code = document.createElement("code");
+      code.textContent = m[1].replace(/\n$/, "");
+      pre.appendChild(code);
+      target.appendChild(pre);
+      last = fence.lastIndex;
+    }
+    if (last < text.length) fillRich(target, text.slice(last));
+  }
+
   function line(kind, who, text, rich) {
     var item = document.createElement("li");
     item.className = "chat-msg " + kind;
@@ -46,7 +67,7 @@
     name.textContent = who;
     var body = document.createElement("span");
     body.className = "chat-text";
-    if (rich) fillRich(body, text); else body.textContent = text;
+    if (rich) fillBlocks(body, text); else body.textContent = text;
     item.appendChild(name);
     item.appendChild(body);
     return item;
@@ -83,11 +104,28 @@
     errorBox.textContent = text || "";
   }
 
+  // The two switches: Web or Code or none (then Claude just answers). Never both: code runs without internet.
+  var modeButtons = document.querySelectorAll(".chat-mode");
+  function currentMode() {
+    var on = document.querySelector(".chat-mode[aria-pressed=true]");
+    return on ? on.dataset.mode : "plain";
+  }
+  function setMode(mode) {
+    Array.prototype.forEach.call(modeButtons, function (b) { b.setAttribute("aria-pressed", String(b.dataset.mode === mode)); });
+    try { localStorage.setItem("chatMode", mode); } catch (e) {}
+  }
+  try { var saved = localStorage.getItem("chatMode"); if (saved) setMode(saved); } catch (e) {}
+  Array.prototype.forEach.call(modeButtons, function (b) {
+    b.addEventListener("click", function () { setMode(currentMode() === b.dataset.mode ? "plain" : b.dataset.mode); });
+  });
+
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     if (!window.AgentHub.validate(form)) return;
     problem("");
-    fetch(url, { method: "POST", body: new FormData(form) })
+    var data = new FormData(form);
+    data.append("mode", currentMode());
+    fetch(url, { method: "POST", body: data })
       .then(function (r) { return r.json().catch(function () { return {}; }); })
       .then(function (data) {
         if (data.ok) { form.reset(); load(); } else problem(data.message || "");

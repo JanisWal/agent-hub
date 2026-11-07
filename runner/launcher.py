@@ -25,8 +25,15 @@ IMAGE = "agent-hub-agent"         # built from runner/Dockerfile
 NETWORK = "agent-hub-agents"      # separate from the "web" network: a run cannot reach the hub
 UID_BASE = 10000                  # run user = UID_BASE + user_id, never root
 MAX_REPORT = 20000
-CHAT_TOOLS = ("WebSearch", "WebFetch")   # what the chat window may use: search the web and read a page
-CHAT_MAX_TURNS = 8                       # steps (model turns) per question
+# The agent network has no route to the outside: everything goes through the egress proxy (runner/egress.py).
+WEB_PROXY = "http://egress:3128"   # any public host on 443, never the home network or the Pi itself
+API_PROXY = "http://egress:3129"   # only Anthropic: Claude Code can reach its API, code it runs can reach nothing
+# What the chat window may do, per mode: tools, proxy and steps (model turns) per question.
+CHAT_MODES = {
+    "plain": {"tools": (), "proxy": API_PROXY, "turns": 3},                              # just answer
+    "web": {"tools": ("WebSearch", "WebFetch"), "proxy": WEB_PROXY, "turns": 8},          # search and read pages
+    "code": {"tools": ("Bash",), "proxy": API_PROXY, "turns": 10},                        # run code, no internet
+}
 _BAD_PATH = re.compile(r"[,\s\x00=:]")   # would confuse --mount parsing or hide something
 _MARKER = re.compile(r"^RESULT:\s*([a-z_]+)\s*$")
 
@@ -48,6 +55,10 @@ def _folder(value, name: str) -> str:
     return text
 
 
+def _proxy_env(url: str) -> list[str]:
+    return ["-e", f"HTTPS_PROXY={url}", "-e", f"https_proxy={url}"]
+
+
 def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, claude_dir: str,
                   image: str = IMAGE, network: str = NETWORK, memory: str = "480m") -> list[str]:
     """The `docker run` command for one run. Raises ValueError for anything unexpected."""
@@ -67,40 +78,51 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, claud
         "--network", network,
         "--mount", f"type=bind,src={work},dst=/work", "--workdir", "/work",
         "--mount", f"type=bind,src={claude},dst=/claude",
-        "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude",
+        "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude", *_proxy_env(API_PROXY),
         image,
         # Inside the isolated container the agent may use its tools freely; the prompt comes via stdin.
         "claude", "-p", "--model", model, "--output-format", "json", "--dangerously-skip-permissions",
     ]
 
 
-def build_chat_command(*, chat_id: int, user_id: int, model: str, claude_dir: str, image: str = IMAGE,
-                       network: str = NETWORK, memory: str = "480m") -> list[str]:
-    """The chat window (see web/app/chat.py): one question to Claude, in a container like a run but
-    with no work folder at all (nothing of any project is mounted) and with only the web tools switched on."""
+def build_chat_command(*, chat_id: int, user_id: int, model: str, claude_dir: str, mode: str = "web",
+                       image: str = IMAGE, network: str = NETWORK, memory: str = "480m") -> list[str]:
+    """The chat window (see web/app/chat.py): one question to Claude, in a container like a run but with no
+    work folder at all (nothing of any project is mounted). `mode` (see CHAT_MODES) decides the tools and the
+    way out: "plain" answers only, "web" may search and read pages (public internet only), "code" may run
+    commands in the container (the internet only reaches Anthropic's API, never a code of its own)."""
     chat_id = _number(chat_id, "chat_id")
     uid = run_uid(user_id)
     if model not in MODELS:
         raise ValueError("unknown model")
+    if mode not in CHAT_MODES:
+        raise ValueError("unknown mode")
     if not re.fullmatch(r"[0-9]+[mg]", memory) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", image + network):
         raise ValueError("bad image, network or memory")
+    spec = CHAT_MODES[mode]
+    tools = spec["tools"]
     claude = _folder(claude_dir, "claude_dir")
+    # Code can write anywhere in the container's /tmp, but never into the saved login of the user: a changed
+    # configuration there (a hook, say) would run in his later runs, which may reach the web.
+    mount = f"type=bind,src={claude},dst=/claude" + (",readonly" if mode == "code" else "")
     return [
         "docker", "run", "--rm", "--init", "-i", "--name", f"agent-chat-{chat_id}",
         "--user", f"{uid}:{uid}",
         "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-        "--read-only", "--tmpfs", "/tmp:rw,size=64m,mode=1777", "--workdir", "/tmp",
+        "--read-only", "--tmpfs", f"/tmp:rw,size={'128m' if mode == 'code' else '64m'},mode=1777", "--workdir", "/tmp",
         "--memory", memory, "--memory-swap", memory, "--pids-limit", "256", "--cpus", "2",
         "--network", network,
-        "--mount", f"type=bind,src={claude},dst=/claude",
-        "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude",
+        "--mount", mount,
+        "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude", "-e", "PYTHONDONTWRITEBYTECODE=1",
+        *_proxy_env(spec["proxy"]),
         image,
         "claude", "-p", "--model", model, "--output-format", "json", "--no-session-persistence",
-        # Only the two web tools, nothing that touches files or runs commands. In -p mode nobody can confirm a
-        # permission, so exactly these are allowed; --max-turns keeps a search from running away (and eating quota).
-        "--tools", ",".join(CHAT_TOOLS), "--allowedTools", " ".join(CHAT_TOOLS), "--max-turns", str(CHAT_MAX_TURNS),
+        # Exactly the tools of the mode. In -p mode nobody can confirm a permission, so exactly these are
+        # allowed; --max-turns keeps a search or a program from running away (and eating quota).
+        "--tools", ",".join(tools),
+        *(["--allowedTools", " ".join(tools)] if tools else []),
+        "--max-turns", str(spec["turns"]),
     ]
-
 
 # Words in an error answer that mean "not signed in (any more)": the connection is shown as expired.
 _AUTH_PROBLEM = re.compile(r"/login|not logged in|log in|authenticat|invalid api key|oauth|401", re.I)
@@ -146,7 +168,7 @@ def build_login_command(*, user_id: int, claude_dir: str, image: str = IMAGE, ne
         "--memory", memory, "--memory-swap", memory, "--pids-limit", "256",
         "--network", network,
         "--mount", f"type=bind,src={claude},dst=/claude",
-        "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude", "-e", "BROWSER=none",
+        "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude", "-e", "BROWSER=none", *_proxy_env(API_PROXY),
         image, "claude", "auth", "login", "--claudeai",
     ]
 
