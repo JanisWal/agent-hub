@@ -157,7 +157,8 @@ def _stations(lang: str) -> str:
 
 def back_html(lang: str) -> str:
     """The way back to the dashboard, right of the brand in the top bar."""
-    return f'<a class="topbar-back" href="/">{icon("arrow_left")}<span>{esc(i18n.t(lang, "back_to_projects"))}</span></a>'
+    label = esc(i18n.t(lang, "back_to_projects"))
+    return f'<a class="topbar-back" href="/" aria-label="{label}" title="{label}">{icon("arrow_left")}</a>'
 
 
 def title_html(project: Project) -> str:
