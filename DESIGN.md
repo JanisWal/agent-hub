@@ -100,7 +100,8 @@ Regeln:
 - Kopfleiste: Marke links, auf angemeldeten Seiten rechts die Einstellungsleiste (Login: nur die Marke), Innenabstand 16 px oben/unten und 24 px seitlich.
 - Inhalt: `main` füllt den Rest der Höhe, Inhalt zentriert, Außenabstand 24 px, unten 96 px Platz für den Umschalter. Meta-Tag `viewport` ist gesetzt.
 - Breite Seiten (Dashboard): Inhaltsbereich `.dash` mit höchstens 1100 px Breite, Abstand zwischen Blöcken 32 px. Auf kleinen Bildschirmen weniger Spalten (siehe Abschnitt 10).
-- **Ungeprüft:** Handy-Ansicht (Layout wurde nur am großen Bildschirm angesehen).
+- **Handy-Ansicht (≤ 560 px, geprüft bei 390 px Breite in Chrome, 07.11.2026):** Außenabstand 16 px, Kopfleiste 12 × 16 px. Das Dashboard zeigt **2 Spalten × 3 Reihen** kompakter Kacheln (Reihenhöhe mindestens 132 px, Abstand 14 px, Innenabstand 16 px, Rundung 22 px, Name 1,1 rem, höchstens 3 Zeilen). Eine Seite passt damit ohne Scrollen auf den Bildschirm. Plus-Zeichen 44 px, Einstiegstext 0,85 rem. Das Zahnrad (Schublade) bekommt auf dem Handy eine Glasfläche mit Rand, weil es beim Scrollen über dem Inhalt schwebt; 8 px Abstand zum Rand. Die Beschriftung der Token-Anzeige darf umbrechen. Bis 1000 px bilden die Stationen eine wischbare Zeile (kein Umbruch, ohne Scrollbalken). Die Schublade ist so breit wie das Fenster abzüglich 96 px, höchstens 320 px.
+- **Nicht geprüft am echten Gerät:** Berührung. Geprüft wurde in Chrome mit einem 390 px breiten Rahmen (Layout), nicht mit einem Handy.
 
 ## 9. Formulare
 
@@ -135,7 +136,7 @@ Stand 07.11.2026, von Janis beauftragt, mit Testkonten im Browser geprüft (Dunk
 - **Besonders bleiben:** **Speichern** (Hauptknopf, volle Breite) und **Abmelden** (dezenter Textlink darunter, mittig).
 
 **Projektkacheln (Mitte)**
-- Raster 3 Spalten × 2 Reihen, Abstand 24 px, Reihenhöhe mindestens 190 px, **6 Kacheln pro Seite**. Unter 900 px Breite 2 Spalten, unter 560 px eine Spalte.
+- Raster 3 Spalten × 2 Reihen, Abstand 24 px, Reihenhöhe mindestens 190 px, **6 Kacheln pro Seite**. Unter 900 px Breite 2 Spalten; auf dem Handy (unter 560 px) ebenfalls 2 Spalten, aber kompakter (siehe Abschnitt 8).
 - Projektkachel: Glas, Innenabstand 24 px, Projektname groß unten links (1,5 rem, Gewicht 650, höchstens 3 Zeilen), weitere Infos folgen später. Die ganze Kachel ist ein Link zum Projekt (**ohne** Anmeldeabfrage). Beim Darüberfahren hebt sie sich um 3 px. Beim Laden blenden die Kacheln gestaffelt ein (70 ms Versatz).
 - **Löschknopf:** kleiner runder Knopf oben rechts in der Kachel (sichtbar 36 px, Klickfläche 44 px), Mülleimer-Symbol, Farbe `--muted`, beim Darüberfahren `--danger`.
 - **Plus-Kachel:** Auf der ersten Seite mit freiem Platz zeigt der nächste freie Platz ein großes Plus (56 px, Akzentfarbe, 70 % Deckkraft, gestrichelter Rand, helle Fläche). Beim Darüberfahren wird sie kräftiger und das Plus dreht sich um 90°. Klick öffnet „Neues Projekt“ (Name, Anlegen, Abbrechen).
@@ -196,7 +197,8 @@ Stand 07.11.2026, von Janis beauftragt, in Chrome mit Testkonto geprüft (Anlege
 
 ## 12. Noch offen (Janis entscheidet bei Bedarf)
 
-- Handy-Layout prüfen (Abschnitt 8). Drag and Drop nutzt die Browser-Funktion und geht auf Touchgeräten noch nicht; per Tastatur lässt sich auch noch nicht umordnen.
+- **Berührung:** Drag and Drop (Kacheln und Board-Punkte) nutzt die Browser-Funktion für die Maus. Auf Touchgeräten ist es **nicht geprüft** und vermutlich unzuverlässig (iPhone). Ein eigenes Ziehen per Finger (lange drücken, ziehen, am Rand blättern) ist noch nicht gebaut; per Tastatur lässt sich auch noch nicht umordnen.
+- Handy-Layout am echten Gerät prüfen (Abschnitt 8, bisher nur am 390-px-Rahmen), dazu Aussparungen wie die iPhone-Notch (`safe-area-inset`).
 - Seitenwechsel beim Ziehen ist gebaut (Abschnitt 10). Ungeprüft: Touch auf dem Handy, ein Ziehen mit der Tastatur und das Verhalten bei sehr vielen Seiten (Punkte am Rand, wenn es über 15 sind).
 - Begrenzung falscher Passworteingaben (Anmeldung und Löschen), steht auch in der Checkliste vor dem Livegang.
 - Login-Seite auf Englisch (erst nach der Anmeldung ist die Sprache bekannt).
