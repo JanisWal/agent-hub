@@ -43,6 +43,12 @@ CREATE TABLE IF NOT EXISTS board_items (
 );
 CREATE INDEX IF NOT EXISTS board_items_by_project
     ON board_items (project_id, kind, status, position);
+CREATE TABLE IF NOT EXISTS login_attempts (
+    ip           TEXT PRIMARY KEY,
+    failures     INTEGER NOT NULL,
+    window_start INTEGER NOT NULL,
+    locked_until INTEGER NOT NULL DEFAULT 0
+);
 """
 
 # Columns added after the first release; added to existing databases on first use.

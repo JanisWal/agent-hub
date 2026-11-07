@@ -21,9 +21,10 @@ LOGIN = """<section class="glass">
 </section>"""
 
 
-def login_page(failed: bool = False) -> str:
+def login_page(failed: bool = False, locked_minutes: int = 0) -> str:
     """The login page (German until the user is known, see DESIGN.md)."""
-    error = f'<p class="error" role="alert">{esc(i18n.t("de", "login_failed"))}</p>' if failed else ""
+    text = i18n.t("de", "login_locked", minutes=locked_minutes) if locked_minutes else i18n.t("de", "login_failed")
+    error = f'<p class="error" role="alert">{esc(text)}</p>' if failed or locked_minutes else ""
     return page(i18n.t("de", "login"), fill(LOGIN, "de", ERROR=error), "de")
 
 

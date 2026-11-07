@@ -8,7 +8,7 @@ import os
 from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from . import users
+from . import i18n, throttle, users
 
 COOKIE_NAME = "session"
 # Set HUB_SECURE_COOKIE=1 in production (HTTPS via the Cloudflare tunnel).
@@ -50,6 +50,12 @@ def redirect(url: str) -> RedirectResponse:
 
 def ok(**extra) -> dict:
     return {"ok": True, **extra}
+
+
+def locked(lang: str, seconds: int) -> JSONResponse:
+    """429 for fetch() endpoints, with the message in the user's language."""
+    message = i18n.t(lang, "login_locked", minutes=throttle.minutes(seconds))
+    return JSONResponse({"ok": False, "message": message}, status_code=429)
 
 
 def fail(status: int) -> JSONResponse:

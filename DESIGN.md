@@ -222,7 +222,7 @@ Aufbau des Codes und Betrieb stehen in PROJEKT.md (Abschnitte 8 und 9). Für die
 - Die Federn wurden in einem Fenster geprüft, in dem Chrome `requestAnimationFrame` pausiert (Test-Fenster ist minimiert); dort wurde der Takt durch einen 16-ms-Zeitgeber ersetzt. Die Werte (Ziel, kein Überschwingen, Dauer) stimmen, die **gefühlte Flüssigkeit** muss Janis in einem sichtbaren Fenster beurteilen.
 - Handy-Layout am echten Gerät prüfen (Abschnitt 8, bisher nur am 390-px-Rahmen), dazu Aussparungen wie die iPhone-Notch (`safe-area-inset`).
 - Seitenwechsel beim Ziehen ist gebaut (Abschnitt 10). Ungeprüft: Touch auf dem Handy, ein Ziehen mit der Tastatur und das Verhalten bei sehr vielen Seiten (Punkte am Rand, wenn es über 15 sind).
-- Begrenzung falscher Passworteingaben (Anmeldung und Löschen), steht auch in der Checkliste vor dem Livegang.
+- Begrenzung falscher Passworteingaben ist gebaut (PROJEKT.md, `throttle.py`): Die Meldung „Zu viele Versuche. Bitte in N Minuten erneut versuchen.“ steht auf der Login-Seite in der getönten Fehlerbox, im Lösch-Dialog an der Stelle von „Passwort falsch.“
 - Login-Seite auf Englisch (erst nach der Anmeldung ist die Sprache bekannt).
 - Board: Punkte per Tastatur ordnen, Touch, weitere Infos pro Punkt (Beschreibung, Priorität, Freigabe durch Janis laut PROJEKT.md) und die Agenten-Bugs folgen später.
 - Inhalt der Kacheln („weitere Infos“) wird später festgelegt.
