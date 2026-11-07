@@ -20,7 +20,7 @@ Ziel, Entscheidungen, Reihenfolge, Codeaufbau, Betrieb, Tests und offene Punkte:
 - Zugriff von außen nur über Cloudflare Tunnel, keine offenen Router-Ports. Login mit E-Mail und Passwort, Rollen Owner (genau einer, übertragbar), Admin, Nutzer; Einladung und Passwort-Reset per E-Mail über Resend.
 - Claude Code läuft als Runner auf dem Pi; für Swift-Aufgaben ein Runner auf dem Mac mit derselben Schnittstelle (nur ausgehende Verbindung). Noch nicht an die Website angebunden.
 - Jeder Nutzer verbindet sein eigenes Claude-Konto; die Konten sind strikt getrennt (Pflichtregeln in PROJEKT.md Abschnitt 3, „Trennung der Claude-Konten“).
-- Pro Aufgabe ein Git-Branch (Worktree). Ablauf: Programmierer, Tester, Prüfer, Freigabe durch Janis, Dokumentator.
+- Pro Aufgabe ein Git-Branch (Worktree). Ablauf: Programmierer, Tester, Prüfer, Freigabe durch Janis, danach führt der Manager die Doku nach (Rolle Dokumentator entfallen am 07.11.2026).
 - Agenten nutzen Zugangsdaten nur über den Vermittler, nie direkt.
 
 ## Coding-Regeln

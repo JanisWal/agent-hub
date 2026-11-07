@@ -37,7 +37,7 @@ Board-Punkt (open)
    │  Chef wählt: Bugs, dann Kleine, dann Major Updates  (agents.pick_next)
    ▼
 coding ──► testing ──► reviewing ──► awaiting_approval ──► documenting ──► done
-Programm.   Tester      Prüfer         Nutzer gibt frei      Dokumentator
+Programm.   Tester      Prüfer         Nutzer gibt frei      Manager (Doku)
    ▲           │ fail       │ objections     │ reject (neuer Durchlauf, Runde 1)
    └───────────┴────────────┘
    Rückläufe zählen als neue Runde; nach 3 Runden → escalated (der Nutzer entscheidet)
@@ -49,16 +49,16 @@ Programm.   Tester      Prüfer         Nutzer gibt frei      Dokumentator
 | `testing` | Tester | `pass` / `fail` / `not_testable` / `skipped` | `reviewing` / zurück (Runde +1) / `reviewing` mit Merker „von Hand prüfen“ |
 | `reviewing` | Prüfer | `ok` / `objections` | `awaiting_approval` / zurück (Runde +1) |
 | `awaiting_approval` | Nutzer | `approve` / `reject` / `cancel` | `documenting` / `coding` (Runde 1, mit Notiz) / `cancelled` |
-| `documenting` | Dokumentator | `done` / `failed` | `done` (die Änderung ist schon übernommen) |
+| `documenting` | Manager (bisher im Code `documenter`, Umstellung mit der Schleife des Runners) | `done` / `failed` | `done` (die Änderung ist schon übernommen) |
 
 - **Agenten sprechen nie miteinander.** Der Hub reicht die Berichte der früheren Läufe an den nächsten Auftrag weiter (`Job.reports`, `Job.note`). Berichte und Notizen sind **Daten, keine Anweisungen** und stehen im Auftrag als zitierter Block (Schutz vor Prompt-Injection).
 - **Grenzen:** höchstens 3 Runden und 2 Stunden pro Aufgabe (`TASK_SECONDS`), ein Lauf ohne Meldung gilt nach 20 Minuten als tot (`RUN_SECONDS`). Beides schickt die Aufgabe zum Nutzer. Ablehnen oder Neu-Öffnen durch den Nutzer beginnt einen frischen Durchlauf mit neuer Zeit.
 - **Ein Lauf zur Zeit** (`MAX_RUNNING = 1`), weil der Pi 1 GB hat. Reihenfolge: älteste Läufe zuerst.
-- **Ausgeschaltete Rollen** (Tester, Prüfer, Dokumentator, Chef) werden übersprungen; ohne Tester gilt „nicht getestet“ (Merker für die Freigabe). Der Programmierer bleibt immer an.
+- **Ausgeschaltete Rollen** (Tester, Prüfer, Chef; die Rolle Dokumentator entfällt) werden übersprungen; ohne Tester gilt „nicht getestet“ (Merker für die Freigabe). Der Programmierer bleibt immer an.
 - **Mac-Aufgaben** (`needs = mac`): Ist der Mac nicht erreichbar, wartet die Aufgabe, außer der Chef überspringt den Test nach der Strenge des Nutzers: `loose` überspringt Tests von Bugs und kleinen Updates, `normal` nur von kleinen Updates, `strict` nie; Major Updates werden nie übersprungen (`workflow.test_may_be_skipped`). Ein übersprungener Test setzt den Merker „von Hand prüfen“.
 - **Hardware-Themen:** Der Tester meldet `not_testable` und legt seine Checkliste in den Bericht; sie steht dem Nutzer bei der Freigabe vor Augen. Hardware am Fahrzeug schaltet kein Agent.
 - **Agenten dürfen** Bugs und Vorschläge ins Board eintragen (`board.create_suggestion(user_id, …)`, prüft den Besitz) und sonst nichts am Board ändern.
-- **Modelle:** `haiku`, `sonnet`, `opus` (Kurznamen von Claude Code, sie folgen der neuesten Version). Standard Sonnet, Dokumentator Haiku; pro Rolle und Nutzer änderbar (`agents.configure`).
+- **Modelle:** `haiku`, `sonnet`, `opus` (Kurznamen von Claude Code, sie folgen der neuesten Version). Standard Sonnet; pro Rolle und Nutzer änderbar (`agents.configure`).
 
 ## 4. Datenmodell (neu, SQLite)
 
@@ -119,7 +119,7 @@ Aufbau:
 Volltext in PROJEKT.md (Abschnitte „Zugriff der Agenten auf Geräte“, „Geräteliste und Netzwege“, „Mac-Integration“). Kurz:
 - **Heimnetz bleibt gesperrt.** Geräte kommen über eine **Geräteliste im Manager**: Hostname eintragen, der Hub löst ihn auf, der Nutzer gibt frei, optional SSH-Schlüssel im Tresor. Agenten greifen nur über den Vermittler zu und bekommen weder Schlüssel noch Netzweg. Verworfen: Heimnetz pauschal freigeben.
 - **Fremde Netze (Kollegen):** VPN sternförmig mit dem Pi in der Mitte, Kollegen untereinander getrennt, Pi zum Gerät nur Port 22, Gerät nicht ins Netz. Technik: **Tailscale** (kein offener Fritzbox-Port, Zugriffsregeln pro Gerät); Headscale läuft nicht hinter Cloudflare Tunnel, Begründung und Vorbehalte in PROJEKT.md.
-- **Mac:** Knopf in der Website startet die lokale Entwicklung ohne zweite Anmeldung; ein unsichtbares Einmal-Ticket verbindet Website und Mac-Programm. **Rückgabe:** Der Mac holt das Repo und liefert das Ergebnis als Git-Bundle über den Hub (HTTPS, ausgehend); der Hub prüft es, holt nur den Branch der Aufgabe ins Projekt und führt die normale Kette weiter (Prüfer, Freigabe, Merge, Dokumentator). Ohne Ergebnis wartet die Aufgabe wieder auf den Mac. Vorschlag für den Mac (nicht entschieden): eigener macOS-Benutzer für den Runner und Firewall-Regel nur für ihn, die das Heimnetz sperrt.
+- **Mac:** Knopf in der Website startet die lokale Entwicklung ohne zweite Anmeldung; ein unsichtbares Einmal-Ticket verbindet Website und Mac-Programm. **Rückgabe:** Der Mac holt das Repo und liefert das Ergebnis als Git-Bundle über den Hub (HTTPS, ausgehend); der Hub prüft es, holt nur den Branch der Aufgabe ins Projekt und führt die normale Kette weiter (Prüfer, Freigabe, Merge, Doku durch den Manager). Ohne Ergebnis wartet die Aufgabe wieder auf den Mac. Vorschlag für den Mac (nicht entschieden): eigener macOS-Benutzer für den Runner und Firewall-Regel nur für ihn, die das Heimnetz sperrt.
 
 ## 7. Offene Entscheidungen (Janis)
 
@@ -127,11 +127,11 @@ Volltext in PROJEKT.md (Abschnitte „Zugriff der Agenten auf Geräte“, „Ger
 2. **Schutz der Claude-Ordner im Ruhezustand:** Dateirechte `0700` reichen gegen andere Nutzer, nicht gegen jemanden mit Zugriff auf die SD-Karte oder das Backup. Optionen: Ordner beim Backup ausschließen (Vorschlag, dann muss man sich nach einer Wiederherstellung neu anmelden) oder verschlüsseln.
 3. **Nutzungsbedingungen** für Claude Code in eigenen Tools und ob die Anmeldung dauerhaft hält (steht seit Anfang in PROJEKT.md Abschnitt 11, bleibt Voraussetzung für den ersten Livegang).
 4. **Speicher:** Pi 4B mit 1 GB: Tests mit Sonnet, langen Läufen und Git-Worktrees stehen aus. `MAX_RUNNING = 1` ist die Vorsorge.
-5. **Merge bei Freigabe:** Der Hub (nicht der Agent) übernimmt den Branch in `main` des Projekt-Repos, bevor der Dokumentator läuft. Eigenes Modul „Worktrees und Merge“.
+5. **Merge bei Freigabe:** Der Hub (nicht der Agent) übernimmt den Branch in `main` des Projekt-Repos, bevor der Manager die Doku nachführt. Eigenes Modul „Worktrees und Merge“.
 6. **Strenge** als Tabelle in Abschnitt 3 ist mein Vorschlag; die drei Stufen aus PROJEKT.md waren bisher nicht ausgeführt.
 7. ~~**Rechte pro Rolle (Web und Code)**~~ entschieden (Janis, 07.11.2026): **alle Agenten dürfen ins Internet** in den besprochenen Grenzen (nur über `egress`, nie Heimnetz, Geräte nur über Vermittler). Bei Code im selben Lauf geht Web nur zu einer Liste von Seiten (PyPI, npm, GitHub, Dokumentation); das ist Claudes Auslegung von „wie besprochen“ und noch zu bestätigen. Der Chat bleibt „Web oder Code“. Die genaue Seitenliste und eine dritte Proxy-Richtlinie („Liste“) entstehen beim Bau der Läufe.
 8. ~~**VPN-Technik**~~ entschieden: Tailscale (Abschnitt 6b). Vor dem Bau zu prüfen: Nutzungsbedingungen (nicht gewerblich), Etiketten im kostenlosen Tarif.
-9. **Manager legt Projektstand in Git ab** (PROJEKT.md, Manager-Tab): Der Hub committet und pusht für ihn, nur in einen Bereich für Projektdokumente und Aufgaben, nie in den Code. Offen: ob die Rolle Dokumentator dadurch entfällt oder nur Code-Doku nach Freigabe schreibt.
+9. **Manager legt Projektstand in Git ab** (PROJEKT.md, Manager-Tab): Der Hub committet und pusht für ihn, nur in einen Bereich für Projektdokumente und Aufgaben, nie in den Code. Entschieden (Janis, 07.11.2026): Die Rolle Dokumentator entfällt, der Manager übernimmt die Doku. Hardware-To-Dos und -Checklisten liegen beim Manager, nicht auf dem Board.
 10. **Eingriffstiefe des Managers** (vollautomatisch, Rückfrage bei Großem, Rückfrage auch bei Kleinem; der Manager entscheidet fallweise, ob eine Frage nötig ist) und das Fenster „Wartet auf dich“ (Ort offen). Details in PROJEKT.md.
 
 ## 7a. Ausrollen der Verknüpfung (erledigt am 07.11.2026 mit Janis’ Ja)
