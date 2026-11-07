@@ -42,6 +42,19 @@ USERS = """<div class="users-wrap" data-network="%t.err_network%">
     </div>
   </form>
 </dialog>
+<dialog class="dialog" id="owner-dialog">
+  <form novalidate data-url="/users/{id}/owner" data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
+    <h2>%t.owner_transfer_title%</h2>
+    <p class="muted" data-email></p>
+    <p>%t.owner_transfer_warning%</p>
+    <label>%t.your_password%<input type="password" name="confirm" required autocomplete="current-password"></label>
+    <p class="error" role="alert" data-error hidden></p>
+    <div class="actions">
+      <button type="button" data-close autofocus>%t.cancel%</button>
+      <button class="primary" type="submit">%t.owner_transfer_do%</button>
+    </div>
+  </form>
+</dialog>
 <dialog class="dialog danger" id="delete-user-dialog">
   <form novalidate data-url="/users/{id}/delete" data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
     <h2>%t.confirm_delete_user%</h2>
@@ -85,12 +98,16 @@ def _row(actor: User, account: User, lang: str) -> str:
             f'aria-label="{esc(i18n.t(lang, "admin_switch"))}" title="{esc(i18n.t(lang, "admin_switch"))}">'
             f'{esc(i18n.t(lang, "role_admin"))}</button>'
         )
+    actions = []
+    if actor.role == "owner" and account.role != "owner" and not account.must_change:
+        actions.append(("data-owner", "crown", "owner_transfer"))  # only to somebody who can log in
     if can_manage(actor, account):
-        for attr, icon_name, label in (("data-reset", "key", "reset_password"), ("data-delete", "trash", "delete_user")):
-            text = esc(i18n.t(lang, label))
-            buttons.append(
-                f'<button class="icon-button" type="button" {attr} aria-label="{text}" title="{text}">{icon(icon_name)}</button>'
-            )
+        actions += [("data-reset", "key", "reset_password"), ("data-delete", "trash", "delete_user")]
+    for attr, icon_name, label in actions:
+        text = esc(i18n.t(lang, label))
+        buttons.append(
+            f'<button class="icon-button" type="button" {attr} aria-label="{text}" title="{text}">{icon(icon_name)}</button>'
+        )
     return (
         f'<div class="user-row" data-id="{account.id}" data-email="{esc(account.email)}">'
         f'<div class="user-main"><span class="user-email">{esc(account.email)}</span>'

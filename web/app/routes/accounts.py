@@ -79,6 +79,27 @@ def delete_user(
     return ok()
 
 
+@router.post("/users/{user_id}/owner")
+def make_owner(
+    request: Request, user_id: int, confirm: str = Form(""), user: users.User = Depends(api_user)
+):
+    """The owner hands the ownership over and becomes an admin; needs his password."""
+    if user.role != "owner":
+        return fail(403)
+    denied = reauth(request, user, confirm)
+    if denied:
+        return denied
+    try:
+        users.transfer_owner(user, user_id)
+    except PermissionError:
+        return error(user.language, "err_forbidden", 403)
+    except users.UserError as problem:
+        if problem.code == "not_ready":
+            return error(user.language, "err_owner_not_ready", 400)
+        return error(user.language, "err_not_found", 404)
+    return ok()
+
+
 @router.post("/users/{user_id}/admin")
 def toggle_admin(user_id: int, value: str = Form(""), user: users.User = Depends(api_user)):
     """Only the owner makes or removes admins."""

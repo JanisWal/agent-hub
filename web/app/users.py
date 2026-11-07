@@ -2,7 +2,10 @@
 
 Roles: `owner` (exactly one), `admin`, `user`. Rules in short (see `can_manage`):
 the owner manages everybody except himself, an admin manages normal users only, a user nobody.
-Only the owner makes or removes admins. Accounts are never created by the visitor himself.
+Only the owner makes or removes admins, and only he can hand the ownership to somebody else
+(`transfer_owner`, he becomes an admin then). Nobody is the owner for good: the role moves, but
+there is never more than one owner (checked in `create_user` and `transfer_owner`, and the
+database refuses a second one too). Accounts are never created by the visitor himself.
 """
 import hashlib
 import hmac
@@ -25,7 +28,7 @@ SCRYPT_N, SCRYPT_R, SCRYPT_P = 2**14, 8, 1
 
 class UserError(ValueError):
     """Bad input. `code` names the problem so the interface can say it in the user's language:
-    email, taken, short, policy, same, wrong_password, not_found."""
+    email, taken, short, policy, same, wrong_password, not_found, owner_exists, not_ready."""
 
     def __init__(self, code: str, message: str = ""):
         super().__init__(message or code)
@@ -110,6 +113,8 @@ def create_user(email: str, password: str, role: str = "user", must_change: bool
         raise UserError("short", f"Passwort zu kurz (mindestens {MIN_PASSWORD_LENGTH} Zeichen)")
     if role not in ROLES:
         raise ValueError(f"unknown role {role}")
+    if role == "owner" and owner_exists():
+        raise UserError("owner_exists", "Es gibt schon einen Owner")
     with db.connect() as conn:
         try:
             cur = conn.execute(
@@ -249,6 +254,33 @@ def set_admin(actor: User, user_id: int, make_admin: bool) -> None:
     role = "admin" if make_admin else "user"
     with db.connect() as conn:
         conn.execute("UPDATE users SET role = ?, is_admin = ? WHERE id = ?", (role, int(make_admin), target.id))
+
+
+def transfer_owner(actor: User, user_id: int) -> None:
+    """The owner hands the ownership to another account and becomes an admin himself.
+
+    Both changes happen in one transaction, so there is never no owner and never two. Only the
+    owner may do it (PermissionError, also for himself as target). The other account must have
+    chosen its own password already (UserError "not_ready"), otherwise the ownership could end up
+    with somebody who cannot log in. The caller asks for the owner's password first.
+    """
+    if actor.role != "owner":
+        raise PermissionError
+    target = get_by_id(user_id)
+    if target is None:
+        raise UserError("not_found")
+    if target.id == actor.id:
+        raise PermissionError
+    if target.must_change:
+        raise UserError("not_ready")
+    with db.connect() as conn:
+        # step down first, so that the unique index never sees two owners
+        stepped_down = conn.execute(
+            "UPDATE users SET role = 'admin', is_admin = 1 WHERE id = ? AND role = 'owner'", (actor.id,)
+        ).rowcount
+        if stepped_down != 1:  # the actor object was out of date
+            raise PermissionError
+        conn.execute("UPDATE users SET role = 'owner', is_admin = 1 WHERE id = ?", (target.id,))
 
 
 def change_own_password(user: User, old_password: str, new_password: str, keep_token: str | None = None) -> None:

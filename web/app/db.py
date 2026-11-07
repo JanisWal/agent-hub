@@ -103,6 +103,8 @@ def _prepare(conn: sqlite3.Connection) -> None:
                     pass  # another process added it first
     for statement in ASSIGN_ROLES:
         conn.execute(statement)
+    # Safety net: the database itself refuses a second owner (it does not say who the owner is).
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_one_owner ON users (role) WHERE role = 'owner'")
     conn.execute(ASSIGN_PAGES)
     conn.commit()
 
