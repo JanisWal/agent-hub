@@ -172,7 +172,7 @@ class Done:
 
 
 class ChatRunTest(unittest.TestCase):
-    """TEMPORARY test chat: the runner answers one question in a container."""
+    """The chat window: the runner answers one question in a container."""
 
     def setUp(self):
         self.api, self.commands = FakeApi(), []

@@ -1,10 +1,10 @@
-"""TEMPORARY test chat: lets a user talk to his own Claude from a project page, to see that the
-connection works end to end (login -> runner -> container -> answer). Remove it (this module,
-routes/chat.py, the panel in projectpage.py, chat.js, the table) once the agents run for real.
+"""The chat window of a project page: quick single questions to the user's own Claude.
 
-Not an agent: no tools, no project files, one question and one answer at a time. The runner takes the
-questions from `claim_next` and reports the answers with `finish`; as everywhere, the user comes from
-the database (the message), never from the runner's request.
+Not an agent: no tools, no project files, no memory of earlier questions, one question and one answer
+at a time. The runner takes the questions from `claim_next` and reports the answers with `finish`; as
+everywhere, the user comes from the database (the message), never from the runner's request.
+Every user keeps at most MAX_STORED messages (the oldest are deleted when a new one comes), and he can
+delete his whole history from the menu (`delete_all`).
 """
 import sqlite3
 import time
@@ -17,6 +17,7 @@ MAX_PROMPT = 2000
 MAX_ANSWER = 8000
 RUN_SECONDS = 300        # a question the runner does not answer in this time has failed
 KEEP = 10                # messages shown per project
+MAX_STORED = 100         # messages kept per user, the oldest go first
 
 
 @dataclass
@@ -68,6 +69,11 @@ def send(user_id: int, project_id: int, prompt: str, now: int | None = None) -> 
         cur = conn.execute(
             "INSERT INTO chat_messages (user_id, project_id, prompt, status, created_at)"
             " VALUES (?, ?, ?, 'queued', ?)", (user_id, project_id, prompt, now),
+        )
+        conn.execute(
+            "DELETE FROM chat_messages WHERE user_id = ? AND id NOT IN"
+            " (SELECT id FROM chat_messages WHERE user_id = ? ORDER BY id DESC LIMIT ?)",
+            (user_id, user_id, MAX_STORED),
         )
         row = conn.execute("SELECT * FROM chat_messages WHERE id = ?", (cur.lastrowid,)).fetchone()
     return _message(row)

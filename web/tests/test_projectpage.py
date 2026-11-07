@@ -171,6 +171,33 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn("-webkit-line-clamp: 2", phone)
         self.assertIn("overflow-x: auto", project)                              # stations: swipeable row, never a wider page
 
+    def test_chat_window_is_final_not_a_test(self):
+        for lang in ("de", "en"):
+            page = self.html(lang)
+            chat = page[page.index('id="chat"'):page.index("</aside>")]
+            for word in ("Vorübergehend", "Temporary", "testen", "Testfenster", "chat-badge", "TEMPORARY"):
+                self.assertNotIn(word, chat)
+            self.assertIn('<h2>Claude</h2>', chat)
+        self.assertIn("Einzelfragen", self.html("de"))
+        for name in ("project.css", "chat.js"):
+            self.assertNotIn("TEMPORARY", css_of(name))
+
+    def test_chat_and_columns_share_the_top_line(self):
+        project = css_of("project.css")
+        chat = project[project.index(".chat {"):project.index(".chat-head")]
+        self.assertIn("top: 94px", chat)                                        # = top bar (26 + 38 + 26) + 4 px of main
+        app = css_of("app.css")
+        self.assertIn(".project-page .topbar { padding-top: 26px; padding-bottom: 26px; }", app)
+        self.assertIn("main { display: flex; align-items: stretch; place-items: initial; padding-top: 4px; }", project)
+
+    def test_gear_handle_is_an_oval_with_the_outline_of_the_round_buttons(self):
+        app = css_of("app.css")
+        handle = app[app.index(".drawer-handle {"):app.index(".drawer-handle:hover")]
+        for part in ("height: 38px", "border: 1px solid var(--glass-border)", "border-radius: 999px", "margin-top: 3px"):
+            self.assertIn(part, handle)
+        extra = app[app.index(".drawer-extra {"):app.index(".drawer-extra svg")]
+        self.assertIn("width: 38px", extra)                                     # same height as the round buttons
+        self.assertIn("margin-top: 3px", extra)                                 # and the same line
     def test_tooltips_are_our_own(self):
         core, app = css_of("core.js"), css_of("app.css")
         for part in ('className = "tip"', "removeAttribute(\"title\")", "aria-label", "mouseover", "showTip", "focusin"):

@@ -393,17 +393,22 @@ main { padding-bottom: 96px; } /* room for the toggle */
 .drawer-extra:hover { color: var(--text); }
 .drawer-extra[aria-pressed="true"] { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .drawer-handle {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 2px;
-  min-height: 44px;
-  padding: 0 10px;
+  height: 38px;
+  min-height: 38px;
+  margin-top: 3px;
+  padding: 0 13px;
   color: var(--muted);
-  background: none;
-  border: 0;
+  background: color-mix(in srgb, var(--glass) 70%, transparent);
+  border: 1px solid var(--glass-border);
   box-shadow: none;
-  border-radius: 999px;
+  border-radius: 999px;   /* an oval: the same height and outline as the round buttons next to it */
+  transition: color 0.2s, border-color 0.2s;
 }
+.drawer-handle::after { content: ''; position: absolute; inset: -3px; border-radius: 999px; } /* 44 px hit area */
 .drawer-handle:hover { color: var(--text); transform: none; }
 .drawer-handle svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .drawer-handle .drawer-arrow { width: 18px; height: 18px; stroke-width: 2.2; transition: transform 0.45s cubic-bezier(0.3, 1.4, 0.5, 1); }

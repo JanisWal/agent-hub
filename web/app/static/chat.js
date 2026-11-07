@@ -1,4 +1,4 @@
-// TEMPORARY test chat of the project page (see web/app/chat.py). Shows the latest questions and
+// The chat window of the project page (see web/app/chat.py). Shows the latest questions and
 // answers, sends a new question, and asks every 2 seconds while one is still open. Answers are
 // text from Claude: they are only ever put in with textContent. All labels come from data-* attributes.
 (function () {

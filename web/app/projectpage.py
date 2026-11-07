@@ -29,11 +29,11 @@ PROJECT = """<div class="project" data-id="%PID%">
     </div>
   </div>
 </div>
-<!-- TEMPORARY test chat (web/app/chat.py): a slim window fixed at the right edge, on every tab of the
-     project; remove it together with chat.js once the agents run. On narrow screens the round button opens it. -->
+<!-- Chat window (web/app/chat.py): a slim window fixed at the right edge, on every tab of the project;
+     on narrow screens the round button opens it. -->
 <aside class="chat glass" id="chat" data-you="%t.chat_you%" data-claude="%t.chat_claude%"
        data-waiting="%t.chat_waiting%" data-failed="%t.chat_failed%">
-  <header class="chat-head"><h2>%t.chat_title%</h2><span class="chat-badge">%t.chat_temporary%</span></header>
+  <header class="chat-head"><h2>%t.chat_title%</h2></header>
   <p class="muted">%t.chat_hint%</p>
   <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
   <p class="error" id="chat-error" role="alert" hidden></p>
