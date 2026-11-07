@@ -160,6 +160,17 @@ class ProjectPageTest(unittest.TestCase):
         self.assertNotIn("64vh", project)                                       # no fixed height any more
         self.assertIn(".theme-fab { position: fixed; right: 24px; bottom: 24px; width: 52px; height: 52px;", app)
 
+    def test_responsive_rules(self):
+        app, project = css_of("app.css"), css_of("project.css")
+        self.assertIn("@media (max-width: 1100px)", project)                    # board and stations stack, like the title
+        self.assertNotIn("@media (max-width: 1000px)", project)
+        phone = app[app.index("/* Phone: the bar has two rows"):]
+        phone = phone[:phone.index("}\n", phone.index(".project-title"))]
+        self.assertIn("flex: 0 0 100%", phone)                                  # the name gets a row of its own
+        self.assertIn("flex-wrap: wrap", app[app.index("/* Phone: the bar has two rows"):][:400])
+        self.assertIn("-webkit-line-clamp: 2", phone)
+        self.assertIn("overflow-x: auto", project)                              # stations: swipeable row, never a wider page
+
     def test_tooltips_are_our_own(self):
         core, app = css_of("core.js"), css_of("app.css")
         for part in ('className = "tip"', "removeAttribute(\"title\")", "aria-label", "mouseover", "showTip", "focusin"):
