@@ -7,7 +7,7 @@ Ziel, Entscheidungen und Reihenfolge der Umsetzung: PROJEKT.md (dort zuerst nach
 - Janis bestimmt die Struktur. Vor dem Code: erst die Schnittstelle zeigen (Signaturen, Datenformat), dann die Implementierung.
 - Kleinste Lösung, die die Anforderung erfüllt. Keine Abstraktion auf Vorrat. Standardbibliothek zuerst; jede neue Abhängigkeit nennen und begründen.
 - Ein Modul pro Auftrag. Jede Entscheidung kurz erklären, inklusive verworfener Alternative.
-- Janis will den Code verstehen und lernen: nach größeren Änderungen zwei Verständnisfragen stellen.
+- Janis will den Code verstehen, aber keine Verständnisfragen am Ende einer Antwort (gestrichen am 07.11.2026). Entscheidungen weiter kurz erklären.
 - Zugangsdaten, Schlüssel und Tokens nie ausgeben, nie ins Git, nie raten. Sie liegen im Tresor oder in der `.env`.
 - Destruktive oder systemweite Befehle (Löschen, Docker-Volumes entfernen, `sudo`, Änderungen am Netzwerk) vorher von Janis bestätigen lassen.
 - Routine (Commit, Merge, Push fertiger Änderungen) ohne Rückfrage, danach kurz berichten. Nachfragen nur bei Berechtigungen, Sicherheit sowie Design- und Feature-Entscheidungen.
