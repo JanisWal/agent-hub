@@ -121,6 +121,11 @@ if project:
 check("settings", call("POST", "/settings", {"display_name": "Tester", "language": "en"})[0] == 303)
 check("language applied", "Log out" in call("GET", "/")[2])
 call("POST", "/settings", {"display_name": "", "language": "de"})
+check("theme saved", call("POST", "/theme", {"value": "dark"})[0] == 200
+      and 'data-theme-saved="dark"' in call("GET", "/")[2])
+check("bad theme refused", call("POST", "/theme", {"value": "neon"})[0] == 400)
+check("theme needs login", call("POST", "/theme", {"value": "dark"}, cookies=False)[0] == 401)
+call("POST", "/theme", {"value": "light"})
 check("logout", call("POST", "/logout")[0] == 303)
 check("session gone", call("GET", "/")[0] == 303)
 

@@ -76,6 +76,7 @@ Regeln:
 - Erster Besuch: Stil der Geräteeinstellung (`prefers-color-scheme`). Danach gilt die Wahl, gespeichert im Browser (`localStorage`, Schlüssel `theme`, Werte `light` / `dark`), für alle Seiten.
 - Kein Aufblitzen: Ein kleines Inline-Skript im `<head>` setzt `data-theme` vor dem ersten Zeichnen. `core.js` übernimmt nur den Klick.
 - `localStorage` kann blockiert sein (private Fenster): jeder Zugriff steht in `try/catch`, die Seite funktioniert dann ohne Speichern.
+- **Kopie fürs Konto (07.11.2026):** Auf angemeldeten Seiten meldet `core.js` den gezeigten Stil zusätzlich per `POST /theme` an den Server (`users.theme`), beim Klick auf den Schalter und beim Laden, wenn er vom gespeicherten abweicht (`data-theme-saved` an der Schublade). Der Browser bleibt maßgeblich für die Anzeige; die Kopie dient nur den Mails (Abschnitt 10c). Schlägt die Meldung fehl, bleibt alles wie es war.
 
 ## 6. Bewegung
 
@@ -216,6 +217,10 @@ Stand 07.11.2026, von Janis beauftragt, in Chrome mit Testkonten geprüft (Hell 
 - **Dialoge:** Hinzufügen (E-Mail, Startpasswort sichtbar im Klartext, damit der Admin ein einfaches vergibt, Hinweis darunter) und Zurücksetzen (neues Startpasswort, dein Passwort) sind normale Dialoge mit Hauptknopf; **Löschen** ist der rote Dialog (Titel, E-Mail, dein Passwort, „Endgültig löschen“). Fehler stehen in der getönten Fehlerbox im Dialog, in der Sprache des Nutzers, vom Server.
 - **Seite `/password`:** wie die Login-Seite eine Glaskarte mit Überschrift „Neues Passwort“ und Unterzeile; nach einem Startpasswort lautet sie „Bitte lege ein eigenes Passwort fest, bevor du weitermachst.“ Felder: aktuelles Passwort, neues Passwort, wiederholen; darunter die Regel in `--muted`. Fehler in der Fehlerbox oben.
 
+## 10b2. Passwortseiten
+
+Stand 07.11.2026, von Janis beauftragt. Gleiche Glaskarte wie die Anmeldung. `/password`: Felder „Aktuelles Passwort“, „Neues Passwort“, „wiederholen“; wer ein Startpasswort hat, sieht nur die letzten beiden. Unter dem Hauptknopf steht als Textlink **Abbrechen** (normal zum Dashboard, bei Startpasswort Abmelden). `/reset/{token}` (Link aus der Mail) und `/forgot` haben ebenfalls einen Textlink zurück zur Anmeldung. Die Benutzerverwaltung hat oben links den Textlink **Zurück** (zum Dashboard), nicht „Alle Projekte“.
+
 ## 10c. Mails
 
 Stand 07.11.2026, von Janis beauftragt (Passwort-Reset und Einladung). Code: `web/app/mailtext.py`, Texte in `i18n.py` (`mail_*`).
@@ -223,7 +228,7 @@ Stand 07.11.2026, von Janis beauftragt (Passwort-Reset und Einladung). Code: `we
 - Aufbau: Hintergrund `--bg`, darauf die Karte (Rundung 28 px, Rand 1 px, Innenabstand 40 × 32 px, höchstens 520 px breit), Marke „Agent-Hub“ darüber, Begrüßung „Hallo Name,“ als große Überschrift (30 px, Laufweite −0,03 em), ein kurzer Text, **ein** Hauptknopf (Akzentfarbe mit hellem Glanz oben, Rundung 16 px, volle Breite), darunter der Link als Text (falls der Knopf blockiert wird), ein Hinweis (13 px, `--muted`) und eine Fußzeile.
 - Farben wie in Abschnitt 2, nur als feste Werte, weil Mailprogramme keine CSS-Variablen kennen: Hell `--bg` `#EFDCC6`, Karte `#F7E6D3`; Dunkel `--bg` `#1F1713`, Karte `#33241C`. Die Glasfläche ist in Mails eine deckende Farbe (kein Weichzeichner möglich). Ändert sich eine Farbe in Abschnitt 2, wird `PALETTES` in `mailtext.py` mitgeändert.
 - Technik: Tabellen und Inline-Stile (Mailprogramme ignorieren das meiste CSS), Knopf als Link mit Hintergrundfarbe, Glanz als Verlauf (fehlt er, bleibt die Fläche einfarbig). Keine Bilder, keine Webfonts, Systemschrift.
-- Der Stil (hell oder dunkel) ist fest pro Mail; der Server kennt die Browserwahl nicht (siehe PROJEKT.md, Benutzerverwaltung). **Ungeprüft:** das Aussehen in echten Mailprogrammen (Gmail, Apple Mail, Outlook).
+- Der Stil (hell oder dunkel) ist fest pro Mail und folgt dem Stil, den der Nutzer zuletzt auf der Seite gesehen hat (`users.theme`, siehe Abschnitt 5). **Ungeprüft:** das Aussehen in echten Mailprogrammen (Gmail, Apple Mail, Outlook).
 
 ## 11. Umsetzung
 

@@ -2,7 +2,8 @@
 
 The HTML uses tables and inline styles only, because mail programs ignore most CSS. Colours
 follow DESIGN.md; the two palettes are the light and the dark style of the site. The mail
-shows one fixed palette (`theme`), it cannot ask the mail program which one the reader likes.
+shows one fixed palette: the style the user saw last on the site (`users.theme`, reported by
+the theme switch). A mail program cannot be asked which one the reader likes.
 Texts live in i18n.py (`mail_<kind>_subject|body|button|note`), so they exist in both languages.
 """
 from . import i18n, mail
@@ -69,11 +70,15 @@ def _duration(lang: str, seconds: int) -> str:
     return i18n.t(lang, "duration_hour")
 
 
-def build(kind: str, user: User, link: str, seconds: int, theme: str = "light") -> tuple[str, str, str]:
-    """Subject, plain text and HTML of a mail. `seconds` is how long the link works."""
+def build(kind: str, user: User, link: str, seconds: int, theme: str | None = None) -> tuple[str, str, str]:
+    """Subject, plain text and HTML of a mail. `seconds` is how long the link works.
+
+    `theme` ("light" or "dark") defaults to the style the user saw last (`user.theme`).
+    """
     if kind not in KINDS:
         raise ValueError(f"unknown mail kind {kind}")
     lang = user.language
+    theme = theme or user.theme
     greeting = i18n.t(lang, "mail_greeting", name=user.name)
     body = i18n.t(lang, f"mail_{kind}_body")
     button = i18n.t(lang, f"mail_{kind}_button")
@@ -91,7 +96,7 @@ def build(kind: str, user: User, link: str, seconds: int, theme: str = "light") 
     return subject, text, html
 
 
-def send_link_mail(kind: str, user: User, token: str, seconds: int, theme: str = "light") -> bool:
+def send_link_mail(kind: str, user: User, token: str, seconds: int, theme: str | None = None) -> bool:
     """Mail the link `<HUB_BASE_URL>/reset/<token>` to the user, in his language. False if it
     could not be sent (no HUB_BASE_URL, no key, or Resend said no)."""
     base = mail.base_url()

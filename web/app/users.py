@@ -43,6 +43,7 @@ class User:
     had_project: bool = False
     role: str = "user"
     must_change: bool = False   # logged in with a start password: has to choose an own one first
+    theme: str = "light"        # "light" or "dark": the style he used last (mails follow it)
 
     @property
     def name(self) -> str:
@@ -78,7 +79,7 @@ def _to_user(row: sqlite3.Row) -> User:
     return User(
         row["id"], row["email"], role != "user", row["created_at"],
         row["display_name"], row["language"], bool(row["had_project"]),
-        role, bool(row["must_change_password"]),
+        role, bool(row["must_change_password"]), row["theme"],
     )
 
 
@@ -154,6 +155,17 @@ def set_profile(user_id: int, display_name: str, language: str) -> None:
             "UPDATE users SET display_name = ?, language = ? WHERE id = ?",
             (display_name or None, language, user_id),
         )
+
+
+THEMES = ("light", "dark")
+
+
+def set_theme(user_id: int, theme: str) -> None:
+    """Remember which style (light or dark) the user sees now. Raises ValueError for anything else."""
+    if theme not in THEMES:
+        raise ValueError(f"unknown theme {theme}")
+    with db.connect() as conn:
+        conn.execute("UPDATE users SET theme = ? WHERE id = ?", (theme, user_id))
 
 
 # ----- managing users -----
@@ -242,14 +254,16 @@ def set_admin(actor: User, user_id: int, make_admin: bool) -> None:
 def change_own_password(user: User, old_password: str, new_password: str, keep_token: str | None = None) -> None:
     """The user chooses a new password. Raises UserError: wrong_password, short, policy, same.
 
+    The old password is asked for, except from somebody who has just logged in with a start
+    password (`must_change`): he proved it a moment ago, and it is not his own anyway.
     Other sessions end; the one in `keep_token` stays.
     """
-    if not verify_password(user.id, old_password):
+    if not user.must_change and not verify_password(user.id, old_password):
         raise UserError("wrong_password")
     problem = password_problem(new_password)
     if problem:
         raise UserError(problem)
-    if new_password == old_password:
+    if verify_password(user.id, new_password):  # same as the current password
         raise UserError("same")
     set_password(user.id, new_password, must_change=False)
     if keep_token:

@@ -117,15 +117,20 @@ class AccountsTest(unittest.TestCase):
         self.assertIsNotNone(users.check_login("user@example.com", "Mein!Pass12"))
 
     def test_change_own_password_errors(self):
+        # first the user chooses his own password (no old one asked: he has a start password) ...
+        users.change_own_password(self.user, "", "Mein!Pass12")
+        settled = users.get_by_id(self.user.id)
+
+        # ... from then on the old password is checked
         def code(old, new):
             with self.assertRaises(users.UserError) as raised:
-                users.change_own_password(self.user, old, new)
+                users.change_own_password(settled, old, new)
             return raised.exception.code
 
-        self.assertEqual(code("wrong", "Mein!Pass12"), "wrong_password")
-        self.assertEqual(code("Start1234", "short"), "short")
-        self.assertEqual(code("Start1234", "nodigits!Aa"), "policy")
-        self.assertEqual(code("Start1234", "Start1234"), "policy")  # no special character
+        self.assertEqual(code("wrong", "Other!Pass12"), "wrong_password")
+        self.assertEqual(code("Mein!Pass12", "short"), "short")
+        self.assertEqual(code("Mein!Pass12", "nodigits!Aa"), "policy")
+        self.assertEqual(code("Mein!Pass12", "Mein!Pass12"), "same")
 
     # --- old databases
     def test_old_database_gets_an_owner(self):

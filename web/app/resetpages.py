@@ -29,6 +29,7 @@ RESET = """<section class="glass">
     <p class="muted">%t.err_pw_rules%</p>
     <button class="primary" type="submit">%t.save%</button>
   </form>
+  <a class="link" href="/login">%t.cancel%</a>
 </section>"""
 
 INVALID = """<section class="glass">
