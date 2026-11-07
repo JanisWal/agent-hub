@@ -11,6 +11,7 @@ import time
 from . import db, users
 
 TOKEN_SECONDS = 3600
+INVITE_SECONDS = 7 * 24 * 3600   # an invitation may wait in a mailbox for a while
 COOLDOWN_SECONDS = 60    # a new mail for the same account earliest after this (no mail flood)
 
 
@@ -18,8 +19,8 @@ def _hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
-def create_token(email: str) -> tuple[users.User, str] | None:
-    """Make a reset token for the account with this address.
+def create_token(email: str, valid_seconds: int = TOKEN_SECONDS) -> tuple[users.User, str] | None:
+    """Make a reset token for the account with this address, valid for `valid_seconds`.
 
     None if there is no such account or a mail was requested less than COOLDOWN_SECONDS ago;
     the caller treats both like success so nobody can find out which addresses exist.
@@ -40,7 +41,7 @@ def create_token(email: str) -> tuple[users.User, str] | None:
         conn.execute("DELETE FROM password_resets WHERE user_id = ?", (row["id"],))
         conn.execute(
             "INSERT INTO password_resets (token_hash, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
-            (_hash(token), row["id"], now, now + TOKEN_SECONDS),
+            (_hash(token), row["id"], now, now + valid_seconds),
         )
     return users.get_by_id(row["id"]), token
 

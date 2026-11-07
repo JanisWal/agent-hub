@@ -2,25 +2,10 @@
 from fastapi import APIRouter, BackgroundTasks, Form
 from fastapi.responses import HTMLResponse
 
-from .. import i18n, mail, resetpages, resets, users
+from .. import mailtext, resetpages, resets, users
 from ..deps import redirect
 
 router = APIRouter()
-
-
-def send_reset_mail(user: users.User, token: str) -> bool:
-    """The mail with the reset link, in the user's language. False if it could not be sent."""
-    base = mail.base_url()
-    if not base:
-        mail.log.warning("reset mail not sent: HUB_BASE_URL is not set")
-        return False
-    link = f"{base}/reset/{token}"
-    minutes = resets.TOKEN_SECONDS // 60
-    return mail.send_mail(
-        user.email,
-        i18n.t(user.language, "mail_reset_subject"),
-        i18n.t(user.language, "mail_reset_body", name=user.name, link=link, minutes=minutes),
-    )
 
 
 @router.get("/forgot", response_class=HTMLResponse)
@@ -36,7 +21,8 @@ def forgot(background: BackgroundTasks, email: str = Form("")):
         return HTMLResponse(resetpages.forgot_page("msg_email"), status_code=400)
     created = resets.create_token(email)
     if created:
-        background.add_task(send_reset_mail, *created)
+        user, token = created
+        background.add_task(mailtext.send_link_mail, "reset", user, token, resets.TOKEN_SECONDS)
     return resetpages.sent_page()
 
 

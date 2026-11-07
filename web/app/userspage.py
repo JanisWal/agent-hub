@@ -20,12 +20,11 @@ USERS = """<div class="users-wrap" data-network="%t.err_network%">
   <form novalidate data-url="/users/add" data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
     <h2>%t.add_user%</h2>
     <label>%t.email%<input type="email" name="email" required autocomplete="off"></label>
-    <label>%t.start_password%<input type="text" name="password" required autocomplete="off" spellcheck="false"></label>
-    <p class="muted">%t.start_password_hint%</p>
+    <p class="muted">%t.invite_hint%</p>
     <p class="error" role="alert" data-error hidden></p>
     <div class="actions">
       <button type="button" data-close>%t.cancel%</button>
-      <button class="primary" type="submit">%t.create%</button>
+      <button class="primary" type="submit">%t.invite_send%</button>
     </div>
   </form>
 </dialog>

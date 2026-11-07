@@ -6,8 +6,8 @@ import unittest
 import urllib.error
 from unittest import mock
 
-from app import db, mail, resetpages, resets, users
-from app.routes import resets as reset_routes
+from app import db, i18n, mail, mailtext, resetpages, resets, users
+from app.routes import accounts
 
 
 class FakeResponse:
@@ -105,15 +105,21 @@ class MailTest(unittest.TestCase):
 
     def test_request_to_resend(self):
         with mock.patch.dict(os.environ, self.ENV), mock.patch("urllib.request.urlopen", return_value=FakeResponse()) as opened:
-            self.assertTrue(mail.send_mail("a@example.com", "Hi", "Text"))
+            self.assertTrue(mail.send_mail("a@example.com", "Hi", "Text", "<p>Hi</p>"))
         request = opened.call_args.args[0]
         self.assertEqual(request.full_url, "https://api.resend.com/emails")
         self.assertEqual(request.get_header("Authorization"), "Bearer re_secret_key")
         self.assertEqual(request.get_header("User-agent"), "agent-hub/1.0")
         self.assertEqual(
             json.loads(request.data),
-            {"from": "Agent-Hub <noreply@example.com>", "to": ["a@example.com"], "subject": "Hi", "text": "Text"},
+            {"from": "Agent-Hub <noreply@example.com>", "to": ["a@example.com"], "subject": "Hi",
+             "text": "Text", "html": "<p>Hi</p>"},
         )
+
+    def test_text_only_mail_has_no_html_part(self):
+        with mock.patch.dict(os.environ, self.ENV), mock.patch("urllib.request.urlopen", return_value=FakeResponse()) as opened:
+            mail.send_mail("a@example.com", "Hi", "Text")
+        self.assertNotIn("html", json.loads(opened.call_args.args[0].data))
 
     def test_failure_returns_false_and_never_logs_the_key(self):
         error = urllib.error.HTTPError(mail.API_URL, 403, "Forbidden", {}, None)
@@ -133,7 +139,7 @@ class MailTest(unittest.TestCase):
             self.assertEqual(mail.base_url(), "")
 
 
-class ResetMailTest(unittest.TestCase):
+class LinkMailTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         db.DB_PATH = os.path.join(self.tmp.name, "test.db")
@@ -147,19 +153,107 @@ class ResetMailTest(unittest.TestCase):
     def test_mail_has_the_link_and_the_users_language(self):
         env = {"HUB_BASE_URL": "https://hub.example.com/"}
         with mock.patch.dict(os.environ, env), mock.patch.object(mail, "send_mail", return_value=True) as sent:
-            self.assertTrue(reset_routes.send_reset_mail(self.user, "TOKEN123"))
-        to, subject, body = sent.call_args.args
+            self.assertTrue(mailtext.send_link_mail("reset", self.user, "TOKEN123", resets.TOKEN_SECONDS))
+        to, subject, text, html = sent.call_args.args
         self.assertEqual(to, "me@example.com")
-        self.assertIn("reset your password", subject)
-        self.assertIn("Hello Jan", body)
-        self.assertIn("https://hub.example.com/reset/TOKEN123", body)
-        self.assertIn("60 minutes", body)
+        self.assertIn("choose a new password", subject)
+        for part in (text, html):
+            self.assertIn("Hello Jan,", part)
+            self.assertIn("https://hub.example.com/reset/TOKEN123", part)
+            self.assertIn("one hour", part)
+
+    def test_invitation_text_and_duration(self):
+        subject, text, html = mailtext.build("invite", self.user, "https://x/reset/T", resets.INVITE_SECONDS)
+        self.assertIn("Welcome", subject)
+        self.assertIn("7 days", text)
+        self.assertIn("7 days", html)
+
+    def test_german_mail(self):
+        users.set_profile(self.user.id, "", "de")
+        german = users.get_by_id(self.user.id)
+        subject, text, _ = mailtext.build("invite", german, "https://x/reset/T", resets.INVITE_SECONDS)
+        self.assertEqual(subject, "Willkommen im Agent-Hub")
+        self.assertIn("Hallo me,", text)
+        self.assertIn("7 Tage", text)
+
+    def test_html_is_filled_escaped_and_has_the_palette(self):
+        hostile = users.create_user("x@example.com", "Start1234")
+        users.set_profile(hostile.id, "<b>Jan</b>", "de")
+        hostile = users.get_by_id(hostile.id)
+        for kind in mailtext.KINDS:
+            for theme, colour in (("light", "#EFDCC6"), ("dark", "#1F1713")):
+                html = mailtext.build(kind, hostile, "https://x/reset/T?a=1&b=2", 3600, theme)[2]
+                self.assertIsNone(re.search(r"%[A-Z_]+%", html))
+                self.assertNotIn("<b>Jan</b>", html)
+                self.assertIn("&lt;b&gt;Jan", html)
+                self.assertIn("a=1&amp;b=2", html)
+                self.assertIn(colour, html)
+                self.assertIn(f'content="{theme}"', html)
+
+    def test_unknown_kind_and_theme(self):
+        with self.assertRaises(ValueError):
+            mailtext.build("nope", self.user, "x", 3600)
+        self.assertIn("#EFDCC6", mailtext.build("reset", self.user, "x", 3600, "neon")[2])
+
+    def test_both_languages_have_every_mail_text(self):
+        for lang in ("de", "en"):
+            for kind in mailtext.KINDS:
+                for part in ("subject", "body", "button", "note"):
+                    i18n.t(lang, f"mail_{kind}_{part}", duration="x")
 
     def test_no_base_url_no_mail(self):
         with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(mail, "send_mail") as sent:
             with self.assertLogs("agent-hub.mail", "WARNING"):
-                self.assertFalse(reset_routes.send_reset_mail(self.user, "TOKEN123"))
+                self.assertFalse(mailtext.send_link_mail("reset", self.user, "TOKEN123", 3600))
         sent.assert_not_called()
+
+
+class InviteTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        db.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        self.owner = users.create_user("owner@example.com", "Own3r!pass", role="owner")
+        self.plain = users.create_user("plain@example.com", "Plain!pass12")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def invite(self, actor, email, sent=True):
+        with mock.patch.object(mailtext, "send_link_mail", return_value=sent) as send:
+            answer = accounts.add_user(email, actor)
+        return answer, send
+
+    def test_invitation_creates_the_account_and_mails_a_link(self):
+        answer, send = self.invite(self.owner, "New@Example.com")
+        self.assertEqual(answer, {"ok": True})
+        kind, account, token, seconds = send.call_args.args
+        self.assertEqual((kind, account.email, seconds), ("invite", "new@example.com", resets.INVITE_SECONDS))
+        self.assertTrue(account.must_change)
+        self.assertEqual(resets.user_for_token(token).id, account.id)
+        # the person chooses a password through the link and can log in
+        self.assertTrue(resets.consume(token, "Mein!Pass12"))
+        self.assertFalse(users.check_login("new@example.com", "Mein!Pass12").must_change)
+
+    def test_invitation_token_lasts_a_week(self):
+        _, send = self.invite(self.owner, "new@example.com")
+        with db.connect() as conn:
+            left = conn.execute("SELECT expires_at - created_at FROM password_resets").fetchone()[0]
+        self.assertEqual(left, resets.INVITE_SECONDS)
+
+    def test_failed_mail_removes_the_account_again(self):
+        answer, _ = self.invite(self.owner, "new@example.com", sent=False)
+        self.assertEqual(answer.status_code, 502)
+        self.assertIsNone(users.check_login("new@example.com", "x"))
+        with db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM users WHERE email = 'new@example.com'").fetchone()[0], 0)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM password_resets").fetchone()[0], 0)
+
+    def test_errors_and_permissions(self):
+        self.assertEqual(self.invite(self.owner, "plain@example.com")[0].status_code, 400)  # taken
+        self.assertEqual(self.invite(self.owner, "nonsense")[0].status_code, 400)
+        answer, send = self.invite(self.plain, "new@example.com")
+        self.assertEqual(answer.status_code, 403)
+        send.assert_not_called()
 
 
 class ResetPagesTest(unittest.TestCase):
