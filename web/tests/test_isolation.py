@@ -142,7 +142,14 @@ class IsolationTest(unittest.TestCase):
         self.assertEqual(board_routes.empty_trash(self.project.id, self.b), {"ok": True})  # nothing to empty for B
         board_routes.create_item(self.project.id, "bug", "planted", self.b)             # silently refused
         board_routes.rename_item(self.open.id, "hacked", self.b)
+        with self.assertRaises(HTTPException) as settings:
+            project_routes.project_settings(self.project.id, "hacked", "hacked", self.b)   # Manager settings
+        self.assertEqual(settings.exception.status_code, 404)
         self.assertEqual(snapshot(), before)
+        own = project_routes.project_settings(self.mine.id, "Renamed", "Described", self.b)
+        self.assertEqual((own.status_code, own.headers["location"]), (303, f"/projects/{self.mine.id}#manager"))
+        self.assertEqual(projects.get_project(self.b.id, self.mine.id).description, "Described")
+        self.assertEqual(projects.get_project(self.a.id, self.project.id).description, "")
 
     # --- accounts
     def test_a_normal_user_has_no_power_over_accounts(self):

@@ -1,12 +1,12 @@
 """HTML of the project page: stations on the left, kanban board and trash on the right."""
-from . import i18n
+from . import i18n, managerpage
 from .board import KINDS, Item
 from .icons import icon
 from .layout import esc, fill
 from .projects import Project
 from .users import User
 
-SCRIPTS = ("motion.js", "sortable.js", "board.js", "chat.js")
+SCRIPTS = ("motion.js", "sortable.js", "board.js", "stations.js", "chat.js")
 STYLES = ("project.css",)
 
 COLUMN_LABEL = {"bug": "col_bug", "minor": "col_minor", "major": "col_major"}
@@ -28,6 +28,7 @@ PROJECT = """<div class="project" data-id="%PID%">
       %COLUMNS%
     </div>
   </div>
+  %MANAGER%
 </div>
 <!-- Chat window (web/app/chat.py): a slim window fixed at the right edge, on every tab of the project;
      on narrow screens the round button opens it. -->
@@ -140,12 +141,23 @@ def _archive(items: list[Item], lang: str) -> str:
     return f'<ul class="trash-list">{rows}</ul>'
 
 
-# The cycle of an idea, top to bottom (Janis, 07.11.2026). Only the board exists so far.
-STATION_KEYS = ("station_manager", "station_programmer", "station_tester", "station_reviewer", "station_me")
+# The cycle of an idea, top to bottom (Janis, 07.11.2026). The board and the manager exist so far;
+# a click swaps the main window (web/app/static/stations.js), the stations stay.
+VIEWS = (("board", "station_board"), ("manager", "station_manager"))
+STATION_KEYS = ("station_programmer", "station_tester", "station_reviewer", "station_me")
 
 
 def _stations(lang: str) -> str:
     soon = esc(i18n.t(lang, "coming_soon"))
+
+    def view(name: str, key: str) -> str:
+        current = ' aria-current="page"' if name == "board" else ""
+        active = " active" if name == "board" else ""
+        return (
+            f'<a class="station{active}" href="#{name}" data-station="{name}"{current}>'
+            f'<span class="station-label">{esc(i18n.t(lang, key))}</span></a>'
+        )
+
     off = "".join(
         f'<span class="station off" aria-disabled="true" title="{soon}">'
         f'<span class="station-label">{esc(i18n.t(lang, key))}</span></span>'
@@ -153,9 +165,7 @@ def _stations(lang: str) -> str:
     )
     return (
         f'<nav class="stations" aria-label="{esc(i18n.t(lang, "stations"))}">'
-        f'<a class="station active" href="#" aria-current="page">'
-        f'<span class="station-label">{esc(i18n.t(lang, "station_board"))}</span></a>'
-        f"{off}</nav>"
+        f'{"".join(view(name, key) for name, key in VIEWS)}{off}</nav>'
     )
 
 
@@ -192,6 +202,7 @@ def render(user: User, project: Project, items: list[Item]) -> str:
         lang,
         PID=str(project.id),
         STATIONS=_stations(lang),
+        MANAGER=managerpage.render(project, lang),
         CHAT_ICON=icon("chat"),
         TRASH=_trash(trashed, lang),
         ARCHIVE=_archive(archived, lang),

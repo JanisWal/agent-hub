@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS projects (
     name       TEXT NOT NULL,
     position   INTEGER NOT NULL,
     created_at INTEGER NOT NULL,
-    page       INTEGER NOT NULL DEFAULT 0
+    page       INTEGER NOT NULL DEFAULT 0,
+    description TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS projects_by_user ON projects (user_id, position);
 CREATE TABLE IF NOT EXISTS board_items (
@@ -129,7 +130,7 @@ NEW_COLUMNS = {
         "must_change_password": "INTEGER NOT NULL DEFAULT 0",
         "theme": "TEXT NOT NULL DEFAULT 'light'",
     },
-    "projects": {"page": "INTEGER NOT NULL DEFAULT 0"},
+    "projects": {"page": "INTEGER NOT NULL DEFAULT 0", "description": "TEXT NOT NULL DEFAULT ''"},
     "chat_messages": {"mode": "TEXT NOT NULL DEFAULT 'web'"},
 }
 

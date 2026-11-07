@@ -93,11 +93,44 @@ class ProjectPageTest(unittest.TestCase):
         names = ["Board", "Manager", "Programmierer", "Tester", "Prüfer", "Für dich"]
         positions = [nav.index(f">{name}<") for name in names]
         self.assertEqual(positions, sorted(positions))
-        self.assertEqual(nav.count('class="station off"'), 5)                  # only the board exists so far
+        self.assertEqual(nav.count('class="station off"'), 4)                  # board and manager exist so far
         self.assertEqual(nav.count('class="station active"'), 1)
+        self.assertIn('href="#manager" data-station="manager"', nav)
+        self.assertIn('href="#board" data-station="board"', nav)
         self.assertNotIn("Alle Projekte", nav)                                # the way back is in the top bar now
         self.assertNotIn("station-back", page)
         self.assertNotIn("clip-path", css_of("project.css"))                 # sharp edges, no arrows
+
+    def test_manager_view_has_the_settings_and_the_announced_tiles(self):
+        projects.update_details(self.user.id, self.project.id, "My <b>project</b>", "About <script>x</script> %BODY%")
+        self.project = projects.get_project(self.user.id, self.project.id)
+        page = self.html()
+        manager = page[page.index('<section class="manager" id="manager-view"'):]
+        manager = manager[:manager.index("</section>\n</section>") + 10]
+        self.assertIn(" hidden>", manager.split("\n")[0])                      # the board is shown first
+        self.assertIn(f'action="/projects/{self.project.id}/settings"', manager)
+        self.assertIn('value="My &lt;b&gt;project&lt;/b&gt;"', manager)
+        self.assertIn("About &lt;script&gt;x&lt;/script&gt; %BODY%", manager)  # escaped, not expanded
+        self.assertNotIn("<script>x", page)
+        for title in ("Status", "Wartet auf dich", "Manager-Chat", "Dateien", "Geräte", "Regelmäßige Prüfungen",
+                      "Einstellungen"):
+            self.assertIn(f"<h2>{title}</h2>", manager)
+        self.assertEqual(manager.count('class="mtile glass m-soon"'), 4)
+        self.assertIn("nicht Teil des Boards", manager)                       # the checks are not board items
+        self.assertIn("stations.js", page)
+        self.assertNotIn('id="manager"', page)                                # the hash must not make the page scroll
+
+    def test_stations_script_swaps_the_views_by_the_address(self):
+        script = css_of("stations.js")
+        for needle in ('"#manager"', "replaceState", "data-station", "drawer-extra", "manager-view"):
+            self.assertIn(needle, script)
+        self.assertIn(".manager {", css_of("project.css"))
+        self.assertIn("[hidden] { display: none !important; }", css_of("project.css"))
+
+    def test_manager_tile_classes_do_not_clash_with_the_settings_bar(self):
+        css = css_of("project.css")
+        for clash in (".mtile.status", ".mtile.settings", ".mtile.soon", ".lamp {", ".tag {"):
+            self.assertNotIn(clash, css)                                      # `.status` is the Claude row of the drawer
 
     def test_english(self):
         page = self.html("en")

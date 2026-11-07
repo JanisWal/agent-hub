@@ -34,7 +34,7 @@ class PagesTest(unittest.TestCase):
     def test_no_placeholder_is_left_over_and_user_text_is_escaped(self):
         for lang in ("de", "en"):
             for page in self.all_pages(lang):
-                self.assertIsNone(re.search(r"%[A-Z_]+%", page.replace("%BODY%</", "")),
+                self.assertIsNone(re.search(r"%[A-Z_]+%", page.replace("&lt;/script&gt; %BODY%", "")),
                                   "unfilled placeholder in " + lang)
                 self.assertNotIn("<script>alert", page)
                 self.assertNotIn("<img src=x", page)

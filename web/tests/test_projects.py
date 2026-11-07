@@ -31,6 +31,25 @@ class ProjectsTest(unittest.TestCase):
         self.add("A", "B", "C")
         self.assertEqual(self.names(self.me), ["A", "B", "C"])
 
+    def test_name_and_description_can_be_changed_by_the_owner(self):
+        (project,) = self.add("Old")
+        self.assertEqual(project.description, "")
+        changed = projects.update_details(self.me.id, project.id, "  New  ", "  What it is\nabout.  ")
+        self.assertEqual((changed.name, changed.description), ("New", "What it is\nabout."))
+        self.assertEqual(projects.get_project(self.me.id, project.id), changed)
+        self.assertEqual(self.names(self.me), ["New"])                         # position and page stay
+        self.assertEqual(projects.update_details(self.me.id, project.id, "New", "").description, "")
+
+    def test_details_are_validated_and_foreign_projects_are_untouched(self):
+        (project,) = self.add("Mine")
+        for name, description in (("  ", "x"), ("x" * (projects.MAX_NAME + 1), "x"),
+                                  ("ok", "x" * (projects.MAX_DESCRIPTION + 1))):
+            with self.assertRaises(ValueError):
+                projects.update_details(self.me.id, project.id, name, description)
+        self.assertIsNone(projects.update_details(self.other.id, project.id, "Hacked", "Hacked"))
+        self.assertEqual(projects.get_project(self.me.id, project.id).name, "Mine")
+        self.assertEqual(projects.get_project(self.me.id, project.id).description, "")
+
     def test_name_is_trimmed_and_validated(self):
         self.assertEqual(projects.create_project(self.me.id, "  X  ").name, "X")
         with self.assertRaises(ValueError):
@@ -152,6 +171,25 @@ class MigrationTest(unittest.TestCase):
             self.assertEqual(row["email"], "old@example.com")
             self.assertEqual((row["language"], row["had_project"]), ("de", 0))
             self.assertIsNone(row["display_name"])
+
+    def test_old_projects_get_an_empty_description(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db.DB_PATH = os.path.join(tmp, "old.db")
+            old = sqlite3.connect(db.DB_PATH)
+            old.executescript(
+                "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE,"
+                " password_hash TEXT NOT NULL, created_at INTEGER NOT NULL);"
+                "INSERT INTO users (email, password_hash, created_at) VALUES ('a@b.c', 'x', 1);"
+                "CREATE TABLE projects (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL,"
+                " name TEXT NOT NULL, position INTEGER NOT NULL, created_at INTEGER NOT NULL,"
+                " page INTEGER NOT NULL DEFAULT 0);"
+                "INSERT INTO projects (user_id, name, position, created_at, page) VALUES (1, 'Old', 0, 1, 1);"
+            )
+            old.commit()
+            old.close()
+            project = projects.get_project(1, 1)
+            self.assertEqual((project.name, project.description), ("Old", ""))
+            self.assertEqual(projects.update_details(1, 1, "Old", "Now described").description, "Now described")
 
     def test_projects_without_pages_are_spread_over_pages_of_six(self):
         with tempfile.TemporaryDirectory() as tmp:
