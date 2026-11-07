@@ -50,6 +50,17 @@ Sonderregel für Swift (Entwurf): Swift-Code braucht Xcode und den Simulator und
 - Risiko: Nach Fehlerberichten ist die Anmeldung ohne Bildschirm auf ARM64-Geräten wie dem Pi teils fehlerhaft, und Token laufen eventuell ohne automatische Erneuerung ab. Darum früh testen und in der Oberfläche den Status „Verbindung abgelaufen“ mit Knopf zum Erneuern anzeigen.
 - Sicherheit: nur über HTTPS, Token verschlüsselt, nie in Logs oder im Git.
 
+### Trennung der Claude-Konten (Pflichtregeln, Janis, 07.11.2026)
+
+Jeder Nutzer verbindet sein eigenes Claude-Konto. Die Konten dürfen sich nie berühren: Wer ein Konto verbindet, bindet es nur für sich, und niemand benutzt je das Claude eines anderen mit. **Stand heute:** Nichts davon ist gebaut, die Website kennt noch keine Claude-Anbindung (die Einträge „Claude“ und „ChatGPT“ in der Schublade sind feste Platzhalter). Die einzige Claude-Anmeldung auf dem Pi (Janis’ Konto) liegt im Docker-Volume `agent-hub_claude-home` des alten Runners (`/opt/agent-hub/compose.yml`, Profil `tools`, von Hand gestartet); das Volume hängt an keinem Dienst der Website, ein Zugriff aus dem Hub ist also nicht möglich. Beim Bau der Anbindung gilt, und der Isolationstest des Runners prüft es:
+
+1. **Ein Konfigurationsordner pro Nutzer.** Jeder Nutzer bekommt seinen eigenen Ordner für die Claude-Anmeldung (z. B. `/data/claude/<user_id>/`, über `CLAUDE_CONFIG_DIR`/`HOME` des Prozesses). Es gibt nie ein gemeinsames Volume und kein gemeinsames `HOME` für mehrere Nutzer. Janis’ bestehende Anmeldung wird sein Nutzerordner, nicht der Standard für alle.
+2. **Kein Rückfall.** Hat ein Nutzer kein Claude verbunden (oder ist die Verbindung abgelaufen), startet seine Aufgabe nicht und wartet mit dem Status „nicht verbunden“. Es gibt keinen Ersatz durch die Anmeldung eines anderen, auch nicht die des Owners.
+3. **Ein Lauf sieht nur seinen Nutzer.** Jede Aufgabe läuft in einem eigenen Container oder Prozess, der nur zwei Ordner sieht: den Projektordner dieser Aufgabe und den Claude-Ordner dieses Nutzers. Weder die Ordner anderer Nutzer noch `hub.db`, `.env`, Backups oder der Tresor sind eingehängt. Zwischen zwei Läufen verschiedener Nutzer gibt es keinen geteilten Speicher, keine gemeinsame Arbeitskopie und keine Verbindung zwischen den Agenten.
+4. **Der Nutzer kommt vom Server, nie vom Aufrufer.** Der Runner bekommt `user_id` und Projekt aus dem Aufgabendatensatz auf dem Server, nie aus einem Parameter, den ein Browser mitschicken kann. Schreibt ein Agent ins Board, dann mit `board.create_suggestion(user_id, project_id, kind, title)`; die Funktion prüft wie alle anderen, dass das Projekt diesem Nutzer gehört.
+5. **Token nur verschlüsselt und nur für den Besitzer.** Verbindungsdaten liegen verschlüsselt pro Nutzer. Weder Admins noch der Owner können sie anzeigen oder exportieren. Die Anzeige „Verknüpft“ und die Nutzungszählung hängen am Nutzer, nicht am Pi.
+6. **Test.** Vor dem ersten Livegang der Anbindung kommt ein Test, der mit zwei Nutzern prüft: Der Lauf von B hängt nur den Ordner von B ein, ohne Verbindung von B startet nichts, und die Zählung von A bleibt bei A.
+
 ### Tresor für Zugangsdaten (Ziel)
 
 - Janis lädt Zugangsdaten (SSH-Schlüssel, Passwörter, Tokens) über die Weboberfläche in einen Tresor. Agenten können sie nie lesen, nur nutzen lassen.
@@ -192,6 +203,8 @@ Sonderregel für Swift (Entwurf): Swift-Code braucht Xcode und den Simulator und
 
 - Keine offenen Ports, Zugriff nur über Tunnel.
 - Passwörter nur gehasht, Zwei-Faktor-Anmeldung, Begrenzung falscher Anmeldeversuche.
+- Sitzungen und Reset-Links stehen in der Datenbank nur als SHA-256-Hash, nie im Klartext: Eine Kopie der Datenbank oder ein Backup enthält keine nutzbare Anmeldung. Ein neues Passwort beendet alle anderen Sitzungen und macht offene Reset-Links ungültig. Reset-Mails sind pro IP begrenzt (wie falsche Passwörter, eigener Zähler) und pro Konto auf eine Mail je 60 Sekunden.
+- Mandantentrennung: Jede Abfrage nach Projekten und Board-Punkten hängt an `user_id` (Punkte über ihr Projekt), ein fremder Zugriff liefert „nicht gefunden“ (404) oder „nichts getan“. `tests/test_isolation.py` und der HTTP-Test mit zwei Konten prüfen das. Neue Datenfunktionen übernehmen diese Regel von Anfang an (auch solche für Agenten).
 - Zugangsdaten und Schlüssel nie im Code, nie im Git.
 - Agenten laufen isoliert im Container und nur im Projektordner.
 - Automatische Backups von Datenbank und Dateiablage auf ein zweites Medium, mit regelmäßigem Test der Wiederherstellung.
@@ -275,12 +288,12 @@ web/app/
 web/tests/                   Unit-Tests und integration_http.py (End-to-End über HTTP)
 ```
 
-**Schnittstellen für später:** Jede Route hängt an einem eigenen Router (`routes/`), neue Bereiche (Agenten, Dateiablage, Tresor) kommen als weiteres Modul plus Router dazu, ohne `main.py` umzubauen. Die Anmeldeprüfung ist eine Abhängigkeit (`page_user` für Seiten, `api_user` für fetch-Aufrufe), eine Rollenprüfung lässt sich dort ergänzen. Neue Seiten bauen auf `ui.logged_in_page()` auf, neue Texte kommen in `i18n.py` in beide Sprachen, neue Symbole in `icons.py`. Claude-Vorschläge legt der spätere Agenten-Code mit `board.create_suggestion(project_id, kind, title)` an.
+**Schnittstellen für später:** Jede Route hängt an einem eigenen Router (`routes/`), neue Bereiche (Agenten, Dateiablage, Tresor) kommen als weiteres Modul plus Router dazu, ohne `main.py` umzubauen. Die Anmeldeprüfung ist eine Abhängigkeit (`page_user` für Seiten, `api_user` für fetch-Aufrufe), eine Rollenprüfung lässt sich dort ergänzen. Neue Seiten bauen auf `ui.logged_in_page()` auf, neue Texte kommen in `i18n.py` in beide Sprachen, neue Symbole in `icons.py`. Claude-Vorschläge legt der spätere Agenten-Code mit `board.create_suggestion(user_id, project_id, kind, title)` an.
 
 ### Datenmodell (SQLite, `/data/hub.db`)
 
-- `users`: id, email (eindeutig), password_hash (scrypt), is_admin (Altlast, immer `role != user`, der Code hält beide gleich), role (`owner`/`admin`/`user`, höchstens ein `owner` durch den Teilindex `users_one_owner`), must_change_password, theme (`light`/`dark`, zuletzt gesehener Stil, für Mails), display_name, language (`de`/`en`), had_project, created_at.
-- `sessions`: token, user_id, expires_at (14 Tage). Cookie `session`: HttpOnly, SameSite=Lax, Secure über `HUB_SECURE_COOKIE=1`.
+- `users`: id, email (eindeutig), password_hash (scrypt), role (`owner`/`admin`/`user`, höchstens ein `owner` durch den Teilindex `users_one_owner`), must_change_password, theme (`light`/`dark`, zuletzt gesehener Stil, für Mails), display_name, language (`de`/`en`), had_project, created_at.
+- `sessions`: token_hash (SHA-256 des Cookie-Werts, nie der Wert selbst), user_id, expires_at (14 Tage). Cookie `session`: HttpOnly, SameSite=Lax, Secure über `HUB_SECURE_COOKIE=1`.
 - `projects`: id, user_id, name (höchstens 60), page, position. Sechs Kacheln pro Seite; eine volle Seite schiebt ihr letztes Projekt auf die nächste (`projects.move`). Seiten ohne Projekte gibt es nicht. Löschen ist endgültig und verlangt das Passwort.
 - `board_items`: id, project_id, kind (`bug`/`minor`/`major`), title (höchstens 200), source (`user`/`claude`), status (`open`/`proposed`/`trash`), position. Von Hand angelegte Punkte sind `open` und stehen oben, Vorschläge von Claude sind `proposed` und stehen unten. Jeder Zugriff prüft, dass das Projekt dem Nutzer gehört.
 - `login_attempts`: ip (Schlüssel), failures, window_start, locked_until. Zählt falsche Passwörter pro IP (hinter dem Tunnel aus `CF-Connecting-IP`). Zehn Fehlversuche innerhalb von 30 Minuten sperren die IP für eine Stunde, dann antworten Anmeldung und Projekt-Löschen mit 429 (auch bei richtigem Passwort). Ein richtiges Passwort setzt den Zähler nicht zurück, er läuft mit dem Zeitfenster ab. Gezählt wird nie pro E-Mail, damit niemand den Owner aussperren kann.
@@ -297,7 +310,7 @@ web/tests/                   Unit-Tests und integration_http.py (End-to-End übe
 | POST `/theme` (Wert `light`/`dark`, sonst 400), `/projects/move`, `/projects/{id}/delete`, `/projects/{id}/trash/empty`, `/items/reorder`, `/items/{id}/{accept,reject,discard,restore,delete}` | fetch-Aufrufe, antworten mit `{"ok": …}` | 401 |
 | GET `/users`, POST `/users/add`, `/users/{id}/reset`, `/users/{id}/delete`, `/users/{id}/owner`, `/users/{id}/admin` | Benutzerverwaltung für Owner und Admins (`/users/add` nimmt nur die E-Mail-Adresse und lädt per Mail ein, bei Versandfehler 502 und das Konto wird wieder entfernt; `/users` sonst 404, die POST-Aufrufe 403; Zurücksetzen, Löschen und Owner-Übergabe verlangen das eigene Passwort; `admin` und `owner` nur für den Owner) | Umleitung auf `/login` bzw. 401 |
 | GET/POST `/password` | eigenes Passwort ändern (nach einem Startpasswort Pflicht, bis dahin ist nur diese Seite erreichbar) | Umleitung auf `/login` |
-| GET/POST `/forgot` | E-Mail-Adresse eingeben, Link per Mail anfordern. Antwort immer gleich, ob es das Konto gibt oder nicht (die Mail geht nach der Antwort raus, auch die Dauer verrät nichts); ohne `@` 400 | offen |
+| GET/POST `/forgot` | E-Mail-Adresse eingeben, Link per Mail anfordern. Antwort immer gleich, ob es das Konto gibt oder nicht (die Mail geht nach der Antwort raus, auch die Dauer verrät nichts); ohne `@` 400; pro IP begrenzt (10 Anfragen in 30 Minuten sperren die IP für eine Stunde, dann 429) | offen |
 | GET/POST `/reset/{token}` | Neues Passwort mit dem Link aus der Mail festlegen (Regeln wie bei `/password`); unbekannter, abgelaufener oder benutzter Link: 400. Danach enden alle Sitzungen, ein Startpasswort-Zwang entfällt, Umleitung auf `/login` | offen |
 | GET `/health` | Lebenszeichen | offen |
 
@@ -324,7 +337,7 @@ web/tests/                   Unit-Tests und integration_http.py (End-to-End übe
 ### Tests
 
 - **Unit-Tests** (laufen im Container, ohne den Dienst anzufassen), im Klon-Ordner (für Code, der noch nicht im Image steckt, zusätzlich `-v "$PWD/web/app:/app/app"` angeben): `docker compose run --rm --no-deps -v "$PWD/web/tests:/app/tests" web python -W ignore -m unittest discover -s tests -t .`
-- **HTTP-Test** gegen eine Wegwerf-Instanz mit eigener Datenbank und Testkonto, z. B. `docker run -d --name hub-test -p 8001:8000 -e HUB_DB=/tmp/test.db -e HUB_SECURE_COOKIE=0 agent-hub-web`, Testnutzer mit `users.create_user` anlegen, dann `python3 web/tests/integration_http.py http://127.0.0.1:8001 EMAIL PASSWORT`. Bei HTTP muss `HUB_SECURE_COOKIE=0` stehen, sonst sendet der Client den Cookie nicht zurück. Nie mit dem echten Konto testen.
+- **HTTP-Test** gegen eine Wegwerf-Instanz mit eigener Datenbank und Testkonto, z. B. `docker run -d --name hub-test -p 8001:8000 -e HUB_DB=/tmp/test.db -e HUB_SECURE_COOKIE=0 agent-hub-web`, Testnutzer mit `users.create_user` anlegen, dann `python3 web/tests/integration_http.py http://127.0.0.1:8001 EMAIL PASSWORT [EMAIL2 PASSWORT2]` (mit einem zweiten normalen Konto prüft der Test zusätzlich, dass es nichts vom ersten sieht oder ändert). Bei HTTP muss `HUB_SECURE_COOKIE=0` stehen, sonst sendet der Client den Cookie nicht zurück. Nie mit dem echten Konto testen.
 - **Browser-Prüfung** der Oberfläche in Claude in Chrome gegen die Testinstanz auf Port 8001 (Seite `http://home.local:8001`). Fenstergrößen werden über Rahmen (iframe) in der gewünschten Größe geprüft, weil `resize_window` das Fenster nicht ändert. In einem minimierten Test-Fenster pausiert Chrome `requestAnimationFrame` und CSS-Animationen: dann den Takt durch einen 16-ms-Zeitgeber ersetzen und endliche Animationen mit `getAnimations().finish()` beenden. Das Feld mit `autofocus` bekommt keinen Fokus, daher per `input.focus()` setzen und 2 bis 3 s nach dem Laden warten. Klicks per Koordinate: Bildschirmfoto ist skaliert (1568 px breit), also `getBoundingClientRect` über `javascript_tool` lesen und umrechnen.
 - Die Federn und die gefühlte Flüssigkeit kann nur Janis in einem sichtbaren Fenster beurteilen. Berührung am echten Handy ist ungeprüft.
 - Aus PowerShell keine verschachtelten Anführungszeichen für `ssh`: längere Schritte als Skriptdatei per `scp` hochladen und mit `bash` ausführen.
@@ -367,7 +380,7 @@ Eine laufende Claude-Code-Sitzung zieht nicht um; der PC muss an bleiben, bis ei
 - [x] Erster Admin angelegt, Login getestet
 - [x] Sicherheits-Header gesetzt, API-Dokumentation abgeschaltet
 - [x] Begrenzung falscher Anmeldeversuche: nur pro IP, 10 Fehlversuche in 30 Minuten sperren die IP für 1 Stunde (Anmeldung und Löschen gemeinsam, `throttle.py`)
-- [ ] Versionen von fastapi, uvicorn und python-multipart festgenagelt
+- [x] Versionen von fastapi, uvicorn und python-multipart festgenagelt (`web/requirements.txt`; die übrigen Pakete, z. B. starlette, ergeben sich daraus)
 - [ ] Web-Container läuft als eigener Benutzer ohne Sonderrechte (Datenordner-Rechte anpassen), mit Speicherlimit
 - [ ] Gesundheitsprüfung über `/health` in compose eingetragen
 - [ ] Content-Security-Policy (benötigt, dass das Theme-Skript im `<head>` ohne Inline-Code auskommt)
