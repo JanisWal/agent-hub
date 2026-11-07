@@ -130,7 +130,7 @@ Sonderregel für Swift (Entwurf): Swift-Code braucht Xcode und den Simulator und
 - In den Einstellungen: „Neuen Benutzer hinzufügen“ mit E-Mail-Adresse und vergebenem Passwort.
 - Liste der Benutzer: Passwörter zurücksetzen und Konten löschen (Owner und Admins).
 - Nur der Owner kann Admin-Rechte per Schalter in der Benutzerliste vergeben oder entziehen. Das Owner-Konto kann niemand löschen oder herabstufen.
-- Das Owner-Konto entsteht bei der Installation (bisher per `python -m app.create_admin` auf dem Pi, wird zum Owner umgebaut).
+- Das Owner-Konto entsteht bei der Installation (bisher per `docker compose exec web python -m app.create_admin` im Ordner der `compose.yml`, wird zum Owner umgebaut).
 
 ### Projektansicht
 
