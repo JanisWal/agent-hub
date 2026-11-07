@@ -22,7 +22,7 @@ from . import launcher, login
 
 LOGIN_TIMEOUT_AFTER_CODE = 90   # seconds Claude Code gets to accept the code
 LINK_TIMEOUT = 30               # seconds until the sign-in prints its link
-CHAT_TIMEOUT = 150              # seconds a test-chat answer may take
+CHAT_TIMEOUT = 200              # seconds a chat answer may take (a web search takes several steps)
 
 
 class Api:

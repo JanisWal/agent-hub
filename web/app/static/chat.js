@@ -12,7 +12,33 @@
   var url = "/projects/" + projectId + "/chat";
   var timer = null;
 
-  function line(kind, who, text) {
+  // Answers may contain **bold**, [text](link) and bare links (after a web search). Built from DOM nodes only,
+  // never from HTML, and only http(s) links: nothing in an answer can inject markup or a javascript: link.
+  var TOKEN = /\*\*([^*\n]+)\*\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s)<>\]]+)/g;
+  function fillRich(target, text) {
+    var last = 0;
+    var m;
+    TOKEN.lastIndex = 0;
+    while ((m = TOKEN.exec(text))) {
+      if (m.index > last) target.appendChild(document.createTextNode(text.slice(last, m.index)));
+      if (m[1] !== undefined) {
+        var strong = document.createElement("strong");
+        strong.textContent = m[1];
+        target.appendChild(strong);
+      } else {
+        var link = document.createElement("a");
+        link.href = m[3] || m[4];
+        link.textContent = m[2] || m[4];
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        target.appendChild(link);
+      }
+      last = TOKEN.lastIndex;
+    }
+    if (last < text.length) target.appendChild(document.createTextNode(text.slice(last)));
+  }
+
+  function line(kind, who, text, rich) {
     var item = document.createElement("li");
     item.className = "chat-msg " + kind;
     var name = document.createElement("span");
@@ -20,7 +46,7 @@
     name.textContent = who;
     var body = document.createElement("span");
     body.className = "chat-text";
-    body.textContent = text;
+    if (rich) fillRich(body, text); else body.textContent = text;
     item.appendChild(name);
     item.appendChild(body);
     return item;
@@ -37,7 +63,7 @@
       } else if (m.status === "failed") {
         log.appendChild(line("claude failed", box.dataset.claude, box.dataset.failed + (m.answer ? ": " + m.answer : "")));
       } else {
-        log.appendChild(line("claude", box.dataset.claude, m.answer));
+        log.appendChild(line("claude", box.dataset.claude, m.answer, true));
       }
     });
     send.disabled = open;
