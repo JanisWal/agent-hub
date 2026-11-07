@@ -43,7 +43,7 @@ class AdvanceTest(unittest.TestCase):
         self.assertEqual((step.status, step.manual_check), ("reviewing", True))  # nothing was tested
         no_review = ALL - {"reviewer"}
         self.assertEqual(w.advance("testing", 1, False, "pass", no_review).status, "awaiting_approval")
-        self.assertEqual(w.after_approval(1, False, ALL - {"documenter"}).status, "done")
+        self.assertEqual(w.after_approval(1, False, ALL - {"chef"}).status, "done")
         bare = frozenset({"programmer"})
         self.assertEqual(w.advance("coding", 1, False, "done", bare).status, "awaiting_approval")
 

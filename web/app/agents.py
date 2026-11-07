@@ -19,7 +19,7 @@ from . import board, claude_link, db, workflow
 
 MODELS = ("haiku", "sonnet", "opus")     # aliases of Claude Code, they follow the newest version
 DEFAULT_MODEL = {"chef": "sonnet", "programmer": "sonnet", "tester": "sonnet",
-                 "reviewer": "sonnet", "documenter": "haiku"}
+                 "reviewer": "sonnet"}
 NEEDS = ("any", "mac")
 # How freely the manager decides (Janis, 07.11.2026): fully on its own, asks for big decisions, asks for small
 # things too. It is a threshold, not a switch: the manager first tries to derive the answer from the project.

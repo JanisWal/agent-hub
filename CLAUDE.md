@@ -18,7 +18,8 @@ Ziel, Entscheidungen, Reihenfolge, Codeaufbau, Betrieb, Tests und offene Punkte:
 - Raspberry Pi 4B, Raspberry Pi OS Lite 64-Bit, alles per Docker Compose unter `/opt/agent-hub/`.
 - Python mit FastAPI, SQLite, schlichtes Frontend (serverseitige Vorlagen, kein Framework). Läuft live unter `hub.janis-home.de`.
 - Zugriff von außen nur über Cloudflare Tunnel, keine offenen Router-Ports. Login mit E-Mail und Passwort, Rollen Owner (genau einer, übertragbar), Admin, Nutzer; Einladung und Passwort-Reset per E-Mail über Resend.
-- Claude Code läuft als Runner auf dem Pi; für Swift-Aufgaben ein Runner auf dem Mac mit derselben Schnittstelle (nur ausgehende Verbindung). Noch nicht an die Website angebunden.
+- Claude Code läuft über den Runner auf dem Pi, ein Wegwerf-Container je Lauf. Live: Claude verknüpfen pro Nutzer und der Manager-Chat; Agentenläufe sind gebaut, aber noch nicht angeschlossen. Für Swift später ein Mac-Programm (nur ausgehend, Start per Knopf ohne zweite Anmeldung, Ergebnis als Git-Bundle über den Hub).
+- Netz der Agenten: internes Docker-Netz, einziger Ausgang der Filter-Proxy `egress` (3129 nur Anthropic, 3128 öffentliche Seiten); nie ins Heimnetz. Geräte nur über Geräteliste und Vermittler, fremde Netze über Tailscale; auf der Fritzbox wird kein Port geöffnet.
 - Jeder Nutzer verbindet sein eigenes Claude-Konto; die Konten sind strikt getrennt (Pflichtregeln in PROJEKT.md Abschnitt 3, „Trennung der Claude-Konten“).
 - Pro Aufgabe ein Git-Branch (Worktree). Ablauf: Programmierer, Tester, Prüfer, Freigabe durch Janis, danach führt der Manager die Doku nach (Rolle Dokumentator entfallen am 07.11.2026).
 - Agenten nutzen Zugangsdaten nur über den Vermittler, nie direkt.
@@ -32,6 +33,9 @@ Ziel, Entscheidungen, Reihenfolge, Codeaufbau, Betrieb, Tests und offene Punkte:
 - **Rechte prüft der Server**, nicht das Menü (`users.can_manage`, Rollenprüfung in der Route). Ernste Aktionen (Löschen, Zurücksetzen, Owner übergeben) verlangen das Passwort des Handelnden (`deps.reauth`, mit Sperre pro IP). Offene Routen, die Mails auslösen oder Passwörter prüfen, bekommen eine Begrenzung (`throttle.py`).
 - **Tokens** (Sitzung, Reset-Link) stehen in der Datenbank nur als Hash. Links in Mails kommen aus `HUB_BASE_URL`, nie aus der Anfrage. Mails nur über `mail.py` und `mailtext.py`.
 - **Datenbank:** Schemaänderungen über `db.py`; Umwandlungen alter Daten laufen einmalig, nie bei jedem Start; eine Migration wird vor dem Deploy an einer Kopie der echten Datenbank geprobt; vor jedem Deploy ein Backup.
+- **Text an Claude** (Projektkontext, Berichte, Fragen) geht nur über die Standardeingabe und ist als Information markiert, nie über die Befehlszeile; der Kontext kommt nur aus Daten des Besitzers. Der Launcher nimmt nur geprüfte Werte (Zahlen, Modell aus `MODELS`, Modus aus `CHAT_MODES`).
+- **Oberfläche:** Auswahlfelder immer im eigenen Stil (`.has-select`, Liste aus `core.js`), nie die Liste des Browsers, und ohne `title` (der Hinweis deckt sonst die Liste zu). Klassen in einer Ansicht mit Präfix, wenn ein Name schon vergeben ist (Manager: `m-`).
+- **Board und Manager:** Das Board ist nur für Software (Bugs, kleine und Major-Updates). Hardware-To-Dos, Checklisten und regelmäßige Prüfungen gehören dem Manager. Einstellungen des Managers (Modell, Selbstständigkeit) gelten pro Nutzer für alles, was er tut (Rolle `chef`, `agents.configure`).
 - Nur ein Thema pro Commit, kurze englische Commit-Nachrichten, ein Branch pro Aufgabe.
 - Backups und Rückrollen sind Teil jeder Änderung, die Daten betrifft.
 

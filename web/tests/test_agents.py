@@ -128,7 +128,7 @@ class ChainTest(Base):
         self.assertEqual(agents.get_task(self.a.id, task.id).status, "awaiting_approval")
         self.assertIsNone(agents.claim_next(can_mac=True))        # waits for the user
         self.assertTrue(agents.decide(self.a.id, task.id, "approve"))
-        self.assertEqual(self.run_stage("done", "documented").role, "documenter")
+        self.assertEqual(self.run_stage("done", "documented").role, "chef")   # the manager documents
         done = agents.get_task(self.a.id, task.id)
         self.assertEqual((done.status, done.round), ("done", 2))
         item = [i for i in board.list_items(self.a.id, self.project.id) if i.id == self.item.id][0]

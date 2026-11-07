@@ -3,7 +3,10 @@
 A task walks through stages, each stage belongs to one role:
 
     coding (programmer) -> testing (tester) -> reviewing (reviewer) -> awaiting_approval (the user)
-        -> documenting (documenter) -> done
+        -> documenting (chef, the manager) -> done
+
+The role "documenter" was dropped (Janis, 07.11.2026): the manager knows everything anyway and writes
+the documentation after an approval.
 
 A failed test or an objection of the reviewer sends the task back to coding and counts as a new
 round. After MAX_ROUNDS the task goes to the user (`escalated`). Agents never talk to each other:
@@ -12,15 +15,15 @@ user's decision), cancelled.
 """
 from dataclasses import dataclass
 
-ROLES = ("chef", "programmer", "tester", "reviewer", "documenter")
+ROLES = ("chef", "programmer", "tester", "reviewer")
 STAGES = ("coding", "testing", "reviewing", "awaiting_approval", "documenting")
 STAGE_ROLE = {"coding": "programmer", "testing": "tester", "reviewing": "reviewer",
-              "documenting": "documenter"}
+              "documenting": "chef"}
 RESULTS = {
     "programmer": ("done", "failed"),
     "tester": ("pass", "fail", "not_testable", "skipped", "failed"),
     "reviewer": ("ok", "objections", "failed"),
-    "documenter": ("done", "failed"),
+    "chef": ("done", "failed"),
 }
 MAX_ROUNDS = 3
 STRICTNESS = ("loose", "normal", "strict")
@@ -86,7 +89,7 @@ def advance(status: str, round_: int, manual_check: bool, result: str,
 
 
 def after_approval(round_: int, manual_check: bool, enabled: frozenset[str]) -> Step:
-    """The user approved: documenting if the documenter is on, else done."""
+    """The user approved: the manager documents if it is on, else done."""
     nxt = _first_enabled("documenting", enabled, manual_check)
     return Step(nxt.status, round_, nxt.manual_check)
 
