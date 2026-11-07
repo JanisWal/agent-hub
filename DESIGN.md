@@ -207,6 +207,15 @@ Stand 07.11.2026, von Janis beauftragt, in Chrome mit Testkonto geprüft (Anlege
 
 **Marke „Agent-Hub“ oben links:** ist ein Link zum GitHub-Repo (`https://github.com/JanisWal/agent-hub`), öffnet in neuem Tab (`rel="noopener noreferrer"`), beim Darüberfahren unterstrichen. Gilt auf allen Seiten, auch beim Login.
 
+## 10c. Benutzer und Passwort
+
+Stand 07.11.2026, von Janis beauftragt, in Chrome mit Testkonten geprüft (Hell und Dunkel). Regeln und Rechte stehen in PROJEKT.md („Benutzerverwaltung“).
+
+- **Schublade:** Unter „Speichern“ stehen zwei Textlinks: **Benutzer verwalten** (nur für Owner und Admins) und **Passwort ändern** (für alle), darunter „Abmelden“.
+- **Seite `/users`:** Oben links der Textlink „Alle Projekte“, darunter die Überschrift **Benutzer** und rechts der Hauptknopf **Benutzer hinzufügen** (einziger Hauptknopf der Ansicht). Die Liste ist eine Glasfläche mit einer Zeile je Konto im Aufbau der Einstellungs-Blöcke: E-Mail (Gewicht 600), darunter die Rolle klein in `--muted` (beim eigenen Konto mit „(du)“). Rechts die Aktionen: ein Schalter **Admin** (Pille, nur beim Owner sichtbar, mit Akzentfüllung wenn aktiv), ein Schlüssel (Passwort zurücksetzen) und ein Mülleimer (löschen). Nur erlaubte Aktionen werden gezeigt; der Owner hat keine. Breite höchstens 760 px; auf dem Handy brechen Kopf und Zeilen um.
+- **Dialoge:** Hinzufügen (E-Mail, Startpasswort sichtbar im Klartext, damit der Admin ein einfaches vergibt, Hinweis darunter) und Zurücksetzen (neues Startpasswort, dein Passwort) sind normale Dialoge mit Hauptknopf; **Löschen** ist der rote Dialog (Titel, E-Mail, dein Passwort, „Endgültig löschen“). Fehler stehen in der getönten Fehlerbox im Dialog, in der Sprache des Nutzers, vom Server.
+- **Seite `/password`:** wie die Login-Seite eine Glaskarte mit Überschrift „Neues Passwort“ und Unterzeile; nach einem Startpasswort lautet sie „Bitte lege ein eigenes Passwort fest, bevor du weitermachst.“ Felder: aktuelles Passwort, neues Passwort, wiederholen; darunter die Regel in `--muted`. Fehler in der Fehlerbox oben.
+
 ## 11. Umsetzung
 
 Aufbau des Codes und Betrieb stehen in PROJEKT.md (Abschnitte 8 und 9). Für die Gestaltung gilt:

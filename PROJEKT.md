@@ -142,7 +142,9 @@ Sonderregel für Swift (Entwurf): Swift-Code braucht Xcode und den Simulator und
 - Absicherung dazu: Ein Startpasswort gilt nur bis zur ersten Änderung. Beim ersten Login mit dem Startpasswort muss der Nutzer ein eigenes Passwort setzen.
 - Zusätzlich: Beim Anlegen kann der Hub direkt eine Einladungs-Mail mit Link zum Passwort-Setzen schicken (gleicher Baustein wie der Reset). Dann gibt der Admin nur die E-Mail-Adresse ein.
 - Nur der Owner kann Admin-Rechte per Schalter in der Benutzerliste vergeben oder entziehen. Das Owner-Konto kann niemand löschen oder herabstufen.
-- Das Owner-Konto entsteht bei der Installation (bisher per `docker compose exec web python -m app.create_admin` im Ordner der `compose.yml`, wird zum Owner umgebaut).
+- **Gebaut am 07.11.2026** (Branch `user-management`): Rollen `owner`/`admin`/`user` in `users.role`, Seite `/users` (Eintrag „Benutzer verwalten“ in der Einstellungs-Schublade, nur für Owner und Admins), Dialoge zum Hinzufügen, Zurücksetzen und Löschen. Zurücksetzen und Löschen verlangen das Passwort dessen, der es tut (mit der Sperre pro IP). Wer sich mit einem Startpasswort anmeldet, erreicht nur `/password`, bis er ein eigenes gesetzt hat; dabei enden seine anderen Sitzungen. Der Owner kann Admins ernennen und entziehen und alle anderen verwalten, Admins verwalten nur normale Nutzer, niemand rührt den Owner an. Beim Löschen eines Kontos verschwinden auch seine Projekte.
+- **Passwortregeln** (Janis, 07.11.2026): für selbst gewählte Passwörter mindestens 6 Zeichen mit Groß- und Kleinbuchstaben, einem Sonderzeichen und zwei Zahlen (`users.password_problem`). Ein vom Admin vergebenes Startpasswort braucht nur 6 Zeichen, denn der Nutzer ersetzt es sofort. Für den Reset per E-Mail steht `users.set_password(user_id, neues_passwort)` bereit; wer ein Passwort wählen lässt, prüft vorher `password_problem`.
+- Das Owner-Konto entsteht bei der Installation (`docker compose exec web python -m app.create_admin` im Ordner der `compose.yml`: das erste Konto wird Owner, weitere werden Admins).
 
 ### Projektansicht
 
@@ -246,19 +248,21 @@ web/app/
   routes/auth.py             /login, /logout, /settings
   routes/projects.py         /, /projects, /projects/move, /projects/{id}, /projects/{id}/delete
   routes/board.py            Punkte anlegen, umbenennen, ordnen, annehmen, verwerfen, Papierkorb
+  routes/accounts.py         /users (Benutzerverwaltung), /password
   db.py                      SQLite-Verbindung, Schema, kleine Migrationen (schließt Verbindungen sicher)
   users.py  projects.py  board.py   Daten und Regeln (ohne HTTP)
   throttle.py                Sperre nach zu vielen falschen Passwörtern (pro IP, SQLite)
+  userspage.py               HTML von /users und /password
   layout.py                  Seitenhülle und Vorlagen-Ersetzung fill(): %NAME% = fertiger Wert, %t.schluessel% = übersetzter Text
   ui.py                      Login-Seite, Einstellungs-Schublade, angemeldeter Seitenrahmen
   dashboard.py  projectpage.py   HTML von Startseite und Projektseite
   icons.py                   alle SVG-Symbole an einer Stelle
   i18n.py                    alle Texte in Deutsch und Englisch (ein Test prüft Gleichstand)
   create_admin.py            python -m app.create_admin
-  static/app.css  dashboard.css  project.css   Gestaltung (Werte siehe DESIGN.md)
+  static/app.css  dashboard.css  project.css  users.css   Gestaltung (Werte siehe DESIGN.md)
   static/core.js             Theme, Formularprüfung, Schublade, Dialog-Schließen, window.AgentHub.reload
   static/motion.js           Federn und FLIP;  sortable.js: Ziehen zum Ordnen
-  static/dashboard.js        Begrüßung, Dialoge;  pages.js: Seitenband, Seitenanzeige, Kachel-Ziehen;  board.js: Board
+  static/dashboard.js        Begrüßung, Dialoge;  pages.js: Seitenband, Seitenanzeige, Kachel-Ziehen;  board.js: Board;  users.js: Benutzerverwaltung
 web/tests/                   Unit-Tests und integration_http.py (End-to-End über HTTP)
 ```
 
@@ -266,7 +270,7 @@ web/tests/                   Unit-Tests und integration_http.py (End-to-End übe
 
 ### Datenmodell (SQLite, `/data/hub.db`)
 
-- `users`: id, email (eindeutig), password_hash (scrypt), is_admin, display_name, language (`de`/`en`), had_project, created_at.
+- `users`: id, email (eindeutig), password_hash (scrypt), is_admin, role (`owner`/`admin`/`user`), must_change_password, display_name, language (`de`/`en`), had_project, created_at.
 - `sessions`: token, user_id, expires_at (14 Tage). Cookie `session`: HttpOnly, SameSite=Lax, Secure über `HUB_SECURE_COOKIE=1`.
 - `projects`: id, user_id, name (höchstens 60), page, position. Sechs Kacheln pro Seite; eine volle Seite schiebt ihr letztes Projekt auf die nächste (`projects.move`). Seiten ohne Projekte gibt es nicht. Löschen ist endgültig und verlangt das Passwort.
 - `board_items`: id, project_id, kind (`bug`/`minor`/`major`), title (höchstens 200), source (`user`/`claude`), status (`open`/`proposed`/`trash`), position. Von Hand angelegte Punkte sind `open` und stehen oben, Vorschläge von Claude sind `proposed` und stehen unten. Jeder Zugriff prüft, dass das Projekt dem Nutzer gehört.
@@ -281,6 +285,8 @@ web/tests/                   Unit-Tests und integration_http.py (End-to-End übe
 | GET `/`, GET `/projects/{id}` | Dashboard, Projektseite | Umleitung auf `/login` |
 | POST `/settings`, `/projects`, `/projects/{id}/items`, `/items/{id}` | Formulare, antworten mit Umleitung | Umleitung auf `/login` |
 | POST `/projects/move`, `/projects/{id}/delete`, `/projects/{id}/trash/empty`, `/items/reorder`, `/items/{id}/{accept,reject,discard,restore,delete}` | fetch-Aufrufe, antworten mit `{"ok": …}` | 401 |
+| GET `/users`, POST `/users/add`, `/users/{id}/reset`, `/users/{id}/delete`, `/users/{id}/admin` | Benutzerverwaltung für Owner und Admins (`/users` sonst 404, die POST-Aufrufe 403; Zurücksetzen und Löschen verlangen das eigene Passwort; `admin` nur für den Owner) | Umleitung auf `/login` bzw. 401 |
+| GET/POST `/password` | eigenes Passwort ändern (nach einem Startpasswort Pflicht, bis dahin ist nur diese Seite erreichbar) | Umleitung auf `/login` |
 | GET `/health` | Lebenszeichen | offen |
 
 `/docs`, `/redoc` und `/openapi.json` sind abgeschaltet. Alle Antworten tragen `X-Content-Type-Options`, `X-Frame-Options: SAMEORIGIN` und `Referrer-Policy`; Seiten (nicht `/static`) zusätzlich `Cache-Control: no-store`, bei HTTPS `Strict-Transport-Security`.
