@@ -83,14 +83,26 @@ Programm.   Tester      Prüfer         Nutzer gibt frei      Dokumentator
 |---|---|
 | 1 Ordner pro Nutzer | `config_dir(user_id)`; Janis’ bestehende Anmeldung wird sein Ordner `/data/claude/<seine id>/` |
 | 2 Kein Rückfall | `claim_next` nimmt nur Läufe von Nutzern mit Zustand `connected` |
-| 3 Lauf sieht nur seinen Nutzer | **Vorschlag:** Ein Runner-Container (ohne `hub.db`, `.env`, Backups, Tresor) startet jeden Lauf als eigenen Prozess unter einer eigenen Unix-Kennung je Nutzer (z. B. `10000 + user_id`), Ordner `0700`, `HOME` und `CLAUDE_CONFIG_DIR` auf seinen Ordner, Arbeitsordner nur der Worktree dieser Aufgabe. Verworfen: Docker-Socket für einen Container je Lauf (würde dem Runner Root auf dem Pi geben). Entscheidung und Test stehen aus. |
+| 3 Lauf sieht nur seinen Nutzer | **Entschieden (Janis, 07.11.2026): ein eigener Container je Lauf**, Sicherheit geht vor Schlankheit. Aufbau in Abschnitt 6a. Verworfen: Prozess unter eigener Unix-Kennung im gemeinsamen Runner-Container (schlanker, aber alle Läufe teilen sich Container und Dateisystem). |
 | 4 Nutzer vom Server | `Job.user_id` kommt aus `agent_tasks` → `projects`, `finish_run` und `claim_next` nehmen keinen Nutzer entgegen |
 | 5 Token nur verschlüsselt, nur für den Besitzer | Token liegen nur in Claude Codes eigenem Ordner des Nutzers, nicht in der Datenbank; kein Admin-Weg zum Anzeigen. Offen: Verschlüsselung des Ordners selbst (siehe Abschnitt 7) |
 | 6 Test | `test_isolation.py::test_b_cannot_touch_the_agents_of_a`; der Test mit dem echten Runner kommt mit dem Runner |
 
+## 6a. Ein Container je Lauf (entschieden)
+
+**Messung auf dem Pi (07.11.2026):** Docker und containerd laufen ohnehin (zusammen etwa 210 MiB, schon in den 349 MiB „benutzt“ enthalten). Ein Wegwerf-Container mit allen Beschränkungen startet in 1,2 bis 2,8 Sekunden (fünf Läufe, bei einem Lauf von Minuten unerheblich) und kostet außer seinem Prozess keinen Dauerspeicher. Frei sind rund 540 MiB; ein Claude-Code-Lauf brauchte im ersten Test mindestens 225 MiB. Darum bleibt `MAX_RUNNING = 1`, der Container je Lauf ändert nichts an der Speicherrechnung.
+
+Aufbau:
+- Der **Launcher** (Teil des Runners, unser Code, nie Code eines Agenten) startet pro Lauf `docker run --rm` aus einer **festen Vorlage**. Aus dem Auftrag fließen nur drei geprüfte Werte ein: die Nutzernummer (Zahl), die Aufgabennummer (Zahl) und das Modell (aus `MODELS`). Berichte, Titel und Notizen gelangen nie in die Befehlszeile, nur als Datei in den Arbeitsordner.
+- **Eingehängt** sind genau zwei Ordner: der Worktree dieser Aufgabe (lesen/schreiben) und `/data/claude/<user_id>/` (lesen/schreiben, als `CLAUDE_CONFIG_DIR`). Nichts sonst: weder `hub.db`, `.env`, Backups, Tresor noch Ordner anderer Nutzer.
+- **Beschränkungen:** `--cap-drop ALL`, `--security-opt no-new-privileges`, `--read-only` mit `tmpfs` für `/tmp`, eigener Benutzer ohne Root (UID `10000 + user_id`, damit auch die Ordner-Rechte `0700` zusätzlich greifen), `--memory` (z. B. 480m, ohne Swap), `--pids-limit`, `--rm`, Zeitlimit durch `RUN_SECONDS`.
+- **Netz:** eigenes Docker-Netz `agents`, getrennt von `web`. Ein Agent erreicht Claude (ausgehend), aber nicht den Hub (`agent-hub:8000`) und nicht den Tunnel. **Offen:** Das Heimnetz bleibt über die Weiterleitung des Pi erreichbar (nötig für spätere Geräte-Aufgaben); die Einschränkung auf freigegebene Ziele kommt mit dem Vermittler (Tresor).
+- **Docker-Socket:** Der Launcher braucht ihn und hat damit faktisch Root auf dem Pi. Gegenmaßnahmen: Der Socket hängt **nur** im Runner, nie im `web`-Container und nie im Lauf-Container; der Launcher nimmt keine freien Argumente an (feste Vorlage, geprüfte Werte, wird getestet); Aufträge und Berichte sind Daten. Später möglich: ein Socket-Proxy, der nur Start, Warten, Log und Löschen erlaubt (eine zusätzliche Abhängigkeit, erst bei Bedarf).
+- **Image:** das vorhandene `agent-hub-runner` (799 MB, Claude Code) dient als Grundlage; der Launcher-Test prüft, dass der Lauf-Container nur seinen Nutzerordner sieht.
+
 ## 7. Offene Entscheidungen (Janis)
 
-1. **Isolation im Runner:** eigene Unix-Kennung je Nutzer in einem Runner-Container (Vorschlag) oder ein Container je Lauf mit Docker-Socket (stärker, aber Root-Risiko).
+1. ~~**Isolation im Runner**~~ entschieden: Container je Lauf (Abschnitt 6a).
 2. **Schutz der Claude-Ordner im Ruhezustand:** Dateirechte `0700` reichen gegen andere Nutzer, nicht gegen jemanden mit Zugriff auf die SD-Karte oder das Backup. Optionen: Ordner beim Backup ausschließen (Vorschlag, dann muss man sich nach einer Wiederherstellung neu anmelden) oder verschlüsseln.
 3. **Nutzungsbedingungen** für Claude Code in eigenen Tools und ob die Anmeldung dauerhaft hält (steht seit Anfang in PROJEKT.md Abschnitt 11, bleibt Voraussetzung für den ersten Livegang).
 4. **Speicher:** Pi 4B mit 1 GB: Tests mit Sonnet, langen Läufen und Git-Worktrees stehen aus. `MAX_RUNNING = 1` ist die Vorsorge.
@@ -99,7 +111,7 @@ Programm.   Tester      Prüfer         Nutzer gibt frei      Dokumentator
 
 ## 8. Reihenfolge der nächsten Module
 
-1. Runner-Schnittstelle (HTTP, Runner-Token) und Runner-Programm für den Pi, mit Isolationstest für zwei Nutzer.
+1. Runner-Schnittstelle (HTTP, Runner-Token) und Runner mit Launcher (ein Container je Lauf, Abschnitt 6a), mit Isolationstest für zwei Nutzer.
 2. Anmeldung in der Oberfläche („Claude verbinden“ in der Schublade statt des Platzhalters, Zustand „abgelaufen“).
 3. Worktrees und Merge.
 4. Station „Agenten“ in der Projektansicht (Aufgaben, Freigabe mit Klick-Aussagen, Verbrauch), danach Design.
