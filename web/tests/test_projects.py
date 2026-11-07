@@ -19,9 +19,16 @@ class ProjectsTest(unittest.TestCase):
     def names(self, user):
         return [p.name for p in projects.list_projects(user.id)]
 
+    def pages(self, user=None):
+        """The layout as lists of names, e.g. [["A", "B"], ["C"]]."""
+        user = user or self.me
+        return [[p.name for p in page] for page in projects.layout(user.id)]
+
+    def add(self, *names):
+        return [projects.create_project(self.me.id, n) for n in names]
+
     def test_create_appends_in_order(self):
-        for name in ("A", "B", "C"):
-            projects.create_project(self.me.id, name)
+        self.add("A", "B", "C")
         self.assertEqual(self.names(self.me), ["A", "B", "C"])
 
     def test_name_is_trimmed_and_validated(self):
@@ -50,24 +57,66 @@ class ProjectsTest(unittest.TestCase):
         projects.delete_project(user_id, project.id)
         self.assertTrue(users.check_login("me@example.com", "correct horse").had_project)
 
-    def test_reorder_swaps_positions(self):
-        a, b, c = (projects.create_project(self.me.id, n) for n in "ABC")
-        projects.reorder(self.me.id, [c.id, a.id, b.id])
-        self.assertEqual(self.names(self.me), ["C", "A", "B"])
+    def test_seventh_project_opens_a_second_page(self):
+        self.add(*"ABCDEFG")
+        self.assertEqual(self.pages(), [list("ABCDEF"), ["G"]])
 
-    def test_reorder_of_one_page_keeps_other_pages(self):
-        made = [projects.create_project(self.me.id, str(i)) for i in range(8)]
-        # Reverse the first six, as if dragged on page one.
-        projects.reorder(self.me.id, [p.id for p in reversed(made[:6])])
-        self.assertEqual(self.names(self.me), ["5", "4", "3", "2", "1", "0", "6", "7"])
+    def test_new_project_takes_the_first_free_slot(self):
+        made = self.add(*"ABCDEFG")
+        projects.delete_project(self.me.id, made[1].id)  # frees a slot on page one
+        self.add("H")
+        self.assertEqual(self.pages(), [list("ACDEFH"), ["G"]])
 
-    def test_reorder_rejects_foreign_and_duplicate_ids(self):
-        mine = projects.create_project(self.me.id, "Mine")
+    def test_display_page(self):
+        made = self.add(*"ABCDEFG")
+        self.assertEqual(projects.display_page(self.me.id, made[0].id), 1)
+        self.assertEqual(projects.display_page(self.me.id, made[6].id), 2)
+
+    def test_move_within_a_page(self):
+        a, b, c = self.add("A", "B", "C")
+        self.assertEqual(projects.move(self.me.id, c.id, 1, 0), 1)
+        self.assertEqual(self.pages(), [["C", "A", "B"]])
+
+    def test_move_to_a_new_page_like_on_a_phone(self):
+        a, b, c, d = self.add("A", "B", "C", "D")
+        # Three belong together, the fourth goes to its own page.
+        self.assertEqual(projects.move(self.me.id, d.id, 2, 0), 2)
+        self.assertEqual(self.pages(), [["A", "B", "C"], ["D"]])
+
+    def test_move_to_a_full_page_pushes_the_last_project_on(self):
+        made = self.add(*"ABCDEFG")  # page one full, G alone on page two
+        projects.move(self.me.id, made[6].id, 1, 0)
+        self.assertEqual(self.pages(), [list("GABCDE"), ["F"]])
+
+    def test_push_cascades_over_several_full_pages(self):
+        made = self.add(*"ABCDEFGHIJKLM")  # 6 + 6 + 1
+        projects.move(self.me.id, made[12].id, 1, 0)
+        self.assertEqual(self.pages(), [list("MABCDE"), list("FGHIJK"), ["L"]])
+
+    def test_emptied_page_disappears(self):
+        made = self.add(*"ABCDEFG")
+        projects.move(self.me.id, made[6].id, 1, 6)  # page one is full, so G is pushed right back
+        self.assertEqual(self.pages(), [list("ABCDEF"), ["G"]])
+        projects.delete_project(self.me.id, made[6].id)
+        self.assertEqual(self.pages(), [list("ABCDEF")])
+
+    def test_move_clamps_page_and_index(self):
+        a, b = self.add("A", "B")
+        self.assertEqual(projects.move(self.me.id, a.id, 99, 99), 2)
+        self.assertEqual(self.pages(), [["B"], ["A"]])
+        self.assertEqual(projects.move(self.me.id, a.id, -5, -5), 1)
+        self.assertEqual(self.pages(), [["A", "B"]])
+
+    def test_move_other_pages_stay_untouched(self):
+        made = self.add(*"ABCDEFGH")  # page two holds G, H
+        projects.move(self.me.id, made[0].id, 1, 5)  # A to the end of page one
+        self.assertEqual(self.pages(), [list("BCDEFA"), ["G", "H"]])
+
+    def test_move_rejects_foreign_projects(self):
         theirs = projects.create_project(self.other.id, "Theirs")
         with self.assertRaises(ValueError):
-            projects.reorder(self.me.id, [mine.id, theirs.id])
-        with self.assertRaises(ValueError):
-            projects.reorder(self.me.id, [mine.id, mine.id])
+            projects.move(self.me.id, theirs.id, 1, 0)
+        self.assertEqual(self.pages(self.other), [["Theirs"]])
 
     def test_verify_password(self):
         self.assertTrue(users.verify_password(self.me.id, "correct horse"))
@@ -103,6 +152,28 @@ class MigrationTest(unittest.TestCase):
             self.assertEqual(row["email"], "old@example.com")
             self.assertEqual((row["language"], row["had_project"]), ("de", 0))
             self.assertIsNone(row["display_name"])
+
+    def test_projects_without_pages_are_spread_over_pages_of_six(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            users.DB_PATH = os.path.join(tmp, "old.db")
+            old = sqlite3.connect(users.DB_PATH)
+            old.executescript(
+                "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE,"
+                " password_hash TEXT NOT NULL, is_admin INTEGER NOT NULL DEFAULT 0,"
+                " created_at INTEGER NOT NULL);"
+                "INSERT INTO users (email, password_hash, created_at) VALUES ('a@b.c', 'x', 1);"
+                "CREATE TABLE projects (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL,"
+                " name TEXT NOT NULL, position INTEGER NOT NULL, created_at INTEGER NOT NULL);"
+            )
+            for i in range(8):  # positions with a gap, as after a deleted project
+                old.execute(
+                    "INSERT INTO projects (user_id, name, position, created_at) VALUES (1, ?, ?, 1)",
+                    (f"P{i}", i * 2 + 1),
+                )
+            old.commit()
+            old.close()
+            pages = [[p.name for p in page] for page in projects.layout(1)]
+            self.assertEqual(pages, [[f"P{i}" for i in range(6)], ["P6", "P7"]])
 
 
 class I18nTest(unittest.TestCase):

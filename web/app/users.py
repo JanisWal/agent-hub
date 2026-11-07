@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS projects (
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name       TEXT NOT NULL,
     position   INTEGER NOT NULL,
-    created_at INTEGER NOT NULL
+    created_at INTEGER NOT NULL,
+    page       INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS projects_by_user ON projects (user_id, position);
 CREATE TABLE IF NOT EXISTS board_items (
@@ -51,11 +52,24 @@ CREATE INDEX IF NOT EXISTS board_items_by_project
 """
 
 # Columns added after the first release; added to existing databases on connect.
-NEW_USER_COLUMNS = {
-    "display_name": "TEXT",
-    "language": "TEXT NOT NULL DEFAULT 'de'",
-    "had_project": "INTEGER NOT NULL DEFAULT 0",
+NEW_COLUMNS = {
+    "users": {
+        "display_name": "TEXT",
+        "language": "TEXT NOT NULL DEFAULT 'de'",
+        "had_project": "INTEGER NOT NULL DEFAULT 0",
+    },
+    "projects": {"page": "INTEGER NOT NULL DEFAULT 0"},
 }
+
+# Projects from before pages existed (page = 0) get their page from their order, 6 per page.
+ASSIGN_PAGES = """
+UPDATE projects SET page = 1 + (
+    SELECT COUNT(*) FROM projects q
+    WHERE q.user_id = projects.user_id
+      AND (q.position < projects.position OR (q.position = projects.position AND q.id < projects.id))
+) / 6
+WHERE page = 0
+"""
 
 
 @dataclass
@@ -75,13 +89,16 @@ class User:
 
 
 def _add_missing_columns(db: sqlite3.Connection) -> None:
-    existing = {row["name"] for row in db.execute("PRAGMA table_info(users)")}
-    for name, definition in NEW_USER_COLUMNS.items():
-        if name not in existing:
-            try:
-                db.execute(f"ALTER TABLE users ADD COLUMN {name} {definition}")
-            except sqlite3.OperationalError:
-                pass  # another connection added it first
+    for table, columns in NEW_COLUMNS.items():
+        existing = {row["name"] for row in db.execute(f"PRAGMA table_info({table})")}
+        for name, definition in columns.items():
+            if name not in existing:
+                try:
+                    db.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+                except sqlite3.OperationalError:
+                    pass  # another connection added it first
+    db.execute(ASSIGN_PAGES)
+    db.commit()
 
 
 def connect() -> sqlite3.Connection:

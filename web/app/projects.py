@@ -1,10 +1,17 @@
-"""Projects of a user, stored in SQLite next to the users. Standard library only."""
+"""Projects of a user, laid out on pages of tiles. Standard library only.
+
+A page holds up to PAGE_SIZE projects. Every project stores its page and its
+position on that page. Pages may be only partly filled; empty slots are simply
+the end of the page. Pages without projects do not exist.
+"""
+import sqlite3
 import time
 from dataclasses import dataclass
 
 from . import users
 
 MAX_NAME = 60
+PAGE_SIZE = 6
 
 
 @dataclass
@@ -12,34 +19,65 @@ class Project:
     id: int
     name: str
     position: int
+    page: int
+
+
+def _to_project(row: sqlite3.Row) -> Project:
+    return Project(row["id"], row["name"], row["position"], row["page"])
+
+
+def _ordered(db: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:
+    return db.execute(
+        "SELECT id, name, position, page FROM projects WHERE user_id = ?"
+        " ORDER BY page, position, id",
+        (user_id,),
+    ).fetchall()
+
+
+def _pages(rows: list[sqlite3.Row]) -> list[list[sqlite3.Row]]:
+    """Group ordered rows by their stored page number (gaps in the numbers do not matter)."""
+    grouped: dict[int, list[sqlite3.Row]] = {}
+    for row in rows:
+        grouped.setdefault(row["page"], []).append(row)
+    return list(grouped.values())
+
+
+def layout(user_id: int) -> list[list[Project]]:
+    """The user's projects as pages (display order). Only pages that hold projects."""
+    with users.connect() as db:
+        rows = _ordered(db, user_id)
+    return [[_to_project(r) for r in page] for page in _pages(rows)]
 
 
 def list_projects(user_id: int) -> list[Project]:
-    """All projects of a user in display order."""
-    with users.connect() as db:
-        rows = db.execute(
-            "SELECT id, name, position FROM projects WHERE user_id = ?"
-            " ORDER BY position, id",
-            (user_id,),
-        ).fetchall()
-    return [Project(r["id"], r["name"], r["position"]) for r in rows]
+    """All projects of a user in display order, page after page."""
+    return [project for page in layout(user_id) for project in page]
 
 
 def get_project(user_id: int, project_id: int) -> Project | None:
     """One project, only if it belongs to the user."""
     with users.connect() as db:
         row = db.execute(
-            "SELECT id, name, position FROM projects WHERE id = ? AND user_id = ?",
+            "SELECT id, name, position, page FROM projects WHERE id = ? AND user_id = ?",
             (project_id, user_id),
         ).fetchone()
-    return Project(row["id"], row["name"], row["position"]) if row else None
+    return _to_project(row) if row else None
+
+
+def display_page(user_id: int, project_id: int) -> int | None:
+    """Number (1, 2, ...) of the page the project is shown on."""
+    for number, page in enumerate(layout(user_id), start=1):
+        if any(p.id == project_id for p in page):
+            return number
+    return None
 
 
 def create_project(user_id: int, name: str) -> Project:
-    """Append a project. Raises ValueError for an empty or too long name.
+    """Add a project on the first page with a free slot, else on a new last page.
 
-    Also marks the user as having used the first tile (users.had_project),
-    which is never reset, so the start hint does not come back after deleting.
+    Raises ValueError for an empty or too long name. Also marks the user as having
+    used the first tile (users.had_project), which is never reset, so the start hint
+    does not come back after deleting.
     """
     name = name.strip()
     if not name:
@@ -47,17 +85,19 @@ def create_project(user_id: int, name: str) -> Project:
     if len(name) > MAX_NAME:
         raise ValueError("Projektname zu lang")
     with users.connect() as db:
-        position = db.execute(
-            "SELECT COALESCE(MAX(position), 0) + 1 FROM projects WHERE user_id = ?",
-            (user_id,),
-        ).fetchone()[0]
+        pages = _pages(_ordered(db, user_id))
+        free = next((p for p in pages if len(p) < PAGE_SIZE), None)
+        if free is not None:
+            page, position = free[0]["page"], free[-1]["position"] + 1
+        else:
+            page, position = (pages[-1][0]["page"] + 1 if pages else 1), 0
         cur = db.execute(
-            "INSERT INTO projects (user_id, name, position, created_at)"
-            " VALUES (?, ?, ?, ?)",
-            (user_id, name, position, int(time.time())),
+            "INSERT INTO projects (user_id, name, position, page, created_at)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (user_id, name, position, page, int(time.time())),
         )
         db.execute("UPDATE users SET had_project = 1 WHERE id = ?", (user_id,))
-    return Project(cur.lastrowid, name, position)
+    return Project(cur.lastrowid, name, position, page)
 
 
 def delete_project(user_id: int, project_id: int) -> bool:
@@ -69,28 +109,42 @@ def delete_project(user_id: int, project_id: int) -> bool:
     return cur.rowcount > 0
 
 
-def reorder(user_id: int, ids: list[int]) -> None:
-    """Put the given projects in the given order.
+def _spill_over(pages: list[list[int]]) -> None:
+    """A page with too many projects pushes its last one to the start of the next page."""
+    i = 0
+    while i < len(pages):
+        while len(pages[i]) > PAGE_SIZE:
+            if i + 1 == len(pages):
+                pages.append([])
+            pages[i + 1].insert(0, pages[i].pop())
+        i += 1
 
-    The ids are the tiles of one page after dragging. They take over the positions
-    that these projects held before, so projects on other pages keep their place.
-    Raises ValueError for duplicates or ids that are not the user's.
+
+def move(user_id: int, project_id: int, page: int, index: int) -> int:
+    """Put a project on display page `page` (1, 2, ...) at position `index` (0 = first).
+
+    A page number one past the last page opens a new page. If the target page is
+    full, its last project moves on to the next page, like apps on a phone. Pages
+    left empty disappear. Returns the display page the project ends up on.
+    Raises ValueError if the project is not the user's.
     """
-    if not ids:
-        return
-    if len(set(ids)) != len(ids):
-        raise ValueError("Doppelte Projekt-IDs")
-    marks = ",".join("?" * len(ids))
     with users.connect() as db:
-        rows = db.execute(
-            f"SELECT id, position FROM projects WHERE user_id = ? AND id IN ({marks})",
-            (user_id, *ids),
-        ).fetchall()
-        if len(rows) != len(ids):
+        pages = [[r["id"] for r in p] for p in _pages(_ordered(db, user_id))]
+        if not any(project_id in p for p in pages):
             raise ValueError("Unbekanntes Projekt")
-        positions = sorted(row["position"] for row in rows)
-        for position, project_id in zip(positions, ids):
-            db.execute(
-                "UPDATE projects SET position = ? WHERE id = ? AND user_id = ?",
-                (position, project_id, user_id),
-            )
+        for p in pages:
+            if project_id in p:
+                p.remove(project_id)
+        target = max(0, min(page - 1, len(pages)))
+        if target == len(pages):
+            pages.append([])
+        pages[target].insert(max(0, min(index, len(pages[target]))), project_id)
+        _spill_over(pages)
+        pages = [p for p in pages if p]
+        for number, ids in enumerate(pages, start=1):
+            for position, pid in enumerate(ids):
+                db.execute(
+                    "UPDATE projects SET page = ?, position = ? WHERE id = ? AND user_id = ?",
+                    (number, position, pid, user_id),
+                )
+    return next(number for number, ids in enumerate(pages, start=1) if project_id in ids)
