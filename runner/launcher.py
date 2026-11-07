@@ -25,6 +25,8 @@ IMAGE = "agent-hub-agent"         # built from runner/Dockerfile
 NETWORK = "agent-hub-agents"      # separate from the "web" network: a run cannot reach the hub
 UID_BASE = 10000                  # run user = UID_BASE + user_id, never root
 MAX_REPORT = 20000
+CHAT_TOOLS = ("WebSearch", "WebFetch")   # what the chat window may use: search the web and read a page
+CHAT_MAX_TURNS = 8                       # steps (model turns) per question
 _BAD_PATH = re.compile(r"[,\s\x00=:]")   # would confuse --mount parsing or hide something
 _MARKER = re.compile(r"^RESULT:\s*([a-z_]+)\s*$")
 
@@ -75,7 +77,7 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, claud
 def build_chat_command(*, chat_id: int, user_id: int, model: str, claude_dir: str, image: str = IMAGE,
                        network: str = NETWORK, memory: str = "480m") -> list[str]:
     """The chat window (see web/app/chat.py): one question to Claude, in a container like a run but
-    with no work folder at all (nothing of any project is mounted) and with all tools switched off."""
+    with no work folder at all (nothing of any project is mounted) and with only the web tools switched on."""
     chat_id = _number(chat_id, "chat_id")
     uid = run_uid(user_id)
     if model not in MODELS:
@@ -93,7 +95,10 @@ def build_chat_command(*, chat_id: int, user_id: int, model: str, claude_dir: st
         "--mount", f"type=bind,src={claude},dst=/claude",
         "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude",
         image,
-        "claude", "-p", "--model", model, "--output-format", "json", "--tools", "", "--no-session-persistence",
+        "claude", "-p", "--model", model, "--output-format", "json", "--no-session-persistence",
+        # Only the two web tools, nothing that touches files or runs commands. In -p mode nobody can confirm a
+        # permission, so exactly these are allowed; --max-turns keeps a search from running away (and eating quota).
+        "--tools", ",".join(CHAT_TOOLS), "--allowedTools", " ".join(CHAT_TOOLS), "--max-turns", str(CHAT_MAX_TURNS),
     ]
 
 
@@ -115,8 +120,11 @@ def parse_chat_output(stdout: str) -> tuple[bool, str, int, int, bool]:
             "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
         tokens_out = int(usage.get("output_tokens") or 0)
         failed = bool(data.get("is_error"))
+        subtype = str(data.get("subtype") or "")
     except (ValueError, AttributeError, TypeError):
         return False, "No readable answer from Claude Code.", 0, 0, bool(_AUTH_PROBLEM.search(stdout or ""))
+    if subtype == "error_max_turns" and not text:
+        return False, "Too many steps: the search limit was reached.", tokens_in, tokens_out, False
     if failed or not text:
         return False, text or "Claude Code reported an error.", tokens_in, tokens_out, bool(_AUTH_PROBLEM.search(text))
     return True, text[:MAX_REPORT], tokens_in, tokens_out, False

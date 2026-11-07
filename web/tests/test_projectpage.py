@@ -210,6 +210,16 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn(":root { --line: 30px; }", app)                           # on the phone the gear sits 4 px higher
         low = css_of("dashboard.css")
         self.assertIn("--line: 24px", low)                                       # low windows move the line, and the gear with it
+    def test_answers_with_links_are_built_safely(self):
+        script = css_of("chat.js")
+        self.assertNotIn("innerHTML", script)
+        self.assertIn("(https?:", script)                                       # only http(s) links, never javascript:
+        self.assertIn("noopener noreferrer", script)
+        self.assertIn("createTextNode", script)
+        self.assertIn("fillRich(body, text)", script)
+        self.assertIn("line(\"claude\", box.dataset.claude, m.answer, true)", script)   # only Claude answers, not the questions
+        self.assertIn("web search", __import__("app.i18n", fromlist=["t"]).t("en", "chat_hint"))
+
     def test_tooltips_are_our_own(self):
         core, app = css_of("core.js"), css_of("app.css")
         for part in ('className = "tip"', "removeAttribute(\"title\")", "aria-label", "mouseover", "showTip", "focusin"):

@@ -146,6 +146,8 @@ html .card.drag-clone::after { display: none; }
 .chat-msg.wait .chat-text { color: var(--muted); }
 .chat-who { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 .chat-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.chat-text a { color: var(--accent); text-underline-offset: 3px; }
+.chat-text strong { font-weight: 700; }
 .chat-form { display: flex; gap: var(--space); align-items: stretch; }
 .chat-form label { flex: 1; min-width: 0; margin: 0; }
 .chat-form input { min-height: 46px; }

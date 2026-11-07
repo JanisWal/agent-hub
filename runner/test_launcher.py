@@ -74,12 +74,16 @@ class CommandTest(unittest.TestCase):
 class ChatCommandTest(unittest.TestCase):
     """The chat window: no project files, no tools."""
 
-    def test_no_work_folder_and_no_tools(self):
+    def test_no_work_folder_and_only_the_web_tools(self):
         cmd = L.build_chat_command(chat_id=5, user_id=2, model="haiku", claude_dir="/data/claude/2")
         text = " ".join(cmd)
         self.assertEqual(sum(1 for c in cmd if c == "--mount"), 1)            # only the user's Claude folder
         self.assertNotIn("dst=/work", text)
-        self.assertEqual(cmd[cmd.index("--tools") + 1], "")                  # every tool switched off
+        self.assertEqual(cmd[cmd.index("--tools") + 1], "WebSearch,WebFetch")   # search and read a page, nothing else
+        self.assertEqual(cmd[cmd.index("--allowedTools") + 1], "WebSearch WebFetch")  # nobody can confirm in -p mode
+        self.assertEqual(cmd[cmd.index("--max-turns") + 1], "8")                 # a search cannot run away
+        for tool in ("Bash", "Edit", "Write", "Read", "Glob", "Grep", "NotebookEdit", "Task"):
+            self.assertNotIn(tool, text)                                          # no tool that touches files or runs commands
         self.assertNotIn("--dangerously-skip-permissions", cmd)
         for flag in ("--read-only", "--cap-drop", "--no-session-persistence", "-i"):
             self.assertIn(flag, cmd)
@@ -100,6 +104,12 @@ class ChatOutputTest(unittest.TestCase):
         out = json.dumps({"result": " Hi! ", "usage": {"input_tokens": 3, "cache_read_input_tokens": 4,
                                                           "output_tokens": 2}})
         self.assertEqual(L.parse_chat_output(out), (True, "Hi!", 7, 2, False))
+
+    def test_search_limit_reached_is_a_clear_failure(self):
+        out = json.dumps({"is_error": True, "subtype": "error_max_turns", "result": "", "usage": {"output_tokens": 9}})
+        ok, text, tokens_in, tokens_out, login = L.parse_chat_output(out)
+        self.assertEqual((ok, login, tokens_out), (False, False, 9))
+        self.assertIn("search limit", text)
 
     def test_errors_are_not_answers(self):
         self.assertFalse(L.parse_chat_output(json.dumps({"is_error": True, "result": "Overloaded"}))[0])
