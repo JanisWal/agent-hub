@@ -46,6 +46,25 @@ STRINGS = {
         "err_forbidden": "Dafür fehlt die Berechtigung.",
         "err_network": "Das hat nicht geklappt. Bitte erneut versuchen.",
         "forgot_password": "Passwort vergessen?",
+        "forgot_title": "Passwort vergessen",
+        "forgot_sub": "Wir schicken dir einen Link zum Festlegen eines neuen Passworts.",
+        "forgot_send": "Link senden",
+        "forgot_sent_title": "Mail unterwegs",
+        "forgot_sent": "Wenn es zu dieser Adresse ein Konto gibt, ist eine Mail mit einem Link unterwegs. Der Link gilt eine Stunde.",
+        "back_to_login": "Zurück zur Anmeldung",
+        "reset_title": "Neues Passwort",
+        "reset_sub": "Wähle ein Passwort, das nur du kennst.",
+        "reset_invalid_title": "Link ungültig",
+        "reset_invalid": "Dieser Link ist abgelaufen oder wurde schon benutzt.",
+        "forgot_again": "Neuen Link anfordern",
+        "mail_reset_subject": "Agent-Hub: Passwort zurücksetzen",
+        "mail_reset_body": (
+            "Hallo {name},\n\n"
+            "für dein Konto im Agent-Hub wurde ein neues Passwort angefordert. "
+            "Mit diesem Link legst du es fest (gültig {minutes} Minuten, nur einmal benutzbar):\n\n"
+            "{link}\n\n"
+            "Wenn du das nicht angefordert hast, ignoriere diese Mail. Dein Passwort bleibt dann unverändert."
+        ),
         "email_placeholder": "name@beispiel.de",
         "settings_toggle": "Einstellungen öffnen oder schließen",
         "display_name": "Nutzername",
@@ -144,6 +163,25 @@ STRINGS = {
         "err_forbidden": "You are not allowed to do that.",
         "err_network": "That did not work. Please try again.",
         "forgot_password": "Forgot password?",
+        "forgot_title": "Forgot password",
+        "forgot_sub": "We will send you a link to choose a new password.",
+        "forgot_send": "Send link",
+        "forgot_sent_title": "Mail on its way",
+        "forgot_sent": "If there is an account for this address, a mail with a link is on its way. The link is valid for one hour.",
+        "back_to_login": "Back to log in",
+        "reset_title": "New password",
+        "reset_sub": "Choose a password only you know.",
+        "reset_invalid_title": "Link not valid",
+        "reset_invalid": "This link has expired or was already used.",
+        "forgot_again": "Request a new link",
+        "mail_reset_subject": "Agent-Hub: reset your password",
+        "mail_reset_body": (
+            "Hello {name},\n\n"
+            "a new password was requested for your Agent-Hub account. "
+            "Use this link to choose it (valid for {minutes} minutes, works only once):\n\n"
+            "{link}\n\n"
+            "If you did not request this, ignore this mail. Your password stays as it is."
+        ),
         "email_placeholder": "name@example.com",
         "settings_toggle": "Open or close settings",
         "display_name": "Username",

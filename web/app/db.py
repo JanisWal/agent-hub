@@ -43,6 +43,12 @@ CREATE TABLE IF NOT EXISTS board_items (
 );
 CREATE INDEX IF NOT EXISTS board_items_by_project
     ON board_items (project_id, kind, status, position);
+CREATE TABLE IF NOT EXISTS password_resets (
+    token_hash TEXT PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+);
 CREATE TABLE IF NOT EXISTS login_attempts (
     ip           TEXT PRIMARY KEY,
     failures     INTEGER NOT NULL,

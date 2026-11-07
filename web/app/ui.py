@@ -16,8 +16,7 @@ LOGIN = """<section class="glass">
     <label>%t.password%<input type="password" name="password" required autocomplete="current-password" placeholder="••••••••"></label>
     <button class="primary" type="submit">%t.login%</button>
   </form>
-  <!-- Placeholder: password reset by e-mail is a later module. -->
-  <button class="link" type="button" disabled title="%t.coming_soon%">%t.forgot_password%</button>
+  <a class="link" href="/forgot">%t.forgot_password%</a>
 </section>"""
 
 
