@@ -10,20 +10,21 @@
     greeting.textContent = greeting.dataset[part] + ", " + greeting.dataset.name;
   }
 
-  // Collapsible settings bar.
+  // Settings drawer: slides out of the top right corner, the handle rides along.
+  var drawer = $("#settings");
   var toggle = $("#settings-toggle");
-  var panel = $("#settings-panel");
-  if (toggle && panel) {
+  if (drawer && toggle) {
     var setOpen = function (open) {
-      panel.hidden = !open;
+      drawer.classList.toggle("open", open);
       toggle.setAttribute("aria-expanded", String(open));
     };
-    toggle.addEventListener("click", function () { setOpen(panel.hidden); });
+    var isOpen = function () { return drawer.classList.contains("open"); };
+    toggle.addEventListener("click", function () { setOpen(!isOpen()); });
     document.addEventListener("click", function (event) {
-      if (!panel.hidden && !event.target.closest("#settings")) setOpen(false);
+      if (isOpen() && !event.target.closest("#settings")) setOpen(false);
     });
     document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape" && !panel.hidden) setOpen(false);
+      if (event.key === "Escape" && isOpen()) setOpen(false);
     });
   }
 
@@ -88,6 +89,7 @@
             wrong.hidden = false;
             password.select();
           } else {
+            try { sessionStorage.setItem("noanim", "1"); } catch (e) {}
             location.reload();
           }
         })

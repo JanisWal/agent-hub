@@ -4,14 +4,17 @@ import re
 
 from . import i18n
 
-# The inline script applies the saved theme before first paint to avoid a flash.
+REPO_URL = "https://github.com/JanisWal/agent-hub"
+
+# The inline script applies the saved theme before first paint to avoid a flash, and
+# switches off the entrance animation after a reload we triggered ourselves ("noanim").
 SHELL = """<!doctype html>
 <html lang="%LANG%">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>%TITLE% – Agent-Hub</title>
-<script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+<script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t;if(sessionStorage.getItem("noanim")){document.documentElement.classList.add("noanim");sessionStorage.removeItem("noanim")}}catch(e){}</script>
 <link rel="stylesheet" href="/static/theme.css">
 <script src="/static/theme.js" defer></script>
 %SCRIPTS%
@@ -19,7 +22,7 @@ SHELL = """<!doctype html>
 <body>
 <div class="orbs" aria-hidden="true"><i></i><i></i><i></i></div>
 <header class="topbar">
-  <span class="brand">Agent-Hub</span>
+  <a class="brand" href="%REPO_URL%" target="_blank" rel="noopener noreferrer" aria-label="%BRAND_LABEL%">Agent-Hub</a>
   %TOP_RIGHT%
 </header>
 <main>
@@ -31,6 +34,11 @@ SHELL = """<!doctype html>
 </button>
 </body>
 </html>"""
+
+
+def esc(text: str) -> str:
+    """Escape for HTML text and attribute values."""
+    return html.escape(text, quote=True)
 
 
 def fill(template: str, **values: str) -> str:
@@ -55,4 +63,6 @@ def page(title: str, body: str, lang: str = "de", top_right: str = "", scripts=(
         TOP_RIGHT=top_right,
         BODY=body,
         TOGGLE_LABEL=html.escape(i18n.t(lang, "theme_toggle")),
+        REPO_URL=REPO_URL,
+        BRAND_LABEL=html.escape(i18n.t(lang, "brand_link")),
     )
