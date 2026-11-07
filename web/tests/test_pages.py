@@ -24,9 +24,9 @@ class PagesTest(unittest.TestCase):
         dropped = board.create_item(user.id, project.id, "major", "Dropped")
         board.discard(user.id, dropped.id)
         items = board.list_items(user.id, project.id)
-        shown = projects.list_projects(user.id)
+        shown = projects.layout(user.id)
         return [
-            layout.page("Home", dashboard.render(user, shown, 1, 1, False), lang,
+            layout.page("Home", dashboard.render(user, shown, 1, False), lang,
                         dashboard.settings_bar(user)),
             layout.page("Project", projectpage.render(user, project, items), lang,
                         dashboard.settings_bar(user)),

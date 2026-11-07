@@ -2,10 +2,8 @@
 from . import i18n
 from .layout import esc as _e
 from .layout import fill
-from .projects import Project
+from .projects import PAGE_SIZE, Project  # 6 per page: 2 rows x 3 columns
 from .users import User
-
-PAGE_SIZE = 6  # 2 rows x 3 columns
 
 # Linked AI accounts (name, connected). The real state comes with the runner (phase 2).
 SERVICES = (("Claude", False), ("ChatGPT", False))
@@ -133,26 +131,52 @@ def _ghost_tile() -> str:
 
 
 def _pager(lang: str, page: int, pages: int) -> str:
-    if pages < 2:
-        return ""
+    """Page dots and arrows. Always present (hidden for one page): dashboard.js redraws
+    it while a tile is dragged to a new page, using the texts in the data attributes."""
 
     def arrow(target: int, icon: str, label: str) -> str:
         if 1 <= target <= pages:
-            return f'<a class="pager-arrow" href="/?page={target}" aria-label="{_e(label)}">{icon}</a>'
+            return (
+                f'<a class="pager-arrow" href="/?page={target}" data-page="{target}" '
+                f'aria-label="{_e(label)}">{icon}</a>'
+            )
         return f'<span class="pager-arrow off" aria-hidden="true">{icon}</span>'
 
     dots = "".join(
-        f'<a class="dot{" active" if n == page else ""}" href="/?page={n}" '
+        f'<a class="dot{" active" if n == page else ""}" href="/?page={n}" data-page="{n}" '
         f'aria-label="{_e(i18n.t(lang, "page_n", n=n))}"'
         f'{" aria-current=page" if n == page else ""}></a>'
         for n in range(1, pages + 1)
     )
     return (
-        f'<nav class="pager" aria-label="{_e(i18n.t(lang, "pages_nav"))}">'
+        f'<nav class="pager" id="pager"{" hidden" if pages < 2 else ""} '
+        f'aria-label="{_e(i18n.t(lang, "pages_nav"))}" '
+        f'data-label-prev="{_e(i18n.t(lang, "page_prev"))}" '
+        f'data-label-next="{_e(i18n.t(lang, "page_next"))}" '
+        f'data-label-page="{_e(i18n.t(lang, "page_n", n="{n}"))}">'
         f'{arrow(page - 1, TRIANGLE_LEFT, i18n.t(lang, "page_prev"))}'
         f'<span class="dots">{dots}</span>'
         f'{arrow(page + 1, TRIANGLE_RIGHT, i18n.t(lang, "page_next"))}</nav>'
     )
+
+
+def _grids(pages: list[list[Project]], current: int, first_project: bool, lang: str) -> str:
+    """One grid of 6 slots per page; only the current page is visible.
+
+    The "+" tile sits on the first page with a free slot (pages are laid out so that
+    `pages` already ends with an empty page when every page is full).
+    """
+    plus_on = next(n for n, page in enumerate(pages) if len(page) < PAGE_SIZE)
+    grids = []
+    for n, page in enumerate(pages):
+        tiles = [_project_tile(p, i, lang) for i, p in enumerate(page)]
+        if n == plus_on:
+            tiles.append(_plus_tile(len(tiles), lang, first_project))
+        while len(tiles) < PAGE_SIZE:
+            tiles.append(_ghost_tile())
+        hidden = "" if n + 1 == current else " hidden"
+        grids.append(f'<div class="grid" data-page="{n + 1}"{hidden}>{"".join(tiles)}</div>')
+    return "\n    ".join(grids)
 
 
 DIALOGS = """<dialog class="dialog" id="create-dialog">
@@ -189,8 +213,8 @@ DIALOGS = """<dialog class="dialog" id="create-dialog">
 DASHBOARD = """<div class="dash">
   <h1 class="greeting" id="greeting" data-morning="%G_MORNING%" data-noon="%G_NOON%"
       data-evening="%G_EVENING%" data-name="%NAME%">%G_FALLBACK%, %NAME%</h1>
-  <div class="grid" id="grid">
-    %TILES%
+  <div class="pages" id="pages" data-size="%SIZE%">
+    %GRIDS%
   </div>
   %PAGER%
   <div class="quota">
@@ -199,17 +223,22 @@ DASHBOARD = """<div class="dash">
          aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
   </div>
 </div>
+<div class="edge edge-left" aria-hidden="true">%EDGE_LEFT%</div>
+<div class="edge edge-right" aria-hidden="true">%EDGE_RIGHT%</div>
 %DIALOGS%"""
 
 
-def render(user: User, projects: list[Project], page: int, pages: int, first_project: bool) -> str:
-    """Dashboard body. `projects` are the ones of this page (at most PAGE_SIZE)."""
+def render(user: User, layout: list[list[Project]], page: int, first_project: bool) -> str:
+    """Dashboard body. `layout` are the user's pages of projects (see projects.layout).
+
+    When every page is full (or there are no projects) one more page is added for the
+    "+" tile. `page` is the page to show (1, 2, ...), limited to the pages that exist.
+    """
     lang = user.language
-    tiles = [_project_tile(p, i, lang) for i, p in enumerate(projects)]
-    if len(projects) < PAGE_SIZE:
-        tiles.append(_plus_tile(len(tiles), lang, first_project))
-    while len(tiles) < PAGE_SIZE:
-        tiles.append(_ghost_tile())
+    pages = [list(p) for p in layout]
+    if all(len(p) >= PAGE_SIZE for p in pages):
+        pages.append([])
+    page = min(max(page, 1), len(pages))
 
     dialogs = fill(
         DIALOGS,
@@ -234,8 +263,11 @@ def render(user: User, projects: list[Project], page: int, pages: int, first_pro
         G_EVENING=_e(i18n.t(lang, "greet_evening")),
         G_FALLBACK=_e(i18n.t(lang, "greet_fallback")),
         NAME=_e(user.name),
-        TILES="\n    ".join(tiles),
-        PAGER=_pager(lang, page, pages),
+        SIZE=str(PAGE_SIZE),
+        GRIDS=_grids(pages, page, first_project, lang),
+        PAGER=_pager(lang, page, len(pages)),
+        EDGE_LEFT=TRIANGLE_LEFT,
+        EDGE_RIGHT=TRIANGLE_RIGHT,
         L_QUOTA=_e(i18n.t(lang, "quota_title")),
         L_QUOTA_NONE=_e(i18n.t(lang, "quota_none")),
         DIALOGS=dialogs,
