@@ -141,7 +141,7 @@ class ProjectPageTest(unittest.TestCase):
     def test_project_title_is_big_with_air(self):
         css = css_of("app.css")
         self.assertIn("clamp(1.8rem, 3.2vw, 2.8rem)", css)
-        self.assertIn(".project-page .topbar { padding-top: 26px; padding-bottom: 26px; }", css)
+        self.assertIn(".project-page .topbar { min-height: 90px; }", css)
     def test_back_link_is_a_round_icon_button(self):
         page = self.html()
         link = page[page.index('class="topbar-back"'):]
@@ -187,7 +187,7 @@ class ProjectPageTest(unittest.TestCase):
         chat = project[project.index(".chat {"):project.index(".chat-head")]
         self.assertIn("top: 94px", chat)                                        # = top bar (26 + 38 + 26) + 4 px of main
         app = css_of("app.css")
-        self.assertIn(".project-page .topbar { padding-top: 26px; padding-bottom: 26px; }", app)
+        self.assertIn(".project-page .topbar { min-height: 90px; }", app)
         self.assertIn("main { display: flex; align-items: stretch; place-items: initial; padding-top: 4px; }", project)
 
     def test_gear_handle_is_an_oval_with_the_outline_of_the_round_buttons(self):
@@ -198,6 +198,18 @@ class ProjectPageTest(unittest.TestCase):
         extra = app[app.index(".drawer-extra {"):app.index(".drawer-extra svg")]
         self.assertIn("width: 38px", extra)                                     # same height as the round buttons
         self.assertIn("margin-top: 3px", extra)                                 # and the same line
+    def test_brand_back_button_and_round_buttons_share_one_line(self):
+        app = css_of("app.css")
+        self.assertIn("--line: 34px;", app)                                      # the line of the round buttons ...
+        drawer = app[app.index(".drawer {"):app.index(".drawer.open")]
+        self.assertIn("top: calc(var(--line) - 22px)", drawer)                   # ... buttons: 3 px + 38 px / 2 = 22 px
+        self.assertIn(".brand { margin-top: calc(var(--line) - 12px);", app)     # brand: 24 px line height / 2 = 12 px
+        self.assertIn("margin-top: calc(var(--line) - 19px)", app[app.index(".topbar-back {"):app.index(".topbar-back::after")])
+        bar = app[app.index(".topbar {"):app.index(".brand {")]
+        self.assertIn("align-items: flex-start", bar)                            # items hang from the line, not centred
+        self.assertIn(":root { --line: 30px; }", app)                           # on the phone the gear sits 4 px higher
+        low = css_of("dashboard.css")
+        self.assertIn("--line: 24px", low)                                       # low windows move the line, and the gear with it
     def test_tooltips_are_our_own(self):
         core, app = css_of("core.js"), css_of("app.css")
         for part in ('className = "tip"', "removeAttribute(\"title\")", "aria-label", "mouseover", "showTip", "focusin"):

@@ -171,8 +171,8 @@ body.fit .plus-sign { width: clamp(36px, 6.5vh, 56px); height: clamp(36px, 6.5vh
 
 /* Low windows (phone held sideways): trim the chrome around the tiles so that nothing scrolls. */
 @media (max-height: 480px) and (min-width: 561px) {
-  :root { --row-min: 66px; --grid-gap: 12px; }
-  .topbar { padding-top: 6px; padding-bottom: 2px; }
+  :root { --row-min: 66px; --grid-gap: 12px; --line: 24px; }
+  .topbar { min-height: 36px; }
   body.fit main { padding-bottom: 8px; }
   body.fit .dash { gap: 6px; }
   body.fit .greeting { font-size: 1.4rem; }
