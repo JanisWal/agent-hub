@@ -14,16 +14,17 @@ COLUMN_LABEL = {"bug": "col_bug", "minor": "col_minor", "major": "col_major"}
 PROJECT = """<div class="project" data-id="%PID%">
   %STATIONS%
   <div class="boardwrap">
-    <header class="board-head">
-      <h1>%NAME%</h1>
-      <button class="icon-button trash-toggle" id="trash-toggle" type="button" aria-expanded="false"
-              aria-controls="trash" aria-label="%t.trash%" title="%t.trash%">%TRASH_ICON%<span class="count">%TRASH_COUNT%</span></button>
-    </header>
-    <section class="trash glass" id="trash" hidden>
-      <h2>%t.trash%</h2>
-      %TRASH%
+    <section class="vault glass" id="vault" hidden>
+      <div class="vault-view" data-view="trash" hidden>
+        <h2>%t.trash%</h2>
+        %TRASH%
+      </div>
+      <div class="vault-view" data-view="archive" hidden>
+        <h2>%t.archive%</h2>
+        %ARCHIVE%
+      </div>
     </section>
-    <div class="board">
+    <div class="board" id="board">
       %COLUMNS%
     </div>
     <!-- TEMPORARY test chat (web/app/chat.py): remove together with chat.js once the agents run -->
@@ -72,12 +73,14 @@ def _action_button(lang: str, action: str, label_key: str, icon_name: str, css: 
 def _card(item: Item, lang: str) -> str:
     title = f'<span class="card-title">{esc(item.title)}</span>'
     if item.status == "proposed":
-        buttons = _action_button(lang, "accept", "accept", "check", "ok") + _action_button(
-            lang, "reject", "reject", "cross", "no"
+        # Green and red buttons (Janis, 07.11.2026): "go" takes the suggestion over, "stop" rejects it.
+        buttons = _action_button(lang, "reject", "reject", "cross", "stop") + _action_button(
+            lang, "accept", "accept", "check", "go"
         )
         return f'<article class="card proposed" data-id="{item.id}">{title}<div class="card-actions">{buttons}</div></article>'
     discard = _action_button(lang, "discard", "discard", "trash", "quiet")
-    return f'<article class="card" data-id="{item.id}">{title}{discard}</article>'
+    origin = " from-claude" if item.source == "claude" else ""
+    return f'<article class="card{origin}" data-id="{item.id}">{title}{discard}</article>'
 
 
 def _column(kind: str, items: list[Item], lang: str) -> str:
@@ -117,33 +120,67 @@ def _trash(items: list[Item], lang: str) -> str:
     )
 
 
+def _archive(items: list[Item], lang: str) -> str:
+    """The archive: what the agents finished. Same look as the trash, but nothing to delete."""
+    if not items:
+        return f'<p class="muted">{esc(i18n.t(lang, "archive_is_empty"))}</p>'
+    rows = "".join(
+        f'<li class="trash-row" data-id="{i.id}"><span class="trash-title">{esc(i.title)}'
+        f'<small>{esc(i18n.t(lang, COLUMN_LABEL[i.kind]))}</small></span>'
+        f'{_action_button(lang, "restore", "restore", "undo")}</li>'
+        for i in items
+    )
+    return f'<ul class="trash-list">{rows}</ul>'
+
+
+# The cycle of an idea, top to bottom (Janis, 07.11.2026). Only the board exists so far.
+STATION_KEYS = ("station_manager", "station_programmer", "station_tester", "station_reviewer", "station_me")
+
+
 def _stations(lang: str) -> str:
     soon = esc(i18n.t(lang, "coming_soon"))
     off = "".join(
-        f'<span class="station off" aria-disabled="true" title="{soon}">{esc(i18n.t(lang, key))}</span>'
-        for key in ("station_agents", "station_files", "station_docs")
+        f'<span class="station off" aria-disabled="true" title="{soon}">'
+        f'<span class="station-label">{esc(i18n.t(lang, key))}</span></span>'
+        for key in STATION_KEYS
     )
     return (
-        f'<nav class="stations glass" aria-label="{esc(i18n.t(lang, "stations"))}">'
-        f'<a class="station back" href="/">{icon("arrow_left")}{esc(i18n.t(lang, "back_to_projects"))}</a>'
-        f'<a class="station active" href="#" aria-current="page">{esc(i18n.t(lang, "station_board"))}</a>'
+        f'<nav class="stations" aria-label="{esc(i18n.t(lang, "stations"))}">'
+        f'<a class="station-back" href="/">{icon("arrow_left")}{esc(i18n.t(lang, "back_to_projects"))}</a>'
+        f'<a class="station active" href="#" aria-current="page">'
+        f'<span class="station-label">{esc(i18n.t(lang, "station_board"))}</span></a>'
         f"{off}</nav>"
     )
+
+
+def title_html(project: Project) -> str:
+    """The project name for the top bar (golden section, see layout.page `top_center`)."""
+    return f'<h1 class="project-title" title="{esc(project.name)}">{esc(project.name)}</h1>'
+
+
+def drawer_buttons(lang: str) -> str:
+    """Trash and archive: two identical round buttons next to the gear, they slide with the drawer."""
+    def button(view: str, label_key: str, icon_name: str) -> str:
+        label = esc(i18n.t(lang, label_key))
+        return (
+            f'<button class="drawer-extra" id="{view}-toggle" type="button" data-view="{view}" '
+            f'aria-pressed="false" aria-controls="vault" aria-label="{label}" title="{label}">{icon(icon_name)}</button>'
+        )
+    return button("archive", "archive", "done") + button("trash", "trash", "trash")
 
 
 def render(user: User, project: Project, items: list[Item]) -> str:
     """Project page body with the kanban board."""
     lang = user.language
     trashed = [i for i in items if i.status == "trash"]
-    live = [i for i in items if i.status != "trash"]
+    archived = [i for i in items if i.status == "archived"]
+    live = [i for i in items if i.status not in ("trash", "archived")]
     return fill(
         PROJECT,
         lang,
         PID=str(project.id),
         STATIONS=_stations(lang),
-        NAME=esc(project.name),
-        TRASH_ICON=icon("trash"),
-        TRASH_COUNT=str(len(trashed)),
         TRASH=_trash(trashed, lang),
+        ARCHIVE=_archive(archived, lang),
         COLUMNS="\n      ".join(_column(kind, live, lang) for kind in KINDS),
     )

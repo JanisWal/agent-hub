@@ -81,16 +81,37 @@
     });
   }
 
-  // The state survives our own reloads, so restoring several items does not close it each time.
-  var trash = $("#trash");
-  var trashToggle = $("#trash-toggle");
-  function setTrashOpen(open) {
-    trash.hidden = !open;
-    trashToggle.setAttribute("aria-expanded", String(open));
-    try { sessionStorage.setItem("trashOpen:" + projectId, open ? "1" : ""); } catch (e) {}
+  // Trash and archive: two buttons next to the gear (the same behaviour for both) swap the board for
+  // that list; the same button again brings the board back. The view survives our own reloads, so
+  // restoring several items does not close it each time.
+  var vault = $("#vault");
+  var board = $("#board");
+  var toggles = document.querySelectorAll(".drawer-extra");
+  var currentView = "";
+  function setView(view, animate) {
+    currentView = view;
+    vault.hidden = !view;
+    board.hidden = !!view;
+    Array.prototype.forEach.call(vault.querySelectorAll(".vault-view"), function (part) {
+      part.hidden = part.dataset.view !== view;
+    });
+    Array.prototype.forEach.call(toggles, function (button) {
+      button.setAttribute("aria-pressed", String(button.dataset.view === view));
+    });
+    var shown = view ? vault : board;
+    if (animate) {   // a short fade, restarted each time
+      shown.classList.remove("appear");
+      void shown.offsetWidth;
+      shown.classList.add("appear");
+    }
+    try { sessionStorage.setItem("vault:" + projectId, view); } catch (e) {}
   }
-  try { if (sessionStorage.getItem("trashOpen:" + projectId)) setTrashOpen(true); } catch (e) {}
-  trashToggle.addEventListener("click", function () { setTrashOpen(trash.hidden); });
+  try { setView(sessionStorage.getItem("vault:" + projectId) || "", false); } catch (e) { setView("", false); }
+  Array.prototype.forEach.call(toggles, function (button) {
+    button.addEventListener("click", function () {
+      setView(currentView === button.dataset.view ? "" : button.dataset.view, true);
+    });
+  });
 
   // Dragging: agreed items move within and between columns (mouse, pen or finger).
   // Suggestions stay put until they are accepted.

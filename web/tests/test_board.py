@@ -46,10 +46,42 @@ class BoardTest(unittest.TestCase):
 
     def test_suggestion_accept_goes_below_agreed_items(self):
         self.add("Mine")
-        item = board.create_suggestion(self.me.id, self.project.id, "bug", "Idea")
+        item = board.create_suggestion(self.me.id, self.project.id, "minor", "Idea")
         self.assertEqual(item.status, "proposed")
+        mine = board.create_item(self.me.id, self.project.id, "minor", "Mine minor")
         self.assertTrue(board.accept(self.me.id, item.id))
-        self.assertEqual(self.titles("open", "bug"), ["Mine", "Idea"])
+        self.assertEqual(self.titles("open", "minor"), ["Mine minor", "Idea"])
+        self.assertTrue(mine.id)
+
+    def test_agent_bug_needs_no_approval(self):
+        self.add("Mine")
+        bug = board.create_suggestion(self.me.id, self.project.id, "bug", "Found by Claude")
+        self.assertEqual((bug.status, bug.source), ("open", "claude"))
+        self.assertEqual(self.titles("open", "bug"), ["Found by Claude", "Mine"])   # on top
+        self.assertEqual(self.titles("proposed"), [])
+        self.assertTrue(board.discard(self.me.id, bug.id))
+        self.assertTrue(board.restore(self.me.id, bug.id))
+        self.assertEqual(self.titles("open", "bug"), ["Found by Claude", "Mine"])   # open again, not "proposed"
+
+    def test_archive_and_restore(self):
+        item = self.add("Done thing")
+        self.assertFalse(board.archive(self.other.id, item.id))
+        self.assertTrue(board.archive(self.me.id, item.id))
+        self.assertEqual(self.titles("archived"), ["Done thing"])
+        self.assertFalse(board.archive(self.me.id, item.id))            # only open items
+        self.assertFalse(board.delete_item(self.me.id, item.id))        # no way to delete from the archive
+        self.assertEqual(board.empty_trash(self.me.id, self.project.id), 0)
+        self.assertEqual(self.titles("archived"), ["Done thing"])
+        self.assertTrue(board.restore(self.me.id, item.id))
+        self.assertEqual(self.titles("open", "bug"), ["Done thing"])
+
+    def test_archived_items_cannot_be_reordered_or_accepted(self):
+        item = self.add("Done thing")
+        board.archive(self.me.id, item.id)
+        with self.assertRaises(ValueError):
+            board.reorder(self.me.id, "bug", [item.id])
+        self.assertFalse(board.accept(self.me.id, item.id))
+        self.assertFalse(board.reject(self.me.id, item.id))
 
     def test_reject_restore_and_delete_flow(self):
         item = board.create_suggestion(self.me.id, self.project.id, "minor", "Idea")
@@ -91,7 +123,7 @@ class BoardTest(unittest.TestCase):
 
     def test_reorder_rejects_foreign_proposed_and_duplicate_ids(self):
         mine = self.add("Mine")
-        suggestion = board.create_suggestion(self.me.id, self.project.id, "bug", "Idea")
+        suggestion = board.create_suggestion(self.me.id, self.project.id, "minor", "Idea")
         theirs = board.create_item(self.other.id, self.foreign.id, "bug", "Theirs")
         for ids in ([mine.id, theirs.id], [mine.id, suggestion.id], [mine.id, mine.id]):
             with self.assertRaises(ValueError):

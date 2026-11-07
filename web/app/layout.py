@@ -41,6 +41,7 @@ SHELL = """<!doctype html>
 <div class="orbs" aria-hidden="true"><i></i><i></i><i></i></div>
 <header class="topbar">
   <a class="brand" href="%REPO_URL%" target="_blank" rel="noopener noreferrer" aria-label="%t.brand_link%">Agent-Hub</a>
+  %TOP_CENTER%
   %TOP_RIGHT%
 </header>
 <main>
@@ -85,11 +86,13 @@ def page(
     lang: str = "de",
     *,
     top_right: str = "",
+    top_center: str = "",
     scripts: tuple[str, ...] = (),
     styles: tuple[str, ...] = (),
     body_class: str = "",
 ) -> str:
-    """Wrap a body in the shell. `title` is plain text, `body` and `top_right` are HTML.
+    """Wrap a body in the shell. `title` is plain text, `body`, `top_right` and `top_center` are HTML
+    (`top_center` sits in the top bar at the golden section, e.g. the name of a project).
 
     `styles` and `scripts` are file names in /static (loaded after app.css and core.js).
     """
@@ -104,6 +107,7 @@ def page(
         SCRIPTS="\n".join(f'<script src="{static_url(name)}" defer></script>' for name in scripts),
         BODY_CLASS=esc(body_class),
         TOP_RIGHT=top_right,
+        TOP_CENTER=top_center,
         BODY=body,
         REPO_URL=REPO_URL,
         MOON=icon("moon", "i-moon"),

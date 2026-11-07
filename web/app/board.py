@@ -2,7 +2,8 @@
 
 Columns (`kind`): bug, minor (small update), major (major update).
 Status: open (agreed, shown on top), proposed (suggested by Claude, waiting for
-accept or reject), trash (discarded, can be restored or deleted for good).
+accept or reject), trash (discarded, can be restored or deleted for good), archived (finished by
+an agent, kept for reference, can be restored).
 """
 import sqlite3
 import time
@@ -21,7 +22,7 @@ class Item:
     kind: str
     title: str
     source: str  # "user" or "claude"
-    status: str  # "open", "proposed" or "trash"
+    status: str  # "open", "proposed", "trash" or "archived"
     position: int
 
 
@@ -101,7 +102,9 @@ def create_item(user_id: int, project_id: int, kind: str, title: str) -> Item:
 
 
 def create_suggestion(user_id: int, project_id: int, kind: str, title: str) -> Item:
-    """Add a suggestion from Claude (used by the agents later). Waits for accept or reject.
+    """Add an item found by an agent. Small and major updates wait for accept or reject; a bug
+    needs no approval (Janis, 07.11.2026): it goes straight to the top of the bug column, marked
+    as coming from Claude.
 
     `user_id` is the user the agent works for; like everywhere, the project must be his
     (ValueError otherwise), so an agent can never write into somebody else's board.
@@ -110,10 +113,14 @@ def create_suggestion(user_id: int, project_id: int, kind: str, title: str) -> I
     with db.connect() as conn:
         if not _owns_project(conn, user_id, project_id):
             raise ValueError("Unbekanntes Projekt")
+        if kind == "bug":
+            status, position = "open", _edge_position(conn, project_id, kind, top=True)
+        else:
+            status, position = "proposed", 0
         cur = conn.execute(
             "INSERT INTO board_items (project_id, kind, title, source, status, position, created_at)"
-            " VALUES (?, ?, ?, 'claude', 'proposed', 0, ?)",
-            (project_id, kind, title, int(time.time())),
+            " VALUES (?, ?, ?, 'claude', ?, ?, ?)",
+            (project_id, kind, title, status, position, int(time.time())),
         )
         row = conn.execute("SELECT * FROM board_items WHERE id = ?", (cur.lastrowid,)).fetchone()
     return _to_item(row)
@@ -133,7 +140,8 @@ def update_title(user_id: int, item_id: int, title: str) -> int | None:
     return row["project_id"]
 
 
-def _move(user_id: int, item_id: int, allowed_from: tuple[str, ...], to_status: str) -> bool:
+def _move(user_id: int, item_id: int, allowed_from: tuple[str, ...], to_status: str,
+          top: bool | None = None) -> bool:
     """Change the status if the item is the user's and currently in `allowed_from`."""
     with db.connect() as conn:
         row = _owned_item(conn, user_id, item_id)
@@ -142,7 +150,9 @@ def _move(user_id: int, item_id: int, allowed_from: tuple[str, ...], to_status: 
         position = row["position"]
         if to_status == "open":
             # Accepted items go below the agreed ones, restored manual items to the top.
-            position = _edge_position(conn, row["project_id"], row["kind"], top=row["source"] == "user")
+            if top is None:
+                top = row["source"] == "user"
+            position = _edge_position(conn, row["project_id"], row["kind"], top=top)
         conn.execute(
             "UPDATE board_items SET status = ?, position = ? WHERE id = ?",
             (to_status, position, item_id),
@@ -165,13 +175,22 @@ def discard(user_id: int, item_id: int) -> bool:
     return _move(user_id, item_id, ("open",), "trash")
 
 
+def archive(user_id: int, item_id: int) -> bool:
+    """A finished item moves into the archive (the agents do this when a task is done)."""
+    return _move(user_id, item_id, ("open",), "archived")
+
+
 def restore(user_id: int, item_id: int) -> bool:
-    """Take an item out of the trash: Claude suggestions wait for a decision again."""
+    """Take an item out of the trash or the archive. From the trash, Claude's small and major
+    updates wait for a decision again; everything else, and anything from the archive, is agreed
+    again and goes to the top of its column."""
     with db.connect() as conn:
         row = _owned_item(conn, user_id, item_id)
-    if row is None or row["status"] != "trash":
+    if row is None or row["status"] not in ("trash", "archived"):
         return False
-    return _move(user_id, item_id, ("trash",), "open" if row["source"] == "user" else "proposed")
+    waits = row["status"] == "trash" and row["source"] == "claude" and row["kind"] != "bug"
+    return _move(user_id, item_id, ("trash", "archived"), "proposed" if waits else "open",
+                 top=not waits)
 
 
 def delete_item(user_id: int, item_id: int) -> bool:

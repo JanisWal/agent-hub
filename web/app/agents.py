@@ -219,6 +219,10 @@ def _enter(conn: sqlite3.Connection, user_id: int, task_id: int, step: workflow.
     if step.status in ("done", "escalated", "cancelled"):
         conn.execute("UPDATE agent_runs SET status = 'cancelled' WHERE task_id = ? AND status = 'queued'",
                      (task_id,))
+    if step.status == "done":
+        # Finished work is not deleted: its board item moves into the archive (Janis, 07.11.2026).
+        conn.execute("UPDATE board_items SET status = 'archived'"
+                     " WHERE id = (SELECT item_id FROM agent_tasks WHERE id = ?) AND status = 'open'", (task_id,))
     _queue(conn, user_id, task_id, step.status, now)
 
 
