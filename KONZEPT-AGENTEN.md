@@ -118,8 +118,8 @@ Aufbau:
 
 Volltext in PROJEKT.md (Abschnitte „Zugriff der Agenten auf Geräte“, „Geräteliste und Netzwege“, „Mac-Integration“). Kurz:
 - **Heimnetz bleibt gesperrt.** Geräte kommen über eine **Geräteliste im Manager**: Hostname eintragen, der Hub löst ihn auf, der Nutzer gibt frei, optional SSH-Schlüssel im Tresor. Agenten greifen nur über den Vermittler zu und bekommen weder Schlüssel noch Netzweg. Verworfen: Heimnetz pauschal freigeben.
-- **Fremde Netze (Kollegen):** VPN sternförmig mit dem Pi in der Mitte, Kollegen untereinander getrennt, Pi zum Gerät nur Port 22, Gerät nicht ins Netz. Technik (Headscale/Tailscale statt offenem WireGuard-Port) ist noch zu entscheiden.
-- **Mac:** Knopf in der Website startet die lokale Entwicklung ohne zweite Anmeldung; ein unsichtbares Einmal-Ticket verbindet Website und Mac-Programm. Vorschlag für den Mac (nicht entschieden): eigener macOS-Benutzer für den Runner und Firewall-Regel nur für ihn, die das Heimnetz sperrt.
+- **Fremde Netze (Kollegen):** VPN sternförmig mit dem Pi in der Mitte, Kollegen untereinander getrennt, Pi zum Gerät nur Port 22, Gerät nicht ins Netz. Technik: **Tailscale** (kein offener Fritzbox-Port, Zugriffsregeln pro Gerät); Headscale läuft nicht hinter Cloudflare Tunnel, Begründung und Vorbehalte in PROJEKT.md.
+- **Mac:** Knopf in der Website startet die lokale Entwicklung ohne zweite Anmeldung; ein unsichtbares Einmal-Ticket verbindet Website und Mac-Programm. **Rückgabe:** Der Mac holt das Repo und liefert das Ergebnis als Git-Bundle über den Hub (HTTPS, ausgehend); der Hub prüft es, holt nur den Branch der Aufgabe ins Projekt und führt die normale Kette weiter (Prüfer, Freigabe, Merge, Dokumentator). Ohne Ergebnis wartet die Aufgabe wieder auf den Mac. Vorschlag für den Mac (nicht entschieden): eigener macOS-Benutzer für den Runner und Firewall-Regel nur für ihn, die das Heimnetz sperrt.
 
 ## 7. Offene Entscheidungen (Janis)
 
@@ -130,7 +130,7 @@ Volltext in PROJEKT.md (Abschnitte „Zugriff der Agenten auf Geräte“, „Ger
 5. **Merge bei Freigabe:** Der Hub (nicht der Agent) übernimmt den Branch in `main` des Projekt-Repos, bevor der Dokumentator läuft. Eigenes Modul „Worktrees und Merge“.
 6. **Strenge** als Tabelle in Abschnitt 3 ist mein Vorschlag; die drei Stufen aus PROJEKT.md waren bisher nicht ausgeführt.
 7. **Rechte pro Rolle (Web und Code):** Ob Programmierer und Manager Web und Code zusammen bekommen (dann Web nur zu einer Liste von Seiten wie PyPI, npm, GitHub) oder getrennt, ist noch offen; der Chat bleibt „Web oder Code“.
-8. **VPN-Technik** für Geräte in fremden Netzen (Abschnitt 6b).
+8. ~~**VPN-Technik**~~ entschieden: Tailscale (Abschnitt 6b). Vor dem Bau zu prüfen: Nutzungsbedingungen (nicht gewerblich), Etiketten im kostenlosen Tarif.
 
 ## 7a. Ausrollen der Verknüpfung (erledigt am 07.11.2026 mit Janis’ Ja)
 
