@@ -104,33 +104,14 @@
     errorBox.textContent = text || "";
   }
 
-  // The two switches: Web or Code or none (then Claude just answers). Never both: code runs without internet.
-  var modeButtons = document.querySelectorAll(".chat-mode");
-  function currentMode() {
-    var on = document.querySelector(".chat-mode[aria-pressed=true]");
-    return on ? on.dataset.mode : "plain";
-  }
-  function setMode(mode) {
-    Array.prototype.forEach.call(modeButtons, function (b) { b.setAttribute("aria-pressed", String(b.dataset.mode === mode)); });
-    try { localStorage.setItem("chatMode", mode); } catch (e) {}
-  }
-  try { var saved = localStorage.getItem("chatMode"); if (saved) setMode(saved); } catch (e) {}
-  Array.prototype.forEach.call(modeButtons, function (b) {
-    b.addEventListener("click", function () { setMode(currentMode() === b.dataset.mode ? "plain" : b.dataset.mode); });
-  });
-
-  // The model for the next question (drop-down next to the switches); the browser remembers the choice.
-  var model = document.getElementById("chat-model");
-  try { var savedModel = localStorage.getItem("chatModel"); if (savedModel && model.querySelector('option[value="' + savedModel + '"]')) model.value = savedModel; } catch (e) {}
-  model.addEventListener("change", function () { try { localStorage.setItem("chatModel", model.value); } catch (e) {} });
-
+  // Web search and code are always available; the manager uses them only when a question needs them. The model
+  // is the manager's setting (drop-down in the tile header, saved by manager.js), the server picks it up.
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     if (!window.AgentHub.validate(form)) return;
     problem("");
     var data = new FormData(form);
-    data.append("mode", currentMode());
-    data.append("model", model.value);
+    data.append("mode", "all");
     fetch(url, { method: "POST", body: data })
       .then(function (r) { return r.json().catch(function () { return {}; }); })
       .then(function (data) {

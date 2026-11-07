@@ -145,6 +145,10 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn("titlemenu.js", page)
         self.assertIn("Edit project", self.html("en"))
         self.assertIn("left: 38.2%", css_of("app.css")[css_of("app.css").index(".title-wrap"):][:200])  # still at the golden section
+        pencil = css_of("app.css")[css_of("app.css").index(".title-edit {"):]
+        pencil = pencil[:pencil.index("}")]
+        for part in ("width: 38px", "border-radius: 50%", "translate: 0 calc(var(--line) - 45px)"):
+            self.assertIn(part, pencil)                                       # like the round buttons, on their line
 
     def test_the_manager_chat_is_the_big_tile_and_the_old_window_is_gone(self):
         page = self.html()
@@ -153,7 +157,7 @@ class ProjectPageTest(unittest.TestCase):
         tile = tile[:tile.index("</section>")]
         self.assertIn("<h2>Manager-Chat</h2>", tile)
         self.assertIn('data-claude="Manager"', tile)                          # the answers come from the manager
-        for part in ('id="chat-log"', 'id="chat-modes"', 'id="chat-form"', 'id="chat-model"'):
+        for part in ('id="chat-log"', 'id="chat-form"', 'id="manager-model"'):
             self.assertIn(part, tile)
         self.assertGreater(page.index('id="chat"'), page.index('id="manager-view"'))   # inside the Manager view
         for gone in ("<aside", 'id="chat-toggle"', "Kurze Einzelfragen"):
@@ -163,18 +167,38 @@ class ProjectPageTest(unittest.TestCase):
             self.assertNotIn(gone, css)
         self.assertNotIn("chat-toggle", css_of("chat.js"))
 
-    def test_the_model_is_picked_per_question_in_a_drop_down(self):
+    def test_model_and_autonomy_are_settings_of_the_manager_in_our_own_drop_downs(self):
+        from app import agents
+        agents.configure(self.user.id, "chef", model="opus", autonomy="all")
         page = self.html()
-        start = page.index('<select id="chat-model"')
-        select = page[start:page.index("</select>", start)]
-        self.assertEqual([v for v in ("haiku", "sonnet", "opus") if f'value="{v}"' in select], ["haiku", "sonnet", "opus"])
-        self.assertIn('value="sonnet" selected', select)                      # Sonnet unless the user picks another
-        self.assertIn('aria-label="Modell für diese Frage"', select)
-        self.assertLess(page.index('id="chat-model"'), page.index('id="chat-form"'))
+
+        def select(name):
+            start = page.index(f'id="manager-{name}"')
+            return page[page.rindex("<label", 0, start):page.index("</label>", start)]
+        model, autonomy = select("model"), select("autonomy")
+        for part in ('class="m-select has-select"', "<svg", 'data-setting='):
+            self.assertIn(part, model)                                        # core.js styles it like the language select
+            self.assertIn(part, autonomy)
+        self.assertIn('value="opus" selected', model)                         # what the server has
+        self.assertIn('value="all" selected', autonomy)
+        self.assertIn("Fragt bei Großem", autonomy)
+        chat_tile = page[page.index('id="chat"'):]
+        self.assertIn('id="manager-model"', chat_tile[:chat_tile.index("</header>")])        # in the chat header
+        waiting = page[page.index('class="mtile glass m-waiting"'):]
+        self.assertIn('id="manager-autonomy"', waiting[:waiting.index("</header>")])        # at "waiting for you"
+        script = css_of("manager.js")
+        self.assertIn('fetch("/manager/settings"', script)
+        self.assertIn("manager.js", page)
+        self.assertIn("Decides alone", self.html("en"))
+
+    def test_web_and_code_are_always_on_without_switches(self):
+        page = self.html()
+        for gone in ("chat-mode", "data-mode=", 'id="chat-modes"'):
+            self.assertNotIn(gone, page)
         script = css_of("chat.js")
-        self.assertIn('data.append("model", model.value)', script)
-        self.assertIn('localStorage.setItem("chatModel"', script)
-        self.assertIn("Opus · thorough", self.html("en"))
+        self.assertIn('data.append("mode", "all")', script)
+        self.assertNotIn("chatMode", script)
+        self.assertNotIn(".chat-mode", css_of("project.css"))
 
     def test_stations_script_swaps_the_views_by_the_address(self):
         script = css_of("stations.js")
@@ -295,22 +319,12 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn("fillBlocks(body, text)", script)
         self.assertIn("line(\"claude\", box.dataset.claude, m.answer, true)", script)   # only Claude answers, not the questions
 
-    def test_chat_has_the_web_and_code_switches(self):
-        page = self.html()
-        modes = page[page.index('id="chat-modes"'):page.index('id="chat-form"')]
-        self.assertIn('data-mode="web" aria-pressed="true"', modes)               # web is on at first
-        self.assertIn('data-mode="code" aria-pressed="false"', modes)
-        self.assertIn("ohne Internet", modes)                                      # the title says what code can not do
-        self.assertLess(page.index('id="chat-modes"'), page.index('id="chat-form"'))
+    def test_chat_answers_show_code_blocks_safely(self):
         script = css_of("chat.js")
-        self.assertIn("data.append(\"mode\", currentMode())", script)
-        self.assertIn("\"plain\"", script)                                         # both off: Claude just answers
         self.assertIn("fillBlocks", script)
         self.assertIn("createElement(\"pre\")", script)                            # code blocks, built from nodes
         self.assertNotIn("innerHTML", script)
-        css = css_of("project.css")
-        self.assertIn(".chat-mode[aria-pressed=\"true\"]", css)
-        self.assertIn(".chat-text pre", css)
+        self.assertIn(".chat-text pre", css_of("project.css"))
     def test_tooltips_are_our_own(self):
         core, app = css_of("core.js"), css_of("app.css")
         for part in ('className = "tip"', "removeAttribute(\"title\")", "aria-label", "mouseover", "showTip", "focusin"):

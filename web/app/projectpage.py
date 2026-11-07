@@ -1,12 +1,12 @@
 """HTML of the project page: stations on the left, kanban board and trash on the right."""
-from . import i18n, managerpage
+from . import agents, i18n, managerpage
 from .board import KINDS, Item
 from .icons import icon
 from .layout import esc, fill
 from .projects import MAX_DESCRIPTION, MAX_NAME, Project
 from .users import User
 
-SCRIPTS = ("motion.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js")
+SCRIPTS = ("motion.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "manager.js")
 STYLES = ("project.css",)
 
 COLUMN_LABEL = {"bug": "col_bug", "minor": "col_minor", "major": "col_major"}
@@ -210,7 +210,7 @@ def render(user: User, project: Project, items: list[Item]) -> str:
         lang,
         PID=str(project.id),
         STATIONS=_stations(lang),
-        MANAGER=managerpage.render(lang),
+        MANAGER=managerpage.render(lang, agents.settings(user.id)),
         TRASH=_trash(trashed, lang),
         ARCHIVE=_archive(archived, lang),
         COLUMNS="\n      ".join(_column(kind, live, lang) for kind in KINDS),

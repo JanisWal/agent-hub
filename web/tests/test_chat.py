@@ -140,7 +140,7 @@ class ChatQueueTest(Base):
         self.assertEqual((mine, oldest, theirs), (chat.MAX_STORED, None, 1))   # the oldest are gone, B is untouched
     def test_modes(self):
         self.connect(self.a)
-        self.assertEqual(chat.MODES, ("plain", "web", "code"))
+        self.assertEqual(chat.MODES, ("plain", "web", "code", "all"))
         for mode in chat.MODES:
             m = chat.send(self.a.id, self.pa.id, f"q {mode}", mode)
             self.assertEqual(m.mode, mode)
@@ -148,8 +148,8 @@ class ChatQueueTest(Base):
             self.assertEqual(job.mode, mode)                                  # the runner learns the mode from the database
             self.assertTrue(job.prompt.endswith(f"\nq {mode}"))
             chat.finish(job.chat_id, True, "a")
-        self.assertEqual([m.mode for m in chat.list_messages(self.a.id, self.pa.id)], ["plain", "web", "code"])
-        self.assertEqual(chat.send(self.a.id, self.pa.id, "default").mode, "web")   # as before: web is the default
+        self.assertEqual([m.mode for m in chat.list_messages(self.a.id, self.pa.id)], ["plain", "web", "code", "all"])
+        self.assertEqual(chat.send(self.a.id, self.pa.id, "default").mode, "all")   # web search and code, always
         for bad in ("", "root", "Code", "web,code", "code; rm -rf /"):
             with self.assertRaises(ValueError) as problem:
                 chat.send(self.a.id, self.pa.id, "x", bad)
@@ -157,11 +157,11 @@ class ChatQueueTest(Base):
 
     def test_route_takes_the_mode_and_refuses_unknown_ones(self):
         self.connect(self.a)
-        self.assertTrue(routes.ask(self.pa.id, "run it", "code", "sonnet", user=self.a)["ok"])
+        self.assertTrue(routes.ask(self.pa.id, "run it", "code", user=self.a)["ok"])
         self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"][0]["mode"], "code")
         claimed = chat.claim_next()
         chat.finish(claimed.chat_id, True, "done")
-        self.assertEqual(routes.ask(self.pa.id, "x", "everything", "sonnet", user=self.a).status_code, 400)
+        self.assertEqual(routes.ask(self.pa.id, "x", "everything", user=self.a).status_code, 400)
 
     def test_an_existing_database_gets_the_mode_column(self):
         import sqlite3
@@ -182,21 +182,38 @@ class ChatQueueTest(Base):
             mode = conn.execute("SELECT mode FROM chat_messages").fetchone()["mode"]
         self.assertIn("mode", columns)
         self.assertEqual(mode, "web")                                           # old questions count as web questions
-    def test_the_model_is_picked_per_question(self):
+    def test_the_model_is_the_setting_of_the_manager(self):
+        from app import agents
+        from app.routes import manager as manager_routes
         self.connect(self.a)
-        self.assertEqual((chat.DEFAULT_MODEL, "haiku" in chat.MODELS, "opus" in chat.MODELS), ("sonnet", True, True))
-        for model in ("haiku", "opus"):
-            self.assertEqual(chat.send(self.a.id, self.pa.id, f"q {model}", model=model).model, model)
-            job = chat.claim_next()
-            self.assertEqual(job.model, model)                                 # from the database, not the runner
-            chat.finish(job.chat_id, True, "a")
-        for bad in ("", "gpt-4", "Sonnet", "sonnet --dangerous", "claude-opus-5-5"):
+        self.assertEqual(chat.send(self.a.id, self.pa.id, "q").model, "sonnet")   # the manager's default
+        chat.finish(chat.claim_next().chat_id, True, "a")
+        self.assertEqual(manager_routes.manager_settings("opus", "", user=self.a), {"ok": True, "model": "opus", "autonomy": "major"})
+        self.assertTrue(routes.ask(self.pa.id, "via route", "all", user=self.a)["ok"])
+        self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"][-1]["model"], "opus")
+        job = chat.claim_next()
+        self.assertEqual(job.model, "opus")                                    # from the database, not the runner
+        chat.finish(job.chat_id, True, "a")
+        self.assertEqual(agents.settings(self.b.id)["roles"]["chef"]["model"], "sonnet")   # B's manager is untouched
+        for bad in ("gpt-4", "Sonnet", "sonnet --dangerous", "claude-opus-5-5"):
             with self.assertRaises(ValueError) as problem:
                 chat.send(self.a.id, self.pa.id, "x", model=bad)
             self.assertEqual(str(problem.exception), "mode")
-        self.assertTrue(routes.ask(self.pa.id, "via route", "plain", "haiku", user=self.a)["ok"])
-        self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"][-1]["model"], "haiku")
-        self.assertEqual(chat.claim_next().model, "haiku")
+            self.assertEqual(manager_routes.manager_settings(bad, "", user=self.a).status_code, 400)
+        self.assertEqual(agents.settings(self.a.id)["roles"]["chef"]["model"], "opus")      # nothing bad was stored
+
+    def test_the_autonomy_is_a_setting_and_the_manager_reads_it(self):
+        from app import agents
+        from app.routes import manager as manager_routes
+        self.connect(self.a)
+        self.assertEqual(agents.AUTONOMY, ("auto", "major", "all"))
+        self.assertEqual(manager_routes.manager_settings("", "auto", user=self.a)["autonomy"], "auto")
+        self.assertEqual(manager_routes.manager_settings("", "everything", user=self.a).status_code, 400)
+        chat.send(self.a.id, self.pa.id, "q")
+        text = chat.claim_next().prompt
+        self.assertIn(chat.AUTONOMY_TEXT["auto"], text)
+        self.assertIn(chat.AUTONOMY_RULE, text)                                # derive first, ask only what is unclear
+        self.assertEqual(agents.settings(self.b.id)["autonomy"], "major")      # per user
 
     def test_the_manager_knows_the_project_and_remembers_it(self):
         self.connect(self.a)
@@ -246,25 +263,25 @@ class ChatRoutesTest(Base):
     def test_ask_and_poll(self):
         self.connect(self.a)
         self.assertEqual(routes.messages(self.pa.id, user=self.a), {"ok": True, "messages": []})
-        sent = routes.ask(self.pa.id, "Hello", "web", "sonnet", user=self.a)
+        sent = routes.ask(self.pa.id, "Hello", "web", user=self.a)
         self.assertTrue(sent["ok"])
         got = routes.messages(self.pa.id, user=self.a)["messages"]
         self.assertEqual([(m["prompt"], m["status"]) for m in got], [("Hello", "queued")])
-        busy = routes.ask(self.pa.id, "again", "web", "sonnet", user=self.a)
+        busy = routes.ask(self.pa.id, "again", "web", user=self.a)
         self.assertEqual(busy.status_code, 409)
         self.assertIn("Frage", busy.body.decode())                     # message in the user's language
 
     def test_problems_are_answered_not_raised(self):
-        self.assertEqual(routes.ask(self.pa.id, "x", "web", "sonnet", user=self.a).status_code, 409)      # not connected
+        self.assertEqual(routes.ask(self.pa.id, "x", "web", user=self.a).status_code, 409)      # not connected
         self.connect(self.a)
-        self.assertEqual(routes.ask(self.pa.id, "  ", "web", "sonnet", user=self.a).status_code, 400)
-        self.assertEqual(routes.ask(self.pb.id, "x", "web", "sonnet", user=self.a).status_code, 404)      # B's project
+        self.assertEqual(routes.ask(self.pa.id, "  ", "web", user=self.a).status_code, 400)
+        self.assertEqual(routes.ask(self.pb.id, "x", "web", user=self.a).status_code, 404)      # B's project
         english = dataclasses.replace(self.b, language="en")
-        self.assertIn("not connected", routes.ask(self.pb.id, "x", "web", "sonnet", user=english).body.decode())  # B has no Claude
+        self.assertIn("not connected", routes.ask(self.pb.id, "x", "web", user=english).body.decode())  # B has no Claude
 
     def test_delete_history_route(self):
         self.connect(self.a)
-        routes.ask(self.pa.id, "Hello", "web", "sonnet", user=self.a)
+        routes.ask(self.pa.id, "Hello", "web", user=self.a)
         self.assertEqual(routes.delete_history(user=self.a), {"ok": True, "deleted": 1})
         self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"], [])
         self.assertEqual(routes.delete_history(user=self.b), {"ok": True, "deleted": 0})   # B has nothing, A's is gone

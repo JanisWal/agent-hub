@@ -21,6 +21,10 @@ MODELS = ("haiku", "sonnet", "opus")     # aliases of Claude Code, they follow t
 DEFAULT_MODEL = {"chef": "sonnet", "programmer": "sonnet", "tester": "sonnet",
                  "reviewer": "sonnet", "documenter": "haiku"}
 NEEDS = ("any", "mac")
+# How freely the manager decides (Janis, 07.11.2026): fully on its own, asks for big decisions, asks for small
+# things too. It is a threshold, not a switch: the manager first tries to derive the answer from the project.
+AUTONOMY = ("auto", "major", "all")
+DEFAULT_AUTONOMY = "major"
 KIND_ORDER = ("bug", "minor", "major")   # the programmer works in this order
 TASK_SECONDS = 2 * 3600                  # time limit per task, then it goes to the user
 RUN_SECONDS = 20 * 60                    # a run that reports nothing for so long is dead
@@ -130,19 +134,30 @@ def _strictness(conn: sqlite3.Connection, user_id: int) -> str:
     return _setting(conn, user_id, "strictness", "normal")
 
 
+def model_in(conn: sqlite3.Connection, user_id: int, role: str) -> str:
+    """The model of a role for this user, inside an open connection (the manager chat uses "chef")."""
+    return _model(conn, user_id, role)
+
+
+def autonomy_in(conn: sqlite3.Connection, user_id: int) -> str:
+    """How freely the manager decides (Janis, 07.11.2026), see AUTONOMY."""
+    return _setting(conn, user_id, "autonomy", DEFAULT_AUTONOMY)
+
+
 def settings(user_id: int) -> dict:
-    """{"strictness": ..., "roles": {role: {"enabled": bool, "model": str}}} with defaults filled in."""
+    """{"strictness": ..., "autonomy": ..., "roles": {role: {"enabled": bool, "model": str}}}, defaults filled in."""
     with db.connect() as conn:
         enabled = _enabled(conn, user_id)
         return {
             "strictness": _strictness(conn, user_id),
+            "autonomy": autonomy_in(conn, user_id),
             "roles": {r: {"enabled": r in enabled, "model": _model(conn, user_id, r)}
                       for r in workflow.ROLES},
         }
 
 
 def configure(user_id: int, role: str | None = None, *, enabled: bool | None = None,
-              model: str | None = None, strictness: str | None = None) -> None:
+              model: str | None = None, strictness: str | None = None, autonomy: str | None = None) -> None:
     """Change a setting of this user. Raises ValueError for unknown values or for switching the
     programmer off."""
     changes: list[tuple[str, str]] = []
@@ -150,6 +165,10 @@ def configure(user_id: int, role: str | None = None, *, enabled: bool | None = N
         if strictness not in workflow.STRICTNESS:
             raise ValueError("Unbekannte Strenge")
         changes.append(("strictness", strictness))
+    if autonomy is not None:
+        if autonomy not in AUTONOMY:
+            raise ValueError("Unbekannte Selbstständigkeit")
+        changes.append(("autonomy", autonomy))
     if enabled is not None or model is not None:
         if role not in workflow.ROLES:
             raise ValueError("Unbekannte Rolle")
