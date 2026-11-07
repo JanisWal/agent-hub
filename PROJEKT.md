@@ -413,6 +413,7 @@ Eine laufende Claude-Code-Sitzung zieht nicht um; der PC muss an bleiben, bis ei
 
 ## 11. Offene Punkte
 
+- Idee (07.11.2026): Projekte mit anderen Nutzern teilen. Noch nicht ausgearbeitet. Zu klären: Rechte (nur lesen oder mitarbeiten), wessen Claude-Konto die Agenten eines geteilten Projekts nutzen, und wie das zur Mandantentrennung passt (Besitzprüfung wird zu „Besitz oder freigegeben“, neue Fälle in `test_isolation.py`).
 - Anbindung des Abos: Claude Code lässt sich auf dem Pi (Debian trixie, arm64) installieren und per Link und Code ohne Bildschirm anmelden (getestet 06.11.2026). Offen: Nutzungsbedingungen prüfen und ob die Anmeldung dauerhaft hält.
 - Vorlagen für Janis’ Freigaben und die Tester-Checklisten: welche Klick-Aussagen, welche Felder.
 - Domain `janis-home.de` ist im Einsatz (Subdomain `hub`); Registrar und Cloudflare-Konditionen bei Gelegenheit prüfen. Optional Cloudflare Access (Code per E-Mail) als zusätzliche Hürde vor der Seite (die Begrenzung der Anmeldeversuche ist inzwischen gebaut, Access wäre eine zweite Schicht).
