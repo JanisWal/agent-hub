@@ -72,6 +72,20 @@ class IsolationTest(unittest.TestCase):
         self.assertFalse(claude_link.disconnect(self.b.id))
         self.assertTrue(claude_link.is_connected(self.a.id))
 
+    def test_b_cannot_touch_the_chat_of_a(self):
+        from pathlib import Path
+        from app import chat, claude_link
+        claude_link.BASE_DIR = Path(self.tmp.name) / "claude"
+        claude_link.begin(self.a.id)
+        claude_link.complete(self.a.id, True)
+        chat.send(self.a.id, self.project.id, "private question of A")
+        with self.assertRaises(ValueError):
+            chat.send(self.b.id, self.project.id, "planted")                   # A's project
+        self.assertEqual(chat.list_messages(self.b.id, self.project.id), [])
+        self.assertEqual(chat.delete_all(self.b.id), 0)                        # B's "delete all" never reaches A
+        self.assertEqual([m.prompt for m in chat.list_messages(self.a.id, self.project.id)],
+                         ["private question of A"])
+
     # --- the data layer
     def test_b_cannot_read_anything_of_a(self):
         self.assertIsNone(projects.get_project(self.b.id, self.project.id))

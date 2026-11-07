@@ -105,6 +105,20 @@ class DrawerTest(unittest.TestCase):
         page = ui.logged_in_page(self.a, "Title", "<p>x</p>")
         self.assertIn("claude.js", page)
 
+    def test_menu_has_its_own_button_for_deleting_the_chat_history(self):
+        for lang, label, yes in (("de", "Chatverlauf löschen", "Endgültig löschen"),
+                                 ("en", "Delete chat history", "Delete for good")):
+            _, html = self.row(lang)
+            self.assertIn('id="chat-clear-open"', html)
+            self.assertIn(label, html)
+            self.assertIn('id="chat-clear-dialog"', html)
+            self.assertIn('class="dialog danger"', html)
+            self.assertIn(yes, html)
+            self.assertNotIn("%t.", html)
+        # Cancel is the default focus, the red button is the only one that deletes
+        dialog = html[html.index('id="chat-clear-dialog"'):]
+        self.assertLess(dialog.index("autofocus"), dialog.index('id="chat-clear-yes"'))
+
     def test_no_texts_in_the_script(self):
         script = (Path(__file__).parent.parent / "app" / "static" / "claude.js").read_text(encoding="utf-8")
         for german_or_english in ("Verknüpf", "Claude ist", "Please", "Bitte"):

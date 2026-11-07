@@ -98,6 +98,29 @@ class ChatQueueTest(Base):
         chat.send(self.b.id, self.pb.id, "mine")                       # A's open question does not block B
         self.assertEqual(len(chat.list_messages(self.a.id, self.pa.id)), 1)
 
+    def test_delete_all_removes_only_the_own_history(self):
+        self.connect(self.a)
+        self.connect(self.b)
+        second = projects.create_project(self.a.id, "Second of A")
+        for project in (self.pa, second):
+            m = chat.send(self.a.id, project.id, "q")
+            chat.claim_next()
+            chat.finish(m.id, True, "a")
+        chat.send(self.b.id, self.pb.id, "of B")
+        self.assertEqual(chat.delete_all(self.a.id), 2)                 # both projects of A
+        self.assertEqual(chat.list_messages(self.a.id, self.pa.id), [])
+        self.assertEqual([m.prompt for m in chat.list_messages(self.b.id, self.pb.id)], ["of B"])
+        self.assertEqual(chat.delete_all(self.a.id), 0)                 # nothing left, nothing breaks
+        self.assertEqual(claude_link.status(self.a.id), "connected")    # the connection is not touched
+
+    def test_late_answer_for_a_deleted_question_is_ignored(self):
+        self.connect(self.a)
+        m = chat.send(self.a.id, self.pa.id, "q")
+        chat.claim_next()
+        chat.delete_all(self.a.id)
+        self.assertFalse(chat.finish(m.id, True, "late"))
+        self.assertEqual(chat.list_messages(self.a.id, self.pa.id), [])
+
     def test_deleting_the_project_removes_the_messages(self):
         self.connect(self.a)
         chat.send(self.a.id, self.pa.id, "q")
@@ -125,6 +148,13 @@ class ChatRoutesTest(Base):
         self.assertEqual(routes.ask(self.pb.id, "x", user=self.a).status_code, 404)      # B's project
         english = dataclasses.replace(self.b, language="en")
         self.assertIn("not connected", routes.ask(self.pb.id, "x", user=english).body.decode())  # B has no Claude
+
+    def test_delete_history_route(self):
+        self.connect(self.a)
+        routes.ask(self.pa.id, "Hello", user=self.a)
+        self.assertEqual(routes.delete_history(user=self.a), {"ok": True, "deleted": 1})
+        self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"], [])
+        self.assertEqual(routes.delete_history(user=self.b), {"ok": True, "deleted": 0})   # B has nothing, A's is gone
 
     def test_routes_need_a_login(self):
         from app.deps import api_user

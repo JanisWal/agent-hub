@@ -83,6 +83,13 @@ def list_messages(user_id: int, project_id: int) -> list[Message]:
     return [_message(r) for r in rows]
 
 
+def delete_all(user_id: int) -> int:
+    """Delete every question and answer of this user (all projects), for good. Returns how many.
+    A question that is just being answered is dropped, too; the runner's late answer finds nothing."""
+    with db.connect() as conn:
+        return conn.execute("DELETE FROM chat_messages WHERE user_id = ?", (user_id,)).rowcount
+
+
 def claim_next(now: int | None = None) -> ChatJob | None:
     """Runner: the oldest open question whose user has his Claude connected (nobody else's is used)."""
     now = int(now if now is not None else time.time())
