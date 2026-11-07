@@ -234,7 +234,7 @@ class ChatRoutesTest(Base):
 
 class ChatPanelTest(Base):
     def test_panel_is_on_the_project_page_in_both_languages(self):
-        for lang, title in (("de", "Für kurze Einzelfragen"), ("en", "For quick single questions")):
+        for lang, title in (("de", "Kurze Einzelfragen"), ("en", "Quick single questions")):
             html = projectpage.render(dataclasses.replace(self.a, language=lang), self.pa, [])
             self.assertIn('id="chat"', html)
             self.assertIn(title, html)
