@@ -8,6 +8,7 @@ description are not here but in the drop-down at the pencil next to the title (p
 The manager chat works (chat.py); status and "waiting for you" are empty, devices, checks and files announced.
 """
 from . import i18n
+from .icons import icon
 from .layout import esc, fill
 
 MANAGER = """<section class="manager" id="manager-view" aria-label="%t.station_manager%" hidden>
@@ -25,7 +26,7 @@ MANAGER = """<section class="manager" id="manager-view" aria-label="%t.station_m
   <div class="mcol">
     %CHAT%
     <section class="mtile glass m-waiting">
-      <header><h2>%t.manager_waiting%</h2><span class="count">0</span></header>
+      <header><h2>%t.manager_waiting%</h2>%AUTONOMY%<span class="count">0</span></header>
       <p class="muted">%t.manager_waiting_empty%</p>
     </section>
   </div>
@@ -33,28 +34,35 @@ MANAGER = """<section class="manager" id="manager-view" aria-label="%t.station_m
 
 
 # The manager chat (web/app/chat.py, static/chat.js): it replaced the slim single-question window at the right
-# edge. The model is picked per question in the drop-down next to the Web and Code switches.
+# edge. Web search and code are always there (no switches, Janis 07.11.2026); the model drop-down is a setting of
+# the manager, so it holds for everything the manager does (static/manager.js saves it).
 CHAT = """<section class="mtile glass m-chat" id="chat" data-you="%t.chat_you%" data-claude="%t.station_manager%"
              data-waiting="%t.chat_waiting%" data-failed="%t.chat_failed%">
-      <header><h2>%t.manager_chat%</h2></header>
+      <header><h2>%t.manager_chat%</h2>%MODEL%</header>
       <p class="muted">%t.manager_chat_hint%</p>
       <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
       <p class="error" id="chat-error" role="alert" hidden></p>
-      <div class="chat-modes" id="chat-modes" role="group" aria-label="%t.manager_chat%">
-        <button class="chat-mode" type="button" data-mode="web" aria-pressed="true" title="%t.chat_mode_web_title%">%t.chat_mode_web%</button>
-        <button class="chat-mode" type="button" data-mode="code" aria-pressed="false" title="%t.chat_mode_code_title%">%t.chat_mode_code%</button>
-        <label class="chat-model">
-          <select id="chat-model" name="model" aria-label="%t.chat_model%" title="%t.chat_model%">
-            <option value="haiku">%t.model_haiku%</option>
-            <option value="sonnet" selected>%t.model_sonnet%</option>
-            <option value="opus">%t.model_opus%</option>
-          </select></label>
-      </div>
       <form class="chat-form" id="chat-form" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
         <label><input name="prompt" required maxlength="2000" autocomplete="off" placeholder="%t.chat_placeholder%"></label>
         <button type="submit" id="chat-send">%t.chat_send%</button>
       </form>
     </section>"""
+
+MODELS = (("haiku", "model_haiku"), ("sonnet", "model_sonnet"), ("opus", "model_opus"))
+AUTONOMY = (("auto", "autonomy_auto"), ("major", "autonomy_major"), ("all", "autonomy_all"))
+
+
+def _select(lang: str, name: str, label_key: str, options: tuple, current: str) -> str:
+    """A setting of the manager as a drop-down in our own style (core.js `.has-select` builds the list)."""
+    label = esc(i18n.t(lang, label_key))
+    items = "".join(
+        f'<option value="{value}"{" selected" if value == current else ""}>{esc(i18n.t(lang, key))}</option>'
+        for value, key in options
+    )
+    return (
+        f'<label class="m-select has-select"><select name="{name}" data-setting="{name}" id="manager-{name}" '
+        f'aria-label="{label}">{items}</select>{icon("chevron_down")}</label>'   # no title: its tip would cover the list
+    )
 
 
 def _soon(lang: str, title: str, hint: str, css: str = "") -> str:
@@ -67,12 +75,16 @@ def _soon(lang: str, title: str, hint: str, css: str = "") -> str:
     )
 
 
-def render(lang: str) -> str:
+def render(lang: str, settings: dict) -> str:
+    """`settings` is agents.settings(user_id): the manager is the role "chef"."""
+    model = _select(lang, "model", "chat_model", MODELS, settings["roles"]["chef"]["model"])
+    autonomy = _select(lang, "autonomy", "autonomy", AUTONOMY, settings["autonomy"])
     return fill(
         MANAGER,
         lang,
         DEVICES=_soon(lang, "manager_devices", "manager_devices_hint", "m-grow"),
         CHECKS=_soon(lang, "manager_checks", "manager_checks_hint"),
         FILES=_soon(lang, "manager_files", "manager_files_hint", "m-grow"),
-        CHAT=fill(CHAT, lang),
+        CHAT=fill(CHAT, lang, MODEL=model),
+        AUTONOMY=autonomy,
     )

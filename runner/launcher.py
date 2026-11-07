@@ -33,6 +33,11 @@ CHAT_MODES = {
     "plain": {"tools": (), "proxy": API_PROXY, "turns": 3},                              # just answer
     "web": {"tools": ("WebSearch", "WebFetch"), "proxy": WEB_PROXY, "turns": 8},          # search and read pages
     "code": {"tools": ("Bash",), "proxy": API_PROXY, "turns": 10},                        # run code, no internet
+    # The manager chat (Janis, 07.11.2026): web search and code always, Claude uses them only when needed.
+    # Safe together because the web search runs on Anthropic's side (API traffic only) and the container's
+    # only way out is still the Anthropic proxy: code reaches no web page, so nothing it reads can leave.
+    # WebFetch (reading any page from here) would need the open web proxy, so it is left out on purpose.
+    "all": {"tools": ("WebSearch", "Bash"), "proxy": API_PROXY, "turns": 10},
 }
 _BAD_PATH = re.compile(r"[,\s\x00=:]")   # would confuse --mount parsing or hide something
 _MARKER = re.compile(r"^RESULT:\s*([a-z_]+)\s*$")
@@ -104,12 +109,13 @@ def build_chat_command(*, chat_id: int, user_id: int, model: str, claude_dir: st
     claude = _folder(claude_dir, "claude_dir")
     # Code can write anywhere in the container's /tmp, but never into the saved login of the user: a changed
     # configuration there (a hook, say) would run in his later runs, which may reach the web.
-    mount = f"type=bind,src={claude},dst=/claude" + (",readonly" if mode == "code" else "")
+    runs_code = "Bash" in tools
+    mount = f"type=bind,src={claude},dst=/claude" + (",readonly" if runs_code else "")
     return [
         "docker", "run", "--rm", "--init", "-i", "--name", f"agent-chat-{chat_id}",
         "--user", f"{uid}:{uid}",
         "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
-        "--read-only", "--tmpfs", f"/tmp:rw,size={'128m' if mode == 'code' else '64m'},mode=1777", "--workdir", "/tmp",
+        "--read-only", "--tmpfs", f"/tmp:rw,size={'128m' if runs_code else '64m'},mode=1777", "--workdir", "/tmp",
         "--memory", memory, "--memory-swap", memory, "--pids-limit", "256", "--cpus", "2",
         "--network", network,
         "--mount", mount,

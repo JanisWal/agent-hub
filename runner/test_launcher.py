@@ -116,6 +116,17 @@ class ChatCommandTest(unittest.TestCase):
         self.assertIn("--read-only", code)                                         # and the container itself is read-only
         self.assertIn("size=128m", " ".join(code))
 
+    def test_the_manager_chat_has_search_and_code_but_no_open_web(self):
+        cmd = L.build_chat_command(chat_id=6, user_id=2, model="sonnet", claude_dir="/data/claude/2", mode="all")
+        self.assertEqual(cmd[cmd.index("--tools") + 1], "WebSearch,Bash")          # no WebFetch: it would need the open web
+        self.assertEqual(cmd[cmd.index("--allowedTools") + 1], "WebSearch Bash")
+        self.assertIn("HTTPS_PROXY=http://egress:3129", cmd)                       # Anthropic only, the search runs there
+        self.assertNotIn("HTTPS_PROXY=http://egress:3128", cmd)
+        self.assertTrue(any(part.endswith(",readonly") for part in cmd))           # code never changes the login
+        self.assertIn("size=128m", " ".join(cmd))
+        self.assertEqual(cmd[cmd.index("--max-turns") + 1], "10")
+        self.assertEqual(cmd[cmd.index("--model") + 1], "sonnet")
+
     def test_every_run_goes_through_the_proxy(self):
         run = L.build_command(run_id=1, user_id=2, model="sonnet", work_dir="/w/1", claude_dir="/c/2")
         login = L.build_login_command(user_id=2, claude_dir="/c/2")
