@@ -98,6 +98,19 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     finished_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS agent_runs_by_status ON agent_runs (status, created_at);
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    prompt     TEXT NOT NULL,
+    status     TEXT NOT NULL,
+    answer     TEXT NOT NULL DEFAULT '',
+    tokens_in  INTEGER NOT NULL DEFAULT 0,
+    tokens_out INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    started_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS chat_by_project ON chat_messages (user_id, project_id, id);
 """
 
 # Columns added after the first release; added to existing databases on first use.

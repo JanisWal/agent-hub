@@ -72,6 +72,56 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, claud
     ]
 
 
+def build_chat_command(*, chat_id: int, user_id: int, model: str, claude_dir: str, image: str = IMAGE,
+                       network: str = NETWORK, memory: str = "480m") -> list[str]:
+    """TEMPORARY test chat (see web/app/chat.py): one question to Claude, in a container like a run but
+    with no work folder at all (nothing of any project is mounted) and with all tools switched off."""
+    chat_id = _number(chat_id, "chat_id")
+    uid = run_uid(user_id)
+    if model not in MODELS:
+        raise ValueError("unknown model")
+    if not re.fullmatch(r"[0-9]+[mg]", memory) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", image + network):
+        raise ValueError("bad image, network or memory")
+    claude = _folder(claude_dir, "claude_dir")
+    return [
+        "docker", "run", "--rm", "--init", "-i", "--name", f"agent-chat-{chat_id}",
+        "--user", f"{uid}:{uid}",
+        "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+        "--read-only", "--tmpfs", "/tmp:rw,size=64m,mode=1777", "--workdir", "/tmp",
+        "--memory", memory, "--memory-swap", memory, "--pids-limit", "256", "--cpus", "2",
+        "--network", network,
+        "--mount", f"type=bind,src={claude},dst=/claude",
+        "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude",
+        image,
+        "claude", "-p", "--model", model, "--output-format", "json", "--tools", "", "--no-session-persistence",
+    ]
+
+
+# Words in an error answer that mean "not signed in (any more)": the connection is shown as expired.
+_AUTH_PROBLEM = re.compile(r"/login|not logged in|log in|authenticat|invalid api key|oauth|401", re.I)
+
+
+def parse_chat_output(stdout: str) -> tuple[bool, str, int, int, bool]:
+    """(ok, text, tokens_in, tokens_out, login_problem) from the JSON of `claude -p`.
+
+    `ok` is False for anything but a clear, non-error answer. `login_problem` is True when the
+    error looks like a lost sign-in. Nothing is guessed: an unreadable output is a failure.
+    """
+    try:
+        data = json.loads(stdout)
+        text = str(data.get("result", "")).strip()
+        usage = data.get("usage") or {}
+        tokens_in = sum(int(usage.get(k) or 0) for k in (
+            "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+        tokens_out = int(usage.get("output_tokens") or 0)
+        failed = bool(data.get("is_error"))
+    except (ValueError, AttributeError, TypeError):
+        return False, "No readable answer from Claude Code.", 0, 0, bool(_AUTH_PROBLEM.search(stdout or ""))
+    if failed or not text:
+        return False, text or "Claude Code reported an error.", tokens_in, tokens_out, bool(_AUTH_PROBLEM.search(text))
+    return True, text[:MAX_REPORT], tokens_in, tokens_out, False
+
+
 def build_login_command(*, user_id: int, claude_dir: str, image: str = IMAGE, network: str = NETWORK,
                         memory: str = "480m") -> list[str]:
     """The `docker run` command of one sign-in (`claude auth login`), same restrictions as a run but

@@ -10,6 +10,7 @@ HUB_CLAUDE_DIR (where the per-user Claude folders live, as seen by this process)
 import json
 import os
 import shutil
+import subprocess
 import sys
 import time
 import urllib.error
@@ -21,6 +22,7 @@ from . import launcher, login
 
 LOGIN_TIMEOUT_AFTER_CODE = 90   # seconds Claude Code gets to accept the code
 LINK_TIMEOUT = 30               # seconds until the sign-in prints its link
+CHAT_TIMEOUT = 150              # seconds a test-chat answer may take
 
 
 class Api:
@@ -45,12 +47,13 @@ class Api:
 
 class Runner:
     def __init__(self, api, claude_base: str, prepare=launcher.prepare_folder, start_session=None,
-                 clock=time.time):
+                 clock=time.time, run_chat=None):
         self.api = api
         self.claude_base = Path(claude_base)
         self.prepare = prepare
         self.start_session = start_session or self._docker_session
         self.clock = clock
+        self.run_chat = run_chat or self._run_chat
         self.sessions: dict[int, login.LoginSession] = {}
 
     def folder(self, user_id: int) -> str:
@@ -114,9 +117,35 @@ class Runner:
                     continue
             self.api.call("POST", f"/runner/wipes/{int(user_id)}/done")
 
+    # --- TEMPORARY test chat (web/app/chat.py): one question, one answer, no tools, no project files
+    def _run_chat(self, command: list[str], prompt: str):
+        return subprocess.run(command, input=prompt, capture_output=True, text=True, timeout=CHAT_TIMEOUT)
+
+    def handle_chat(self) -> None:
+        job = self.api.call("POST", "/runner/chat/claim").get("job")
+        if not job:
+            return
+        user_id, chat_id = job["user_id"], job["chat_id"]
+        self.prepare(self.folder(user_id), user_id)
+        command = launcher.build_chat_command(chat_id=chat_id, user_id=user_id, model=job["model"],
+                                              claude_dir=self.folder(user_id))
+        try:
+            done = self.run_chat(command, job["prompt"])
+            ok, text, tokens_in, tokens_out, login_problem = launcher.parse_chat_output(done.stdout)
+            if not ok and done.returncode:
+                text = f"{text} (exit code {done.returncode})".strip()
+        except subprocess.TimeoutExpired:
+            subprocess.run(["docker", "rm", "-f", f"agent-chat-{int(chat_id)}"], capture_output=True)
+            ok, text, tokens_in, tokens_out, login_problem = False, "Timeout: no answer in time.", 0, 0, False
+        if login_problem:   # Claude says we are not signed in: show the connection as expired
+            self.api.call("POST", f"/runner/logins/{user_id}/expired")
+        self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="1" if ok else "0", answer=text,
+                      tokens_in=tokens_in, tokens_out=tokens_out)
+
     def step(self) -> None:
         self.handle_wipes()
         self.handle_logins()
+        self.handle_chat()
 
 
 def main() -> None:
