@@ -124,10 +124,15 @@ Stand 07.11.2026, von Janis beauftragt, mit Testkonten im Browser geprüft (Dunk
 - Große Überschrift `.greeting`: Größe `clamp(2.2rem, 5.5vw, 3.6rem)`, Laufweite −0,035 em. Text „Guten Morgen / Guten Mittag / Guten Abend, Name“, bestimmt im Browser nach der **lokalen Uhrzeit** des Besuchers: 5–11 Uhr Morgen, 11–17 Uhr Mittag, sonst Abend. Ohne JavaScript steht „Hallo, Name“.
 - Name: der gewählte Nutzername, sonst der Teil der E-Mail vor dem `@`.
 
-**Einstellungsleiste (oben rechts, auf jeder angemeldeten Seite)**
-- Dezente Pille (`.settings-toggle`): Nutzername (höchstens 14 Zeichen sichtbar) und ein Pfeil, Schrift 0,92 rem in `--muted`, Fläche nur 60 % Glas, kein Schatten. Der Pfeil dreht sich beim Aufklappen um 180°.
-- Aufgeklapptes Panel (`.settings-panel`, Glas, 300 px, Rundung 24 px, 16 px unter der Pille): Feld **Nutzername** (höchstens 40 Zeichen), Auswahl **Sprache** (zwei große Schalter „Deutsch“ / „English“, der gewählte mit Akzentrand), **Speichern**, dann „Claude verknüpfen“ und „ChatGPT verknüpfen“ (ausgegraut, „Kommt später“), darunter **Abmelden**.
-- Schließt bei Klick daneben und mit Escape.
+**Einstellungs-Schublade (oben rechts, auf jeder angemeldeten Seite)** (neu gestaltet am 07.11.2026, ersetzt die frühere Pille)
+- **Geschlossen:** nur ein dezentes Zahnrad (22 px) mit einem Pfeil nach links daneben (18 px), beide in `--muted`, ohne Kasten, 12 px von Rand und Oberkante. Beim Darüberfahren `--text`.
+- **Öffnen:** Ein Klick zieht den Kasten weich aus der rechten oberen Ecke heraus (0,55 s, federnd). Zahnrad und Pfeil hängen links am Kasten und fahren mit, der Pfeil dreht sich dabei um 180° (zeigt dann nach rechts = zurückschieben). Der Kasten blendet dabei ein (0,3 s) und ist im geschlossenen Zustand unsichtbar und nicht anwählbar.
+- **Kasten:** Glas, Breite `min(320 px, 100 vw − 96 px)`, Rundung 24 px, Innenabstand 20 px, 12 px von Rand und Oberkante, höchstens so hoch wie das Fenster (dann scrollbar). Schließt bei Klick daneben und mit Escape.
+- **Einheitliche Einträge:** Jeder Eintrag ist derselbe Block (`.setting`): Feldfarbe, Rand 1 px, Rundung 16 px, Innenabstand 10 × 14 px, oben kleine Beschriftung (0,78 rem, `--muted`), darunter der Wert (1 rem, Gewicht 600), 8 px Abstand zwischen Blöcken. Fokus: Rand `--accent` und Ring 4 px am ganzen Block.
+  1. **Nutzername** (Textfeld, höchstens 40 Zeichen; als Platzhalter steht der aktuell gezeigte Name).
+  2. **Sprache** als Dropdown („Deutsch“ / „English“) mit eigenem Pfeil rechts.
+  3. **Claude** und 4. **ChatGPT**: Name als Beschriftung, darunter ein Statuspunkt mit „Nicht verknüpft“ bzw. „Verknüpft“ (Punkt in Akzentfarbe, Text in `--text`). Nicht verknüpft: rechts daneben der Textlink „Verknüpfen“ (ausgegraut, „Kommt später“). Ist ein Dienst verknüpft, steht nur „Verknüpft“ da. **Ist:** Der Zustand ist fest „nicht verknüpft“, echt wird er mit dem Runner (Phase 2).
+- **Besonders bleiben:** **Speichern** (Hauptknopf, volle Breite) und **Abmelden** (dezenter Textlink darunter, mittig).
 
 **Projektkacheln (Mitte)**
 - Raster 3 Spalten × 2 Reihen, Abstand 24 px, Reihenhöhe mindestens 190 px, **6 Kacheln pro Seite**. Unter 900 px Breite 2 Spalten, unter 560 px eine Spalte.
@@ -155,15 +160,33 @@ Stand 07.11.2026, von Janis beauftragt, mit Testkonten im Browser geprüft (Dunk
 **Sprache**
 - Deutsch und Englisch, pro Nutzer gespeichert (`users.language`). Alle Texte stehen in `web/app/i18n.py`. **Jeder neue Text kommt in beide Sprachen.** Ein Test prüft, dass beide Wörterbücher dieselben Schlüssel haben. Die Login-Seite ist noch nur Deutsch.
 
-**Projektseite:** Platzhalter mit Projektname und „Hier entsteht das Kanban-Board.“, darunter „← Zurück“.
+## 10b. Projektseite und Kanban-Board
+
+Stand 07.11.2026, von Janis beauftragt, in Chrome mit Testkonto geprüft (Anlegen, Umbenennen, Spaltenwechsel per Maus, Akzeptieren, Ablehnen, Papierkorb, endgültig Löschen, Leeren).
+
+**Aufbau:** Links die Stationen (`.stations`, Glas, 210 px breit), rechts Projektname als große Überschrift (`clamp(1.8rem, 4vw, 2.6rem)`), oben rechts der Papierkorb-Knopf, darunter die drei Spalten. Der Inhalt ist **oben ausgerichtet** (springt nicht, wenn sich die Höhe ändert), Breite höchstens 1280 px. Unter 1000 px Breite stehen die Stationen als Zeile oben und die Spalten untereinander.
+- **Stationen:** „← Alle Projekte“ (Link zum Dashboard), **Board** (aktiv, Akzentfläche 30 %), „Agenten“, „Dateiablage“, „Dokumentation“ (ausgegraut, „Kommt später“).
+- **Spalten (`.column`, Glas, Rundung 24 px):** **Bugs**, **Kleine Updates**, **Major Updates**. Kopf: Name, Zähler (Anzahl der Punkte inkl. Vorschläge, aktualisiert sich beim Verschieben) und ein runder Plus-Knopf (36 px, Klickfläche 44 px, Akzentfarbe).
+- **Punkte (`.card`):** kleine Karten (Feldfarbe, Rundung 16 px, Titel Gewicht 600). Von Hand angelegte Punkte gelten als zugestimmt und stehen **oben** (neuester zuerst). Beim Darüberfahren erscheint rechts ein kleiner Papierkorb-Knopf, die Karte hebt sich 2 px.
+- **Claude-Vorschläge:** unter einer kleinen Zwischenzeile („Vorschläge von Claude“, Großbuchstaben, 0,74 rem) **unten** in der Spalte, mit gestricheltem Akzentrand und ohne Füllung. Rechts zwei runde Knöpfe: **Haken** (Akzeptieren, Akzentrand) und **Kreuz** (Ablehnen, beim Darüberfahren `--danger`). Akzeptierte Vorschläge landen unter den zugestimmten Punkten, abgelehnte im Papierkorb. Vorschläge lassen sich nicht ziehen.
+- **Papierkorb:** standardmäßig zu. Der runde Knopf oben rechts (48 px, Mülleimer, kleiner Zähler) klappt ihn als Glasfläche über den Spalten auf, der Zustand bleibt beim Neuladen erhalten. Jede Zeile zeigt Titel und Spalte, rechts **Wiederherstellen** (Pfeil zurück) und **X** (endgültig löschen). Darunter der Textlink **Papierkorb leeren**. Leer: „Der Papierkorb ist leer.“
+- **Wiederherstellen:** Von Hand angelegte Punkte kommen als zugestimmt zurück (oben), Claude-Vorschläge warten wieder auf Entscheidung.
+- **Bestätigung bei endgültigem Löschen** (X und „Papierkorb leeren“): kleiner roter Dialog mit „Abbrechen“ (Standardfokus) und „Ja“, **ohne Passwort** (das bleibt Projekten vorbehalten).
+- **Anlegen und Umbenennen:** Plus-Knopf öffnet den Dialog „Neuer Punkt“ (Titel, höchstens 200 Zeichen). Doppelklick auf einen Punkt öffnet „Punkt bearbeiten“ mit vorausgefülltem Titel. Leere Titel zeigen „Bitte ausfüllen.“
+- **Drag and Drop:** Zugestimmte Punkte lassen sich innerhalb einer Spalte ordnen und **in eine andere Spalte ziehen** (der Punkt wechselt dann die Art). Die gezogene Karte wird halbtransparent (45 %). Leere Spalten nehmen Karten ebenfalls an. Die Reihenfolge wird sofort gespeichert.
+- Nach Aktionen lädt die Seite neu, **ohne** die Einblend-Animation zu wiederholen (Merker `noanim` in `sessionStorage`).
+- Texte und Berechtigungen: alle Texte in Deutsch und Englisch (`i18n.py`), jeder Zugriff prüft, dass das Projekt dem Nutzer gehört.
+
+**Marke „Agent-Hub“ oben links:** ist ein Link zum GitHub-Repo (`https://github.com/JanisWal/agent-hub`), öffnet in neuem Tab (`rel="noopener noreferrer"`), beim Darüberfahren unterstrichen. Gilt auf allen Seiten, auch beim Login.
 
 ## 11. Umsetzung
 
 - `web/app/static/theme.css`: alle Werte als Variablen, alle Komponenten.
 - `web/app/static/theme.js`: Umschalter und Formularmeldungen (Texte kommen vom Server über `data-msg-*`). Keine Abhängigkeit, kein Framework.
-- `web/app/static/dashboard.js`: Begrüßung, Einstellungsleiste, Dialoge, Löschablauf, Drag and Drop.
+- `web/app/static/dashboard.js`: Begrüßung, Einstellungs-Schublade, Dialoge, Löschablauf, Drag and Drop der Kacheln.
+- `web/app/static/board.js`: Kanban-Board (Anlegen, Umbenennen, Akzeptieren, Papierkorb, Drag and Drop zwischen Spalten). Nur auf der Projektseite geladen.
 - `web/app/layout.py`: `page(title, body, lang, top_right, scripts)` ist die gemeinsame Hülle mit Meta-Tags, Inline-Skript für das Theme, Farbflächen, Kopfleiste und Umschalter. **Neue Seiten nutzen `page()`**, damit der Umschalter überall da ist. `fill()` setzt `%NAME%`-Platzhalter in einem Durchgang ein (Nutzertext kann so nichts einschleusen).
-- `web/app/dashboard.py`: HTML von Dashboard, Einstellungsleiste und Projektseite. `web/app/i18n.py`: Texte. `web/app/projects.py`: Projekte in SQLite.
+- `web/app/dashboard.py`: HTML von Dashboard und Einstellungs-Schublade. `web/app/projectpage.py`: HTML der Projektseite mit Board. `web/app/i18n.py`: Texte. `web/app/projects.py`: Projekte, `web/app/board.py`: Board-Punkte (beides SQLite). Die Claude-Vorschläge legt später der Agenten-Code mit `board.create_suggestion()` an.
 - Reines CSS und JavaScript ohne Bibliotheken (Standardbibliothek zuerst, siehe CLAUDE.md), neue Abhängigkeiten nur nach Begründung.
 - Einbindung: `/static` wird von FastAPI (`StaticFiles`) ausgeliefert; nach Änderungen an Dateien im Ordner `static` muss der Web-Container neu gebaut werden (`docker compose up -d --build web`).
 
@@ -173,6 +196,7 @@ Stand 07.11.2026, von Janis beauftragt, mit Testkonten im Browser geprüft (Dunk
 - **Gewünscht (Janis, 07.11.2026), nach dem Kanban-Board:** Kacheln auf eine andere Seite ziehen, wie Apps auf dem Handy. Zieht man eine Kachel an den rechten Rand, blättert die Ansicht zur nächsten Seite, ist keine da, geht eine neue auf; am linken Rand zurück. Beispiel: Drei Projekte gehören zu einer Kategorie, das vierte soll auf die nächste Seite. Leere Plätze bleiben immer am Ende, sie müssen nicht umgeordnet werden. Bis dahin lassen sich Kacheln nur innerhalb einer Seite ordnen (mit der Maus geprüft, Touch ungeprüft).
 - Begrenzung falscher Passworteingaben (Anmeldung und Löschen), steht auch in der Checkliste vor dem Livegang.
 - Login-Seite auf Englisch (erst nach der Anmeldung ist die Sprache bekannt).
+- Board: Punkte per Tastatur ordnen, Touch, weitere Infos pro Punkt (Beschreibung, Priorität, Freigabe durch Janis laut PROJEKT.md) und die Agenten-Bugs folgen später.
 - Inhalt der Kacheln („weitere Infos“) wird später festgelegt.
 - Kontrastmessung aller Farbpaare (Abschnitt 2).
 - Schriftcharakter: reine Systemschrift oder eine warme Serifenschrift für Überschriften.
