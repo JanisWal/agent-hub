@@ -18,14 +18,15 @@ Drei Bausteine, jeder ein Modul, alle ohne Abhängigkeit von außen:
 
 - **Zustand:** `none` → `connecting` → `connected` → `expired` → `connecting` … (Tabelle `claude_connections`). Die Datenbank speichert nur den Zustand und den kurzlebigen Anmelde-Link, **nie** Token oder Code.
 - **Zugangsdaten** legt Claude Code selbst in den Ordner des Nutzers: `claude_link.config_dir(user_id)` = `/data/claude/<user_id>/` (`CLAUDE_CONFIG_DIR` und `HOME` seiner Läufe). Der Web-Container hängt diesen Ordner nicht ein, nur der Runner.
-- **Ablauf der Anmeldung** (der Nutzer gibt nie Benutzername oder Passwort ein):
-  1. Nutzer drückt „Claude verbinden“ → `begin(user_id)`, Zustand `connecting`.
-  2. Der Runner sieht die Anfrage, startet `claude` mit dem Ordner dieses Nutzers und meldet den Anmelde-Link zurück → `set_login_url` (nur `https` zu claude.ai, claude.com oder anthropic.com, sonst abgelehnt).
-  3. Die Maske zeigt den Link. Der Nutzer bestätigt bei Claude und gibt den angezeigten Code in die Maske ein.
-  4. Der Code geht **flüchtig** (nur im Arbeitsspeicher, nie in die Datenbank, nie ins Log) an den Runner, der ihn Claude Code übergibt → `complete(user_id, ok)`.
-  5. Wer 10 Minuten nichts bestätigt, fällt auf `none` zurück (`CONNECT_TIMEOUT`).
+- **Ablauf der Anmeldung** (der Nutzer gibt nie Benutzername oder Passwort ein; Knopf „Verknüpfen“ in der Schublade, Dialog in DESIGN.md Abschnitt 10):
+  1. Nutzer drückt „Verknüpfen“ → `POST /claude/connect` → `begin(user_id)`, Zustand `connecting`.
+  2. Der Runner fragt alle 2 Sekunden `GET /runner/logins`, startet für diesen Nutzer einen Container mit `claude auth login --claudeai` (Pseudo-Terminal, nur sein Claude-Ordner eingehängt) und liest den Link aus der Ausgabe („If the browser didn't open, visit: …“, auch in einem OSC-8-Hyperlink) → `set_login_url` (nur `https` zu claude.ai, claude.com oder anthropic.com, sonst abgelehnt).
+  3. Der Dialog fragt `GET /claude/status`, zeigt den Link und das Feld „Code“. Der Nutzer bestätigt bei Claude und gibt den Code ein → `POST /claude/code`.
+  4. Der Code geht **flüchtig** (nur im Arbeitsspeicher des Hubs, nie in Datenbank oder Log) an den Runner, der ihn in das Terminal des Containers tippt („Paste code here if prompted >“). Beendet sich Claude Code mit Erfolg, meldet der Runner `complete(user_id, True)`, sonst (falscher Code, 90 Sekunden ohne Ergebnis) `False`.
+  5. Wer 10 Minuten nichts bestätigt, fällt auf `none` zurück (`CONNECT_TIMEOUT`). Schließen des Dialogs bricht die Anmeldung ab.
+  - **Geprüft auf dem Pi** (Wegwerf-Hub auf `127.0.0.1:8001`, Testkonto, echter Runner und echter Anmelde-Container): Link kommt von claude.com beim Hub an, die Schublade zeigt „Wird verknüpft“, ein absichtlich falscher Code endet als „nicht verknüpft“, kein Container bleibt übrig. **Nicht geprüft:** der Erfolgsweg mit einem echten Code (das kann nur Janis mit seinem Konto) und ob die Anmeldung dauerhält.
 - **Abgelaufen:** Meldet Claude Code „nicht angemeldet“, setzt der Runner `mark_expired`. Die Aufgaben des Nutzers warten dann (`waiting_reason` = `no_claude`), die Maske zeigt „Verbindung abgelaufen“ mit Knopf zum Erneuern.
-- **Trennen:** `disconnect(user_id)` löscht den Eintrag, der Runner löscht danach den Ordner.
+- **Trennen:** `disconnect(user_id)` setzt den Eintrag auf „wipe“: für den Nutzer ist es sofort `none`, der Runner löscht daraufhin den Claude-Ordner (`GET /runner/wipes`, `POST /runner/wipes/{id}/done`) und erst dann vergisst der Hub die Zeile. Der Runner meldet „fertig“ nur, wenn der Ordner wirklich weg ist; sonst bleibt „wipe“ und er versucht es erneut. So bleibt nie eine gespeicherte Anmeldung zurück, obwohl der Nutzer getrennt hat (der Web-Container kommt an den Ordner nicht heran).
 - **Fallback:** `claude setup-token` am Mac, das Token einfügen; es nimmt denselben flüchtigen Weg.
 - **Kein Rückfall (Pflichtregel 2):** Ohne eigene Verbindung startet nichts. `claim_next` überspringt solche Aufträge, ein Stellvertreter wird nie gesucht (Test dafür in `test_isolation.py`).
 
@@ -121,6 +122,16 @@ Aufbau:
 4. **Speicher:** Pi 4B mit 1 GB: Tests mit Sonnet, langen Läufen und Git-Worktrees stehen aus. `MAX_RUNNING = 1` ist die Vorsorge.
 5. **Merge bei Freigabe:** Der Hub (nicht der Agent) übernimmt den Branch in `main` des Projekt-Repos, bevor der Dokumentator läuft. Eigenes Modul „Worktrees und Merge“.
 6. **Strenge** als Tabelle in Abschnitt 3 ist mein Vorschlag; die drei Stufen aus PROJEKT.md waren bisher nicht ausgeführt.
+
+## 7a. Ausrollen der Verknüpfung (wartet auf Janis’ Ja)
+
+Fertig vorbereitet (Compose-Dienst `runner`, Image `agent-hub-hub-runner`, Netz `agent-hub-agents`), aber **nicht gestartet**. Beim Ausrollen entsteht Neues, das Sicherheit und Netzwerk betrifft:
+1. Ordner `/opt/agent-hub/claude` (Besitzer root, Modus 0700), **außerhalb** von `data/`, damit der Web-Container ihn nicht sieht.
+2. Ein Runner-Token: zufällig erzeugt, in `.env` als `RUNNER_TOKEN` und sein SHA-256 als `HUB_RUNNER_TOKEN_HASH` (nie ausgegeben, nie im Git).
+3. Docker-Netz `agent-hub-agents` (legt Compose an) und der Dienst `runner` mit dem Docker-Socket (nur dieser Dienst).
+4. `main` bekommt `agent-core` (neue Tabellen, neue Routen), Backup der Datenbank vorher, `docker compose up -d --build web runner`, Prüfung von `/health` und der Live-Seite.
+5. Janis’ bestehende Anmeldung (Volume `agent-hub_claude-home` des alten Runners) wird **nicht** übernommen: Er verknüpft einfach über den Knopf neu. Das alte Volume und der alte Runner bleiben unberührt, bis er sie löschen lässt.
+Rückweg: `docker compose stop runner`, die Verknüpfung ist dann „nicht erreichbar“, nichts anderes ändert sich; Code per `git revert`.
 
 ## 8. Reihenfolge der nächsten Module
 
