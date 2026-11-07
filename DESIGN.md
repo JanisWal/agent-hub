@@ -147,7 +147,7 @@ Stand 07.11.2026, von Janis beauftragt, mit Testkonten im Browser geprüft (Dunk
 - **Kasten:** Glas, Breite `min(320 px, 100 vw − 96 px)`, Rundung 24 px, Innenabstand 20 px, 12 px von Rand und Oberkante, höchstens so hoch wie das Fenster (dann scrollbar). Schließt bei Klick daneben und mit Escape.
 - **Einheitliche Einträge:** Jeder Eintrag ist derselbe Block (`.setting`): Feldfarbe, Rand 1 px, Rundung 16 px, Innenabstand 10 × 14 px, oben kleine Beschriftung (0,78 rem, `--muted`), darunter der Wert (1 rem, Gewicht 600), 8 px Abstand zwischen Blöcken. Fokus: Rand `--accent` und Ring 4 px am ganzen Block.
   1. **Nutzername** (Textfeld, höchstens 40 Zeichen; als Platzhalter steht der aktuell gezeigte Name).
-  2. **Sprache** als Dropdown („Deutsch“ / „English“) mit eigenem Pfeil rechts.
+  2. **Sprache** als Dropdown („Deutsch“ / „English“) mit eigenem Pfeil rechts. Die Auswahl ist eine eigene Glasliste (`core.js`, `.select-menu`), nicht das Auswahlfenster des Browsers; der echte `select` bleibt als Formularfeld. Tastatur: Enter, Leertaste oder Alt+Pfeil unten öffnet, Pfeile wählen, Escape schließt nur die Liste.
   3. **Claude** und 4. **ChatGPT**: Name als Beschriftung, darunter ein Statuspunkt mit „Nicht verknüpft“ bzw. „Verknüpft“ (Punkt in Akzentfarbe, Text in `--text`). Nicht verknüpft: rechts daneben der Textlink „Verknüpfen“ (ausgegraut, „Kommt später“). Ist ein Dienst verknüpft, steht nur „Verknüpft“ da. **Ist:** Der Zustand ist fest „nicht verknüpft“, echt wird er mit dem Runner (Phase 2).
 - **Besonders bleiben:** **Speichern** (Hauptknopf, volle Breite) und **Abmelden** (dezenter Textlink darunter, mittig).
 

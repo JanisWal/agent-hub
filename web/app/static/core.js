@@ -109,6 +109,82 @@
     });
   }
 
+  // Select: the browser's popup cannot be styled, so a select inside .has-select gets its own
+  // list. The select stays in the page as the form field and keeps the value.
+  document.querySelectorAll(".has-select select").forEach(function (select) {
+    var menu = document.createElement("ul");
+    menu.className = "select-menu";
+    menu.setAttribute("role", "listbox");
+    var items = Array.prototype.map.call(select.options, function (option) {
+      var item = document.createElement("li");
+      item.className = "select-option";
+      item.setAttribute("role", "option");
+      item.textContent = option.textContent;
+      item.dataset.value = option.value;
+      menu.appendChild(item);
+      return item;
+    });
+    select.parentNode.appendChild(menu);
+    select.setAttribute("aria-haspopup", "listbox");
+
+    var active = -1;
+    function mark(index) {
+      active = index;
+      items.forEach(function (item, i) { item.classList.toggle("active", i === index); });
+    }
+    function isOpen() { return menu.classList.contains("open"); }
+    function open() {
+      items.forEach(function (item, i) { item.setAttribute("aria-selected", String(i === select.selectedIndex)); });
+      mark(select.selectedIndex);
+      menu.classList.add("open");
+      select.setAttribute("aria-expanded", "true");
+    }
+    function close() {
+      menu.classList.remove("open");
+      select.setAttribute("aria-expanded", "false");
+    }
+    function choose(index) {
+      if (index !== select.selectedIndex) {
+        select.selectedIndex = index;
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      close();
+      select.focus();
+    }
+
+    select.addEventListener("mousedown", function (event) {
+      event.preventDefault();
+      select.focus();
+      if (isOpen()) close(); else open();
+    });
+    select.addEventListener("keydown", function (event) {
+      var key = event.key;
+      if (!isOpen()) {
+        if (key === " " || key === "Enter" || (event.altKey && key === "ArrowDown")) { event.preventDefault(); open(); }
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation(); // Escape closes only the list, not the drawer
+      if (key === "ArrowDown") mark(Math.min(active + 1, items.length - 1));
+      else if (key === "ArrowUp") mark(Math.max(active - 1, 0));
+      else if (key === "Enter" || key === " ") choose(active);
+      else if (key === "Escape" || key === "Tab") close();
+    });
+    menu.addEventListener("mousedown", function (event) { event.preventDefault(); }); // keep focus on the select
+    menu.addEventListener("click", function (event) {
+      var item = event.target.closest(".select-option");
+      if (item) choose(items.indexOf(item));
+    });
+    menu.addEventListener("pointermove", function (event) {
+      var item = event.target.closest(".select-option");
+      if (item) mark(items.indexOf(item));
+    });
+    document.addEventListener("click", function (event) {
+      if (isOpen() && !event.target.closest(".has-select")) close();
+    });
+    select.addEventListener("blur", function () { setTimeout(function () { if (!menu.contains(document.activeElement)) close(); }, 0); });
+  });
+
   // Dialogs: every [data-close] button closes the dialog it is in.
   document.addEventListener("click", function (event) {
     var close = event.target.closest("[data-close]");
