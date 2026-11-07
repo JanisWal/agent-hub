@@ -31,6 +31,7 @@
     var step1 = $('[data-step="1"]', deleteDialog);
     var step2 = $('[data-step="2"]', deleteDialog);
     var wrong = $("#delete-error");
+    var wrongText = wrong.textContent; // the lock message replaces it for a while
     var password = $('input[name="password"]', deleteDialog);
     var projectId = null;
 
@@ -60,11 +61,17 @@
       event.preventDefault();
       if (!AgentHub.validate(step2)) return;
       wrong.hidden = true;
+      wrong.textContent = wrongText;
       fetch("/projects/" + projectId + "/delete", { method: "POST", body: new FormData(step2) })
         .then(function (response) {
           if (response.status === 403) {
             wrong.hidden = false;
             password.select();
+          } else if (response.status === 429) {
+            return response.json().then(function (data) {
+              wrong.textContent = data.message;
+              wrong.hidden = false;
+            });
           } else {
             AgentHub.reload();
           }

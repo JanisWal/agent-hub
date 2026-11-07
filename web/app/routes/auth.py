@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 
-from .. import i18n, ui, users
+from .. import i18n, throttle, ui, users
 from ..deps import COOKIE_NAME, COOKIE_SECURE, page_user, redirect
 
 router = APIRouter()
@@ -14,9 +14,17 @@ def login_form() -> str:
 
 
 @router.post("/login", response_class=HTMLResponse)
-def login(email: str = Form(""), password: str = Form("")):
+def login(request: Request, email: str = Form(""), password: str = Form("")):
+    ip = throttle.client_ip(request)
+    wait = throttle.seconds_locked(ip)  # checked first: a locked IP gets no answer about the password
+    if wait:
+        return HTMLResponse(ui.login_page(locked_minutes=throttle.minutes(wait)), status_code=429)
     user = users.check_login(email, password)
     if user is None:
+        throttle.record_failure(ip)
+        wait = throttle.seconds_locked(ip)
+        if wait:
+            return HTMLResponse(ui.login_page(locked_minutes=throttle.minutes(wait)), status_code=429)
         return HTMLResponse(ui.login_page(failed=True), status_code=401)
     response = redirect("/")
     response.set_cookie(

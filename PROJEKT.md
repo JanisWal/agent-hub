@@ -248,6 +248,7 @@ web/app/
   routes/board.py            Punkte anlegen, umbenennen, ordnen, annehmen, verwerfen, Papierkorb
   db.py                      SQLite-Verbindung, Schema, kleine Migrationen (schließt Verbindungen sicher)
   users.py  projects.py  board.py   Daten und Regeln (ohne HTTP)
+  throttle.py                Sperre nach zu vielen falschen Passwörtern (pro IP, SQLite)
   layout.py                  Seitenhülle und Vorlagen-Ersetzung fill(): %NAME% = fertiger Wert, %t.schluessel% = übersetzter Text
   ui.py                      Login-Seite, Einstellungs-Schublade, angemeldeter Seitenrahmen
   dashboard.py  projectpage.py   HTML von Startseite und Projektseite
@@ -269,6 +270,7 @@ web/tests/                   Unit-Tests und integration_http.py (End-to-End übe
 - `sessions`: token, user_id, expires_at (14 Tage). Cookie `session`: HttpOnly, SameSite=Lax, Secure über `HUB_SECURE_COOKIE=1`.
 - `projects`: id, user_id, name (höchstens 60), page, position. Sechs Kacheln pro Seite; eine volle Seite schiebt ihr letztes Projekt auf die nächste (`projects.move`). Seiten ohne Projekte gibt es nicht. Löschen ist endgültig und verlangt das Passwort.
 - `board_items`: id, project_id, kind (`bug`/`minor`/`major`), title (höchstens 200), source (`user`/`claude`), status (`open`/`proposed`/`trash`), position. Von Hand angelegte Punkte sind `open` und stehen oben, Vorschläge von Claude sind `proposed` und stehen unten. Jeder Zugriff prüft, dass das Projekt dem Nutzer gehört.
+- `login_attempts`: ip (Schlüssel), failures, window_start, locked_until. Zählt falsche Passwörter pro IP (hinter dem Tunnel aus `CF-Connecting-IP`). Zehn Fehlversuche innerhalb von 30 Minuten sperren die IP für eine Stunde, dann antworten Anmeldung und Projekt-Löschen mit 429 (auch bei richtigem Passwort). Ein richtiges Passwort setzt den Zähler nicht zurück, er läuft mit dem Zeitfenster ab. Gezählt wird nie pro E-Mail, damit niemand den Owner aussperren kann.
 - Schemaänderungen laufen über `NEW_COLUMNS` in `db.py` (Spalten werden beim Start ergänzt). Vor jeder Änderung an Daten ein Backup.
 
 ### Routen
@@ -345,7 +347,7 @@ Eine laufende Claude-Code-Sitzung zieht nicht um; der PC muss an bleiben, bis ei
 - [x] Update-Ablauf festgelegt (Abschnitt 9)
 - [x] Erster Admin angelegt, Login getestet
 - [x] Sicherheits-Header gesetzt, API-Dokumentation abgeschaltet
-- [ ] Begrenzung falscher Anmeldeversuche (Anmeldung und Löschen) – von Janis noch nicht freigegeben
+- [x] Begrenzung falscher Anmeldeversuche: nur pro IP, 10 Fehlversuche in 30 Minuten sperren die IP für 1 Stunde (Anmeldung und Löschen gemeinsam, `throttle.py`)
 - [ ] Versionen von fastapi, uvicorn und python-multipart festgenagelt
 - [ ] Web-Container läuft als eigener Benutzer ohne Sonderrechte (Datenordner-Rechte anpassen), mit Speicherlimit
 - [ ] Gesundheitsprüfung über `/health` in compose eingetragen

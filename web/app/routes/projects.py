@@ -2,8 +2,8 @@
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from .. import board, dashboard, i18n, projectpage, projects, ui, users
-from ..deps import api_user, fail, ok, page_user, redirect
+from .. import board, dashboard, i18n, projectpage, projects, throttle, ui, users
+from ..deps import api_user, fail, locked, ok, page_user, redirect
 
 router = APIRouter()
 
@@ -51,10 +51,18 @@ def project_view(project_id: int, user: users.User = Depends(page_user)):
 
 
 @router.post("/projects/{project_id}/delete")
-def delete_project(project_id: int, password: str = Form(""), user: users.User = Depends(api_user)):
+def delete_project(
+    request: Request, project_id: int, password: str = Form(""), user: users.User = Depends(api_user)
+):
     """Deleting needs the password again, even though the user is logged in."""
+    ip = throttle.client_ip(request)
+    wait = throttle.seconds_locked(ip)
+    if wait:
+        return locked(user.language, wait)
     if not users.verify_password(user.id, password):
-        return fail(403)
+        throttle.record_failure(ip)
+        wait = throttle.seconds_locked(ip)
+        return locked(user.language, wait) if wait else fail(403)
     if not projects.delete_project(user.id, project_id):
         return fail(404)
     return ok()
