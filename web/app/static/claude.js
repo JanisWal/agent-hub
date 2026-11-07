@@ -3,6 +3,20 @@
 // time and asks the server how the login is going (GET /claude/status). The login itself runs in
 // the runner: link -> the user signs in at Claude -> he types the code here.
 (function () {
+  // Delete the chat history: an own button in the menu, a red "are you sure" dialog, then it is gone.
+  var clearOpen = document.getElementById("chat-clear-open");
+  var clearDialog = document.getElementById("chat-clear-dialog");
+  var clearYes = document.getElementById("chat-clear-yes");
+  if (clearOpen && clearDialog && clearYes && typeof clearDialog.showModal === "function") {
+    clearOpen.addEventListener("click", function () { clearDialog.showModal(); });
+    clearYes.addEventListener("click", function () {
+      clearYes.disabled = true;
+      fetch("/chat/delete", { method: "POST" })
+        .catch(function () {})
+        .then(function () { clearYes.disabled = false; clearDialog.close(); window.AgentHub.reload(); });
+    });
+  }
+
   var openButton = document.getElementById("claude-open");
   var dialog = document.getElementById("claude-dialog");
   if (!openButton || !dialog || typeof dialog.showModal !== "function") return;

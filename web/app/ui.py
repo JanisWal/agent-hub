@@ -50,6 +50,7 @@ SETTINGS = """<div class="drawer" id="settings" data-theme-saved="%THEME%">
       %SERVICES%
       <button class="primary save" type="submit">%t.save%</button>
     </form>
+    <button class="link" type="button" id="chat-clear-open">%t.chat_clear%</button>
     %ACCOUNT_LINKS%
     <form method="post" action="/logout"><button class="link" type="submit">%t.logout%</button></form>
   </div>
@@ -92,6 +93,14 @@ CLAUDE_DIALOG = """<dialog class="dialog" id="claude-dialog">
       <button type="button" data-finish-keep autofocus>%t.cancel%</button>
       <button class="danger-btn" type="button" data-disconnect>%t.claude_disconnect%</button>
     </div>
+  </div>
+</dialog>
+<dialog class="dialog danger" id="chat-clear-dialog">
+  <h2>%t.chat_clear_title%</h2>
+  <p class="muted">%t.chat_clear_text%</p>
+  <div class="actions">
+    <button type="button" data-close autofocus>%t.cancel%</button>
+    <button class="danger-btn" type="button" id="chat-clear-yes">%t.chat_clear_yes%</button>
   </div>
 </dialog>"""
 
