@@ -14,11 +14,10 @@ CREATE TABLE IF NOT EXISTS users (
     id            INTEGER PRIMARY KEY,
     email         TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
-    is_admin      INTEGER NOT NULL DEFAULT 0,
     created_at    INTEGER NOT NULL
 );
 CREATE TABLE IF NOT EXISTS sessions (
-    token      TEXT PRIMARY KEY,
+    token_hash TEXT PRIMARY KEY,
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     expires_at INTEGER NOT NULL
 );
@@ -70,6 +69,9 @@ NEW_COLUMNS = {
     "projects": {"page": "INTEGER NOT NULL DEFAULT 0"},
 }
 
+# The three statements below run once, when a database from before the feature is opened for the
+# first time (see `_prepare`), never again: they must not undo later changes.
+
 # Projects from before pages existed (page = 0) get their page from their order, 6 per page.
 ASSIGN_PAGES = """
 UPDATE projects SET page = 1 + (
@@ -90,22 +92,37 @@ ASSIGN_ROLES = (
 _ready: set[str] = set()  # database files whose schema is already current in this process
 
 
+def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+
+
 def _prepare(conn: sqlite3.Connection) -> None:
-    """Create missing tables, add missing columns, give old projects a page."""
+    """Bring a database up to date: create missing tables, add missing columns, and do the
+    one-time conversions of old data (roles, pages, session tokens, the old `is_admin` column)."""
     conn.executescript(SCHEMA)
+    before = {table: _columns(conn, table) for table in ("users", "projects", "sessions")}
     for table, columns in NEW_COLUMNS.items():
-        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
         for name, definition in columns.items():
-            if name not in existing:
+            if name not in before[table]:
                 try:
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
                 except sqlite3.OperationalError:
                     pass  # another process added it first
-    for statement in ASSIGN_ROLES:
-        conn.execute(statement)
+    if "is_admin" in before["users"]:
+        if "role" not in before["users"]:   # roles come from the old admin flag, once
+            for statement in ASSIGN_ROLES:
+                conn.execute(statement)
+        conn.execute("ALTER TABLE users DROP COLUMN is_admin")   # `role` says it all now
+    if "page" not in before["projects"]:
+        conn.execute(ASSIGN_PAGES)
+    if "token" in before["sessions"]:
+        # Sessions used to be stored as the cookie value itself, now only as its hash (a copy of the
+        # database or a backup must not contain usable logins). Old sessions cannot be converted:
+        # everybody logs in once more.
+        conn.execute("ALTER TABLE sessions RENAME COLUMN token TO token_hash")
+        conn.execute("DELETE FROM sessions")
     # Safety net: the database itself refuses a second owner (it does not say who the owner is).
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_one_owner ON users (role) WHERE role = 'owner'")
-    conn.execute(ASSIGN_PAGES)
     conn.commit()
 
 

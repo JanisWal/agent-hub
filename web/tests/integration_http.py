@@ -1,10 +1,11 @@
 """End-to-end check of a running Agent-Hub over HTTP (standard library only).
 
-    python integration_http.py BASE_URL EMAIL PASSWORD
+    python integration_http.py BASE_URL EMAIL PASSWORD [EMAIL2 PASSWORD2]
 
-Logs in, walks through projects, board and settings, and removes what it created. Run it
-against a test instance (see PROJEKT.md, "Tests"). Against the live site only with a test
-account. Exit code 0 = all fine.
+Logs in, walks through projects, board and settings, and removes what it created. With a second
+(normal) account it also checks that this account sees and changes nothing of the first one.
+Run it against a test instance (see PROJEKT.md, "Tests"). Against the live site only with test
+accounts. Exit code 0 = all fine.
 """
 import http.cookiejar
 import json
@@ -27,14 +28,15 @@ jar = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(NoRedirect, urllib.request.HTTPCookieProcessor(jar))
 
 
-def call(method, path, data=None, as_json=False, cookies=True):
-    """Returns (status, headers, body). Redirects are not followed."""
+def call(method, path, data=None, as_json=False, cookies=True, who=None):
+    """Returns (status, headers, body). Redirects are not followed. `who` is another client
+    (its own cookies) for the checks with a second account."""
     body, headers = None, {}
     if data is not None:
         body = json.dumps(data).encode() if as_json else urllib.parse.urlencode(data).encode()
         headers["Content-Type"] = "application/json" if as_json else "application/x-www-form-urlencoded"
     request = urllib.request.Request(base + path, body, headers, method=method)
-    client = opener if cookies else urllib.request.build_opener(NoRedirect)
+    client = who or (opener if cookies else urllib.request.build_opener(NoRedirect))
     try:
         with client.open(request, timeout=15) as response:
             return response.status, response.headers, response.read().decode()
@@ -111,6 +113,32 @@ if project:
         check("foreign item", call("POST", "/items/999999/discard")[0] == 404)
         call("POST", f"/items/{second}/discard")
         check("empty trash", call("POST", f"/projects/{project}/trash/empty")[0] == 200)
+
+        # --- a second account must see and change nothing of the first (optional EMAIL2 PASSWORD2) ---
+        if len(sys.argv) > 5:
+            email2, password2 = sys.argv[4], sys.argv[5]
+            other = urllib.request.build_opener(NoRedirect, urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+            check("second account logs in", call("POST", "/login", {"email": email2, "password": password2}, who=other)[0] == 303)
+            _, _, theirs = call("GET", "/", who=other)
+            check("second account sees no project of the first", "Integration" not in theirs and email not in theirs)
+            check("foreign project page is 404", call("GET", f"/projects/{project}", who=other)[0] == 404)
+            for action in ("accept", "reject", "discard", "restore", "delete"):
+                check(f"foreign item {action} is 404", call("POST", f"/items/{first}/{action}", who=other)[0] == 404)
+            check("foreign reorder refused", call("POST", "/items/reorder", {"kind": "bug", "ids": [int(first)]}, True, who=other)[0] == 400)
+            check("foreign project cannot be moved", call("POST", "/projects/move", {"id": int(project), "page": 1, "index": 0}, True, who=other)[0] == 400)
+            call("POST", f"/items/{first}", {"title": "hacked"}, who=other)
+            call("POST", f"/projects/{project}/items", {"kind": "bug", "title": "planted"}, who=other)
+            check("foreign trash cannot be emptied", call("POST", f"/projects/{project}/trash/empty", who=other)[0] == 200)
+            check("foreign delete is 404", call("POST", f"/projects/{project}/delete", {"password": password2}, who=other)[0] == 404)
+            _, _, mine = call("GET", f"/projects/{project}")
+            check("first account's data is untouched", "Renamed" in mine and "hacked" not in mine and "planted" not in mine)
+            check("normal user has no user management", call("GET", "/users", who=other)[0] == 404
+                  and call("POST", "/users/add", {"email": "x@example.com"}, who=other)[0] == 403
+                  and call("POST", "/users/1/owner", {"confirm": password2}, who=other)[0] == 403
+                  and call("POST", "/users/1/delete", {"confirm": password2}, who=other)[0] == 403)
+            check("second account logs out", call("POST", "/logout", who=other)[0] == 303)
+            check("its session is gone, the first one still works", call("GET", "/", who=other)[0] == 303
+                  and call("GET", "/")[0] == 200)
 
     # --- delete needs the password ---
     check("delete wrong password", call("POST", f"/projects/{project}/delete", {"password": "nope"})[0] == 403)

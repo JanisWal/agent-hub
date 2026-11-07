@@ -49,11 +49,6 @@ def layout(user_id: int) -> list[list[Project]]:
     return [[_to_project(r) for r in page] for page in _pages(rows)]
 
 
-def list_projects(user_id: int) -> list[Project]:
-    """All projects of a user in display order, page after page."""
-    return [project for page in layout(user_id) for project in page]
-
-
 def get_project(user_id: int, project_id: int) -> Project | None:
     """One project, only if it belongs to the user."""
     with db.connect() as conn:

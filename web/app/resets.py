@@ -4,19 +4,15 @@ Flow: `create_token` for an e-mail address gives a random token that goes into t
 Only its SHA-256 hash is stored, so a copy of the database cannot be used to reset anybody's
 password. A token is valid for one hour and works once. A new request replaces older ones.
 """
-import hashlib
 import secrets
 import time
 
 from . import db, users
+from .users import hash_token as _hash
 
 TOKEN_SECONDS = 3600
 INVITE_SECONDS = 7 * 24 * 3600   # an invitation may wait in a mailbox for a while
 COOLDOWN_SECONDS = 60    # a new mail for the same account earliest after this (no mail flood)
-
-
-def _hash(token: str) -> str:
-    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def create_token(email: str, valid_seconds: int = TOKEN_SECONDS) -> tuple[users.User, str] | None:

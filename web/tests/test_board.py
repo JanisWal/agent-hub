@@ -46,13 +46,13 @@ class BoardTest(unittest.TestCase):
 
     def test_suggestion_accept_goes_below_agreed_items(self):
         self.add("Mine")
-        item = board.create_suggestion(self.project.id, "bug", "Idea")
+        item = board.create_suggestion(self.me.id, self.project.id, "bug", "Idea")
         self.assertEqual(item.status, "proposed")
         self.assertTrue(board.accept(self.me.id, item.id))
         self.assertEqual(self.titles("open", "bug"), ["Mine", "Idea"])
 
     def test_reject_restore_and_delete_flow(self):
-        item = board.create_suggestion(self.project.id, "minor", "Idea")
+        item = board.create_suggestion(self.me.id, self.project.id, "minor", "Idea")
         self.assertTrue(board.reject(self.me.id, item.id))
         self.assertEqual(self.titles("trash"), ["Idea"])
         self.assertTrue(board.restore(self.me.id, item.id))
@@ -91,7 +91,7 @@ class BoardTest(unittest.TestCase):
 
     def test_reorder_rejects_foreign_proposed_and_duplicate_ids(self):
         mine = self.add("Mine")
-        suggestion = board.create_suggestion(self.project.id, "bug", "Idea")
+        suggestion = board.create_suggestion(self.me.id, self.project.id, "bug", "Idea")
         theirs = board.create_item(self.other.id, self.foreign.id, "bug", "Theirs")
         for ids in ([mine.id, theirs.id], [mine.id, suggestion.id], [mine.id, mine.id]):
             with self.assertRaises(ValueError):

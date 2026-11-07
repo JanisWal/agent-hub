@@ -20,6 +20,7 @@ SESSION_SECONDS = 14 * 24 * 3600
 MIN_PASSWORD_LENGTH = 6      # floor for every password, also a start password given by an admin
 MIN_DIGITS = 2               # extra rule for passwords people choose themselves (password_problem)
 MAX_DISPLAY_NAME = 40
+MAX_EMAIL_LENGTH = 254       # the longest address that exists (RFC 5321)
 ROLES = ("owner", "admin", "user")
 
 # scrypt cost parameters (about 16 MiB RAM per hash, fine for a Pi 4)
@@ -107,7 +108,7 @@ def create_user(email: str, password: str, role: str = "user", must_change: bool
     password go through `password_problem` first.
     """
     email = _normalize(email)
-    if "@" not in email:
+    if "@" not in email or len(email) > MAX_EMAIL_LENGTH:
         raise UserError("email", "Ungültige E-Mail-Adresse")
     if len(password) < MIN_PASSWORD_LENGTH:
         raise UserError("short", f"Passwort zu kurz (mindestens {MIN_PASSWORD_LENGTH} Zeichen)")
@@ -118,9 +119,9 @@ def create_user(email: str, password: str, role: str = "user", must_change: bool
     with db.connect() as conn:
         try:
             cur = conn.execute(
-                "INSERT INTO users (email, password_hash, is_admin, role, must_change_password, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
-                (email, _hash_password(password), int(role != "user"), role, int(must_change), int(time.time())),
+                "INSERT INTO users (email, password_hash, role, must_change_password, created_at)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (email, _hash_password(password), role, int(must_change), int(time.time())),
             )
         except sqlite3.IntegrityError:
             raise UserError("taken", "E-Mail-Adresse ist schon vergeben") from None
@@ -215,10 +216,10 @@ def _managed(actor: User, user_id: int) -> User:
     return target
 
 
-def set_password(user_id: int, new_password: str, must_change: bool = False) -> None:
-    """Store a new password and end all sessions of that user. Checks only the length: callers
-    that let people choose a password check `password_problem` first (also the future reset by
-    e-mail)."""
+def set_password(user_id: int, new_password: str, must_change: bool = False, keep_token: str | None = None) -> None:
+    """Store a new password, end all sessions of that user (except the one with the cookie value
+    `keep_token`) and cancel reset links that are still open. Checks only the length: callers
+    that let people choose a password check `password_problem` first."""
     if len(new_password) < MIN_PASSWORD_LENGTH:
         raise UserError("short")
     with db.connect() as conn:
@@ -226,7 +227,11 @@ def set_password(user_id: int, new_password: str, must_change: bool = False) -> 
             "UPDATE users SET password_hash = ?, must_change_password = ? WHERE id = ?",
             (_hash_password(new_password), int(must_change), user_id),
         )
-        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        conn.execute(
+            "DELETE FROM sessions WHERE user_id = ? AND token_hash != ?",
+            (user_id, hash_token(keep_token) if keep_token else ""),
+        )
+        conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
 
 
 def reset_password(actor: User, user_id: int, start_password: str) -> None:
@@ -253,7 +258,7 @@ def set_admin(actor: User, user_id: int, make_admin: bool) -> None:
         raise PermissionError
     role = "admin" if make_admin else "user"
     with db.connect() as conn:
-        conn.execute("UPDATE users SET role = ?, is_admin = ? WHERE id = ?", (role, int(make_admin), target.id))
+        conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, target.id))
 
 
 def transfer_owner(actor: User, user_id: int) -> None:
@@ -276,11 +281,11 @@ def transfer_owner(actor: User, user_id: int) -> None:
     with db.connect() as conn:
         # step down first, so that the unique index never sees two owners
         stepped_down = conn.execute(
-            "UPDATE users SET role = 'admin', is_admin = 1 WHERE id = ? AND role = 'owner'", (actor.id,)
+            "UPDATE users SET role = 'admin' WHERE id = ? AND role = 'owner'", (actor.id,)
         ).rowcount
         if stepped_down != 1:  # the actor object was out of date
             raise PermissionError
-        conn.execute("UPDATE users SET role = 'owner', is_admin = 1 WHERE id = ?", (target.id,))
+        conn.execute("UPDATE users SET role = 'owner' WHERE id = ?", (target.id,))
 
 
 def change_own_password(user: User, old_password: str, new_password: str, keep_token: str | None = None) -> None:
@@ -297,24 +302,24 @@ def change_own_password(user: User, old_password: str, new_password: str, keep_t
         raise UserError(problem)
     if verify_password(user.id, new_password):  # same as the current password
         raise UserError("same")
-    set_password(user.id, new_password, must_change=False)
-    if keep_token:
-        with db.connect() as conn:
-            conn.execute(
-                "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
-                (keep_token, user.id, int(time.time()) + SESSION_SECONDS),
-            )
+    set_password(user.id, new_password, must_change=False, keep_token=keep_token)
+
+
+def hash_token(token: str) -> str:
+    """What the database stores of a token (session cookie, reset link): its SHA-256. The tokens are
+    long random strings, so a plain hash is enough, and a copy of the database holds nothing usable."""
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def create_session(user_id: int) -> str:
-    """Store a new session for 14 days and return its random token."""
+    """Store a new session for 14 days and return its random token (the cookie value)."""
     token = secrets.token_urlsafe(32)
     now = int(time.time())
     with db.connect() as conn:
         conn.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,))
         conn.execute(
-            "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
-            (token, user_id, now + SESSION_SECONDS),
+            "INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)",
+            (hash_token(token), user_id, now + SESSION_SECONDS),
         )
     return token
 
@@ -326,12 +331,12 @@ def get_user(token: str | None) -> User | None:
     with db.connect() as conn:
         row = conn.execute(
             "SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id"
-            " WHERE s.token = ? AND s.expires_at > ?",
-            (token, int(time.time())),
+            " WHERE s.token_hash = ? AND s.expires_at > ?",
+            (hash_token(token), int(time.time())),
         ).fetchone()
     return _to_user(row) if row else None
 
 
 def delete_session(token: str) -> None:
     with db.connect() as conn:
-        conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+        conn.execute("DELETE FROM sessions WHERE token_hash = ?", (hash_token(token),))

@@ -16,6 +16,9 @@ MAX_FAILURES = 10            # generous: a real user may mistype many times
 WINDOW_SECONDS = 30 * 60     # failures older than this are forgotten
 LOCK_SECONDS = 60 * 60       # how long an IP stays locked
 
+# The functions below take a key: the IP for passwords, "forgot:" + IP for requests of a reset mail
+# (each kind has its own counter).
+
 
 def client_ip(request: Request) -> str:
     """The visitor's IP. Behind the Cloudflare tunnel the real address is in CF-Connecting-IP

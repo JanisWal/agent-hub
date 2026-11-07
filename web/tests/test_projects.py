@@ -17,7 +17,7 @@ class ProjectsTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def names(self, user):
-        return [p.name for p in projects.list_projects(user.id)]
+        return [p.name for page in projects.layout(user.id) for p in page]
 
     def pages(self, user=None):
         """The layout as lists of names, e.g. [["A", "B"], ["C"]]."""
