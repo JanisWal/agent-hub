@@ -2,9 +2,11 @@ import os
 import re
 import sqlite3
 import tempfile
+import types
 import unittest
 
 from app import board, db, projects, ui, userspage, users
+from app.routes import accounts
 
 
 class AccountsTest(unittest.TestCase):
@@ -177,6 +179,125 @@ class AccountsTest(unittest.TestCase):
         owner_view = userspage.render(self.owner, users.list_users(self.owner))
         self.assertEqual(owner_view.count("data-admin"), 2)  # admin and user, not himself
         self.assertEqual(owner_view.count("data-delete"), 2)
+
+
+class OwnerTransferTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        db.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        self.owner = users.create_user("owner@example.com", "Own3r!pass", role="owner")
+        self.admin = users.create_user("admin@example.com", "Adm1n!pass", role="admin")
+        self.fresh = users.add_user(self.owner, "fresh@example.com", "Start1234")   # still a start password
+        self.user = users.add_user(self.owner, "user@example.com", "Start1234")
+        users.change_own_password(self.user, "", "Mein!Pass12")
+        self.user = users.get_by_id(self.user.id)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def roles(self):
+        return {u.email.split("@")[0]: u.role for u in users.list_users(self.owner)}
+
+    def owners(self):
+        with db.connect() as conn:
+            return conn.execute("SELECT COUNT(*) FROM users WHERE role = 'owner'").fetchone()[0]
+
+    def request(self):
+        return types.SimpleNamespace(headers={}, client=types.SimpleNamespace(host="203.0.113.7"))
+
+    def test_the_owner_hands_over_and_becomes_admin(self):
+        users.transfer_owner(self.owner, self.admin.id)
+        self.assertEqual(self.roles()["admin"], "owner")
+        self.assertEqual(self.roles()["owner"], "admin")
+        self.assertEqual(self.owners(), 1)
+        self.assertTrue(users.get_by_id(self.owner.id).is_admin)   # is_admin stays in step with role
+
+    def test_a_normal_user_can_become_owner(self):
+        users.transfer_owner(self.owner, self.user.id)
+        new_owner = users.get_by_id(self.user.id)
+        self.assertEqual((new_owner.role, new_owner.is_admin), ("owner", True))
+        self.assertEqual(users.get_by_id(self.owner.id).role, "admin")
+        self.assertEqual(self.owners(), 1)
+
+    def test_the_new_owner_has_the_owner_rights_and_the_old_one_lost_them(self):
+        users.transfer_owner(self.owner, self.admin.id)
+        new_owner, old_owner = users.get_by_id(self.admin.id), users.get_by_id(self.owner.id)
+        self.assertTrue(users.can_manage(new_owner, old_owner))
+        self.assertFalse(users.can_manage(old_owner, new_owner))
+        with self.assertRaises(PermissionError):
+            users.set_admin(old_owner, self.user.id, True)
+        users.set_admin(new_owner, self.user.id, True)
+
+    def test_sessions_stay_and_the_old_object_cannot_repeat_it(self):
+        token = users.create_session(self.owner.id)
+        users.transfer_owner(self.owner, self.admin.id)
+        self.assertEqual(users.get_user(token).role, "admin")   # still logged in, with the new role
+        with self.assertRaises(PermissionError):                # self.owner is out of date now
+            users.transfer_owner(self.owner, self.user.id)
+        self.assertEqual(self.owners(), 1)
+        self.assertEqual(self.roles()["admin"], "owner")
+
+    def test_refused_cases_change_nothing(self):
+        before = self.roles()
+        with self.assertRaises(PermissionError):
+            users.transfer_owner(self.admin, self.user.id)         # only the owner
+        with self.assertRaises(PermissionError):
+            users.transfer_owner(self.user, self.admin.id)
+        with self.assertRaises(PermissionError):
+            users.transfer_owner(self.owner, self.owner.id)        # not to himself
+        with self.assertRaises(users.UserError) as missing:
+            users.transfer_owner(self.owner, 9999)
+        self.assertEqual(missing.exception.code, "not_found")
+        with self.assertRaises(users.UserError) as not_ready:
+            users.transfer_owner(self.owner, self.fresh.id)        # no own password yet
+        self.assertEqual(not_ready.exception.code, "not_ready")
+        self.assertEqual(self.roles(), before)
+
+    def test_there_can_never_be_two_owners(self):
+        with self.assertRaises(users.UserError) as second:
+            users.create_user("second@example.com", "Own3r!pass", role="owner")
+        self.assertEqual(second.exception.code, "owner_exists")
+        with db.connect() as conn:     # the database refuses it as well
+            with self.assertRaises(sqlite3.IntegrityError):
+                conn.execute("UPDATE users SET role = 'owner' WHERE id = ?", (self.admin.id,))
+        self.assertEqual(self.owners(), 1)
+
+    def test_the_owner_is_not_tied_to_one_account(self):
+        users.transfer_owner(self.owner, self.admin.id)
+        users.transfer_owner(users.get_by_id(self.admin.id), self.owner.id)   # and back again
+        self.assertEqual(self.roles()["owner"], "owner")
+        self.assertEqual(self.owners(), 1)
+
+    # --- the route (password asked first)
+    def test_route_needs_the_owners_password(self):
+        answer = accounts.make_owner(self.request(), self.admin.id, "wrong", self.owner)
+        self.assertEqual(answer.status_code, 403)
+        self.assertEqual(self.roles()["owner"], "owner")
+        answer = accounts.make_owner(self.request(), self.admin.id, "Own3r!pass", self.owner)
+        self.assertEqual(answer, {"ok": True})
+        self.assertEqual(self.roles()["admin"], "owner")
+
+    def test_route_is_for_the_owner_only(self):
+        self.assertEqual(accounts.make_owner(self.request(), self.user.id, "Adm1n!pass", self.admin).status_code, 403)
+        self.assertEqual(self.roles()["owner"], "owner")
+
+    def test_route_messages(self):
+        not_ready = accounts.make_owner(self.request(), self.fresh.id, "Own3r!pass", self.owner)
+        self.assertEqual(not_ready.status_code, 400)
+        self.assertEqual(accounts.make_owner(self.request(), 9999, "Own3r!pass", self.owner).status_code, 404)
+
+    # --- the page
+    def test_button_only_for_the_owner_and_only_for_accounts_that_can_log_in(self):
+        owner_view = userspage.render(self.owner, users.list_users(self.owner))
+        self.assertEqual(owner_view.count("data-owner"), 2)     # admin and settled user, not the start-password one
+        self.assertIn('id="owner-dialog"', owner_view)
+        admin_view = userspage.render(self.admin, users.list_users(self.admin))
+        self.assertNotIn("data-owner", admin_view)
+
+    def test_the_index_exists_after_migration(self):
+        with db.connect() as conn:
+            names = [row["name"] for row in conn.execute("PRAGMA index_list(users)")]
+        self.assertIn("users_one_owner", names)
 
 
 if __name__ == "__main__":

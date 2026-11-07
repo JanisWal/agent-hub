@@ -1,4 +1,5 @@
-// User management page: add, reset password, delete (with the asker's password) and the admin switch.
+// User management page: add, reset password, hand over the ownership, delete (these three with the
+// asker's password) and the admin switch.
 // Every action is a fetch() that answers {"ok": ..., "message": ...}; the message is already translated.
 (function () {
   var root = document.querySelector(".users-wrap");
@@ -36,7 +37,7 @@
     });
   }
 
-  ["add-dialog", "reset-dialog", "delete-user-dialog"].forEach(function (id) { wire(dialogOf(id)); });
+  ["add-dialog", "reset-dialog", "owner-dialog", "delete-user-dialog"].forEach(function (id) { wire(dialogOf(id)); });
 
   function openFor(button, dialogId) {
     var row = button.closest(".user-row");
@@ -52,6 +53,7 @@
     if (!button) return;
     if (button.id === "add-user") dialogOf("add-dialog").showModal();
     else if (button.hasAttribute("data-reset")) openFor(button, "reset-dialog");
+    else if (button.hasAttribute("data-owner")) openFor(button, "owner-dialog");
     else if (button.hasAttribute("data-delete")) openFor(button, "delete-user-dialog");
     else if (button.hasAttribute("data-admin")) {
       var body = new FormData();
