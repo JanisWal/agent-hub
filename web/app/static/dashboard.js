@@ -389,6 +389,7 @@
         return grid;
       },
       axis: function () { return compact.matches ? "y" : "xy"; },
+      gapHost: function (tile) { return compact.matches ? track : tile.closest(".grid"); },
       endSelector: ".tile.plus, .tile.ghost",
       ignore: ".tile-delete",
       onPick: function (tile) {

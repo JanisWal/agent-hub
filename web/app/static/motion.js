@@ -169,6 +169,7 @@ var Motion = (function () {
   //   axis           "xy" for grids, "y" for vertical lists (or a function that answers it now)
   //   endSelector    elements (free slots) that mean "put it at the end"
   //   ignore         presses on these never start a drag (buttons)
+  //   gapHost(item)  element the red gap is placed in (it must slide away with the list)
   //   onPick(item), onMove(x, y), onDrop(info)
   // A mouse starts dragging after 5 px, a finger after a short press (so scrolling and swiping
   // still work). The picked item follows the pointer 1:1, the others make room, and on release
@@ -233,10 +234,28 @@ var Motion = (function () {
       clone.classList.add("drag-clone");
       clone.style.cssText = "left:" + rect.left + "px;top:" + rect.top + "px;width:" + rect.width + "px;height:" + rect.height + "px;";
       document.body.appendChild(clone);
-      item.classList.add("drag-slot");  // the slot stays reserved, the item travels as a clone
+      item.classList.add("drag-slot");  // invisible, but its place stays reserved while the clone travels
+      // The red gap is its own element, fixed where the item was taken from. It belongs to the
+      // list (so it slides away with its page) and has nothing to do with the item or its move.
+      var host = o.gapHost ? o.gapHost(item) : (item.offsetParent || item.parentNode);
+      if (getComputedStyle(host).position === "static") host.style.position = "relative";
+      // Layout pixels (offset*), not screen pixels: a parent that is scaled (for example while it
+      // plays its entrance animation) would otherwise shrink the gap twice.
+      var box;
+      if (item.offsetParent === host) {
+        box = { left: item.offsetLeft, top: item.offsetTop, width: item.offsetWidth, height: item.offsetHeight };
+      } else {
+        var hostRect = host.getBoundingClientRect();
+        box = { left: rect.left - hostRect.left - host.clientLeft, top: rect.top - hostRect.top - host.clientTop, width: rect.width, height: rect.height };
+      }
+      var gap = document.createElement("div");
+      gap.className = "drag-gap";
+      gap.style.cssText = "left:" + box.left + "px;top:" + box.top + "px;width:" + box.width + "px;height:" + box.height +
+        "px;border-radius:" + getComputedStyle(item).borderRadius + ";";
+      host.appendChild(gap);
       var state = {
         item: item, clone: clone, id: id, grabX: grabX, grabY: grabY, left: rect.left, top: rect.top,
-        w: rect.width, h: rect.height, rest: null, pending: null, marked: null,
+        w: rect.width, h: rect.height, rest: null, pending: null, markedNode: null, gap: gap,
         startContainer: o.containerFor(item), history: [{ t: performance.now(), x: x, y: y }]
       };
       // Every picked item draws itself, so the landing animation still works after `drag` is cleared.
@@ -302,10 +321,11 @@ var Motion = (function () {
     // gap you took it from), and the item under the middle of the carried one lifts a little.
     // The rearranging happens when you let go.
     function mark(d, el) {
-      if (d.marked === el) return;
-      if (d.marked) d.marked.classList.remove("drop-target");
-      d.marked = el;
-      if (el) el.classList.add("drop-target");
+      var node = el === d.item ? d.gap : el;  // over its own place: the red gap itself is the target
+      if (d.markedNode === node) return;
+      if (d.markedNode) d.markedNode.classList.remove("drop-target");
+      d.markedNode = node;
+      if (node) node.classList.add("drop-target");
     }
 
     function aim(d) {
@@ -354,6 +374,7 @@ var Motion = (function () {
       clearTimeout(d.rest);
       clearInterval(d.scroller);
       mark(d, null);
+      d.gap.classList.add("leaving");  // the red gap fades out where it is; it does not travel
       if (d.pending) {
         // Let go: now the item takes its new place and the others glide to make room.
         var pending = d.pending;
@@ -371,6 +392,7 @@ var Motion = (function () {
       var finish = function () {
         d.clone.remove();
         d.item.classList.remove("drag-slot");
+        d.gap.remove();
         setTimeout(function () { swallowClick = false; }, 60);
         if (o.onDrop) o.onDrop({ item: d.item, container: o.containerFor(d.item), from: d.startContainer });
       };
