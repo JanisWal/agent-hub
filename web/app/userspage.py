@@ -7,7 +7,7 @@ from .users import User, can_manage
 ROLE_LABEL = {"owner": "role_owner", "admin": "role_admin", "user": "role_user"}
 
 USERS = """<div class="users-wrap" data-network="%t.err_network%">
-  <a class="link back" href="/">%t.back_to_projects%</a>
+  <a class="link back" href="/">%t.back%</a>
   <header class="users-head">
     <h1>%t.users_title%</h1>
     <button class="primary" id="add-user" type="button">%t.add_user%</button>
@@ -60,13 +60,20 @@ PASSWORD = """<section class="glass">
   <p class="subtitle">%SUBTITLE%</p>
   %ERROR%
   <form method="post" action="/password" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
-    <label>%t.pw_old%<input type="password" name="old" required autofocus autocomplete="current-password"></label>
-    <label>%t.pw_new%<input type="password" name="new" required autocomplete="new-password"></label>
+    %OLD_FIELD%
+    <label>%t.pw_new%<input type="password" name="new" required %NEW_FOCUS% autocomplete="new-password"></label>
     <label>%t.pw_repeat%<input type="password" name="repeat" required autocomplete="new-password"></label>
     <p class="muted">%t.err_pw_rules%</p>
     <button class="primary" type="submit">%t.save%</button>
   </form>
+  %CANCEL%
 </section>"""
+
+# The current password is asked for only when somebody changes a password he already chose.
+OLD_FIELD = '<label>%t.pw_old%<input type="password" name="old" required autofocus autocomplete="current-password"></label>'
+# Somebody with a start password cannot go "back" (every page sends him here again): cancel logs him out.
+CANCEL_LINK = '<a class="link" href="/">%t.cancel%</a>'
+CANCEL_LOGOUT = '<form method="post" action="/logout"><button class="link" type="submit">%t.cancel%</button></form>'
 
 
 def _row(actor: User, account: User, lang: str) -> str:
@@ -103,5 +110,10 @@ def password_page(user: User, error: str = "") -> str:
     lang = user.language
     subtitle = i18n.t(lang, "pw_change_first" if user.must_change else "pw_change_sub")
     box = f'<p class="error" role="alert">{esc(error)}</p>' if error else ""
-    body = fill(PASSWORD, lang, SUBTITLE=esc(subtitle), ERROR=box)
+    body = fill(
+        PASSWORD, lang, SUBTITLE=esc(subtitle), ERROR=box,
+        OLD_FIELD="" if user.must_change else fill(OLD_FIELD, lang),
+        NEW_FOCUS="autofocus" if user.must_change else "",
+        CANCEL=fill(CANCEL_LOGOUT if user.must_change else CANCEL_LINK, lang),
+    )
     return ui.logged_in_page(user, i18n.t(lang, "pw_change_title"), body)

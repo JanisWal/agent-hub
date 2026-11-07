@@ -6,8 +6,9 @@ import unittest
 import urllib.error
 from unittest import mock
 
-from app import db, i18n, mail, mailtext, resetpages, resets, users
+from app import db, i18n, mail, mailtext, resetpages, resets, ui, userspage, users
 from app.routes import accounts
+from app.routes import auth as auth_routes
 
 
 class FakeResponse:
@@ -267,3 +268,93 @@ class ResetPagesTest(unittest.TestCase):
 
     def test_reset_form_posts_to_the_token_url(self):
         self.assertIn('action="/reset/abc-_123"', resetpages.reset_page("abc-_123", "de"))
+
+    def test_reset_page_can_be_cancelled(self):
+        self.assertIn('<a class="link" href="/login">Abbrechen</a>', resetpages.reset_page("t", "de"))
+
+
+class ThemeTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        db.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        self.user = users.create_user("me@example.com", "Start1234")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_default_is_light_and_the_choice_is_stored(self):
+        self.assertEqual(self.user.theme, "light")
+        users.set_theme(self.user.id, "dark")
+        self.assertEqual(users.get_by_id(self.user.id).theme, "dark")
+        self.assertEqual(users.check_login("me@example.com", "Start1234").theme, "dark")
+
+    def test_only_light_and_dark(self):
+        with self.assertRaises(ValueError):
+            users.set_theme(self.user.id, "neon")
+        self.assertEqual(users.get_by_id(self.user.id).theme, "light")
+
+    def test_route(self):
+        self.assertEqual(auth_routes.save_theme("dark", self.user), {"ok": True})
+        self.assertEqual(users.get_by_id(self.user.id).theme, "dark")
+        self.assertEqual(auth_routes.save_theme("neon", self.user).status_code, 400)
+
+    def test_mail_follows_the_saved_theme(self):
+        users.set_theme(self.user.id, "dark")
+        dark = users.get_by_id(self.user.id)
+        html = mailtext.build("reset", dark, "https://x/reset/T", 3600)[2]
+        self.assertIn("#1F1713", html)
+        self.assertNotIn("#EFDCC6", html)
+        users.set_theme(self.user.id, "light")
+        self.assertIn("#EFDCC6", mailtext.build("reset", users.get_by_id(self.user.id), "https://x/reset/T", 3600)[2])
+
+    def test_pages_carry_the_saved_theme_for_the_script(self):
+        users.set_theme(self.user.id, "dark")
+        self.assertIn('data-theme-saved="dark"', ui.settings_bar(users.get_by_id(self.user.id)))
+
+
+class PasswordPageTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        db.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        owner = users.create_user("owner@example.com", "Own3r!pass", role="owner")
+        self.fresh = users.add_user(owner, "new@example.com", "Start1234")   # must change
+        self.settled = users.create_user("old@example.com", "Plain!pass12")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_start_password_page_has_no_old_password_field_and_cancel_logs_out(self):
+        page = userspage.password_page(self.fresh)
+        self.assertNotIn('name="old"', page)
+        self.assertIn('name="new" required autofocus', page)
+        self.assertIn('<form method="post" action="/logout"><button class="link" type="submit">Abbrechen</button></form>', page)
+
+    def test_normal_page_asks_for_the_old_password_and_cancel_goes_home(self):
+        page = userspage.password_page(self.settled)
+        self.assertIn('name="old"', page)
+        self.assertNotIn('name="new" required autofocus', page)
+        self.assertIn('<a class="link" href="/">Abbrechen</a>', page)
+
+    def test_start_password_user_chooses_without_the_old_one(self):
+        users.change_own_password(self.fresh, "", "Mein!Pass12")
+        login = users.check_login("new@example.com", "Mein!Pass12")
+        self.assertFalse(login.must_change)
+
+    def test_start_password_user_still_follows_the_rules_and_cannot_keep_it(self):
+        for new, code in (("weak", "short"), ("alllowercase12", "policy"), ("Start1234", "policy")):
+            with self.assertRaises(users.UserError) as problem:
+                users.change_own_password(self.fresh, "", new)
+            self.assertEqual(problem.exception.code, code)
+        keep = users.add_user(users.get_by_id(1), "keep@example.com", "Keep!pass12")  # a start password that follows the rules
+        with self.assertRaises(users.UserError) as problem:
+            users.change_own_password(keep, "", "Keep!pass12")
+        self.assertEqual(problem.exception.code, "same")
+
+    def test_normal_user_still_needs_the_old_password(self):
+        with self.assertRaises(users.UserError) as problem:
+            users.change_own_password(self.settled, "", "Mein!Pass12")
+        self.assertEqual(problem.exception.code, "wrong_password")
+
+    def test_users_page_back_button(self):
+        owner = users.get_by_id(1)
+        self.assertIn(">Zurück</a>", userspage.render(owner, users.list_users(owner)))

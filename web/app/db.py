@@ -65,6 +65,7 @@ NEW_COLUMNS = {
         "had_project": "INTEGER NOT NULL DEFAULT 0",
         "role": "TEXT NOT NULL DEFAULT 'user'",
         "must_change_password": "INTEGER NOT NULL DEFAULT 0",
+        "theme": "TEXT NOT NULL DEFAULT 'light'",
     },
     "projects": {"page": "INTEGER NOT NULL DEFAULT 0"},
 }
