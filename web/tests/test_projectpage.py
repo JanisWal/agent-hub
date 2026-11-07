@@ -67,7 +67,7 @@ class ProjectPageTest(unittest.TestCase):
 
     def test_board_shows_open_and_suggested_items_only(self):
         page = self.html()
-        board_html = page[page.index('id="board"'):page.index('id="chat"')]
+        board_html = page[page.index('id="board"'):page.index('id="manager-view"')]
         for title in ("A bug", "Found by Claude", "An idea"):
             self.assertIn(title, board_html)
         for title in ("Finished thing", "Thrown away"):
@@ -117,11 +117,11 @@ class ProjectPageTest(unittest.TestCase):
             titles = [column.index(f"<h2>{t}</h2>") for t in ("Status", "Regelmäßige Prüfungen", "Manager-Chat")
                       if f"<h2>{t}</h2>" in column]
             self.assertEqual(titles, sorted(titles))
-        self.assertEqual(manager.count('class="mtile glass m-soon'), 4)
+        self.assertEqual(manager.count('class="mtile glass m-soon'), 3)       # devices, checks, files (the chat works)
         for tall in ("m-grow", "m-chat"):
             self.assertIn(tall, manager)
         self.assertIn("nicht Teil des Boards", manager)                       # the checks are not board items
-        self.assertNotIn("<form", manager)                                    # name and description moved to the pencil
+        self.assertNotIn("/settings", manager)                                # name and description moved to the pencil
         self.assertIn("stations.js", page)
         self.assertNotIn('id="manager"', page)                                # the hash must not make the page scroll
 
@@ -146,11 +146,35 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn("Edit project", self.html("en"))
         self.assertIn("left: 38.2%", css_of("app.css")[css_of("app.css").index(".title-wrap"):][:200])  # still at the golden section
 
-    def test_the_old_chat_steps_aside_in_the_manager_view(self):
-        css, script = css_of("project.css"), css_of("stations.js")
-        self.assertIn(".view-manager .chat, .view-manager .chat-toggle { display: none; }", css)
-        self.assertIn(".view-manager.project-page main { padding-right: 24px; }", css)
-        self.assertIn('classList.toggle("view-manager"', script)
+    def test_the_manager_chat_is_the_big_tile_and_the_old_window_is_gone(self):
+        page = self.html()
+        self.assertEqual(page.count('id="chat"'), 1)
+        tile = page[page.index('class="mtile glass m-chat" id="chat"'):]
+        tile = tile[:tile.index("</section>")]
+        self.assertIn("<h2>Manager-Chat</h2>", tile)
+        self.assertIn('data-claude="Manager"', tile)                          # the answers come from the manager
+        for part in ('id="chat-log"', 'id="chat-modes"', 'id="chat-form"', 'id="chat-model"'):
+            self.assertIn(part, tile)
+        self.assertGreater(page.index('id="chat"'), page.index('id="manager-view"'))   # inside the Manager view
+        for gone in ("<aside", 'id="chat-toggle"', "Kurze Einzelfragen"):
+            self.assertNotIn(gone, page)
+        css = css_of("project.css")
+        for gone in (".chat {", ".chat-toggle", "padding-right: 356px", "view-manager"):
+            self.assertNotIn(gone, css)
+        self.assertNotIn("chat-toggle", css_of("chat.js"))
+
+    def test_the_model_is_picked_per_question_in_a_drop_down(self):
+        page = self.html()
+        start = page.index('<select id="chat-model"')
+        select = page[start:page.index("</select>", start)]
+        self.assertEqual([v for v in ("haiku", "sonnet", "opus") if f'value="{v}"' in select], ["haiku", "sonnet", "opus"])
+        self.assertIn('value="sonnet" selected', select)                      # Sonnet unless the user picks another
+        self.assertIn('aria-label="Modell für diese Frage"', select)
+        self.assertLess(page.index('id="chat-model"'), page.index('id="chat-form"'))
+        script = css_of("chat.js")
+        self.assertIn('data.append("model", model.value)', script)
+        self.assertIn('localStorage.setItem("chatModel"', script)
+        self.assertIn("Opus · thorough", self.html("en"))
 
     def test_stations_script_swaps_the_views_by_the_address(self):
         script = css_of("stations.js")
@@ -185,18 +209,6 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn('href="/"', bar[bar.index("topbar-back"):])
         self.assertIn("Alle Projekte", bar)
 
-    def test_chat_is_a_dock_outside_the_board_with_a_button_for_narrow_screens(self):
-        page = self.html()
-        self.assertEqual(page.count('id="chat"'), 1)
-        self.assertGreater(page.index('id="chat"'), page.index('id="board"'))
-        self.assertGreater(page.index('id="chat"'), page.index('class="project"'))
-        board_area = page[page.index('class="boardwrap"'):page.index('id="chat"')]
-        self.assertNotIn('id="chat"', board_area)
-        self.assertIn('id="chat-toggle"', page)
-        css = css_of("project.css")
-        self.assertIn("position: fixed", css[css.index(".chat {"):css.index(".chat-head")])
-        self.assertIn("padding-right", css)                                     # a strip is kept free on wide screens
-
     def test_scrollbars_are_styled(self):
         css = css_of("app.css")
         for part in ("::-webkit-scrollbar-thumb", "::-webkit-scrollbar-track", "scrollbar-color"):
@@ -215,11 +227,9 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn("<svg", link)
         self.assertNotIn("<span", link)                                         # an icon, no text beside the brand
 
-    def test_columns_and_chat_end_on_the_same_line_above_the_theme_button(self):
+    def test_columns_end_on_one_line_above_the_theme_button(self):
         project, app = css_of("project.css"), css_of("app.css")
         self.assertIn("main { padding-bottom: 96px; }", app)                    # columns stretch down to here
-        chat = project[project.index(".chat {"):project.index(".chat-head")]
-        self.assertIn("bottom: 96px", chat)                                     # the chat ends on the same line
         self.assertIn(".project-page main { display: flex; align-items: stretch;", project)
         self.assertIn(".board { flex: 1;", project)
         self.assertNotIn("64vh", project)                                       # no fixed height any more
@@ -239,22 +249,19 @@ class ProjectPageTest(unittest.TestCase):
     def test_chat_window_is_final_not_a_test(self):
         for lang in ("de", "en"):
             page = self.html(lang)
-            chat = page[page.index('id="chat"'):page.index("</aside>")]
+            chat = page[page.index('id="chat"'):]
+            chat = chat[:chat.index("</section>")]
             for word in ("Vorübergehend", "Temporary", "testen", "Testfenster", "chat-badge", "TEMPORARY"):
                 self.assertNotIn(word, chat)
-            self.assertIn('<h2>Claude</h2>', chat)
-        self.assertIn("Kurze Einzelfragen an dein Claude.", self.html("de"))
         for lang in ("de", "en"):
-            hint = __import__("app.i18n", fromlist=["t"]).t(lang, "chat_hint")
+            hint = __import__("app.i18n", fromlist=["t"]).t(lang, "manager_chat_hint")
             self.assertLess(len(hint), 60, hint)                                  # one short sentence, no explanations
             self.assertEqual(hint.count("."), 1)
         for name in ("project.css", "chat.js"):
             self.assertNotIn("TEMPORARY", css_of(name))
 
-    def test_chat_and_columns_share_the_top_line(self):
+    def test_the_page_starts_below_the_top_bar(self):
         project = css_of("project.css")
-        chat = project[project.index(".chat {"):project.index(".chat-head")]
-        self.assertIn("top: 94px", chat)                                        # = top bar (26 + 38 + 26) + 4 px of main
         app = css_of("app.css")
         self.assertIn(".project-page .topbar { min-height: 90px; }", app)
         self.assertIn("main { display: flex; align-items: stretch; place-items: initial; padding-top: 4px; }", project)
@@ -287,7 +294,6 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn("createTextNode", script)
         self.assertIn("fillBlocks(body, text)", script)
         self.assertIn("line(\"claude\", box.dataset.claude, m.answer, true)", script)   # only Claude answers, not the questions
-        self.assertLess(len(__import__("app.i18n", fromlist=["t"]).t("en", "chat_hint")), 60)       # one short sentence
 
     def test_chat_has_the_web_and_code_switches(self):
         page = self.html()

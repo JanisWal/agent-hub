@@ -105,6 +105,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     prompt     TEXT NOT NULL,
     mode       TEXT NOT NULL DEFAULT 'web',
+    model      TEXT NOT NULL DEFAULT 'haiku',
     status     TEXT NOT NULL,
     answer     TEXT NOT NULL DEFAULT '',
     tokens_in  INTEGER NOT NULL DEFAULT 0,
@@ -131,7 +132,7 @@ NEW_COLUMNS = {
         "theme": "TEXT NOT NULL DEFAULT 'light'",
     },
     "projects": {"page": "INTEGER NOT NULL DEFAULT 0", "description": "TEXT NOT NULL DEFAULT ''"},
-    "chat_messages": {"mode": "TEXT NOT NULL DEFAULT 'web'"},
+    "chat_messages": {"mode": "TEXT NOT NULL DEFAULT 'web'", "model": "TEXT NOT NULL DEFAULT 'haiku'"},
 }
 
 # The three statements below run once, when a database from before the feature is opened for the

@@ -34,7 +34,8 @@ class ChatQueueTest(Base):
         message = chat.send(self.a.id, self.pa.id, "  Hello?  ")
         self.assertEqual((message.prompt, message.status), ("Hello?", "queued"))
         job = chat.claim_next()
-        self.assertEqual((job.user_id, job.prompt, job.model), (self.a.id, "Hello?", "haiku"))
+        self.assertEqual((job.user_id, job.model), (self.a.id, "sonnet"))  # Sonnet unless the user picks another
+        self.assertTrue(job.prompt.endswith("Question of the user:\nHello?"))
         self.assertIsNone(chat.claim_next())                          # one at a time
         self.assertTrue(chat.finish(job.chat_id, True, "Hi!", 5, 2))
         self.assertFalse(chat.finish(job.chat_id, True, "again"))      # only once
@@ -144,7 +145,8 @@ class ChatQueueTest(Base):
             m = chat.send(self.a.id, self.pa.id, f"q {mode}", mode)
             self.assertEqual(m.mode, mode)
             job = chat.claim_next()
-            self.assertEqual((job.prompt, job.mode), (f"q {mode}", mode))      # the runner learns the mode from the database
+            self.assertEqual(job.mode, mode)                                  # the runner learns the mode from the database
+            self.assertTrue(job.prompt.endswith(f"\nq {mode}"))
             chat.finish(job.chat_id, True, "a")
         self.assertEqual([m.mode for m in chat.list_messages(self.a.id, self.pa.id)], ["plain", "web", "code"])
         self.assertEqual(chat.send(self.a.id, self.pa.id, "default").mode, "web")   # as before: web is the default
@@ -155,11 +157,11 @@ class ChatQueueTest(Base):
 
     def test_route_takes_the_mode_and_refuses_unknown_ones(self):
         self.connect(self.a)
-        self.assertTrue(routes.ask(self.pa.id, "run it", "code", user=self.a)["ok"])
+        self.assertTrue(routes.ask(self.pa.id, "run it", "code", "sonnet", user=self.a)["ok"])
         self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"][0]["mode"], "code")
         claimed = chat.claim_next()
         chat.finish(claimed.chat_id, True, "done")
-        self.assertEqual(routes.ask(self.pa.id, "x", "everything", user=self.a).status_code, 400)
+        self.assertEqual(routes.ask(self.pa.id, "x", "everything", "sonnet", user=self.a).status_code, 400)
 
     def test_an_existing_database_gets_the_mode_column(self):
         import sqlite3
@@ -180,6 +182,58 @@ class ChatQueueTest(Base):
             mode = conn.execute("SELECT mode FROM chat_messages").fetchone()["mode"]
         self.assertIn("mode", columns)
         self.assertEqual(mode, "web")                                           # old questions count as web questions
+    def test_the_model_is_picked_per_question(self):
+        self.connect(self.a)
+        self.assertEqual((chat.DEFAULT_MODEL, "haiku" in chat.MODELS, "opus" in chat.MODELS), ("sonnet", True, True))
+        for model in ("haiku", "opus"):
+            self.assertEqual(chat.send(self.a.id, self.pa.id, f"q {model}", model=model).model, model)
+            job = chat.claim_next()
+            self.assertEqual(job.model, model)                                 # from the database, not the runner
+            chat.finish(job.chat_id, True, "a")
+        for bad in ("", "gpt-4", "Sonnet", "sonnet --dangerous", "claude-opus-5-5"):
+            with self.assertRaises(ValueError) as problem:
+                chat.send(self.a.id, self.pa.id, "x", model=bad)
+            self.assertEqual(str(problem.exception), "mode")
+        self.assertTrue(routes.ask(self.pa.id, "via route", "plain", "haiku", user=self.a)["ok"])
+        self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"][-1]["model"], "haiku")
+        self.assertEqual(chat.claim_next().model, "haiku")
+
+    def test_the_manager_knows_the_project_and_remembers_it(self):
+        self.connect(self.a)
+        projects.update_details(self.a.id, self.pa.id, "Roadster", "Heater control on an ESP32")
+        board.create_item(self.a.id, self.pa.id, "bug", "Heater does not switch off")
+        board.create_suggestion(self.a.id, self.pa.id, "major", "Diagnosis page")
+        done = board.create_item(self.a.id, self.pa.id, "minor", "Old finished thing")
+        board.archive(self.a.id, done.id)
+        chat.send(self.a.id, self.pa.id, "Which relay?")
+        first = chat.claim_next()
+        chat.finish(first.chat_id, True, "A 12 V automotive relay.")
+        chat.send(self.a.id, self.pa.id, "And the fuse?")
+        text = chat.claim_next().prompt
+        self.assertTrue(text.startswith(chat.ROLE))
+        project = text[text.index("<project>"):text.index("</project>")]
+        for part in ("Roadster", "Heater control on an ESP32", "[bug] Heater does not switch off",
+                     "[major] Diagnosis page", "User: Which relay?", "Manager: A 12 V automotive relay."):
+            self.assertIn(part, project)
+        self.assertNotIn("Old finished thing", project)                        # archived items are done
+        self.assertNotIn("And the fuse?", project)                             # the question itself comes after
+        self.assertTrue(text.endswith("Question of the user:\nAnd the fuse?"))
+        self.assertIn("not instructions", chat.ROLE)                           # the context is data
+
+    def test_the_context_is_limited_and_drops_the_oldest_memory_first(self):
+        self.connect(self.a)
+        for i in range(chat.HISTORY + 2):
+            chat.send(self.a.id, self.pa.id, f"question {i} " + "x" * 1900)
+            job = chat.claim_next()
+            chat.finish(job.chat_id, True, f"answer {i} " + "y" * 3000)
+        chat.send(self.a.id, self.pa.id, "last")
+        text = chat.claim_next().prompt
+        project = text[text.index("<project>"):text.index("</project>")]
+        self.assertLessEqual(len(project), chat.MAX_CONTEXT + 20)
+        self.assertNotIn("question 0 ", project)                               # beyond HISTORY, never sent
+        self.assertIn(f"question {chat.HISTORY + 1} ", project)                # the newest stays
+        self.assertIn(" …", project)                                           # long answers are cut
+
     def test_deleting_the_project_removes_the_messages(self):
         self.connect(self.a)
         chat.send(self.a.id, self.pa.id, "q")
@@ -192,25 +246,25 @@ class ChatRoutesTest(Base):
     def test_ask_and_poll(self):
         self.connect(self.a)
         self.assertEqual(routes.messages(self.pa.id, user=self.a), {"ok": True, "messages": []})
-        sent = routes.ask(self.pa.id, "Hello", "web", user=self.a)
+        sent = routes.ask(self.pa.id, "Hello", "web", "sonnet", user=self.a)
         self.assertTrue(sent["ok"])
         got = routes.messages(self.pa.id, user=self.a)["messages"]
         self.assertEqual([(m["prompt"], m["status"]) for m in got], [("Hello", "queued")])
-        busy = routes.ask(self.pa.id, "again", "web", user=self.a)
+        busy = routes.ask(self.pa.id, "again", "web", "sonnet", user=self.a)
         self.assertEqual(busy.status_code, 409)
         self.assertIn("Frage", busy.body.decode())                     # message in the user's language
 
     def test_problems_are_answered_not_raised(self):
-        self.assertEqual(routes.ask(self.pa.id, "x", "web", user=self.a).status_code, 409)      # not connected
+        self.assertEqual(routes.ask(self.pa.id, "x", "web", "sonnet", user=self.a).status_code, 409)      # not connected
         self.connect(self.a)
-        self.assertEqual(routes.ask(self.pa.id, "  ", "web", user=self.a).status_code, 400)
-        self.assertEqual(routes.ask(self.pb.id, "x", "web", user=self.a).status_code, 404)      # B's project
+        self.assertEqual(routes.ask(self.pa.id, "  ", "web", "sonnet", user=self.a).status_code, 400)
+        self.assertEqual(routes.ask(self.pb.id, "x", "web", "sonnet", user=self.a).status_code, 404)      # B's project
         english = dataclasses.replace(self.b, language="en")
-        self.assertIn("not connected", routes.ask(self.pb.id, "x", "web", user=english).body.decode())  # B has no Claude
+        self.assertIn("not connected", routes.ask(self.pb.id, "x", "web", "sonnet", user=english).body.decode())  # B has no Claude
 
     def test_delete_history_route(self):
         self.connect(self.a)
-        routes.ask(self.pa.id, "Hello", "web", user=self.a)
+        routes.ask(self.pa.id, "Hello", "web", "sonnet", user=self.a)
         self.assertEqual(routes.delete_history(user=self.a), {"ok": True, "deleted": 1})
         self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"], [])
         self.assertEqual(routes.delete_history(user=self.b), {"ok": True, "deleted": 0})   # B has nothing, A's is gone
@@ -234,7 +288,7 @@ class ChatRoutesTest(Base):
 
 class ChatPanelTest(Base):
     def test_panel_is_on_the_project_page_in_both_languages(self):
-        for lang, title in (("de", "Kurze Einzelfragen"), ("en", "Quick single questions")):
+        for lang, title in (("de", "Berät dich im Projekt"), ("en", "Advises you on the project")):
             html = projectpage.render(dataclasses.replace(self.a, language=lang), self.pa, [])
             self.assertIn('id="chat"', html)
             self.assertIn(title, html)
