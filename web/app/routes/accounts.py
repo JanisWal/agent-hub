@@ -1,13 +1,15 @@
 """User management for owner and admins, and everybody's own password."""
+import secrets
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from .. import i18n, throttle, ui, userspage, users
+from .. import i18n, mailtext, resets, throttle, ui, userspage, users
 from ..deps import COOKIE_NAME, api_user, error, fail, ok, page_user, reauth, redirect, session_user
 
 router = APIRouter()
 
-_ADD_ERRORS = {"email": "msg_email", "taken": "err_email_taken", "short": "err_start_short"}
+_ADD_ERRORS = {"email": "msg_email", "taken": "err_email_taken"}
 _PASSWORD_ERRORS = {"short": "err_pw_rules", "policy": "err_pw_rules", "same": "err_pw_same"}
 
 
@@ -22,13 +24,19 @@ def users_page(user: users.User = Depends(page_user)):
 
 
 @router.post("/users/add")
-def add_user(email: str = Form(""), password: str = Form(""), user: users.User = Depends(api_user)):
+def add_user(email: str = Form(""), user: users.User = Depends(api_user)):
+    """Invite somebody: the account gets a password nobody knows, and a mail with a link lets
+    him choose his own. If the mail cannot be sent, the account is removed again."""
     if not user.is_admin:
         return fail(403)
     try:
-        users.add_user(user, email, password)
+        account = users.add_user(user, email, secrets.token_urlsafe(24))
     except users.UserError as problem:
         return error(user.language, _ADD_ERRORS[problem.code], 400)
+    created = resets.create_token(account.email, resets.INVITE_SECONDS)
+    if not (created and mailtext.send_link_mail("invite", account, created[1], resets.INVITE_SECONDS)):
+        users.delete_user(user, account.id)
+        return error(user.language, "err_mail_failed", 502)
     return ok()
 
 

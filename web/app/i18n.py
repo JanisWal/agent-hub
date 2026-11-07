@@ -19,7 +19,6 @@ STRINGS = {
         "manage_users": "Benutzer verwalten",
         "change_password": "Passwort ändern",
         "add_user": "Benutzer hinzufügen",
-        "start_password": "Startpasswort",
         "new_start_password": "Neues Startpasswort",
         "start_password_hint": "Der Nutzer ersetzt es bei der ersten Anmeldung durch ein eigenes.",
         "role_owner": "Owner",
@@ -57,14 +56,22 @@ STRINGS = {
         "reset_invalid_title": "Link ungültig",
         "reset_invalid": "Dieser Link ist abgelaufen oder wurde schon benutzt.",
         "forgot_again": "Neuen Link anfordern",
-        "mail_reset_subject": "Agent-Hub: Passwort zurücksetzen",
-        "mail_reset_body": (
-            "Hallo {name},\n\n"
-            "für dein Konto im Agent-Hub wurde ein neues Passwort angefordert. "
-            "Mit diesem Link legst du es fest (gültig {minutes} Minuten, nur einmal benutzbar):\n\n"
-            "{link}\n\n"
-            "Wenn du das nicht angefordert hast, ignoriere diese Mail. Dein Passwort bleibt dann unverändert."
-        ),
+        "mail_greeting": "Hallo {name},",
+        "mail_link_help": "Funktioniert der Knopf nicht? Kopiere diesen Link in deinen Browser:",
+        "mail_footer": "Diese Mail wurde automatisch vom Agent-Hub verschickt. Bitte nicht darauf antworten.",
+        "duration_hour": "eine Stunde",
+        "duration_days": "{n} Tage",
+        "mail_reset_subject": "Agent-Hub: Neues Passwort festlegen",
+        "mail_reset_body": "Für dein Konto wurde ein neues Passwort angefordert. Ein Klick auf den Knopf, und du legst es in wenigen Sekunden fest.",
+        "mail_reset_button": "Neues Passwort festlegen",
+        "mail_reset_note": "Der Link gilt {duration} und lässt sich nur einmal benutzen. Warst du das nicht, ignoriere diese Mail einfach, dein Passwort bleibt, wie es ist.",
+        "mail_invite_subject": "Willkommen im Agent-Hub",
+        "mail_invite_body": "Schön, dass du dabei bist! Für dich wurde ein Konto im Agent-Hub angelegt. Lege jetzt dein Passwort fest, dann kannst du direkt loslegen.",
+        "mail_invite_button": "Passwort festlegen",
+        "mail_invite_note": "Der Link gilt {duration} und lässt sich nur einmal benutzen. Erwartest du kein Konto, ignoriere diese Mail einfach.",
+        "invite_hint": "Die Person bekommt eine Mail mit einem Link, über den sie ihr Passwort selbst festlegt.",
+        "invite_send": "Einladung senden",
+        "err_mail_failed": "Die Mail konnte nicht gesendet werden. Das Konto wurde nicht angelegt.",
         "email_placeholder": "name@beispiel.de",
         "settings_toggle": "Einstellungen öffnen oder schließen",
         "display_name": "Nutzername",
@@ -136,7 +143,6 @@ STRINGS = {
         "manage_users": "Manage users",
         "change_password": "Change password",
         "add_user": "Add user",
-        "start_password": "Start password",
         "new_start_password": "New start password",
         "start_password_hint": "The user replaces it with his own at the first login.",
         "role_owner": "Owner",
@@ -174,14 +180,22 @@ STRINGS = {
         "reset_invalid_title": "Link not valid",
         "reset_invalid": "This link has expired or was already used.",
         "forgot_again": "Request a new link",
-        "mail_reset_subject": "Agent-Hub: reset your password",
-        "mail_reset_body": (
-            "Hello {name},\n\n"
-            "a new password was requested for your Agent-Hub account. "
-            "Use this link to choose it (valid for {minutes} minutes, works only once):\n\n"
-            "{link}\n\n"
-            "If you did not request this, ignore this mail. Your password stays as it is."
-        ),
+        "mail_greeting": "Hello {name},",
+        "mail_link_help": "Button not working? Copy this link into your browser:",
+        "mail_footer": "This mail was sent automatically by Agent-Hub. Please do not reply.",
+        "duration_hour": "one hour",
+        "duration_days": "{n} days",
+        "mail_reset_subject": "Agent-Hub: choose a new password",
+        "mail_reset_body": "A new password was requested for your account. One click on the button and you can choose it in a few seconds.",
+        "mail_reset_button": "Choose a new password",
+        "mail_reset_note": "The link is valid for {duration} and works only once. If this was not you, just ignore this mail, your password stays as it is.",
+        "mail_invite_subject": "Welcome to Agent-Hub",
+        "mail_invite_body": "Great to have you on board! An account was created for you in Agent-Hub. Choose your password now and you can get started right away.",
+        "mail_invite_button": "Choose your password",
+        "mail_invite_note": "The link is valid for {duration} and works only once. If you do not expect an account, just ignore this mail.",
+        "invite_hint": "They get a mail with a link where they choose their own password.",
+        "invite_send": "Send invitation",
+        "err_mail_failed": "The mail could not be sent. The account was not created.",
         "email_placeholder": "name@example.com",
         "settings_toggle": "Open or close settings",
         "display_name": "Username",

@@ -33,15 +33,16 @@ def base_url() -> str:
     return os.environ.get("HUB_BASE_URL", "").strip().rstrip("/")
 
 
-def send_mail(to: str, subject: str, text: str) -> bool:
-    """Send a plain-text mail. True on success; False (with a log line) if not configured or
-    the service refused. Never raises, never logs the key."""
+def send_mail(to: str, subject: str, text: str, html: str | None = None) -> bool:
+    """Send a mail with a plain-text part and, if given, an HTML part. True on success; False
+    (with a log line) if not configured or the service refused. Never raises, never logs the key."""
     if not configured():
         log.warning("mail not sent: RESEND_API_KEY or MAIL_FROM is not set")
         return False
-    payload = json.dumps(
-        {"from": os.environ["MAIL_FROM"], "to": [to], "subject": subject, "text": text}
-    ).encode()
+    message = {"from": os.environ["MAIL_FROM"], "to": [to], "subject": subject, "text": text}
+    if html:
+        message["html"] = html
+    payload = json.dumps(message).encode()
     request = urllib.request.Request(
         API_URL,
         payload,
