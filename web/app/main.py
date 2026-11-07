@@ -6,7 +6,6 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import board, dashboard, i18n, layout, projectpage, projects, users
-from .dashboard import PAGE_SIZE
 
 app = FastAPI(title="Agent-Hub")
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
@@ -52,12 +51,9 @@ def index(request: Request, page: str = "1"):
     user = _user(request)
     if user is None:
         return RedirectResponse("/login", status_code=303)
-    all_projects = projects.list_projects(user.id)
-    pages = len(all_projects) // PAGE_SIZE + 1  # the free "+" tile may need a new page
-    number = min(max(int(page) if page.isdigit() else 1, 1), pages)
-    shown = all_projects[(number - 1) * PAGE_SIZE : number * PAGE_SIZE]
-    first_project = not user.had_project and not all_projects
-    body = dashboard.render(user, shown, number, pages, first_project)
+    pages = projects.layout(user.id)
+    first_project = not user.had_project and not pages
+    body = dashboard.render(user, pages, int(page) if page.isdigit() else 1, first_project)
     return _logged_in_page(user, i18n.t(user.language, "home"), body)
 
 
@@ -113,24 +109,25 @@ def create_project(request: Request, name: str = Form("")):
     if user is None:
         return RedirectResponse("/login", status_code=303)
     try:
-        projects.create_project(user.id, name)
+        project = projects.create_project(user.id, name)
     except ValueError:
         return RedirectResponse("/", status_code=303)
-    count = len(projects.list_projects(user.id))
-    return RedirectResponse(f"/?page={(count - 1) // PAGE_SIZE + 1}", status_code=303)
+    page = projects.display_page(user.id, project.id) or 1
+    return RedirectResponse(f"/?page={page}", status_code=303)
 
 
-@app.post("/projects/reorder")
-async def reorder_projects(request: Request):
+@app.post("/projects/move")
+async def move_project(request: Request):
+    """Drag and drop of a tile: {"id": ..., "page": 1, "index": 0}. Answers the final page."""
     user = _user(request)
     if user is None:
         return JSONResponse({"ok": False}, status_code=401)
     try:
-        ids = [int(i) for i in (await request.json())["ids"]]
-        projects.reorder(user.id, ids)
+        data = await request.json()
+        page = projects.move(user.id, int(data["id"]), int(data["page"]), int(data["index"]))
     except (ValueError, KeyError, TypeError):
         return JSONResponse({"ok": False}, status_code=400)
-    return {"ok": True}
+    return {"ok": True, "page": page}
 
 
 @app.get("/projects/{project_id}", response_class=HTMLResponse)

@@ -594,3 +594,18 @@ a.station:hover { color: var(--text); background: color-mix(in srgb, var(--field
   .station.back { margin-bottom: 0; }
   .board { grid-template-columns: 1fr; }
 }
+
+/* ===== Pages of tiles and dragging between pages ===== */
+.grid[hidden], .pager[hidden] { display: none; }
+.grid { min-height: calc(190px * 2 + var(--space) * 3); } /* an empty new page still catches the drop */
+.dragging-tile .tile.plus, .dragging-tile .tile.ghost { visibility: hidden; }
+.edge {
+  position: fixed; top: 0; bottom: 0; z-index: 15; width: 88px;
+  display: grid; place-items: center;
+  pointer-events: none; opacity: 0; transition: opacity 0.25s;
+}
+.edge-left { left: 0; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 24%, transparent), transparent); }
+.edge-right { right: 0; background: linear-gradient(270deg, color-mix(in srgb, var(--accent) 24%, transparent), transparent); }
+.edge svg { width: 28px; height: 28px; fill: var(--accent); opacity: 0.85; }
+.dragging-tile .edge { opacity: 0.5; }
+.dragging-tile .edge.hot { opacity: 1; }
