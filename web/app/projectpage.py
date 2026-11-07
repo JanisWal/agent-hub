@@ -27,20 +27,23 @@ PROJECT = """<div class="project" data-id="%PID%">
     <div class="board" id="board">
       %COLUMNS%
     </div>
-    <!-- TEMPORARY test chat (web/app/chat.py): remove together with chat.js once the agents run -->
-    <section class="chat glass" id="chat" data-you="%t.chat_you%" data-claude="%t.chat_claude%"
-             data-waiting="%t.chat_waiting%" data-failed="%t.chat_failed%">
-      <header class="chat-head"><h2>%t.chat_title%</h2><span class="chat-badge">%t.chat_temporary%</span></header>
-      <p class="muted">%t.chat_hint%</p>
-      <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
-      <p class="error" id="chat-error" role="alert" hidden></p>
-      <form class="chat-form" id="chat-form" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
-        <label><input name="prompt" required maxlength="2000" autocomplete="off" placeholder="%t.chat_placeholder%"></label>
-        <button type="submit" id="chat-send">%t.chat_send%</button>
-      </form>
-    </section>
   </div>
 </div>
+<!-- TEMPORARY test chat (web/app/chat.py): a slim window fixed at the right edge, on every tab of the
+     project; remove it together with chat.js once the agents run. On narrow screens the round button opens it. -->
+<aside class="chat glass" id="chat" data-you="%t.chat_you%" data-claude="%t.chat_claude%"
+       data-waiting="%t.chat_waiting%" data-failed="%t.chat_failed%">
+  <header class="chat-head"><h2>%t.chat_title%</h2><span class="chat-badge">%t.chat_temporary%</span></header>
+  <p class="muted">%t.chat_hint%</p>
+  <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
+  <p class="error" id="chat-error" role="alert" hidden></p>
+  <form class="chat-form" id="chat-form" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
+    <label><input name="prompt" required maxlength="2000" autocomplete="off" placeholder="%t.chat_placeholder%"></label>
+    <button type="submit" id="chat-send">%t.chat_send%</button>
+  </form>
+</aside>
+<button class="icon-button chat-toggle" id="chat-toggle" type="button" aria-expanded="false" aria-controls="chat"
+        aria-label="%t.chat_title%" title="%t.chat_title%">%CHAT_ICON%</button>
 <dialog class="dialog" id="item-dialog" data-title-new="%t.new_item%" data-title-edit="%t.edit_item%"
         data-btn-new="%t.create%" data-btn-edit="%t.save%">
   <form method="post" action="" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
@@ -146,11 +149,15 @@ def _stations(lang: str) -> str:
     )
     return (
         f'<nav class="stations" aria-label="{esc(i18n.t(lang, "stations"))}">'
-        f'<a class="station-back" href="/">{icon("arrow_left")}{esc(i18n.t(lang, "back_to_projects"))}</a>'
         f'<a class="station active" href="#" aria-current="page">'
         f'<span class="station-label">{esc(i18n.t(lang, "station_board"))}</span></a>'
         f"{off}</nav>"
     )
+
+
+def back_html(lang: str) -> str:
+    """The way back to the dashboard, right of the brand in the top bar."""
+    return f'<a class="topbar-back" href="/">{icon("arrow_left")}<span>{esc(i18n.t(lang, "back_to_projects"))}</span></a>'
 
 
 def title_html(project: Project) -> str:
@@ -180,6 +187,7 @@ def render(user: User, project: Project, items: list[Item]) -> str:
         lang,
         PID=str(project.id),
         STATIONS=_stations(lang),
+        CHAT_ICON=icon("chat"),
         TRASH=_trash(trashed, lang),
         ARCHIVE=_archive(archived, lang),
         COLUMNS="\n      ".join(_column(kind, live, lang) for kind in KINDS),

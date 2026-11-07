@@ -69,5 +69,18 @@
       .catch(function () {});
   });
 
+  // On narrow screens the window is hidden behind a round button (CSS shows it on wide screens always).
+  var toggle = document.getElementById("chat-toggle");
+  function setOpen(open, focus) {
+    document.body.classList.toggle("chat-open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+    try { sessionStorage.setItem("chatOpen", open ? "1" : ""); } catch (e) {}
+    if (open && focus) { var field = form.querySelector("input"); if (field) field.focus(); }
+  }
+  if (toggle) {
+    toggle.addEventListener("click", function () { setOpen(!document.body.classList.contains("chat-open"), true); });
+    try { if (sessionStorage.getItem("chatOpen")) setOpen(true, false); } catch (e) {}
+  }
+
   load();
 })();
