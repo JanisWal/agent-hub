@@ -10,6 +10,7 @@ from dataclasses import dataclass
 DB_PATH = os.environ.get("HUB_DB", "/data/hub.db")
 SESSION_SECONDS = 14 * 24 * 3600
 MIN_PASSWORD_LENGTH = 8
+MAX_DISPLAY_NAME = 40
 
 # scrypt cost parameters (about 16 MiB RAM per hash, fine for a Pi 4)
 SCRYPT_N, SCRYPT_R, SCRYPT_P = 2**14, 8, 1
@@ -27,7 +28,22 @@ CREATE TABLE IF NOT EXISTS sessions (
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     expires_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS projects (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    position   INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS projects_by_user ON projects (user_id, position);
 """
+
+# Columns added after the first release; added to existing databases on connect.
+NEW_USER_COLUMNS = {
+    "display_name": "TEXT",
+    "language": "TEXT NOT NULL DEFAULT 'de'",
+    "had_project": "INTEGER NOT NULL DEFAULT 0",
+}
 
 
 @dataclass
@@ -36,14 +52,33 @@ class User:
     email: str
     is_admin: bool
     created_at: int
+    display_name: str | None = None
+    language: str = "de"
+    had_project: bool = False
+
+    @property
+    def name(self) -> str:
+        """Name to show in the interface: chosen name, else the part before the @."""
+        return self.display_name or self.email.split("@")[0]
 
 
-def _connect() -> sqlite3.Connection:
-    """Open the database (path read at call time) and make sure tables exist."""
+def _add_missing_columns(db: sqlite3.Connection) -> None:
+    existing = {row["name"] for row in db.execute("PRAGMA table_info(users)")}
+    for name, definition in NEW_USER_COLUMNS.items():
+        if name not in existing:
+            try:
+                db.execute(f"ALTER TABLE users ADD COLUMN {name} {definition}")
+            except sqlite3.OperationalError:
+                pass  # another connection added it first
+
+
+def connect() -> sqlite3.Connection:
+    """Open the database (path read at call time) and make sure the schema is current."""
     db = sqlite3.connect(DB_PATH)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys = ON")
     db.executescript(SCHEMA)
+    _add_missing_columns(db)
     return db
 
 
@@ -73,7 +108,15 @@ def _normalize(email: str) -> str:
 
 
 def _to_user(row: sqlite3.Row) -> User:
-    return User(row["id"], row["email"], bool(row["is_admin"]), row["created_at"])
+    return User(
+        row["id"],
+        row["email"],
+        bool(row["is_admin"]),
+        row["created_at"],
+        row["display_name"],
+        row["language"],
+        bool(row["had_project"]),
+    )
 
 
 def create_user(email: str, password: str, is_admin: bool = False) -> User:
@@ -83,7 +126,7 @@ def create_user(email: str, password: str, is_admin: bool = False) -> User:
         raise ValueError("Ungültige E-Mail-Adresse")
     if len(password) < MIN_PASSWORD_LENGTH:
         raise ValueError(f"Passwort zu kurz (mindestens {MIN_PASSWORD_LENGTH} Zeichen)")
-    with _connect() as db:
+    with connect() as db:
         try:
             cur = db.execute(
                 "INSERT INTO users (email, password_hash, is_admin, created_at)"
@@ -98,7 +141,7 @@ def create_user(email: str, password: str, is_admin: bool = False) -> User:
 
 def check_login(email: str, password: str) -> User | None:
     """Return the user if e-mail and password match, else None."""
-    with _connect() as db:
+    with connect() as db:
         row = db.execute(
             "SELECT * FROM users WHERE email = ?", (_normalize(email),)
         ).fetchone()
@@ -108,11 +151,32 @@ def check_login(email: str, password: str) -> User | None:
     return _to_user(row) if _verify_password(password, row["password_hash"]) else None
 
 
+def verify_password(user_id: int, password: str) -> bool:
+    """Check a password for an already logged-in user (e.g. before deleting)."""
+    with connect() as db:
+        row = db.execute(
+            "SELECT password_hash FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+    return row is not None and _verify_password(password, row["password_hash"])
+
+
+def set_profile(user_id: int, display_name: str, language: str) -> None:
+    """Store display name (empty = use e-mail) and language. Raises ValueError if too long."""
+    display_name = display_name.strip()
+    if len(display_name) > MAX_DISPLAY_NAME:
+        raise ValueError("Nutzername zu lang")
+    with connect() as db:
+        db.execute(
+            "UPDATE users SET display_name = ?, language = ? WHERE id = ?",
+            (display_name or None, language, user_id),
+        )
+
+
 def create_session(user_id: int) -> str:
     """Store a new session for 14 days and return its random token."""
     token = secrets.token_urlsafe(32)
     now = int(time.time())
-    with _connect() as db:
+    with connect() as db:
         db.execute("DELETE FROM sessions WHERE expires_at <= ?", (now,))
         db.execute(
             "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
@@ -125,7 +189,7 @@ def get_user(token: str | None) -> User | None:
     """Return the user of a valid, unexpired session token, else None."""
     if not token:
         return None
-    with _connect() as db:
+    with connect() as db:
         row = db.execute(
             "SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id"
             " WHERE s.token = ? AND s.expires_at > ?",
@@ -135,5 +199,5 @@ def get_user(token: str | None) -> User | None:
 
 
 def delete_session(token: str) -> None:
-    with _connect() as db:
+    with connect() as db:
         db.execute("DELETE FROM sessions WHERE token = ?", (token,))
