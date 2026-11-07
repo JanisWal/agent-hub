@@ -1,4 +1,4 @@
-// Behaviour of the logged-in pages: greeting, settings drawer, dialogs, project pages and drag and drop.
+// Behaviour of the logged-in pages: greeting, settings drawer, dialogs, project pages and dragging.
 (function () {
   function $(selector, root) { return (root || document).querySelector(selector); }
   function reloadQuietly(url) {
@@ -100,44 +100,61 @@
     });
   }
 
-  // Pages of project tiles. Only the current page is visible. Dragging a tile works like
-  // on a phone's home screen: hold it at the left or right edge to turn the page, and
-  // past the last page a new page opens. Empty slots and the "+" tile never move.
+  // Pages of project tiles. All pages sit side by side on a track that slides by spring.
+  // Pages turn by the dots and arrows, by swiping (finger), and by holding a carried tile at
+  // the left or right edge. Past the last page a new page opens. Empty slots and the "+" tile
+  // never move.
   var pagesBox = $("#pages");
   if (pagesBox) {
     var SIZE = Number(pagesBox.dataset.size);
+    var GAP = 48;  // distance between pages, must match .track in theme.css
+    var track = $("#track");
     var pager = $("#pager");
     var edges = document.querySelectorAll(".edge");
     var ARROWS = {
       left: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-8 6 8 6z"/></svg>',
       right: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l8 6-8 6z"/></svg>'
     };
-    var dragged = null;
-    var startGrid = null;
+    var index = Number(pagesBox.dataset.current) - 1;  // 0-based page that is shown
     var before = "";
+    var startGrid = null;
     var flipTimer = null;
     var flipDir = 0;
+    var swipe = null;
 
-    var grids = function () { return Array.prototype.slice.call(pagesBox.querySelectorAll(".grid")); };
+    var grids = function () { return Array.prototype.slice.call(track.querySelectorAll(".grid")); };
     var tilesOf = function (grid) { return Array.prototype.slice.call(grid.querySelectorAll(".tile[data-id]")); };
-    var current = function () {
-      var all = grids();
-      for (var i = 0; i < all.length; i++) if (!all[i].hidden) return i + 1;
-      return 1;
-    };
     var order = function () {
       var ids = [];
       grids().forEach(function (grid) { tilesOf(grid).forEach(function (t) { ids.push(t.dataset.id); }); });
       return ids.join();
     };
+    var stride = function () {
+      var style = getComputedStyle(pagesBox);
+      var inner = pagesBox.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      return inner + GAP;
+    };
+
+    var pageX = Motion.spring(0, Motion.MOVE, function (value) {
+      track.style.transform = "translate3d(" + value + "px,0,0)";
+    });
+    pageX.set(-index * stride());
+
+    // Tabbing must not scroll the clipped track sideways, and hidden pages are not reachable.
+    pagesBox.addEventListener("scroll", function () { pagesBox.scrollLeft = 0; });
+    var markInert = function () {
+      grids().forEach(function (grid, i) { grid.inert = i !== index; });
+    };
+    markInert();
+    window.addEventListener("resize", function () { pageX.set(-index * stride()); });
 
     function arrowElement(target, count, side, label) {
       var element;
-      if (target >= 1 && target <= count) {
+      if (target >= 0 && target < count) {
         element = document.createElement("a");
         element.className = "pager-arrow";
-        element.href = "/?page=" + target;
-        element.dataset.page = target;
+        element.href = "/?page=" + (target + 1);
+        element.dataset.page = target + 1;
         element.setAttribute("aria-label", label);
       } else {
         element = document.createElement("span");
@@ -151,31 +168,37 @@
     // Redraw the dots and arrows (the number of pages can change while dragging).
     function renderPager() {
       var count = grids().length;
-      var now = current();
       var texts = pager.dataset;
       pager.hidden = count < 2;
       pager.textContent = "";
-      pager.appendChild(arrowElement(now - 1, count, "left", texts.labelPrev));
+      pager.appendChild(arrowElement(index - 1, count, "left", texts.labelPrev));
       var dots = document.createElement("span");
       dots.className = "dots";
-      for (var n = 1; n <= count; n++) {
+      for (var n = 0; n < count; n++) {
         var dot = document.createElement("a");
-        dot.className = "dot" + (n === now ? " active" : "");
-        dot.href = "/?page=" + n;
-        dot.dataset.page = n;
-        dot.setAttribute("aria-label", texts.labelPage.replace("{n}", n));
-        if (n === now) dot.setAttribute("aria-current", "page");
+        dot.className = "dot" + (n === index ? " active" : "");
+        dot.href = "/?page=" + (n + 1);
+        dot.dataset.page = n + 1;
+        dot.setAttribute("aria-label", texts.labelPage.replace("{n}", n + 1));
+        if (n === index) dot.setAttribute("aria-current", "page");
         dots.appendChild(dot);
       }
       pager.appendChild(dots);
-      pager.appendChild(arrowElement(now + 1, count, "right", texts.labelNext));
+      pager.appendChild(arrowElement(index + 1, count, "right", texts.labelNext));
     }
 
-    function showPage(n) {
-      var all = grids();
-      n = Math.min(Math.max(n, 1), all.length);
-      all.forEach(function (grid, i) { grid.hidden = i + 1 !== n; });
-      try { history.replaceState(null, "", "/?page=" + n); } catch (e) {}
+    // Slide to a page. The spring starts from where the track is right now, so a new
+    // request while it is still moving continues smoothly. `velocity` is a flick's speed.
+    function goTo(n, options) {
+      var count = grids().length;
+      index = Math.min(Math.max(n, 0), count - 1);
+      var velocity = options && options.velocity;
+      var params = options && options.flick ? Motion.SNAP : Motion.MOVE;
+      pageX.k = Math.pow((2 * Math.PI) / params.response, 2);
+      pageX.c = 2 * params.damping * Math.sqrt(pageX.k);
+      pageX.to(-index * stride(), velocity === undefined ? undefined : { velocity: velocity });
+      try { history.replaceState(null, "", "/?page=" + (index + 1)); } catch (e) {}
+      if (!sorter.dragging()) markInert();
       renderPager();
     }
 
@@ -183,26 +206,78 @@
       var link = event.target.closest("[data-page]");
       if (!link) return;
       event.preventDefault();
-      showPage(Number(link.dataset.page));
+      goTo(Number(link.dataset.page) - 1);
     });
 
-    // Turn the page after the pointer rested at an edge for a moment.
+    document.addEventListener("keydown", function (event) {
+      if (event.target.closest("input, textarea, select, dialog") || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (event.key === "ArrowLeft") goTo(index - 1);
+      else if (event.key === "ArrowRight") goTo(index + 1);
+    });
+
+    // Swiping with a finger: the track follows 1:1 (with rubber-banding at both ends), and on
+    // release the flick's velocity decides where it comes to rest.
+    pagesBox.addEventListener("pointerdown", function (event) {
+      if (event.pointerType === "mouse" || sorter.dragging()) return;
+      pageX.stop();  // grab the track while it is still moving
+      swipe = {
+        id: event.pointerId, x: event.clientX, y: event.clientY, base: pageX.value,
+        active: false, history: [{ t: performance.now(), x: event.clientX, y: 0 }]
+      };
+    });
+
+    document.addEventListener("pointermove", function (event) {
+      if (!swipe || event.pointerId !== swipe.id) return;
+      if (sorter.dragging()) { swipe = null; return; }  // a tile is carried: no page swipe
+      var dx = event.clientX - swipe.x;
+      var dy = event.clientY - swipe.y;
+      if (!swipe.active) {
+        if (Math.abs(dy) > 10 && Math.abs(dy) > Math.abs(dx)) { swipe = null; return; }  // vertical: not ours
+        if (Math.abs(dx) <= 10) return;
+        swipe.active = true;
+        sorter.cancelPress();
+      }
+      var min = -(grids().length - 1) * stride();
+      var position = swipe.base + dx;
+      if (position > 0) position = Motion.rubberband(position, pagesBox.clientWidth);
+      else if (position < min) position = min - Motion.rubberband(min - position, pagesBox.clientWidth);
+      pageX.set(position);
+      swipe.history.push({ t: performance.now(), x: event.clientX, y: 0 });
+      if (swipe.history.length > 6) swipe.history.shift();
+    });
+
+    function endSwipe(event) {
+      if (!swipe || event.pointerId !== swipe.id) return;
+      var state = swipe;
+      swipe = null;
+      if (!state.active) return;
+      var velocity = Motion.velocityOf(state.history).x;
+      var projected = pageX.value + Motion.project(velocity);  // where the flick would come to rest
+      var target = Math.round(-projected / stride());
+      // At most one page per swipe, like a pager.
+      target = Math.min(Math.max(target, index - 1), index + 1);
+      goTo(target, { velocity: velocity, flick: true });
+    }
+    document.addEventListener("pointerup", endSwipe);
+    document.addEventListener("pointercancel", endSwipe);
+
+    // Turn the page after a carried tile rested at an edge for a moment.
     function flip() {
       var dir = flipDir;
-      flipDir = 0;  // lets the next dragover arm the timer again
+      flipDir = 0;  // lets the next move arm the timer again
       var all = grids();
-      var target = current() + dir;
-      if (target < 1) return;
-      if (target > all.length) {
-        // A new page only opens if the last page holds a project besides the dragged one.
-        var others = tilesOf(all[all.length - 1]).filter(function (t) { return t !== dragged; });
+      var target = index + dir;
+      if (target < 0) return;
+      if (target >= all.length) {
+        // A new page only opens if the last page holds a project besides the carried one.
+        var carried = $(".tile.drag-slot");
+        var others = tilesOf(all[all.length - 1]).filter(function (t) { return t !== carried; });
         if (!others.length) return;
         var fresh = document.createElement("div");
         fresh.className = "grid";
-        fresh.hidden = true;
-        pagesBox.appendChild(fresh);
+        track.appendChild(fresh);
       }
-      showPage(target);
+      goTo(target);
     }
 
     function checkEdges(x) {
@@ -216,76 +291,51 @@
       if (dir) flipTimer = setTimeout(flip, 650);
     }
 
-    document.addEventListener("dragstart", function (event) {
-      var tile = event.target.closest && event.target.closest(".tile[data-id]");
-      if (!tile) return;
-      dragged = tile;
-      startGrid = tile.closest(".grid");
-      before = order();
-      tile.classList.add("dragging");
-      document.body.classList.add("dragging-tile");
-      event.dataTransfer.effectAllowed = "move";
-      event.dataTransfer.setData("text/plain", tile.dataset.id);
-    });
+    // Carrying a tile: it follows the pointer, the others make room, it lands in its slot.
+    var sorter = Motion.sortable({
+      itemSelector: ".tile[data-id]",
+      items: function () { return track.querySelectorAll(".tile[data-id]"); },
+      containerFor: function (el) { return el.closest("#track .grid"); },
+      axis: "xy",
+      endSelector: ".tile.plus, .tile.ghost",
+      ignore: ".tile-delete",
+      onPick: function (tile) {
+        before = order();
+        startGrid = tile.closest(".grid");
+        pageX.stop();
+        grids().forEach(function (grid) { grid.inert = false; });
+        document.body.classList.add("dragging-tile");
+      },
+      onMove: function (x) { checkEdges(x); },
+      onDrop: function (info) {
+        document.body.classList.remove("dragging-tile");
+        clearTimeout(flipTimer);
+        flipDir = 0;
+        Array.prototype.forEach.call(edges, function (edge) { edge.classList.remove("hot"); });
 
-    document.addEventListener("dragover", function (event) {
-      if (!dragged) return;
-      event.preventDefault();
-      checkEdges(event.clientX);
-      var grid = pagesBox.querySelector(".grid:not([hidden])");
-      if (!grid || !grid.contains(event.target)) return;
-      var over = event.target.closest(".tile[data-id]");
-      if (over && over !== dragged) {
-        if (dragged.parentNode !== grid) {
-          grid.insertBefore(dragged, over);  // arrived from another page: take this slot
-        } else {
-          var kids = Array.prototype.slice.call(grid.children);
-          if (kids.indexOf(dragged) < kids.indexOf(over)) over.after(dragged);
-          else over.before(dragged);
-        }
-      } else if (!over && (event.target.closest(".tile.plus, .tile.ghost") || dragged.parentNode !== grid)) {
-        // On a free slot (or an empty page): go behind the last project of this page.
-        var others = tilesOf(grid).filter(function (t) { return t !== dragged; });
-        var last = others[others.length - 1];
-        var anchor = last ? last.nextSibling : grid.firstChild;
-        if (anchor !== dragged) grid.insertBefore(dragged, anchor);
+        // A page we opened but did not use disappears again.
+        grids().forEach(function (grid) { if (!grid.querySelector(".tile")) grid.remove(); });
+        var tile = info.item;
+        var endGrid = tile.closest(".grid");
+        var all = grids();
+        goTo(all.indexOf(endGrid));
+        if (order() === before && endGrid === startGrid) return;
+        fetch("/projects/move", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: Number(tile.dataset.id),
+            page: all.indexOf(endGrid) + 1,
+            index: tilesOf(endGrid).indexOf(tile)
+          })
+        }).then(function (response) {
+          return response.ok ? response.json() : null;
+        }).then(function (result) {
+          // Another page, or a full page that pushed a tile on: let the server lay it out.
+          if (!result) reloadQuietly();
+          else if (endGrid !== startGrid || tilesOf(endGrid).length > SIZE) reloadQuietly("/?page=" + result.page);
+        }).catch(function () { reloadQuietly(); });
       }
-    });
-
-    document.addEventListener("drop", function (event) { if (dragged) event.preventDefault(); });
-
-    document.addEventListener("dragend", function () {
-      if (!dragged) return;
-      var tile = dragged;
-      dragged = null;
-      tile.classList.remove("dragging");
-      document.body.classList.remove("dragging-tile");
-      clearTimeout(flipTimer);
-      flipDir = 0;
-      Array.prototype.forEach.call(edges, function (edge) { edge.classList.remove("hot"); });
-
-      // A page we opened but did not use disappears again.
-      grids().forEach(function (grid) { if (!grid.querySelector(".tile")) grid.remove(); });
-      var endGrid = tile.closest(".grid");
-      var all = grids();
-      showPage(all.indexOf(endGrid) + 1);
-
-      if (order() === before && endGrid === startGrid) return;
-      fetch("/projects/move", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: Number(tile.dataset.id),
-          page: all.indexOf(endGrid) + 1,
-          index: tilesOf(endGrid).indexOf(tile)
-        })
-      }).then(function (response) {
-        return response.ok ? response.json() : null;
-      }).then(function (result) {
-        // Another page, or a full page that pushed a tile on: let the server lay it out.
-        if (!result) reloadQuietly();
-        else if (endGrid !== startGrid || tilesOf(endGrid).length > SIZE) reloadQuietly("/?page=" + result.page);
-      }).catch(function () { reloadQuietly(); });
     });
   }
 })();

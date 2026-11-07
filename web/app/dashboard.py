@@ -104,7 +104,7 @@ def settings_bar(user: User) -> str:
 
 def _project_tile(project: Project, index: int, lang: str) -> str:
     return (
-        f'<article class="tile glass" draggable="true" data-id="{project.id}" style="--i:{index}">'
+        f'<article class="tile glass" data-id="{project.id}" style="--i:{index}">'
         f'<a class="tile-link" href="/projects/{project.id}" draggable="false">'
         f'<span class="tile-name">{_e(project.name)}</span></a>'
         f'<button class="icon-button tile-delete" type="button" data-id="{project.id}" '
@@ -160,8 +160,8 @@ def _pager(lang: str, page: int, pages: int) -> str:
     )
 
 
-def _grids(pages: list[list[Project]], current: int, first_project: bool, lang: str) -> str:
-    """One grid of 6 slots per page; only the current page is visible.
+def _grids(pages: list[list[Project]], first_project: bool, lang: str) -> str:
+    """One grid of 6 slots per page. All pages are in the page; dashboard.js slides between them.
 
     The "+" tile sits on the first page with a free slot (pages are laid out so that
     `pages` already ends with an empty page when every page is full).
@@ -174,8 +174,7 @@ def _grids(pages: list[list[Project]], current: int, first_project: bool, lang: 
             tiles.append(_plus_tile(len(tiles), lang, first_project))
         while len(tiles) < PAGE_SIZE:
             tiles.append(_ghost_tile())
-        hidden = "" if n + 1 == current else " hidden"
-        grids.append(f'<div class="grid" data-page="{n + 1}"{hidden}>{"".join(tiles)}</div>')
+        grids.append(f'<div class="grid" data-page="{n + 1}">{"".join(tiles)}</div>')
     return "\n    ".join(grids)
 
 
@@ -213,8 +212,10 @@ DIALOGS = """<dialog class="dialog" id="create-dialog">
 DASHBOARD = """<div class="dash">
   <h1 class="greeting" id="greeting" data-morning="%G_MORNING%" data-noon="%G_NOON%"
       data-evening="%G_EVENING%" data-name="%NAME%">%G_FALLBACK%, %NAME%</h1>
-  <div class="pages" id="pages" data-size="%SIZE%">
+  <div class="pages" id="pages" data-size="%SIZE%" data-current="%CURRENT%">
+    <div class="track" id="track" style="--page:%PAGE_INDEX%">
     %GRIDS%
+    </div>
   </div>
   %PAGER%
   <div class="quota">
@@ -264,7 +265,9 @@ def render(user: User, layout: list[list[Project]], page: int, first_project: bo
         G_FALLBACK=_e(i18n.t(lang, "greet_fallback")),
         NAME=_e(user.name),
         SIZE=str(PAGE_SIZE),
-        GRIDS=_grids(pages, page, first_project, lang),
+        CURRENT=str(page),
+        PAGE_INDEX=str(page - 1),
+        GRIDS=_grids(pages, first_project, lang),
         PAGER=_pager(lang, page, len(pages)),
         EDGE_LEFT=TRIANGLE_LEFT,
         EDGE_RIGHT=TRIANGLE_RIGHT,

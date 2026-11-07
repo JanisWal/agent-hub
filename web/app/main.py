@@ -13,7 +13,7 @@ app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), na
 COOKIE_NAME = "session"
 # Set HUB_SECURE_COOKIE=1 in production (HTTPS via Cloudflare Tunnel).
 COOKIE_SECURE = os.environ.get("HUB_SECURE_COOKIE") == "1"
-LOGGED_IN_SCRIPTS = ["/static/dashboard.js"]
+LOGGED_IN_SCRIPTS = ["/static/motion.js", "/static/dashboard.js"]
 BOARD_SCRIPTS = LOGGED_IN_SCRIPTS + ["/static/board.js"]
 
 LOGIN_BODY = """<section class="glass">

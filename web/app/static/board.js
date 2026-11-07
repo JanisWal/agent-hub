@@ -1,4 +1,4 @@
-// Kanban board of a project: add and edit items, accept/reject suggestions, trash, drag and drop.
+// Kanban board of a project: add and edit items, accept/reject suggestions, trash, dragging.
 (function () {
   var project = document.querySelector(".project");
   if (!project) return;
@@ -83,7 +83,6 @@
     });
   }
 
-  // Trash opens and closes with its button.
   // The state survives our own reloads, so restoring several items does not close it each time.
   var trash = $("#trash");
   var trashToggle = $("#trash-toggle");
@@ -95,8 +94,8 @@
   try { if (sessionStorage.getItem("trashOpen:" + projectId)) setTrashOpen(true); } catch (e) {}
   trashToggle.addEventListener("click", function () { setTrashOpen(trash.hidden); });
 
-  // Drag and drop: agreed items move within and between columns. Suggestions stay put.
-  var dragged = null;
+  // Dragging: agreed items move within and between columns (mouse, pen or finger).
+  // Suggestions stay put until they are accepted.
   var snapshot = "";
 
   function layout() {
@@ -105,56 +104,35 @@
     }));
   }
 
-  document.addEventListener("dragstart", function (event) {
-    var card = event.target.closest && event.target.closest(".card[draggable]");
-    if (!card) return;
-    dragged = card;
-    snapshot = layout();
-    card.classList.add("dragging");
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", card.dataset.id);
-  });
-
-  document.addEventListener("dragover", function (event) {
-    if (!dragged) return;
-    var list = event.target.closest(".column") && event.target.closest(".column").querySelector(".open-list");
-    if (!list) return;
-    event.preventDefault();
-    // Insert before the first card whose middle is below the pointer, else at the end.
-    var cards = Array.prototype.filter.call(list.querySelectorAll(".card"), function (c) { return c !== dragged; });
-    var next = null;
-    for (var i = 0; i < cards.length; i++) {
-      var box = cards[i].getBoundingClientRect();
-      if (event.clientY < box.top + box.height / 2) { next = cards[i]; break; }
-    }
-    if (next) { if (dragged.nextSibling !== next) list.insertBefore(dragged, next); }
-    else if (list.lastElementChild !== dragged) list.appendChild(dragged);
-  });
-
-  document.addEventListener("drop", function (event) { if (dragged) event.preventDefault(); });
-
-  document.addEventListener("dragend", function () {
-    if (!dragged) return;
-    var card = dragged;
-    dragged = null;
-    card.classList.remove("dragging");
-    if (layout() === snapshot) return;
-    var list = card.closest(".open-list");
-    var ids = Array.prototype.map.call(list.querySelectorAll(".card"), function (c) { return c.dataset.id; });
-    fetch("/items/reorder", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ kind: list.dataset.kind, ids: ids })
-    }).then(function (response) {
-      if (!response.ok) reload();
-      else refreshCounts();
-    }).catch(reload);
-  });
-
   // Keep the number badges of the columns right after a card moved.
   function refreshCounts() {
     Array.prototype.forEach.call(document.querySelectorAll(".column"), function (column) {
       $(".count", column).textContent = column.querySelectorAll(".card").length;
     });
   }
+
+  Motion.sortable({
+    itemSelector: ".open-list .card",
+    items: function () { return document.querySelectorAll(".open-list .card"); },
+    containerFor: function (el) {
+      var column = el.closest(".column");
+      return column && column.querySelector(".open-list");
+    },
+    axis: "y",
+    ignore: ".card-btn",
+    onPick: function () { snapshot = layout(); },
+    onDrop: function (info) {
+      refreshCounts();
+      if (layout() === snapshot) return;
+      var list = info.item.closest(".open-list");
+      var ids = Array.prototype.map.call(list.querySelectorAll(".card"), function (c) { return c.dataset.id; });
+      fetch("/items/reorder", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ kind: list.dataset.kind, ids: ids })
+      }).then(function (response) {
+        if (!response.ok) reload();
+      }).catch(reload);
+    }
+  });
 })();
