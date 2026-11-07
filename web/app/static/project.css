@@ -109,7 +109,32 @@ a.station:hover::before { background: color-mix(in srgb, var(--field) 55%, trans
 .trash-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
 .trash-title small { display: block; font-size: 0.78rem; font-weight: 500; color: var(--muted); }
 
+/* ===== Manager view: the second view of the page, tiles of the manager (DESIGN.md 10b) ===== */
+.manager { min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: calc(var(--space) * 3); align-content: start; }
+.mtile { max-width: none; min-height: 120px; padding: 20px 22px 18px; border-radius: 28px; display: flex; flex-direction: column; gap: 10px; }
+.mtile header { display: flex; align-items: center; gap: 10px; }
+.mtile h2 { flex: 1; margin: 0; font-size: 1.2rem; letter-spacing: -0.01em; }
+.mtile p { margin: 0; line-height: 1.45; }
+.mtile .m-tag { padding: 4px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); background: var(--field); }
+.mtile.m-soon { opacity: 0.78; }
+/* The status lamp: grey until the manager reports (green, amber, red later). */
+.m-lamp { flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); opacity: 0.55; box-shadow: 0 0 0 4px color-mix(in srgb, var(--muted) 18%, transparent); }
+.mtile.m-settings { grid-column: 1 / -1; }
+.mtile.m-settings form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 0 calc(var(--space) * 3); align-items: start; }
+.mtile.m-settings label { margin-bottom: var(--space); }
+.mtile.m-settings .actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; }
+.mtile.m-settings .actions > * { flex: none; min-width: 180px; }
+textarea {
+  display: block; width: 100%; min-height: 110px; margin-top: var(--space); padding: 12px calc(var(--space) * 2);
+  font: inherit; font-size: 1rem; line-height: 1.45; color: var(--text); caret-color: var(--accent); resize: vertical;
+  background: var(--field); border: 1px solid var(--glass-border); border-radius: var(--radius-button);
+  box-shadow: inset 0 1px 3px rgba(80, 40, 10, 0.14); transition: border-color 0.2s, box-shadow 0.2s;
+}
+textarea::placeholder { color: var(--muted); opacity: 0.6; }
+textarea:focus { outline: none; border-color: var(--accent); box-shadow: inset 0 1px 3px rgba(80, 40, 10, 0.14), 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent); }
+
 @media (max-width: 1100px) {
+  .mtile.m-settings form { grid-template-columns: 1fr; }
   .project { grid-template-columns: 1fr; }
   .board { grid-template-columns: 1fr; }
   .column, .vault { min-height: 0; }

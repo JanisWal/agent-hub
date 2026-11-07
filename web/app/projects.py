@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from . import db
 
 MAX_NAME = 60
+MAX_DESCRIPTION = 2000
 PAGE_SIZE = 6
 
 
@@ -20,15 +21,16 @@ class Project:
     name: str
     position: int
     page: int
+    description: str = ""
 
 
 def _to_project(row: sqlite3.Row) -> Project:
-    return Project(row["id"], row["name"], row["position"], row["page"])
+    return Project(row["id"], row["name"], row["position"], row["page"], row["description"])
 
 
 def _ordered(conn: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:
     return conn.execute(
-        "SELECT id, name, position, page FROM projects WHERE user_id = ?"
+        "SELECT id, name, position, page, description FROM projects WHERE user_id = ?"
         " ORDER BY page, position, id",
         (user_id,),
     ).fetchall()
@@ -53,10 +55,31 @@ def get_project(user_id: int, project_id: int) -> Project | None:
     """One project, only if it belongs to the user."""
     with db.connect() as conn:
         row = conn.execute(
-            "SELECT id, name, position, page FROM projects WHERE id = ? AND user_id = ?",
+            "SELECT id, name, position, page, description FROM projects WHERE id = ? AND user_id = ?",
             (project_id, user_id),
         ).fetchone()
     return _to_project(row) if row else None
+
+
+def update_details(user_id: int, project_id: int, name: str, description: str) -> Project | None:
+    """Rename a project and set its description (Manager tab). None if it is not the user's.
+
+    Raises ValueError for an empty or too long name or a too long description. The description is
+    later handed to every agent run as project context, so it is plain text, trimmed.
+    """
+    name, description = name.strip(), description.strip()
+    if not name:
+        raise ValueError("Projektname fehlt")
+    if len(name) > MAX_NAME:
+        raise ValueError("Projektname zu lang")
+    if len(description) > MAX_DESCRIPTION:
+        raise ValueError("Beschreibung zu lang")
+    with db.connect() as conn:
+        cur = conn.execute(
+            "UPDATE projects SET name = ?, description = ? WHERE id = ? AND user_id = ?",
+            (name, description, project_id, user_id),
+        )
+    return get_project(user_id, project_id) if cur.rowcount else None
 
 
 def display_page(user_id: int, project_id: int) -> int | None:

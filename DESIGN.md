@@ -240,6 +240,12 @@ Stand 07.11.2026, von Janis beauftragt, in Chrome mit Testkonto geprüft (Anlege
 - Nach Aktionen lädt die Seite neu, **ohne** die Einblend-Animation zu wiederholen (Merker `noanim` in `sessionStorage`).
 - Texte und Berechtigungen: alle Texte in Deutsch und Englisch (`i18n.py`), jeder Zugriff prüft, dass das Projekt dem Nutzer gehört.
 
+**Manager-Ansicht (Janis, 07.11.2026; erster Stand, ohne KI):** Ein Klick auf die Station „Manager“ blendet das Board aus und zeigt im Hauptfenster die Kacheln des Managers; die Stationen links bleiben, ebenso Chat, Zahnrad und die Knöpfe oben. **Eine Seite, zwei Ansichten** (kein eigenes Menü und keine zweite Seite: von oben nach unten lässt sich alles in einem Zug durchgehen). Die Ansicht steht in der Adresse (`#board`, `#manager`), `stations.js` schaltet um, mit kurzem Einblenden. Der Papierkorb- und der Archiv-Knopf holen das Board zurück und öffnen ihre Liste. Das Panel heißt `manager-view` (nicht `manager`), damit der Browser beim Laden nicht zu ihm scrollt.
+- **Aufbau:** Raster aus Glas-Kacheln (`.mtile`, wie die Spalten des Boards, Radius 28 px), je Kachel Überschrift, eine Zeile Text und rechts eine Marke. Reihenfolge: Status (mit Lampe, grau bis der Manager meldet; später grün, gelb, rot) und „Wartet auf dich“ (mit Zähler); dann die angekündigten Kacheln mit der Marke „Kommt später“: Manager-Chat, Dateien, Geräte, Regelmäßige Prüfungen; zuletzt, über die volle Breite, **Einstellungen** (Projektname und Projektbeschreibung, Knopf „Speichern“ rechts). Das Raster passt sich der Breite an (`auto-fit`, ab 280 px je Kachel), auf dem Handy eine Spalte; Name und Beschreibung stehen dort untereinander.
+- **Klassen:** Alle Kacheln tragen das Präfix `m-` (`m-status`, `m-soon`, `m-settings`, `m-lamp`, `m-tag`), weil `.status` die Claude-Zeile der Schublade ist; ohne Präfix zerlegte sie die Kachel.
+- **Beschreibung:** Das Feld ist ein Textfeld (höchstens 2000 Zeichen) im Stil der Eingaben. Die Beschreibung wird später jedem Agentenlauf als Projektkontext mitgegeben (PROJEKT.md, „Manager-Tab“).
+- **Regelmäßige Prüfungen** (Code, Sicherheit, Standards, Lesbarkeit, Altlasten entfernen) gehören dem Manager und stehen **nicht auf dem Board**, weil sie weder Bugs noch Updates sind (Janis, 07.11.2026).
+
 **Marke „Agent-Hub“ oben links:** ist ein Link zum GitHub-Repo (`https://github.com/JanisWal/agent-hub`), öffnet in neuem Tab (`rel="noopener noreferrer"`), beim Darüberfahren unterstrichen. Gilt auf allen Seiten, auch beim Login.
 
 ## 10c. Benutzer und Passwort

@@ -52,6 +52,20 @@ def project_view(project_id: int, user: users.User = Depends(page_user)):
     )
 
 
+@router.post("/projects/{project_id}/settings")
+def project_settings(
+    project_id: int, name: str = Form(""), description: str = Form(""), user: users.User = Depends(page_user)
+):
+    """Name and description from the Manager view. A foreign project is 404, bad input changes nothing."""
+    try:
+        project = projects.update_details(user.id, project_id, name, description)
+    except ValueError:
+        return redirect(f"/projects/{project_id}#manager")
+    if project is None:
+        raise HTTPException(status_code=404)
+    return redirect(f"/projects/{project_id}#manager")
+
+
 @router.post("/projects/{project_id}/delete")
 def delete_project(
     request: Request, project_id: int, password: str = Form(""), user: users.User = Depends(api_user)
