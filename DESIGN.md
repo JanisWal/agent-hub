@@ -67,7 +67,7 @@ Regeln:
 - Löschen und Verwerfen sind nie in der Hauptfarbe und brauchen eine Bestätigung.
 - **Normaler Knopf:** Schrift 600, Füllung `--glass`, Rand 1 px `--glass-border`, Schatten `--shadow`, Hover hebt um 1 px an, Klick skaliert auf 0,97. Übergang 0,25 s `cubic-bezier(0.3, 1.5, 0.5, 1)` (federnd).
 - **Hauptknopf (`.primary`):** volle Breite, Höhe mindestens 54 px, Schrift 1,05 rem, Text `--on-accent`, Füllung `--accent` mit hellem Glanz oben (Verlauf von `rgba(255,255,255,0.38)` zu transparent bei 55 %), Rand `rgba(255,255,255,0.4)`, Schatten `0 10px 24px` in 38 % Akzent plus innere Lichtlinie `inset 0 1px 0 rgba(255,255,255,0.55)`, Hover `brightness(1.05)`, Abstand oben 8 px.
-- **Nebenaktion als Textlink (`.link`):** ohne Kasten, ohne Schatten, zentriert, Höhe mindestens 44 px, Schrift 0,92 rem Gewicht 500, Farbe `--muted`, Abstand oben 16 px. Beim Darüberfahren Farbe `--text` und Unterstreichung (Abstand 4 px, vorher transparent, Übergang 0,2 s). Noch nicht gebaute Funktionen: `disabled`, Cursor normal, `title="Kommt später"` (Beispiel: „Passwort vergessen?“).
+- **Nebenaktion als Textlink (`.link`):** ohne Kasten, ohne Schatten, zentriert, Höhe mindestens 44 px, Schrift 0,92 rem Gewicht 500, Farbe `--muted`, Abstand oben 16 px. Beim Darüberfahren Farbe `--text` und Unterstreichung (Abstand 4 px, vorher transparent, Übergang 0,2 s). Noch nicht gebaute Funktionen: `disabled`, Cursor normal, `title="Kommt später"` (Beispiel: „Verknüpfen“ bei Claude und ChatGPT; „Passwort vergessen?“ war früher so und ist jetzt ein echter Link).
 - **Umschalter Hell/Dunkel (`.theme-fab`):** 52 px rund, nur Symbol (Linien 2 px, runde Enden, 24 px), **fest unten rechts** (24 px Abstand zu Rand und Boden, über allem), `aria-label` übersetzt. Zeigt das Symbol des Stils, **zu dem man wechseln würde**: im hellen Stil den Mond, im dunklen die Sonne.
 
 ## 5. Hell und Dunkel
@@ -150,7 +150,7 @@ Stand 07.11.2026, von Janis beauftragt, mit Testkonten im Browser geprüft (Dunk
   1. **Nutzername** (Textfeld, höchstens 40 Zeichen; als Platzhalter steht der aktuell gezeigte Name).
   2. **Sprache** als Dropdown („Deutsch“ / „English“) mit eigenem Pfeil rechts. Die Auswahl ist eine eigene Glasliste (`core.js`, `.select-menu`), nicht das Auswahlfenster des Browsers; der echte `select` bleibt als Formularfeld. Tastatur: Enter, Leertaste oder Alt+Pfeil unten öffnet, Pfeile wählen, Escape schließt nur die Liste.
   3. **Claude** und 4. **ChatGPT**: Name als Beschriftung, darunter ein Statuspunkt mit „Nicht verknüpft“ bzw. „Verknüpft“ (Punkt in Akzentfarbe, Text in `--text`). Nicht verknüpft: rechts daneben der Textlink „Verknüpfen“ (ausgegraut, „Kommt später“). Ist ein Dienst verknüpft, steht nur „Verknüpft“ da. **Ist:** Der Zustand ist fest „nicht verknüpft“, echt wird er mit dem Runner (Phase 2).
-- **Besonders bleiben:** **Speichern** (Hauptknopf, volle Breite) und **Abmelden** (dezenter Textlink darunter, mittig).
+- **Besonders bleiben:** **Speichern** (Hauptknopf, volle Breite) und **Abmelden** (dezenter Textlink darunter, mittig). Zwischen beiden stehen als Textlinks **Benutzer verwalten** (nur Owner und Admins, zur Seite `/users`) und **Passwort ändern** (für alle, zur Seite `/password`).
 
 **Projektkacheln (Mitte)**
 - **6 Kacheln pro Seite.** Das Dashboard **füllt das Fenster und folgt seiner Größe** (Abschnitt 8, „Fenster“): Im Querformat 3 Spalten × 2 Reihen (ab 700 px Breite), darunter 2 Spalten × 3 Reihen, auf dem Handy hochkant eine Liste. Alle Kacheln sind auf **jeder Seite gleich groß** und ändern beim Verschieben ihre Größe nie (die Reihenhöhe hängt nur vom Fenster ab, nicht von der Zahl der Kacheln auf der Seite).
@@ -247,11 +247,12 @@ Aufbau des Codes und Betrieb stehen in PROJEKT.md (Abschnitte 8 und 9). Für die
 - Die Federn wurden in einem Fenster geprüft, in dem Chrome `requestAnimationFrame` pausiert (Test-Fenster ist minimiert); dort wurde der Takt durch einen 16-ms-Zeitgeber ersetzt. Die Werte (Ziel, kein Überschwingen, Dauer) stimmen, die **gefühlte Flüssigkeit** muss Janis in einem sichtbaren Fenster beurteilen.
 - Handy-Layout am echten Gerät prüfen (Abschnitt 8, bisher nur am 390-px-Rahmen), dazu Aussparungen wie die iPhone-Notch (`safe-area-inset`).
 - Seitenwechsel beim Ziehen ist gebaut (Abschnitt 10). Ungeprüft: Touch auf dem Handy, ein Ziehen mit der Tastatur und das Verhalten bei sehr vielen Seiten (Punkte am Rand, wenn es über 15 sind).
-- Begrenzung falscher Passworteingaben ist gebaut (PROJEKT.md, `throttle.py`): Die Meldung „Zu viele Versuche. Bitte in N Minuten erneut versuchen.“ steht auf der Login-Seite in der getönten Fehlerbox, im Lösch-Dialog an der Stelle von „Passwort falsch.“
+- Begrenzung falscher Passworteingaben und zu vieler „Passwort vergessen“-Anfragen ist gebaut (PROJEKT.md, `throttle.py`): Die Meldung „Zu viele Versuche. Bitte in N Minuten erneut versuchen.“ steht auf der Login-Seite in der getönten Fehlerbox, im Lösch-Dialog an der Stelle von „Passwort falsch.“
 - Login-Seite auf Englisch (erst nach der Anmeldung ist die Sprache bekannt).
 - Board: Punkte per Tastatur ordnen, Touch, weitere Infos pro Punkt (Beschreibung, Priorität, Freigabe durch Janis laut PROJEKT.md) und die Agenten-Bugs folgen später.
 - Inhalt der Kacheln („weitere Infos“) wird später festgelegt.
 - Kontrastmessung aller Farbpaare (Abschnitt 2).
 - Schriftcharakter: reine Systemschrift oder eine warme Serifenschrift für Überschriften.
 - Hauptgerät (Mac/PC oder Handy) bestimmt, wie viel Aufwand das Handy-Layout bekommt.
-- Passwort zurücksetzen: Link ist nur Platzhalter, das Modul folgt später.
+- Mails und Passwortseiten (Abschnitte 10b2 und 10c): Aussehen in echten Mailprogrammen (Gmail, Apple Mail, Outlook; hell und dunkel) und am Handy ist ungeprüft.
+- Benutzerverwaltung (`/users`): Aussehen und Bedienung am Handy ungeprüft; Dialoge (Hinzufügen, Zurücksetzen, Owner übergeben, Löschen) nur im Code und in Tests geprüft, nicht von Janis angesehen.

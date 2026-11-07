@@ -1,6 +1,16 @@
 # Agent-Hub – Projektsheet
 
-Stand: 07.11.2026 · Autor: Janis (mit Claude) · Zweck: Philosophie, Ziel, Entscheidungen und Reihenfolge, damit jeder Claude-Chat im Projekt denselben Stand hat.
+Stand: 07.11.2026 (Ende des Tages, nach dem Merge `review-cleanup`) · Autor: Janis (mit Claude) · Zweck: Philosophie, Ziel, Entscheidungen und Reihenfolge, damit jeder Claude-Chat im Projekt denselben Stand hat.
+
+## Auf einen Blick (zuerst lesen, für neue Chats)
+
+- **Was läuft:** Der Hub ist live unter `https://hub.janis-home.de` (Raspberry Pi 4B, 1 GB, Docker Compose, Cloudflare Tunnel). Repo `JanisWal/agent-hub` (privat), `main` = Produktiv und entspricht dem, was auf dem Pi läuft. Verlauf der Änderungen: Abschnitt 12.
+- **Fertig:** Login, Dashboard mit Kacheln (Ziehen, Seiten), Projektseite mit Kanban-Board und Papierkorb, Hell/Dunkel, Deutsch/Englisch, Benutzerverwaltung mit Rollen Owner/Admin/Nutzer, Einladung und „Passwort vergessen“ per E-Mail (Resend, schöne HTML-Mails in Hell und Dunkel), Owner-Übergabe, Sperre nach falschen Passwörtern und nach zu vielen Reset-Anfragen, Mandantentrennung mit Tests.
+- **Noch nicht gebaut:** Claude-Anbindung und Agenten (Phase 2 und 3), Dateiablage, Tresor, Token-Anzeige, Backup mit restic, Umzug auf SSD, Härtung des Containers (Abschnitt 11, Checkliste).
+- **Pflichtregeln für alles Neue:** Standards in `CLAUDE.md`; Gestaltung in `DESIGN.md`; die Trennung der Nutzer (Abschnitt 6) und die Trennung der Claude-Konten (Abschnitt 3, „Trennung der Claude-Konten“) gelten ausnahmslos.
+- **So wird gearbeitet:** Janis beauftragt, Claude zeigt erst die Schnittstelle, dann den Code. Auf dem Windows-PC gibt es kein Git: Claude bearbeitet Dateien lokal im Arbeitsordner (Scratchpad), kopiert sie per `scp` in den Klon auf dem Pi, testet dort im Container, committet auf einem Branch je Thema, merged nach `main`, pusht, sichert die Datenbank und baut neu (Abschnitt 9, „Arbeitsablauf vom PC aus“). Commit, Merge, Push, Deploy und Tests ohne Rückfrage, Fragen nur bei Berechtigungen, Sicherheit und Design- oder Feature-Entscheidungen.
+- **Nächste Schritte (Vorschlag, Reihenfolge):** (1) Janis prüft die Mails und die Einladung in echten Postfächern (Gmail, Apple Mail, Hell und Dunkel) und die Owner-Übergabe mit einem Testkonto; (2) Rest von Phase 1: Dateiablage, Backup mit restic, SSD; (3) Checkliste vor dem Livegang: Container als eigener Benutzer mit Speicherlimit, Gesundheitsprüfung, Content-Security-Policy; (4) Phase 2: Claude-Anbindung pro Nutzer nach den Pflichtregeln, Runner an die Website, Verbrauchsanzeige, Tresor; (5) Aufräumen auf dem Pi (Abschnitt 11).
+- **Übergabe:** `CHAT-ZUSAMMENFASSUNG.md` fasst den Stand und die Entscheidungen des letzten Arbeitstags zusammen.
 
 ## 1. Ziel und Philosophie
 
@@ -14,7 +24,8 @@ Stand: 07.11.2026 · Autor: Janis (mit Claude) · Zweck: Philosophie, Ziel, Ents
 ## 2. Getroffene Entscheidungen
 
 - Claude Pro-Abo, keine API-Kosten. Sind die Limits aufgebraucht, wird später weitergearbeitet.
-- Zugriff von überall über eigene Domain, Login mit E-Mail und Passwort. Passwort zurücksetzen per E-Mail über einen fertigen Baustein.
+- Zugriff von überall über eigene Domain, Login mit E-Mail und Passwort. Passwort zurücksetzen und Einladungen per E-Mail über Resend (gebaut, Abschnitt 5 und 9).
+- Rollen: Owner (genau einer, übertragbar), Admin, Nutzer. Keine Selbstregistrierung. Jeder Nutzer sieht und ändert nur seine eigenen Daten, und jeder verbindet sein eigenes Claude-Konto (Pflichtregeln in Abschnitt 3 und 6).
 - Eine Installation pro Pi, mit Benutzerkonten. Andere nutzen entweder Janis’ Pi als Server mit eigener Claude-Anbindung oder installieren das Paket auf einem eigenen Pi. Janis’ Abo wird nie geteilt.
 - Zuerst nur Claude. Andere KIs (z. B. ChatGPT) später als separate Anmeldung hinter einer gemeinsamen Schnittstelle.
 - Programmiersprache Python; ein Wechsel nur, wenn JavaScript große Vorteile bringt.
@@ -158,8 +169,9 @@ Jeder Nutzer verbindet sein eigenes Claude-Konto. Die Konten dürfen sich nie be
 - **Gebaut am 07.11.2026** (Branch `password-reset`): „Passwort vergessen?“ auf der Login-Seite führt zu `/forgot`, die Mail kommt über Resend (`mail.py`) mit einem Link `HUB_BASE_URL/reset/{token}` (1 Stunde gültig, einmalig, Sprache des Nutzers). Mit dem Link legt man ein Passwort nach den üblichen Regeln fest; danach enden alle Sitzungen und ein Startpasswort-Zwang entfällt.
 - **Gebaut am 07.11.2026** (Branch `invite-mail`): Die Mails (Reset und Einladung) sind HTML-Mails im Design des Hubs (`mailtext.py`): Begrüßung „Hallo Name,“ (Name oder Teil vor dem `@`), Text, großer Knopf in der Akzentfarbe, darunter der Link als Text und ein Hinweis zur Gültigkeit; dazu immer eine reine Textfassung. Es gibt zwei Farbstile (hell und dunkel, Werte aus DESIGN.md Abschnitt 2); verschickt wird der Stil, den der Nutzer zuletzt gesehen hat. Dafür merkt sich der Server die Wahl pro Konto (`users.theme`, `light` oder `dark`, Standard `light`): Der Schalter speichert weiter im Browser (`localStorage`) und meldet die Wahl zusätzlich per `POST /theme`; außerdem meldet jede angemeldete Seite beim Laden ihren Stil, wenn er vom gespeicherten abweicht (so zählt auch die Geräteeinstellung, und das zuletzt benutzte Gerät gewinnt). Bei einem noch nie angemeldeten Konto (frische Einladung) ist die Mail hell. Mailprogramme wie Gmail färben dunkle Mails im Dunkelmodus eventuell selbst um.
 - **Passwortseite** (`/password`, 07.11.2026): Wer sich gerade mit einem Startpasswort angemeldet hat, sieht nur „Neues Passwort“ und „wiederholen“ (kein aktuelles Passwort, er hat es eben eingegeben und es ist ohnehin nicht seins; das neue darf nicht gleich dem Startpasswort sein). Wer sein eigenes Passwort ändert, gibt wie bisher das aktuelle an. Beide Seiten haben „Abbrechen“: normal zurück zum Dashboard, bei Startpasswort Abmelden (jede andere Seite schickt ihn sonst hierher zurück). Der Reset-Link aus der Mail (`/reset/{token}`) fragt nie nach dem alten Passwort und hat ebenfalls „Abbrechen“ (zur Anmeldung). In der Benutzerverwaltung heißt der Rückweg „Zurück“.
-- **Passwortregeln** (Janis, 07.11.2026): für selbst gewählte Passwörter mindestens 6 Zeichen mit Groß- und Kleinbuchstaben, einem Sonderzeichen und zwei Zahlen (`users.password_problem`). Ein vom Admin vergebenes Startpasswort braucht nur 6 Zeichen, denn der Nutzer ersetzt es sofort. Für den Reset per E-Mail steht `users.set_password(user_id, neues_passwort)` bereit; wer ein Passwort wählen lässt, prüft vorher `password_problem`.
-- Das Owner-Konto entsteht bei der Installation (`docker compose exec web python -m app.create_admin` im Ordner der `compose.yml`: das erste Konto wird Owner, weitere werden Admins).
+- **Passwortregeln** (Janis, 07.11.2026): für selbst gewählte Passwörter mindestens 6 Zeichen mit Groß- und Kleinbuchstaben, einem Sonderzeichen und zwei Zahlen (`users.password_problem`). Ein vom Admin vergebenes Startpasswort braucht nur 6 Zeichen, denn der Nutzer ersetzt es sofort. `users.set_password(user_id, neues_passwort)` prüft nur die Länge, beendet alle Sitzungen (außer der als `keep_token` übergebenen) und macht offene Reset-Links ungültig; wer ein Passwort wählen lässt, prüft vorher `password_problem` (so tun `/password` und `/reset/{token}`).
+- Das Owner-Konto entsteht bei der Installation (`docker compose exec -it web python -m app.create_admin` im Ordner der `compose.yml`: das erste Konto wird Owner, weitere werden Admins). Ein normales Konto lässt sich nur über die Website einladen; per SSH gäbe es nur den Aufruf von `users.create_user` mit `python -c`, einen fertigen Befehl gibt es dafür nicht.
+- Sicherheits-Eigenschaften der Konten (Stand 07.11.2026): Passwörter als scrypt-Hash mit eigenem Salz; Sitzungen und Reset-Links nur als SHA-256-Hash in der Datenbank; Cookie HttpOnly, SameSite=Lax, Secure; Rollen werden bei jeder Anfrage aus der Datenbank gelesen (eine Rollenänderung gilt sofort, auch für laufende Sitzungen); Rollenrechte prüft der Server (`users.can_manage`, `transfer_owner`, Routen), nicht nur das Menü.
 
 ### Projektansicht
 
@@ -246,11 +258,13 @@ Jeder Nutzer verbindet sein eigenes Claude-Konto. Die Konten dürfen sich nie be
 
 ## 8. Stand der Umsetzung (07.11.2026)
 
-Phase 0 und der Großteil von Phase 1 sind erledigt und laufen live unter `https://hub.janis-home.de`.
+Phase 0 und der Großteil von Phase 1 sind erledigt und laufen live unter `https://hub.janis-home.de`. Dazu kamen am 07.11.2026 die Benutzerverwaltung und der E-Mail-Versand (Verlauf: Abschnitt 12).
 
-**Fertig:** Pi eingerichtet (Raspberry Pi OS Lite 64-Bit, Docker, Compose, SSH mit Schlüssel); Login mit Benutzerkonten; Dashboard mit Kacheln, Seiten, Drag and Drop, zweistufigem Löschen; Projektseite mit Kanban-Board und Papierkorb; Einstellungen (Nutzername, Sprache); Deutsch/Englisch; Hell/Dunkel; Cloudflare Tunnel mit HTTPS; Claude Code auf dem Pi angemeldet (Runner, noch nicht an die Website angebunden).
+**Fertig:** Pi eingerichtet (Raspberry Pi OS Lite 64-Bit, Docker, Compose, SSH mit Schlüssel); Login mit Benutzerkonten und Sperre nach falschen Passwörtern; Dashboard mit Kacheln, Seiten, Drag and Drop, zweistufigem Löschen; Projektseite mit Kanban-Board und Papierkorb; Einstellungen (Nutzername, Sprache, eigene Auswahlliste); Deutsch/Englisch; Hell/Dunkel (Wahl wird auch am Konto gemerkt); Cloudflare Tunnel mit HTTPS; Benutzerverwaltung (Owner, Admin, Nutzer, Einladung per Mail, Zurücksetzen, Löschen, Owner-Übergabe); Passwort ändern und „Passwort vergessen“ per Mail über Resend, mit HTML-Mails in Hell und Dunkel; Sitzungen und Links nur als Hash; Mandantentrennung durch Tests belegt; Claude Code auf dem Pi angemeldet (Runner im alten Compose-Ordner, noch nicht an die Website angebunden).
 
 **Noch Platzhalter in der Oberfläche:** Claude/ChatGPT verknüpfen, Token-Anzeige, Stationen Agenten/Dateiablage/Dokumentation.
+
+**Tests (Stand 07.11.2026):** 141 Unit-Tests (`web/tests/`, alle grün) und der HTTP-Test mit zwei Konten (alle Prüfungen grün). Nicht geprüft: Aussehen der Mails in echten Mailprogrammen, Berührung am echten Handy, gefühlte Flüssigkeit der Bewegung (Abschnitt 9, „Tests“).
 
 ### Aufbau des Codes
 
@@ -259,6 +273,7 @@ Repo `JanisWal/agent-hub` (privat), Branch `main` = Produktiv, ein Branch je Auf
 ```
 compose.yml                  web-Dienst (127.0.0.1:8000, Daten in ./data, Netz „web“ für den Tunnel)
 web/Dockerfile               python:3.13-slim, startet uvicorn app.main:app
+web/requirements.txt         festgenagelt: fastapi 0.162.0, uvicorn 0.54.0, python-multipart 0.0.33
 web/app/
   main.py                    FastAPI-App, Sicherheits-Header, Fehlerumleitungen, /health
   deps.py                    Cookie-Einstellungen, Anmeldeprüfung (page_user, api_user), Antwort-Helfer
@@ -267,7 +282,7 @@ web/app/
   routes/board.py            Punkte anlegen, umbenennen, ordnen, annehmen, verwerfen, Papierkorb
   routes/accounts.py         /users (Benutzerverwaltung), /password
   routes/resets.py           /forgot, /reset/{token} (Passwort vergessen)
-  db.py                      SQLite-Verbindung, Schema, kleine Migrationen (schließt Verbindungen sicher)
+  db.py                      SQLite-Verbindung, Schema, Migrationen (einmalig, nur für alte Datenbanken; schließt Verbindungen sicher)
   users.py  projects.py  board.py   Daten und Regeln (ohne HTTP)
   throttle.py                Sperre nach zu vielen falschen Passwörtern (pro IP, SQLite)
   mail.py                    Mailversand über die Resend-API (`send_mail`), nur Standardbibliothek
@@ -285,7 +300,8 @@ web/app/
   static/core.js             Theme, Formularprüfung, Schublade, Dialog-Schließen, window.AgentHub.reload
   static/motion.js           Federn und FLIP;  sortable.js: Ziehen zum Ordnen
   static/dashboard.js        Begrüßung, Dialoge;  pages.js: Seitenband, Seitenanzeige, Kachel-Ziehen;  board.js: Board;  users.js: Benutzerverwaltung
-web/tests/                   Unit-Tests und integration_http.py (End-to-End über HTTP)
+web/tests/                   Unit-Tests (test_users, test_accounts, test_resets, test_isolation, test_db_upgrade, test_throttle, test_projects, test_board, test_pages, test_static),
+                             integration_http.py (End-to-End über HTTP, mit zweitem Konto) und preview_mail.py (schreibt die Mails als HTML-Dateien, kein Test)
 ```
 
 **Schnittstellen für später:** Jede Route hängt an einem eigenen Router (`routes/`), neue Bereiche (Agenten, Dateiablage, Tresor) kommen als weiteres Modul plus Router dazu, ohne `main.py` umzubauen. Die Anmeldeprüfung ist eine Abhängigkeit (`page_user` für Seiten, `api_user` für fetch-Aufrufe), eine Rollenprüfung lässt sich dort ergänzen. Neue Seiten bauen auf `ui.logged_in_page()` auf, neue Texte kommen in `i18n.py` in beide Sprachen, neue Symbole in `icons.py`. Claude-Vorschläge legt der spätere Agenten-Code mit `board.create_suggestion(user_id, project_id, kind, title)` an.
@@ -298,7 +314,7 @@ web/tests/                   Unit-Tests und integration_http.py (End-to-End übe
 - `board_items`: id, project_id, kind (`bug`/`minor`/`major`), title (höchstens 200), source (`user`/`claude`), status (`open`/`proposed`/`trash`), position. Von Hand angelegte Punkte sind `open` und stehen oben, Vorschläge von Claude sind `proposed` und stehen unten. Jeder Zugriff prüft, dass das Projekt dem Nutzer gehört.
 - `login_attempts`: ip (Schlüssel), failures, window_start, locked_until. Zählt falsche Passwörter pro IP (hinter dem Tunnel aus `CF-Connecting-IP`). Zehn Fehlversuche innerhalb von 30 Minuten sperren die IP für eine Stunde, dann antworten Anmeldung und Projekt-Löschen mit 429 (auch bei richtigem Passwort). Ein richtiges Passwort setzt den Zähler nicht zurück, er läuft mit dem Zeitfenster ab. Gezählt wird nie pro E-Mail, damit niemand den Owner aussperren kann.
 - `password_resets`: token_hash (Schlüssel, SHA-256 des Tokens, der Token selbst steht nur in der Mail), user_id, created_at, expires_at. Gültig 1 Stunde, wird beim Benutzen gelöscht. Eine neue Anfrage ersetzt die alte; für dasselbe Konto geht frühestens nach 60 Sekunden eine neue Mail raus. Löscht man den Nutzer, verschwinden seine Tokens (Cascade).
-- Schemaänderungen laufen über `NEW_COLUMNS` in `db.py` (Spalten werden beim Start ergänzt). Vor jeder Änderung an Daten ein Backup.
+- Schemaänderungen laufen über `NEW_COLUMNS` in `db.py` (Spalten werden beim ersten Datenbankzugriff nach dem Start ergänzt). Umwandlungen alter Daten (Rollen aus dem früheren `is_admin`, Seiten der Projekte, Sitzungs-Hashes) laufen **einmalig** und nur für alte Datenbanken, nie bei jedem Start; vor dem Deploy einer Migration wird sie an einer Kopie der echten Datenbank geprobt. Vor jeder Änderung an Daten ein Backup.
 
 ### Routen
 
@@ -326,6 +342,19 @@ web/tests/                   Unit-Tests und integration_http.py (End-to-End übe
 - GitHub: Deploy-Key auf dem Pi, Push von dort.
 - **E-Mail-Versand (Resend, Absender `Agent-Hub <noreply@janis-home.de>`):** Domain `janis-home.de` wird bei Resend verifiziert (DNS-Einträge in Cloudflare, „Nur DNS“, nicht über den Proxy). Die Einstellungen stehen in der `.env` im Klon-Ordner (nie im Git, nur für `admin` lesbar halten): `RESEND_API_KEY` (Schlüssel mit „Sending access“ nur für diese Domain), `MAIL_FROM` und `HUB_BASE_URL=https://hub.janis-home.de`. `compose.yml` reicht sie an `web` weiter; fehlen sie, passiert beim Versand nichts außer einer Logzeile (`docker compose logs web`). Der Link in der Mail kommt aus `HUB_BASE_URL`, nie aus der Anfrage (Schutz vor gefälschtem Host-Header). Nach Änderung der `.env`: `docker compose up -d web`.
 
+### Arbeitsablauf vom PC aus (so wurde bisher gearbeitet)
+
+Auf dem Windows-PC ist kein Git installiert und das Repo liegt nur auf dem Pi und bei GitHub. Claude arbeitet deshalb so (Janis muss dafür nichts tun):
+
+1. **Bearbeiten lokal:** Dateien aus dem Klon per `scp` in einen Arbeitsordner (Scratchpad der Sitzung) holen, dort mit den Editier-Werkzeugen ändern (UTF-8 ohne BOM, Zeilenenden `\n`).
+2. **Auf den Pi:** geänderte Dateien per `scp` in den Klon `/opt/agent-hub/workspaces/agent-hub` legen, vorher `git switch -c <thema>` dort (ein Branch je Thema).
+3. **Testen im Container**, ohne den laufenden Dienst anzufassen (Abschnitt „Tests“), neuer Code über zusätzliches `-v "$PWD/web/app:/app/app"`.
+4. **Committen** (ein Thema pro Commit, kurze englische Nachricht), `git switch main`, `git merge --no-ff <thema>`, `git push origin main`.
+5. **Sichern und ausrollen:** Datenbank nach `/opt/agent-hub/backups/hub-<datum>-before-<thema>.db` kopieren, `docker compose up -d --build web`, dann `/health` und `https://hub.janis-home.de/login` prüfen und bei Datenbankänderungen die Tabellen ansehen.
+6. **Schritte als Skriptdatei:** längere Abläufe als `.sh`-Datei per `scp` hochladen und mit `bash` ausführen (keine verschachtelten Anführungszeichen für `ssh` aus PowerShell). Skripte und Vorschau-Dateien liegen im Scratchpad, nicht im Projekt.
+7. **Keine Ports für Vorschauen öffnen** (z. B. `http.server` auf dem Pi): Die Sicherheitsprüfung der Sitzung lehnt das ab. Mail-Vorschauen stattdessen als Datei erzeugen und im eingebauten Browser der Claude-App öffnen (dort nur ansehen, kein Bedienen).
+8. **Zugangsdaten** (`.env`, Schlüssel) werden nie ausgegeben; Prüfungen zeigen nur Namen und Längen, nie Werte.
+
 ### Update-Ablauf
 
 1. Backup der Datenbank: `cp data/hub.db /opt/agent-hub/backups/hub-$(date +%F).db` (im Klon-Ordner, Dienst darf laufen).
@@ -338,6 +367,7 @@ web/tests/                   Unit-Tests und integration_http.py (End-to-End übe
 
 - **Unit-Tests** (laufen im Container, ohne den Dienst anzufassen), im Klon-Ordner (für Code, der noch nicht im Image steckt, zusätzlich `-v "$PWD/web/app:/app/app"` angeben): `docker compose run --rm --no-deps -v "$PWD/web/tests:/app/tests" web python -W ignore -m unittest discover -s tests -t .`
 - **HTTP-Test** gegen eine Wegwerf-Instanz mit eigener Datenbank und Testkonto, z. B. `docker run -d --name hub-test -p 8001:8000 -e HUB_DB=/tmp/test.db -e HUB_SECURE_COOKIE=0 agent-hub-web`, Testnutzer mit `users.create_user` anlegen, dann `python3 web/tests/integration_http.py http://127.0.0.1:8001 EMAIL PASSWORT [EMAIL2 PASSWORT2]` (mit einem zweiten normalen Konto prüft der Test zusätzlich, dass es nichts vom ersten sieht oder ändert). Bei HTTP muss `HUB_SECURE_COOKIE=0` stehen, sonst sendet der Client den Cookie nicht zurück. Nie mit dem echten Konto testen.
+- **Mail-Vorschau:** `docker compose run --rm --no-deps -v "$PWD/web/tests:/app/tests" -v /tmp/mailprev:/out web python -W ignore tests/preview_mail.py /out` schreibt die Mails (Reset und Einladung, hell und dunkel) als HTML-Dateien; ansehen im Browser der Claude-App (Datei öffnen), ohne einen Port freizugeben. Das Aussehen in echten Mailprogrammen prüft nur Janis.
 - **Browser-Prüfung** der Oberfläche in Claude in Chrome gegen die Testinstanz auf Port 8001 (Seite `http://home.local:8001`). Fenstergrößen werden über Rahmen (iframe) in der gewünschten Größe geprüft, weil `resize_window` das Fenster nicht ändert. In einem minimierten Test-Fenster pausiert Chrome `requestAnimationFrame` und CSS-Animationen: dann den Takt durch einen 16-ms-Zeitgeber ersetzen und endliche Animationen mit `getAnimations().finish()` beenden. Das Feld mit `autofocus` bekommt keinen Fokus, daher per `input.focus()` setzen und 2 bis 3 s nach dem Laden warten. Klicks per Koordinate: Bildschirmfoto ist skaliert (1568 px breit), also `getBoundingClientRect` über `javascript_tool` lesen und umrechnen.
 - Die Federn und die gefühlte Flüssigkeit kann nur Janis in einem sichtbaren Fenster beurteilen. Berührung am echten Handy ist ungeprüft.
 - Aus PowerShell keine verschachtelten Anführungszeichen für `ssh`: längere Schritte als Skriptdatei per `scp` hochladen und mit `bash` ausführen.
@@ -363,12 +393,14 @@ Eine laufende Claude-Code-Sitzung zieht nicht um; der PC muss an bleiben, bis ei
 
 - Anbindung des Abos: Claude Code lässt sich auf dem Pi (Debian trixie, arm64) installieren und per Link und Code ohne Bildschirm anmelden (getestet 06.11.2026). Offen: Nutzungsbedingungen prüfen und ob die Anmeldung dauerhaft hält.
 - Vorlagen für Janis’ Freigaben und die Tester-Checklisten: welche Klick-Aussagen, welche Felder.
-- Domain `janis-home.de` ist im Einsatz (Subdomain `hub`); Registrar und Cloudflare-Konditionen bei Gelegenheit prüfen. Optional Cloudflare Access (Code per E-Mail) als zusätzliche Hürde vor der Seite, bis eine Begrenzung der Anmeldeversuche gebaut ist.
+- Domain `janis-home.de` ist im Einsatz (Subdomain `hub`); Registrar und Cloudflare-Konditionen bei Gelegenheit prüfen. Optional Cloudflare Access (Code per E-Mail) als zusätzliche Hürde vor der Seite (die Begrenzung der Anmeldeversuche ist inzwischen gebaut, Access wäre eine zweite Schicht).
 - SSD kaufen (120–240 GB) und Umzug von der SD-Karte planen.
-- E-Mail-Versand für Passwort-Reset: **entschieden, Resend** mit Absender `noreply@janis-home.de` (Betrieb siehe Abschnitt 9). Eigener Mailserver zu Hause schied aus (Privat-IPs landen im Spam oder auf Sperrlisten, Port 25 oft gesperrt). Offen: Tarifgrenzen von Resend im Blick behalten; Anfragen für „Passwort vergessen“ sind nur pro Konto begrenzt (60 s), nicht pro IP.
+- E-Mail-Versand für Passwort-Reset: **entschieden, Resend** mit Absender `noreply@janis-home.de` (Betrieb siehe Abschnitt 9). Eigener Mailserver zu Hause schied aus (Privat-IPs landen im Spam oder auf Sperrlisten, Port 25 oft gesperrt). Offen: Tarifgrenzen von Resend im Blick behalten (die Mails sind pro IP und pro Konto begrenzt, eine Obergrenze für alle zusammen gibt es nicht); das Aussehen der Mails in echten Mailprogrammen ist ungeprüft.
 - Wie viele Nutzer langfristig (bestimmt Leistung des Pi und Rechtekonzept).
 - Arbeitsspeicher: Der Pi 4B hat nur 1 GB (905 MiB nutzbar), Claude Code verlangt laut Anleitung 4 GB. Erster Test am 07.11.2026: Claude Code (`claude -p`, Haiku) lief im Runner-Container mit hartem Limit von 480 MB ohne Swap zweimal fehlerfrei durch (je 11 s, Spitze mindestens 225 MiB, im Sekundentakt gemessen), danach waren weiter etwa 580 MiB frei und die Seite blieb erreichbar. Offen: lange Läufe, Sonnet, parallel laufende Tests und Git-Worktrees. Fällt er schlecht aus: Runner auf Mac oder PC (Variante B) oder Pi mit 4–8 GB (Variante C).
-- Aufräumen auf dem Pi: Codekopie `/opt/agent-hub/web` und alte Branches, doppelte `docker-compose.yml` unter `/home/admin/cloudflared`.
+- Aufräumen auf dem Pi (löschen nur nach Janis’ Ja): alte Codekopie `/opt/agent-hub/web`, die alte `/opt/agent-hub/compose.yml` mit dem Runner (er teilt ein einziges Volume `agent-hub_claude-home` für die Claude-Anmeldung und wird durch die Lösung pro Nutzer ersetzt, Abschnitt 3) samt Ordner `runner/`, doppelte `docker-compose.yml` unter `/home/admin/cloudflared`, der leere Ordner `web/tests/tests` im Klon, und 21 lokale Branches im Klon, die alle schon in `main` gemergt sind (`git branch --merged main`).
+- Offen für die Mails: Obergrenze für alle Reset- und Einladungsmails zusammen (Schutz des Resend-Kontingents), falls Missbrauch auftritt.
+- Offen für die Anmeldung: Login-Seite auf Englisch (die Sprache ist vor der Anmeldung unbekannt), Zwei-Faktor-Anmeldung (steht in Abschnitt 6 als Ziel).
 - Oberfläche: siehe DESIGN.md, Abschnitt „Noch offen“.
 
 ### Checkliste vor dem Livegang
@@ -381,9 +413,32 @@ Eine laufende Claude-Code-Sitzung zieht nicht um; der PC muss an bleiben, bis ei
 - [x] Sicherheits-Header gesetzt, API-Dokumentation abgeschaltet
 - [x] Begrenzung falscher Anmeldeversuche: nur pro IP, 10 Fehlversuche in 30 Minuten sperren die IP für 1 Stunde (Anmeldung und Löschen gemeinsam, `throttle.py`)
 - [x] Versionen von fastapi, uvicorn und python-multipart festgenagelt (`web/requirements.txt`; die übrigen Pakete, z. B. starlette, ergeben sich daraus)
-- [ ] Web-Container läuft als eigener Benutzer ohne Sonderrechte (Datenordner-Rechte anpassen), mit Speicherlimit
+- [x] Sitzungen und Reset-Links nur als Hash in der Datenbank, `.env` nur für `admin` lesbar (07.11.2026)
+- [x] „Passwort vergessen“ pro IP begrenzt, pro Konto eine Mail je 60 Sekunden (07.11.2026)
+- [x] Mandantentrennung geprüft und durch Tests belegt (`tests/test_isolation.py`, HTTP-Test mit zwei Konten, 07.11.2026)
+- [ ] Web-Container läuft als eigener Benutzer ohne Sonderrechte (Datenordner-Rechte anpassen: Der Dienst läuft jetzt als root und schreibt in `data/`, die Rechte müssen zuerst passen, sonst kann er nicht mehr schreiben), mit Speicherlimit
 - [ ] Gesundheitsprüfung über `/health` in compose eingetragen
 - [ ] Content-Security-Policy (benötigt, dass das Theme-Skript im `<head>` ohne Inline-Code auskommt)
 - [ ] Tägliches Backup (restic) läuft, Wiederherstellung einmal getestet
 - [ ] System von SD-Karte auf SSD umgezogen
 - [ ] Nur noch eine Codekopie (Doppelung /opt/agent-hub/web und Klon in workspaces aufgelöst)
+- [ ] Mails in echten Mailprogrammen angesehen (Gmail, Apple Mail; hell und dunkel), Einladung an eine zweite Adresse und Owner-Übergabe mit einem Testkonto von Janis probiert
+- [ ] Trennung der Claude-Konten gebaut und mit dem Isolationstest geprüft (Pflichtregeln in Abschnitt 3), bevor der erste Nutzer außer Janis Claude verbindet
+
+## 12. Änderungsprotokoll
+
+Neueste zuerst. Alle Einträge vom 07.11.2026; jeder Eintrag ist ein Branch, der in `main` gemergt wurde (`git log --no-merges 132f9cb..main` zeigt die Commits). Basis war die große Säuberung „Frontend: split CSS and JS per page, remove dead rules“ (`132f9cb`, davor `11b1b01` für das Backend).
+
+| Branch | Was sich geändert hat |
+|---|---|
+| `review-cleanup` | Prüfung des Codes seit der Säuberung. Sitzungen nur noch als SHA-256-Hash (alle wurden einmal abgemeldet); Migrationen laufen einmalig statt bei jedem Start (vorher hätte ein Neustart einen herabgestuften Admin wieder befördert); Spalte `is_admin` entfernt (`role` genügt); Passwortwechsel in einer Transaktion und er macht offene Reset-Links ungültig; „Passwort vergessen“ pro IP begrenzt; `board.create_suggestion` prüft jetzt den Besitz (neue Signatur mit `user_id`); E-Mail höchstens 254 Zeichen; `.env` auf Modus 600; Versionen festgenagelt; tote Teile entfernt (`projects.list_projects`, BOM in `__init__.py`); neue Tests `test_isolation.py`, `test_db_upgrade.py` und HTTP-Test mit zweitem Konto. Die Umstellung wurde vorher an einer Kopie der echten Datenbank geprobt. |
+| `owner-transfer` | Der Owner kann seine Rechte mit Passwort-Bestätigung an ein anderes Konto übergeben und wird selbst Admin. Genau ein Owner: Prüfung im Code (`create_user`, `transfer_owner`) und Teilindex `users_one_owner` in der Datenbank. Kronen-Knopf und Dialog in `/users`. |
+| `theme-mail` | `users.theme` merkt den zuletzt gesehenen Stil (Schalter und Seitenaufruf melden ihn per `POST /theme`), die Mails kommen in diesem Stil. `/password` ohne „Aktuelles Passwort“ bei Startpasswort, „Abbrechen“ auf `/password` und `/reset/{token}`, „Zurück“ statt „Alle Projekte“ in der Benutzerverwaltung. |
+| `invite-mail` | HTML-Mails im Design des Hubs (`mailtext.py`, Knopf, Hell und Dunkel). „Benutzer hinzufügen“ nimmt nur noch die E-Mail-Adresse und schickt eine Einladung mit Link (7 Tage); klappt der Versand nicht, wird das Konto wieder entfernt. |
+| `password-reset` | „Passwort vergessen?“ per E-Mail über Resend: `mail.py`, `resets.py`, Seiten `/forgot` und `/reset/{token}`, Tabelle `password_resets`, `compose.yml` reicht die Mail-Einstellungen aus `.env` weiter. |
+| `user-management` | Rollen Owner/Admin/Nutzer, Seite `/users` (Hinzufügen, Zurücksetzen, Löschen, Admin-Schalter), `/password`, Passwortregeln, Startpasswort-Zwang. |
+| `login-throttle` | Sperre einer IP für eine Stunde nach 10 falschen Passwörtern in 30 Minuten (Anmeldung und Projekt-Löschen), `throttle.py`. |
+| `custom-select` | Eigene Glas-Auswahlliste für die Sprache statt des Browser-Popups. |
+| `fix-static-cache` | Inhalts-Hash in den Adressen der statischen Dateien, damit ein veralteter Cache nie alte und neue Skripte mischt. |
+
+Dazu Doku-Commits (Rollenmodell, Mail-Entscheidung, Zugriff der Agenten auf Geräte, erster Speichertest von Claude Code auf dem Pi, Skill `apple-design` im Repo) und diese Fassung der Dokumente. Die Backups vor jedem Deploy liegen unter `/opt/agent-hub/backups/` (`hub-2026-11-07-before-*.db`).
