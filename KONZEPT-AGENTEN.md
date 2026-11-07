@@ -129,7 +129,7 @@ Volltext in PROJEKT.md (Abschnitte „Zugriff der Agenten auf Geräte“, „Ger
 4. **Speicher:** Pi 4B mit 1 GB: Tests mit Sonnet, langen Läufen und Git-Worktrees stehen aus. `MAX_RUNNING = 1` ist die Vorsorge.
 5. **Merge bei Freigabe:** Der Hub (nicht der Agent) übernimmt den Branch in `main` des Projekt-Repos, bevor der Dokumentator läuft. Eigenes Modul „Worktrees und Merge“.
 6. **Strenge** als Tabelle in Abschnitt 3 ist mein Vorschlag; die drei Stufen aus PROJEKT.md waren bisher nicht ausgeführt.
-7. **Rechte pro Rolle (Web und Code):** Ob Programmierer und Manager Web und Code zusammen bekommen (dann Web nur zu einer Liste von Seiten wie PyPI, npm, GitHub) oder getrennt, ist noch offen; der Chat bleibt „Web oder Code“.
+7. ~~**Rechte pro Rolle (Web und Code)**~~ entschieden (Janis, 07.11.2026): **alle Agenten dürfen ins Internet** in den besprochenen Grenzen (nur über `egress`, nie Heimnetz, Geräte nur über Vermittler). Bei Code im selben Lauf geht Web nur zu einer Liste von Seiten (PyPI, npm, GitHub, Dokumentation); das ist Claudes Auslegung von „wie besprochen“ und noch zu bestätigen. Der Chat bleibt „Web oder Code“. Die genaue Seitenliste und eine dritte Proxy-Richtlinie („Liste“) entstehen beim Bau der Läufe.
 8. ~~**VPN-Technik**~~ entschieden: Tailscale (Abschnitt 6b). Vor dem Bau zu prüfen: Nutzungsbedingungen (nicht gewerblich), Etiketten im kostenlosen Tarif.
 
 ## 7a. Ausrollen der Verknüpfung (erledigt am 07.11.2026 mit Janis’ Ja)
