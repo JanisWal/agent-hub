@@ -451,8 +451,9 @@ a.brand:hover { text-decoration: underline; text-underline-offset: 4px; }
 
 /* ===== Carried item (Motion.sortable) and its gap ===== */
 /* The item you carry is a clone above everything; its slot stays reserved in the grid. */
-.drag-clone { position: fixed; z-index: 60; margin: 0; max-width: none; pointer-events: none; will-change: transform; animation: none !important; transition: box-shadow 0.25s; }
-.drag-clone.lifted { box-shadow: 0 34px 70px rgba(0, 0, 0, 0.34), 0 10px 22px rgba(0, 0, 0, 0.22), 0 0 0 1px var(--glass-border); }
+/* "html" raises the specificity: dashboard.css and project.css (loaded later) also style .tile and .card. */
+html .drag-clone { position: fixed; z-index: 60; margin: 0; max-width: none; pointer-events: none; will-change: transform; animation: none !important; transition: box-shadow 0.25s; }
+html .drag-clone.lifted { box-shadow: 0 34px 70px rgba(0, 0, 0, 0.34), 0 10px 22px rgba(0, 0, 0, 0.22), 0 0 0 1px var(--glass-border); }
 .drag-clone.glass { background: color-mix(in srgb, var(--bg) 62%, var(--glass)); } /* denser, so the tile below does not shine through */
 /* The slot shows where the carried item will land. */
 .drag-slot { opacity: 0; } /* the real item: invisible, its place stays reserved */
