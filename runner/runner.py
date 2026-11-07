@@ -117,7 +117,7 @@ class Runner:
                     continue
             self.api.call("POST", f"/runner/wipes/{int(user_id)}/done")
 
-    # --- TEMPORARY test chat (web/app/chat.py): one question, one answer, no tools, no project files
+    # --- the chat window (web/app/chat.py): one question, one answer, no tools, no project files
     def _run_chat(self, command: list[str], prompt: str):
         return subprocess.run(command, input=prompt, capture_output=True, text=True, timeout=CHAT_TIMEOUT)
 

@@ -74,7 +74,7 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, claud
 
 def build_chat_command(*, chat_id: int, user_id: int, model: str, claude_dir: str, image: str = IMAGE,
                        network: str = NETWORK, memory: str = "480m") -> list[str]:
-    """TEMPORARY test chat (see web/app/chat.py): one question to Claude, in a container like a run but
+    """The chat window (see web/app/chat.py): one question to Claude, in a container like a run but
     with no work folder at all (nothing of any project is mounted) and with all tools switched off."""
     chat_id = _number(chat_id, "chat_id")
     uid = run_uid(user_id)

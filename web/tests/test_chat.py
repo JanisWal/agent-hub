@@ -1,4 +1,4 @@
-"""TEMPORARY test chat: the question queue, who may ask, the routes and the project page."""
+"""The chat window: the question queue, who may ask, the routes and the project page."""
 import dataclasses
 import os
 import tempfile
@@ -121,6 +121,22 @@ class ChatQueueTest(Base):
         self.assertFalse(chat.finish(m.id, True, "late"))
         self.assertEqual(chat.list_messages(self.a.id, self.pa.id), [])
 
+    def test_each_user_keeps_a_limited_history(self):
+        self.connect(self.a)
+        self.connect(self.b)
+        first = chat.send(self.b.id, self.pb.id, "of B")
+        chat.claim_next()                                                       # B is answered first (the oldest)
+        chat.finish(first.id, True, "ok")
+        for i in range(chat.MAX_STORED + 5):
+            m = chat.send(self.a.id, self.pa.id, f"q{i}")
+            chat.claim_next()
+            chat.finish(m.id, True, f"a{i}")
+        with db.connect() as conn:
+            mine = conn.execute("SELECT COUNT(*) FROM chat_messages WHERE user_id = ?", (self.a.id,)).fetchone()[0]
+            oldest = conn.execute("SELECT MIN(prompt) FROM chat_messages WHERE user_id = ? AND prompt = 'q0'",
+                                  (self.a.id,)).fetchone()[0]
+            theirs = conn.execute("SELECT COUNT(*) FROM chat_messages WHERE user_id = ?", (self.b.id,)).fetchone()[0]
+        self.assertEqual((mine, oldest, theirs), (chat.MAX_STORED, None, 1))   # the oldest are gone, B is untouched
     def test_deleting_the_project_removes_the_messages(self):
         self.connect(self.a)
         chat.send(self.a.id, self.pa.id, "q")
@@ -175,7 +191,7 @@ class ChatRoutesTest(Base):
 
 class ChatPanelTest(Base):
     def test_panel_is_on_the_project_page_in_both_languages(self):
-        for lang, title in (("de", "Claude testen"), ("en", "Test Claude")):
+        for lang, title in (("de", "Für kurze Einzelfragen"), ("en", "For quick single questions")):
             html = projectpage.render(dataclasses.replace(self.a, language=lang), self.pa, [])
             self.assertIn('id="chat"', html)
             self.assertIn(title, html)
@@ -185,7 +201,7 @@ class ChatPanelTest(Base):
     def test_script_has_no_texts_and_never_uses_innerhtml(self):
         script = (Path(__file__).parent.parent / "app" / "static" / "chat.js").read_text(encoding="utf-8")
         self.assertNotIn("innerHTML", script)
-        for text in ("Claude testen", "Senden", "Fehlgeschlagen", "Du "):
+        for text in ("Einzelfragen", "Senden", "Fehlgeschlagen", "Du "):
             self.assertNotIn(text, script)
 
 

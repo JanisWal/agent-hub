@@ -72,7 +72,7 @@ class CommandTest(unittest.TestCase):
 
 
 class ChatCommandTest(unittest.TestCase):
-    """TEMPORARY test chat: no project files, no tools."""
+    """The chat window: no project files, no tools."""
 
     def test_no_work_folder_and_no_tools(self):
         cmd = L.build_chat_command(chat_id=5, user_id=2, model="haiku", claude_dir="/data/claude/2")

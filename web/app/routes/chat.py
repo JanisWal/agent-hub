@@ -1,4 +1,4 @@
-"""TEMPORARY test chat of a project page (see chat.py): ask Claude, poll for the answer."""
+"""The chat window of a project page (see chat.py): ask Claude, poll for the answer, delete the history."""
 from fastapi import APIRouter, Depends, Form
 
 from .. import chat, users

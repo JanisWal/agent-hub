@@ -58,7 +58,7 @@ def finish(run_id: int, result: str = Form(""), report: str = Form(""), tokens_i
 
 @router.post("/chat/claim")
 def chat_claim():
-    """TEMPORARY (see chat.py): the next question of the test chat, or null."""
+    """The next question of the chat window (see chat.py), or null."""
     job = chat.claim_next()
     return ok(job=None if job is None else dataclasses.asdict(job))
 
