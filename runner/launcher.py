@@ -72,6 +72,27 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, claud
     ]
 
 
+def build_login_command(*, user_id: int, claude_dir: str, image: str = IMAGE, network: str = NETWORK,
+                        memory: str = "480m") -> list[str]:
+    """The `docker run` command of one sign-in (`claude auth login`), same restrictions as a run but
+    with a terminal (the login asks for the code there) and only the Claude folder of this user."""
+    uid = run_uid(user_id)
+    if not re.fullmatch(r"[0-9]+[mg]", memory) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", image + network):
+        raise ValueError("bad image, network or memory")
+    claude = _folder(claude_dir, "claude_dir")
+    return [
+        "docker", "run", "--rm", "--init", "-t", "-i", "--name", f"agent-login-{int(user_id)}",
+        "--user", f"{uid}:{uid}",
+        "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+        "--read-only", "--tmpfs", "/tmp:rw,size=64m,mode=1777",
+        "--memory", memory, "--memory-swap", memory, "--pids-limit", "256",
+        "--network", network,
+        "--mount", f"type=bind,src={claude},dst=/claude",
+        "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude", "-e", "BROWSER=none",
+        image, "claude", "auth", "login", "--claudeai",
+    ]
+
+
 def prepare_folder(path: str, user_id: int, recursive: bool = False) -> None:
     """Create a folder (if needed) and hand it to the run user: mode 0700, nobody else may enter.
     Needs root (the runner container is root, the runs are not)."""
