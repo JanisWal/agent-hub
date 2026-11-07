@@ -654,8 +654,11 @@ a.station:hover { color: var(--text); background: color-mix(in srgb, var(--field
 .drag-clone.lifted { box-shadow: 0 34px 70px rgba(0, 0, 0, 0.34), 0 10px 22px rgba(0, 0, 0, 0.22), 0 0 0 1px var(--glass-border); }
 .drag-clone.glass { background: color-mix(in srgb, var(--bg) 62%, var(--glass)); } /* denser, so the tile below does not shine through */
 /* The slot shows where the carried item will land. */
-.drag-slot { background: color-mix(in srgb, var(--accent) 9%, transparent); border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, transparent); box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
-.drag-slot::before, .drag-slot > * { visibility: hidden; }
+.drag-slot { opacity: 0; } /* the real item: invisible, its place stays reserved */
+/* The red gap: its own element, fixed where the item was taken from, nothing moves it. */
+.drag-gap { position: absolute; z-index: -1; box-sizing: border-box; pointer-events: none; background: color-mix(in srgb, var(--accent) 9%, transparent); border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, transparent); transition: opacity 0.25s, translate 0.3s cubic-bezier(0.3, 1.4, 0.5, 1); }
+.drag-gap.drop-target { translate: 0 -3px; }
+.drag-gap.leaving { opacity: 0; }
 html.dragging-active, html.dragging-active * { -webkit-user-select: none !important; user-select: none !important; cursor: grabbing !important; }
 @media (max-width: 560px) { :root { --bleed: 16px; } } /* main has 16 px side padding on phones */
 
@@ -701,7 +704,7 @@ body.fit .tile-name { font-size: clamp(1.05rem, 2.7vh, 1.5rem); }
 body.fit .plus-sign { width: clamp(36px, 6.5vh, 56px); height: clamp(36px, 6.5vh, 56px); }
 @media (min-width: 561px) {
   /* A page holds six: while a tile is carried onto a full page the last one is pushed off it. */
-  body.fit .grid > :nth-child(n+7) { display: none; }
+  body.fit .grid > :nth-child(n+7):not(.drag-gap) { display: none; }
 }
 
 /* Phone held upright: one column of tiles, all pages one after the other, scroll down. */

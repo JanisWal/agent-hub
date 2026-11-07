@@ -122,6 +122,7 @@
       return column && column.querySelector(".open-list");
     },
     axis: "y",
+    gapHost: function (card) { return card.closest(".open-list"); },
     ignore: ".card-btn",
     onPick: function () { snapshot = layout(); },
     onDrop: function (info) {
