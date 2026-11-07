@@ -120,8 +120,10 @@ class Runner:
 
 
 def main() -> None:
-    runner = Runner(Api(os.environ["HUB_URL"], os.environ["RUNNER_TOKEN"]),
-                    os.environ.get("HUB_CLAUDE_DIR", "/data/claude"))
+    base = os.environ.get("HUB_CLAUDE_DIR", "/data/claude")
+    Path(base).mkdir(parents=True, exist_ok=True)
+    os.chmod(base, 0o700)   # nobody but root may even list whose folders exist
+    runner = Runner(Api(os.environ["HUB_URL"], os.environ["RUNNER_TOKEN"]), base)
     while True:
         try:
             runner.step()
