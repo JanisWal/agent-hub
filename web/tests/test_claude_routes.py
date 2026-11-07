@@ -109,7 +109,7 @@ class DrawerTest(unittest.TestCase):
         for lang, label, yes in (("de", "Chatverlauf löschen", "Endgültig löschen"),
                                  ("en", "Delete chat history", "Delete for good")):
             _, html = self.row(lang)
-            self.assertIn('id="chat-clear-open"', html)
+            self.assertIn('class="clear-btn" type="button" id="chat-clear-open"', html)   # a button, no longer a link
             self.assertIn(label, html)
             self.assertIn('id="chat-clear-dialog"', html)
             self.assertIn('class="dialog danger"', html)
