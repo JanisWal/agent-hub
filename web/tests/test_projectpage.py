@@ -142,6 +142,32 @@ class ProjectPageTest(unittest.TestCase):
         css = css_of("app.css")
         self.assertIn("clamp(1.8rem, 3.2vw, 2.8rem)", css)
         self.assertIn(".project-page .topbar { padding-top: 26px; padding-bottom: 26px; }", css)
+    def test_back_link_is_a_round_icon_button(self):
+        page = self.html()
+        link = page[page.index('class="topbar-back"'):]
+        link = link[:link.index("</a>")]
+        self.assertIn('aria-label="Alle Projekte"', link)
+        self.assertIn("<svg", link)
+        self.assertNotIn("<span", link)                                         # an icon, no text beside the brand
+
+    def test_columns_and_chat_end_on_the_same_line_above_the_theme_button(self):
+        project, app = css_of("project.css"), css_of("app.css")
+        self.assertIn("main { padding-bottom: 96px; }", app)                    # columns stretch down to here
+        chat = project[project.index(".chat {"):project.index(".chat-head")]
+        self.assertIn("bottom: 96px", chat)                                     # the chat ends on the same line
+        self.assertIn(".project-page main { display: flex; align-items: stretch;", project)
+        self.assertIn(".board { flex: 1;", project)
+        self.assertNotIn("64vh", project)                                       # no fixed height any more
+        self.assertIn(".theme-fab { position: fixed; right: 24px; bottom: 24px; width: 52px; height: 52px;", app)
+
+    def test_tooltips_are_our_own(self):
+        core, app = css_of("core.js"), css_of("app.css")
+        for part in ('className = "tip"', "removeAttribute(\"title\")", "aria-label", "mouseover", "showTip", "focusin"):
+            self.assertIn(part, core)
+        self.assertIn(".tip {", app)
+        self.assertIn("backdrop-filter", app[app.index(".tip {"):app.index(".tip.show")])
+        # a title is adopted, never lost: icon buttons keep it as their name for screen readers
+        self.assertIn("textContent.trim()", core)
 
 if __name__ == "__main__":
     unittest.main()

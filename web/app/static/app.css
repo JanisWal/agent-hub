@@ -142,9 +142,11 @@ body {
   white-space: nowrap;
 }
 /* "All projects", right of the brand: quiet, it only takes you back. */
-.topbar-back { display: inline-flex; align-items: center; gap: 6px; margin-left: 22px; min-height: 36px; color: var(--muted); font-size: 0.92rem; font-weight: 600; text-decoration: none; transition: color 0.2s, translate 0.25s cubic-bezier(0.3, 1.5, 0.5, 1); }
-.topbar-back:hover { color: var(--text); translate: -2px 0; }
-.topbar-back svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+/* The way back is a round arrow button, the same kind as trash and archive on the other side of the bar. */
+.topbar-back { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; margin-left: 16px; color: var(--muted); text-decoration: none; border: 1px solid var(--glass-border); border-radius: 50%; background: color-mix(in srgb, var(--glass) 70%, transparent); transition: color 0.2s, translate 0.25s cubic-bezier(0.3, 1.5, 0.5, 1), border-color 0.2s; }
+.topbar-back::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; } /* 46 px hit area */
+.topbar-back:hover { color: var(--text); border-color: var(--accent); translate: -2px 0; }
+.topbar-back svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 /* The project page gets a taller bar so the big name has air above and below. */
 .project-page .topbar { padding-top: 26px; padding-bottom: 26px; }
 .topbar > .topbar-back { margin-right: auto; }
@@ -153,7 +155,6 @@ body {
 }
 @media (max-width: 560px) {
   .topbar-back { margin-left: 10px; }
-  .topbar-back span { display: none; }
 }
 main {
   flex: 1;
@@ -590,6 +591,29 @@ html .drag-clone.lifted { box-shadow: 0 34px 70px rgba(0, 0, 0, 0.34), 0 10px 22
 .drag-gap.leaving { opacity: 0; }
 html.dragging-active, html.dragging-active * { -webkit-user-select: none !important; user-select: none !important; cursor: grabbing !important; }
 main { overflow: clip; } /* shadows may reach to the window edge, but their empty margins never make the page scroll */
+
+/* ===== Tooltips (core.js): our own small glass label instead of the browser's grey box ===== */
+.tip {
+  position: fixed;
+  z-index: 100;
+  max-width: 260px;
+  padding: 7px 13px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text);
+  background: color-mix(in srgb, var(--bg) 86%, var(--glass));
+  -webkit-backdrop-filter: blur(18px) saturate(1.5);
+  backdrop-filter: blur(18px) saturate(1.5);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 22px rgba(60, 30, 10, 0.22), inset 0 1px 0 var(--highlight);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(var(--tip-from, 4px)) scale(0.97);
+  transition: opacity 0.18s, transform 0.3s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+.tip.show { opacity: 1; transform: none; }
 
 /* ===== Scrollbars (Janis, 07.11.2026): slim, round, in the warm palette instead of the browser's grey ===== */
 /* Chromium (Opera GX, Chrome, Edge, Safari) takes the ::-webkit-scrollbar parts; browsers without them

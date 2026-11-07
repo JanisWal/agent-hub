@@ -204,4 +204,65 @@
     var close = event.target.closest("[data-close]");
     if (close) close.closest("dialog").close();
   });
+
+  // Tooltips: the browser would show every title="..." in its own plain grey box. We take the text over
+  // (icon-only buttons keep it as their aria-label), and show a small glass label of our own next to the
+  // element after a short moment (at once when it is reached by keyboard).
+  var tip = document.createElement("div");
+  tip.className = "tip";
+  tip.setAttribute("role", "tooltip");
+  document.body.appendChild(tip);
+  var tipTimer = null;
+  var tipFor = null;
+
+  function adopt(el) {
+    var text = el.getAttribute("title");
+    if (text === null) return;
+    el.removeAttribute("title");
+    if (!text.trim()) return;
+    el.dataset.tip = text;
+    if (!el.hasAttribute("aria-label") && !el.textContent.trim()) el.setAttribute("aria-label", text);
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("[title]"), adopt);
+
+  function hideTip() {
+    clearTimeout(tipTimer);
+    tipTimer = null;
+    tipFor = null;
+    tip.classList.remove("show");
+  }
+
+  function showTip(el) {
+    tip.textContent = el.dataset.tip;
+    tip.style.left = "0px";
+    tip.style.top = "0px";
+    var r = el.getBoundingClientRect();
+    var w = tip.offsetWidth;
+    var h = tip.offsetHeight;
+    var x = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), window.innerWidth - w - 8);
+    var below = r.bottom + 10 + h <= window.innerHeight - 8;
+    tip.style.setProperty("--tip-from", below ? "4px" : "-4px");
+    tip.style.left = Math.round(x) + "px";
+    tip.style.top = Math.round(below ? r.bottom + 10 : r.top - h - 10) + "px";
+    tip.classList.add("show");
+  }
+
+  document.addEventListener("mouseover", function (event) {
+    var el = event.target.closest ? event.target.closest("[title],[data-tip]") : null;
+    if (el) adopt(el);
+    if (!el || !el.dataset.tip) { hideTip(); return; }
+    if (el === tipFor) return;
+    hideTip();
+    tipFor = el;
+    tipTimer = setTimeout(function () { showTip(el); }, 350);
+  });
+  document.documentElement.addEventListener("mouseleave", hideTip);
+  document.addEventListener("pointerdown", hideTip, true);
+  document.addEventListener("scroll", hideTip, true);
+  document.addEventListener("keydown", hideTip, true);
+  document.addEventListener("focusin", function (event) {
+    var el = event.target.closest ? event.target.closest("[data-tip]") : null;
+    if (el && el.matches(":focus-visible")) { hideTip(); tipFor = el; showTip(el); }
+  });
+  document.addEventListener("focusout", hideTip);
 })();
