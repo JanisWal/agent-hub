@@ -43,9 +43,10 @@ def _error(text: str) -> str:
     return f'<p class="error" role="alert">{esc(text)}</p>' if text else ""
 
 
-def forgot_page(error_key: str = "") -> str:
-    """Ask for the e-mail address (German, the user is not known yet, like the login page)."""
-    error = _error(i18n.t("de", error_key)) if error_key else ""
+def forgot_page(error_key: str = "", **values) -> str:
+    """Ask for the e-mail address (German, the user is not known yet, like the login page).
+    `values` fill the placeholders of the error text (e.g. minutes)."""
+    error = _error(i18n.t("de", error_key, **values)) if error_key else ""
     return page(i18n.t("de", "forgot_title"), fill(FORGOT, "de", ERROR=error), "de")
 
 

@@ -100,10 +100,16 @@ def create_item(user_id: int, project_id: int, kind: str, title: str) -> Item:
     return _to_item(row)
 
 
-def create_suggestion(project_id: int, kind: str, title: str) -> Item:
-    """Add a suggestion from Claude (used by the agents later). Waits for accept or reject."""
+def create_suggestion(user_id: int, project_id: int, kind: str, title: str) -> Item:
+    """Add a suggestion from Claude (used by the agents later). Waits for accept or reject.
+
+    `user_id` is the user the agent works for; like everywhere, the project must be his
+    (ValueError otherwise), so an agent can never write into somebody else's board.
+    """
     kind, title = _clean(kind, title)
     with db.connect() as conn:
+        if not _owns_project(conn, user_id, project_id):
+            raise ValueError("Unbekanntes Projekt")
         cur = conn.execute(
             "INSERT INTO board_items (project_id, kind, title, source, status, position, created_at)"
             " VALUES (?, ?, ?, 'claude', 'proposed', 0, ?)",

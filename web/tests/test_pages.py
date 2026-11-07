@@ -20,7 +20,7 @@ class PagesTest(unittest.TestCase):
         user = users.check_login("me@example.com", "correct horse")
         project = projects.create_project(user.id, '<script>alert("x")</script> %BODY%')
         board.create_item(user.id, project.id, "bug", "<img src=x onerror=1>")
-        board.create_suggestion(project.id, "minor", "Idea")
+        board.create_suggestion(user.id, project.id, "minor", "Idea")
         dropped = board.create_item(user.id, project.id, "major", "Dropped")
         board.discard(user.id, dropped.id)
         items = board.list_items(user.id, project.id)

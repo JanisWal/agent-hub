@@ -1,8 +1,8 @@
 """Forgotten password: ask for a link by e-mail, then choose a new password with it."""
-from fastapi import APIRouter, BackgroundTasks, Form
+from fastapi import APIRouter, BackgroundTasks, Form, Request
 from fastapi.responses import HTMLResponse
 
-from .. import mailtext, resetpages, resets, users
+from .. import mailtext, resetpages, resets, throttle, users
 from ..deps import redirect
 
 router = APIRouter()
@@ -14,10 +14,17 @@ def forgot_form() -> str:
 
 
 @router.post("/forgot", response_class=HTMLResponse)
-def forgot(background: BackgroundTasks, email: str = Form("")):
+def forgot(request: Request, background: BackgroundTasks, email: str = Form("")):
     """Always the same answer. The mail goes out after the answer, so the time it takes does not
-    show whether the address has an account either."""
-    if "@" not in email:
+    show whether the address has an account either. Every request counts for the IP (same limit as
+    wrong passwords, own counter), so nobody can use the form to flood a mailbox or use up the
+    mail quota of the service."""
+    key = "forgot:" + throttle.client_ip(request)
+    wait = throttle.seconds_locked(key)
+    if wait:
+        return HTMLResponse(resetpages.forgot_page("login_locked", minutes=throttle.minutes(wait)), status_code=429)
+    throttle.record_failure(key)
+    if "@" not in email or len(email) > users.MAX_EMAIL_LENGTH:
         return HTMLResponse(resetpages.forgot_page("msg_email"), status_code=400)
     created = resets.create_token(email)
     if created:
