@@ -79,12 +79,19 @@ Regeln:
 
 ## 6. Bewegung
 
-- Kurz, federnd, ruhig. Details im Skill `apple-design`.
+- Kurz, federnd, ruhig. Grundlage ist der Skill `apple-design` (Apple, „Designing Fluid Interfaces“).
+- **Alles, was man anfassen kann, bewegt sich mit Federn** (`web/app/static/motion.js`, ohne Bibliothek), nicht mit festen Dauern. Eine Feder hat zwei Werte, Dämpfung und Reaktionszeit, und hat keine feste Dauer:
+  - **Verschieben und Seitenwechsel** (`MOVE`): Dämpfung 1,0, Reaktionszeit 0,4 s, kein Überschwingen. Gemessen: Seitenwechsel per Punkt kommt nach etwa 0,7 s an, ohne Überschwingen.
+  - **Anheben** (`LIFT`): Dämpfung 1,0, Reaktionszeit 0,25 s.
+  - **Nach einem Wisch** (`SNAP`): Dämpfung 0,85, Reaktionszeit 0,35 s, etwas Nachschwingen (gemessen 3 px), **nur weil die Geste Schwung hatte**.
+- **Jede Bewegung startet vom Wert, der gerade zu sehen ist** und lässt sich jederzeit unterbrechen oder umkehren (greift man die Bahn mitten in der Bewegung, folgt sie dem Finger). Die Geschwindigkeit der Geste wird an die Feder übergeben, damit zwischen Ziehen und Gleiten kein Ruck entsteht. X und Y laufen als getrennte Federn.
+- Es werden nur `transform` und `opacity` animiert. Das Schweben beim Darüberfahren nutzt die CSS-Eigenschaft `translate`, damit es sich nicht mit den Federn (`transform`) beißt. Der Einblend-Zustand der Karten ist `backwards`, damit er nach dem Ende nicht mehr über die Feder bestimmt.
 - Karte beim Laden (`rise`): 0,7 s, `cubic-bezier(0.3, 1.25, 0.5, 1)` (leichtes Überschwingen), von 14 px tiefer, Skalierung 0,97 und unsichtbar zu normal.
 - Fehlermeldung unter dem Feld (`fade`): 0,2 s, von 3 px höher und unsichtbar zu normal.
 - Felder: Rand und Ring blenden in 0,2 s um. Textlink: Farbe und Unterstreichung 0,2 s.
 - Hintergrund-Farbflächen driften sehr langsam (siehe Abschnitt 3), nur als ruhiges Hintergrundleben.
-- `prefers-reduced-motion: reduce` wird beachtet, **Ist:** dann entfallen **alle** Übergänge und Animationen, auch das Einblenden (nichts bewegt sich, alles steht sofort).
+- `prefers-reduced-motion: reduce` wird beachtet, **Ist:** dann entfallen **alle** Übergänge und Animationen, auch das Einblenden, und die Federn springen sofort auf ihr Ziel (nichts bewegt sich, alles steht sofort).
+- **Seiten und Ziehen** haben eigene Regeln, siehe Abschnitt 10 („Seitenband“, „Ziehen“).
 
 ## 7. Typografie
 
@@ -101,7 +108,7 @@ Regeln:
 - Inhalt: `main` füllt den Rest der Höhe, Inhalt zentriert, Außenabstand 24 px, unten 96 px Platz für den Umschalter. Meta-Tag `viewport` ist gesetzt.
 - Breite Seiten (Dashboard): Inhaltsbereich `.dash` mit höchstens 1100 px Breite, Abstand zwischen Blöcken 32 px. Auf kleinen Bildschirmen weniger Spalten (siehe Abschnitt 10).
 - **Handy-Ansicht (≤ 560 px, geprüft bei 390 px Breite in Chrome, 07.11.2026):** Außenabstand 16 px, Kopfleiste 12 × 16 px. Das Dashboard zeigt **2 Spalten × 3 Reihen** kompakter Kacheln (Reihenhöhe mindestens 132 px, Abstand 14 px, Innenabstand 16 px, Rundung 22 px, Name 1,1 rem, höchstens 3 Zeilen). Eine Seite passt damit ohne Scrollen auf den Bildschirm. Plus-Zeichen 44 px, Einstiegstext 0,85 rem. Das Zahnrad (Schublade) bekommt auf dem Handy eine Glasfläche mit Rand, weil es beim Scrollen über dem Inhalt schwebt; 8 px Abstand zum Rand. Die Beschriftung der Token-Anzeige darf umbrechen. Bis 1000 px bilden die Stationen eine wischbare Zeile (kein Umbruch, ohne Scrollbalken). Die Schublade ist so breit wie das Fenster abzüglich 96 px, höchstens 320 px.
-- **Nicht geprüft am echten Gerät:** Berührung. Geprüft wurde in Chrome mit einem 390 px breiten Rahmen (Layout), nicht mit einem Handy.
+- **Nicht geprüft am echten Gerät:** Berührung. Geprüft wurde in Chrome mit einem 390 px breiten Rahmen (Layout) und mit **selbst gesendeten Zeigerereignissen** (Berührung, Wisch, langes Drücken), nicht an einem Handy.
 
 ## 9. Formulare
 
@@ -142,8 +149,13 @@ Stand 07.11.2026, von Janis beauftragt, mit Testkonten im Browser geprüft (Dunk
 - **Plus-Kachel:** Auf der ersten Seite mit freiem Platz zeigt der nächste freie Platz ein großes Plus (56 px, Akzentfarbe, 70 % Deckkraft, gestrichelter Rand, helle Fläche). Beim Darüberfahren wird sie kräftiger und das Plus dreht sich um 90°. Klick öffnet „Neues Projekt“ (Name, Anlegen, Abbrechen).
 - **Einstiegstext:** Auf der Plus-Kachel oben links steht „Beginne mit deinem ersten Projekt“, solange der Nutzer noch nie ein Projekt hatte (`users.had_project`). Er kommt nach dem Löschen des letzten Projekts **nicht** zurück.
 - **Leere Plätze** sind nur zarte gestrichelte Umrisse (55 % Deckkraft), damit das Raster bestehen bleibt. Sie sind nicht klickbar.
-- **Drag and Drop wie auf der Handy-Startseite** (Janis, 07.11.2026): Nur belegte Kacheln lassen sich ziehen, Plus und leere Plätze bleiben stehen (leere Plätze sind immer das Ende einer Seite, man muss sie nicht ordnen). Die gezogene Kachel wird halbtransparent (45 %) und etwas kleiner; Plus und leere Plätze werden währenddessen ausgeblendet. Mit der Maus geprüft.
-  - **Seitenwechsel:** Hält man die Kachel etwa 0,65 s am linken oder rechten Rand (Zone: 8 % der Fensterbreite, höchstens 96 px), blättert die Ansicht um. Am Rand erscheint dabei ein Farbverlauf mit Pfeil (Deckkraft 50 %, am Rand, der gerade zählt, 100 %). Hält man weiter, blättert sie weiter.
+- **Drag and Drop wie auf der Handy-Startseite** (Janis, 07.11.2026): Nur belegte Kacheln lassen sich ziehen, Plus und leere Plätze bleiben stehen (leere Plätze sind immer das Ende einer Seite, man muss sie nicht ordnen). Plus und leere Plätze werden währenddessen ausgeblendet (Deckkraft 0, bleiben aber als Ablageziel).
+  - **Ziehen (Maus, Stift, Finger):** Eigenes Ziehen mit Zeigerereignissen, nicht die Browser-Funktion, damit es auch per Finger geht. Eine Maus beginnt nach 5 px Bewegung, ein Finger nach **380 ms Drücken** (Bewegt er sich vorher mehr als 10 px, ist es ein Wisch oder Scrollen, kein Tragen; dazu kurzes Vibrieren auf Geräten, die es können). Die Kachel wird als **Klon über allem** getragen: Sie wächst auf 1,05 (Feder `LIFT`) mit tieferem Schatten (`0 34px 70px`) und dichterer Glasfläche, hängt **1:1 am Zeiger und behält den Abstand zum Griffpunkt**. Ihr Platz bleibt reserviert (unsichtbar).
+  - **Die anderen machen Platz:** Beim Überfahren einer anderen Kachel tauscht der Platz die Stelle, und alle betroffenen Kacheln gleiten mit Federn (`MOVE`) an ihren neuen Ort (FLIP). Ändert sich das Ziel mitten im Gleiten, geht es von der aktuellen Position und Geschwindigkeit weiter.
+  - **Loslassen:** Der Klon fliegt mit der **Geschwindigkeit der Geste** in seinen Platz und wird kleiner (Federn), danach wird er durch die echte Kachel ersetzt. Ein Klick nach dem Ziehen löst den Link nicht aus.
+  - **Seitenband:** Alle Seiten liegen nebeneinander auf einer Bahn (48 px Abstand), die per Feder gleitet (`MOVE`), statt dass Seiten ein- und ausgeblendet werden. Der Seitenwechsel per Punkt, Pfeil, Pfeiltaste (links/rechts) oder Wisch ist also immer **dieselbe Bewegung in dieselbe Richtung** (räumliche Konsistenz). Seiten, die nicht zu sehen sind, sind nicht anwählbar (`inert`).
+  - **Wischen mit dem Finger:** Die Bahn folgt dem Finger 1:1, an den Enden mit Gummiband (Formel aus dem Skill; 400 px Zug ergeben 185 px Weg). Beim Loslassen zählt die **Geschwindigkeit**: Der Ruhepunkt wird hochgerechnet (`v/1000 · 0,998/(1−0,998)`), höchstens eine Seite pro Wisch, dann gleitet die Bahn mit der Loslass-Geschwindigkeit und etwas Nachschwingen (`SNAP`) dorthin. Greift man die Bahn mitten in der Bewegung, hält sie an und folgt dem Finger.
+  - **Seitenwechsel beim Ziehen:** Hält man die Kachel etwa 0,65 s am linken oder rechten Rand (Zone: 8 % der Fensterbreite, höchstens 96 px), blättert die Ansicht um. Am Rand erscheint dabei ein Farbverlauf mit Pfeil (Deckkraft 50 %, am Rand, der gerade zählt, 100 %). Hält man weiter, blättert sie weiter.
   - **Neue Seite:** Rechts hinter der letzten Seite öffnet sich eine neue leere Seite, **wenn die letzte Seite mindestens ein anderes Projekt enthält**. Wird dort nichts abgelegt, verschwindet sie wieder.
   - **Ablegen:** Auf einer Kachel setzt man vor diese, auf einem freien Platz hinter das letzte Projekt der Seite. Ist die Zielseite voll (6), schiebt sie ihr letztes Projekt an den Anfang der nächsten Seite (das kann sich über mehrere Seiten fortsetzen). Seiten ohne Projekte gibt es nicht.
   - **Speichern:** Jedes Projekt merkt sich Seite und Position (`projects.page`, `projects.position`), Seiten dürfen also nur teilweise gefüllt sein (z. B. 3 Projekte auf Seite 1, das vierte allein auf Seite 2). Wechselt die Kachel die Seite oder schiebt eine volle Seite ein Projekt weiter, lädt die Seite danach einmal neu (ohne Einblend-Animation), damit die Aufteilung vom Server kommt.
@@ -178,7 +190,7 @@ Stand 07.11.2026, von Janis beauftragt, in Chrome mit Testkonto geprüft (Anlege
 - **Wiederherstellen:** Von Hand angelegte Punkte kommen als zugestimmt zurück (oben), Claude-Vorschläge warten wieder auf Entscheidung.
 - **Bestätigung bei endgültigem Löschen** (X und „Papierkorb leeren“): kleiner roter Dialog mit „Abbrechen“ (Standardfokus) und „Ja“, **ohne Passwort** (das bleibt Projekten vorbehalten).
 - **Anlegen und Umbenennen:** Plus-Knopf öffnet den Dialog „Neuer Punkt“ (Titel, höchstens 200 Zeichen). Doppelklick auf einen Punkt öffnet „Punkt bearbeiten“ mit vorausgefülltem Titel. Leere Titel zeigen „Bitte ausfüllen.“
-- **Drag and Drop:** Zugestimmte Punkte lassen sich innerhalb einer Spalte ordnen und **in eine andere Spalte ziehen** (der Punkt wechselt dann die Art). Die gezogene Karte wird halbtransparent (45 %). Leere Spalten nehmen Karten ebenfalls an. Die Reihenfolge wird sofort gespeichert.
+- **Drag and Drop:** Zugestimmte Punkte lassen sich innerhalb einer Spalte ordnen und **in eine andere Spalte ziehen** (der Punkt wechselt dann die Art). Es gilt dasselbe Ziehen wie bei den Kacheln (Abschnitt 10): Maus, Stift oder Finger (langes Drücken), die Karte wird als Klon angehoben (Schatten, Größe 1,05), hängt 1:1 am Zeiger, die anderen Karten gleiten per Feder beiseite, und beim Loslassen landet sie mit der Geschwindigkeit der Geste. Leere Spalten nehmen Karten ebenfalls an. Die Reihenfolge wird sofort gespeichert.
 - Nach Aktionen lädt die Seite neu, **ohne** die Einblend-Animation zu wiederholen (Merker `noanim` in `sessionStorage`).
 - Texte und Berechtigungen: alle Texte in Deutsch und Englisch (`i18n.py`), jeder Zugriff prüft, dass das Projekt dem Nutzer gehört.
 
@@ -197,7 +209,8 @@ Stand 07.11.2026, von Janis beauftragt, in Chrome mit Testkonto geprüft (Anlege
 
 ## 12. Noch offen (Janis entscheidet bei Bedarf)
 
-- **Berührung:** Drag and Drop (Kacheln und Board-Punkte) nutzt die Browser-Funktion für die Maus. Auf Touchgeräten ist es **nicht geprüft** und vermutlich unzuverlässig (iPhone). Ein eigenes Ziehen per Finger (lange drücken, ziehen, am Rand blättern) ist noch nicht gebaut; per Tastatur lässt sich auch noch nicht umordnen.
+- **Berührung:** Ziehen und Wischen per Finger sind gebaut und mit selbst gesendeten Zeigerereignissen geprüft (Wisch mit Schwung, Gummiband, langes Drücken, Tragen über Spalten und Seiten). **Am echten Handy nicht geprüft**, besonders das Verhalten von iPhone-Safari (Scroll-Sperre beim Tragen, Kontextmenü beim langen Drücken). Umordnen per Tastatur gibt es noch nicht (nur Pfeiltasten für Seiten).
+- Die Federn wurden in einem Fenster geprüft, in dem Chrome `requestAnimationFrame` pausiert (Test-Fenster ist minimiert); dort wurde der Takt durch einen 16-ms-Zeitgeber ersetzt. Die Werte (Ziel, kein Überschwingen, Dauer) stimmen, die **gefühlte Flüssigkeit** muss Janis in einem sichtbaren Fenster beurteilen.
 - Handy-Layout am echten Gerät prüfen (Abschnitt 8, bisher nur am 390-px-Rahmen), dazu Aussparungen wie die iPhone-Notch (`safe-area-inset`).
 - Seitenwechsel beim Ziehen ist gebaut (Abschnitt 10). Ungeprüft: Touch auf dem Handy, ein Ziehen mit der Tastatur und das Verhalten bei sehr vielen Seiten (Punkte am Rand, wenn es über 15 sind).
 - Begrenzung falscher Passworteingaben (Anmeldung und Löschen), steht auch in der Checkliste vor dem Livegang.
