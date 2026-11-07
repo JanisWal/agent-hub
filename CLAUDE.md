@@ -23,6 +23,7 @@ Ziel, Entscheidungen und Reihenfolge der Umsetzung: PROJEKT.md (dort zuerst nach
 
 ## Coding-Regeln
 - Code, Klassen, Variablen, Dateinamen und Kommentare auf Englisch. Oberfläche und Doku auf Deutsch.
+- Bewegung in der Oberfläche folgt dem Skill `apple-design`: Federn aus `web/app/static/motion.js` statt fester Dauern, immer unterbrechbar, nur `transform` und `opacity`, `prefers-reduced-motion` beachten. Neue Zieh-Listen nutzen `Motion.sortable`. Details in DESIGN.md Abschnitt 6.
 - Die Oberfläche ist zweisprachig (Deutsch und Englisch, pro Nutzer wählbar). Jeder neue Text kommt in `web/app/i18n.py` in beide Sprachen, nie fest im HTML oder JavaScript. Neue Seiten bauen auf `layout.page()` auf.
 - Für Oberfläche und Swift/iOS-Teile gelten die Apple Human Interface Guidelines (Bedienung, Layout, Typografie, Farben, Barrierefreiheit) und die Apple-Richtlinien für Swift und die App Review. Bei Zielkonflikten mit dem Projektsheet fragt Claude nach. Das konkrete Design (Farben, Glas, Knöpfe, Hell/Dunkel) steht in DESIGN.md und ist für jede Oberfläche verbindlich.
 - Nur ein Thema pro Commit, kurze Commit-Nachrichten.
