@@ -12,7 +12,7 @@ Drei Bausteine, jeder ein Modul, alle ohne Abhängigkeit von außen:
 | Kette der Agenten | wer nach wem arbeitet, Rückläufe, Limits (reine Zustandsmaschine) | `workflow.py` |
 | Aufgaben und Läufe | Warteschlange in SQLite, Einstellungen pro Nutzer, Auftragsvergabe an den Runner | `agents.py` |
 
-**Gebaut und getestet (Branch `agent-core`):** die drei Module, die Tabellen, die HTTP-Schnittstelle des Runners (`routes/runner.py`, mit Token), der Launcher für den Container je Lauf (`runner/launcher.py`) und das Image dafür (`runner/Dockerfile`, `agent-hub-agent`), dazu 173 Hub-Tests und 11 Launcher-Tests, darunter ein Fall in `test_isolation.py`. **Noch nicht gebaut:** die Schleife des Runners (Aufträge holen, Prompt bauen, Lauf starten, Ergebnis melden), Git-Arbeitsordner und Merge, die Oberfläche. Der Branch ist nicht in `main` gemergt und nicht ausgerollt.
+**Gebaut und getestet (Branch `agent-core`):** die drei Module, die Tabellen, die HTTP-Schnittstelle des Runners (`routes/runner.py`, mit Token), der Launcher für den Container je Lauf (`runner/launcher.py`) und das Image dafür (`runner/Dockerfile`, `agent-hub-agent`), dazu 173 Hub-Tests und 11 Launcher-Tests, darunter ein Fall in `test_isolation.py`. **Noch nicht gebaut:** die Schleife des Runners (Aufträge holen, Prompt bauen, Lauf starten, Ergebnis melden), Git-Arbeitsordner und Merge, die Oberfläche. Anmeldung und Trennen laufen seit dem 07.11.2026 live (Abschnitt 7a); der Rest (Kette, Läufe) ist gemergt, aber noch ohne Runner-Schleife und ohne Oberfläche, also nicht wirksam.
 
 ## 2. Claude-Instanzen (eine pro Nutzer)
 
@@ -123,9 +123,9 @@ Aufbau:
 5. **Merge bei Freigabe:** Der Hub (nicht der Agent) übernimmt den Branch in `main` des Projekt-Repos, bevor der Dokumentator läuft. Eigenes Modul „Worktrees und Merge“.
 6. **Strenge** als Tabelle in Abschnitt 3 ist mein Vorschlag; die drei Stufen aus PROJEKT.md waren bisher nicht ausgeführt.
 
-## 7a. Ausrollen der Verknüpfung (wartet auf Janis’ Ja)
+## 7a. Ausrollen der Verknüpfung (erledigt am 07.11.2026 mit Janis’ Ja)
 
-Fertig vorbereitet (Compose-Dienst `runner`, Image `agent-hub-hub-runner`, Netz `agent-hub-agents`), aber **nicht gestartet**. Beim Ausrollen entsteht Neues, das Sicherheit und Netzwerk betrifft:
+Ausgerollt: Compose-Dienst `runner` (Image `agent-hub-hub-runner`), Netz `agent-hub-agents`, Ordner `/opt/agent-hub/claude`, Token in der `.env`, `agent-core` in `main`. Beim Ausrollen entstand Neues, das Sicherheit und Netzwerk betrifft (so war der Plan; Stand danach in PROJEKT.md, Abschnitt 12):
 1. Ordner `/opt/agent-hub/claude` (Besitzer root, Modus 0700), **außerhalb** von `data/`, damit der Web-Container ihn nicht sieht.
 2. Ein Runner-Token: zufällig erzeugt, in `.env` als `RUNNER_TOKEN` und sein SHA-256 als `HUB_RUNNER_TOKEN_HASH` (nie ausgegeben, nie im Git).
 3. Docker-Netz `agent-hub-agents` (legt Compose an) und der Dienst `runner` mit dem Docker-Socket (nur dieser Dienst).
