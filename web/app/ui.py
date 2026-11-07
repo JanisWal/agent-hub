@@ -32,6 +32,7 @@ def login_page(failed: bool = False, locked_minutes: int = 0) -> str:
 # Closed: only the gear and the arrow show at the top right. Open: the box slides out of
 # the corner and the handle rides along on its left edge (see app.css).
 SETTINGS = """<div class="drawer" id="settings" data-theme-saved="%THEME%">
+  %DRAWER_EXTRAS%
   <button class="drawer-handle" id="settings-toggle" type="button"
           aria-expanded="false" aria-controls="settings-panel" aria-label="%t.settings_toggle%">%GEAR%%ARROW%</button>
   <div class="drawer-box glass" id="settings-panel">
@@ -147,12 +148,14 @@ def _account_links(user: User) -> str:
     return "\n    ".join(f'<a class="link" href="{href}">{esc(i18n.t(lang, key))}</a>' for href, key in links)
 
 
-def settings_bar(user: User) -> str:
-    """Settings drawer for the top right corner of every logged-in page."""
+def settings_bar(user: User, extras: str = "") -> str:
+    """Settings drawer for the top right corner of every logged-in page. `extras` (HTML) are small
+    buttons to the left of the gear that ride along when the drawer slides out (project page)."""
     lang = user.language
     return fill(
         SETTINGS,
         lang,
+        DRAWER_EXTRAS=extras,
         THEME=esc(user.theme),
         GEAR=icon("gear"),
         ARROW=icon("arrow_left", "drawer-arrow"),
@@ -175,9 +178,12 @@ def logged_in_page(
     scripts: tuple[str, ...] = (),
     styles: tuple[str, ...] = (),
     body_class: str = "",
+    top_center: str = "",
+    drawer_extras: str = "",
 ) -> str:
     """A page with the settings drawer in the corner, in the language of the user."""
     return page(
         title, body, user.language,
-        top_right=settings_bar(user), scripts=("claude.js", *scripts), styles=styles, body_class=body_class,
+        top_right=settings_bar(user, drawer_extras), top_center=top_center,
+        scripts=("claude.js", *scripts), styles=styles, body_class=body_class,
     )

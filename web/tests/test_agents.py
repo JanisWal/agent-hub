@@ -131,6 +131,8 @@ class ChainTest(Base):
         self.assertEqual(self.run_stage("done", "documented").role, "documenter")
         done = agents.get_task(self.a.id, task.id)
         self.assertEqual((done.status, done.round), ("done", 2))
+        item = [i for i in board.list_items(self.a.id, self.project.id) if i.id == self.item.id][0]
+        self.assertEqual(item.status, "archived")       # finished work is kept in the archive, not deleted
         self.assertEqual(agents.usage(self.a.id, self.project.id)["tokens_in"], 60)
         self.assertEqual(agents.usage(self.b.id), {"tokens_in": 0, "tokens_out": 0, "seconds": 0, "runs": 0})
 
@@ -191,7 +193,7 @@ class ChainTest(Base):
     def test_pick_next_order_and_taken_items(self):
         minor = board.create_item(self.a.id, self.project.id, "minor", "Small")
         major = board.create_item(self.a.id, self.project.id, "major", "Big")
-        board.create_suggestion(self.a.id, self.project.id, "bug", "Only a suggestion")
+        board.create_suggestion(self.a.id, self.project.id, "major", "Only a suggestion")
         self.assertEqual(agents.pick_next(self.a.id, self.project.id).id, self.item.id)   # bug first
         agents.start_task(self.a.id, self.project.id, self.item.id)
         self.assertEqual(agents.pick_next(self.a.id, self.project.id).id, minor.id)
