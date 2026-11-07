@@ -50,7 +50,7 @@ SETTINGS = """<div class="drawer" id="settings" data-theme-saved="%THEME%">
       %SERVICES%
       <button class="primary save" type="submit">%t.save%</button>
     </form>
-    <button class="link" type="button" id="chat-clear-open">%t.chat_clear%</button>
+    <button class="clear-btn" type="button" id="chat-clear-open">%t.chat_clear%</button>
     %ACCOUNT_LINKS%
     <form method="post" action="/logout"><button class="link" type="submit">%t.logout%</button></form>
   </div>
