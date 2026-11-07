@@ -8,7 +8,7 @@ router = APIRouter()
 
 # ValueError text from chat.send -> (message key in i18n.py, status)
 _PROBLEMS = {"claude": ("chat_err_claude", 409), "busy": ("chat_err_busy", 409),
-             "prompt": ("chat_err_prompt", 400)}
+             "prompt": ("chat_err_prompt", 400), "mode": ("chat_err_prompt", 400)}
 
 
 @router.post("/chat/delete")
@@ -20,15 +20,15 @@ def delete_history(user: users.User = Depends(api_user)):
 @router.get("/projects/{project_id}/chat")
 def messages(project_id: int, user: users.User = Depends(api_user)):
     return ok(messages=[
-        {"id": m.id, "prompt": m.prompt, "status": m.status, "answer": m.answer}
+        {"id": m.id, "prompt": m.prompt, "status": m.status, "answer": m.answer, "mode": m.mode}
         for m in chat.list_messages(user.id, project_id)
     ])
 
 
 @router.post("/projects/{project_id}/chat")
-def ask(project_id: int, prompt: str = Form(""), user: users.User = Depends(api_user)):
+def ask(project_id: int, prompt: str = Form(""), mode: str = Form("web"), user: users.User = Depends(api_user)):
     try:
-        message = chat.send(user.id, project_id, prompt)
+        message = chat.send(user.id, project_id, prompt, mode)
     except ValueError as problem:
         key, status = _PROBLEMS.get(str(problem), (None, 404))   # "project": not found
         return error(user.language, key, status) if key else fail(404)

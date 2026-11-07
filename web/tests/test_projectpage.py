@@ -216,10 +216,26 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn("(https?:", script)                                       # only http(s) links, never javascript:
         self.assertIn("noopener noreferrer", script)
         self.assertIn("createTextNode", script)
-        self.assertIn("fillRich(body, text)", script)
+        self.assertIn("fillBlocks(body, text)", script)
         self.assertIn("line(\"claude\", box.dataset.claude, m.answer, true)", script)   # only Claude answers, not the questions
         self.assertIn("web search", __import__("app.i18n", fromlist=["t"]).t("en", "chat_hint"))
 
+    def test_chat_has_the_web_and_code_switches(self):
+        page = self.html()
+        modes = page[page.index('id="chat-modes"'):page.index('id="chat-form"')]
+        self.assertIn('data-mode="web" aria-pressed="true"', modes)               # web is on at first
+        self.assertIn('data-mode="code" aria-pressed="false"', modes)
+        self.assertIn("ohne Internet", modes)                                      # the title says what code can not do
+        self.assertLess(page.index('id="chat-modes"'), page.index('id="chat-form"'))
+        script = css_of("chat.js")
+        self.assertIn("data.append(\"mode\", currentMode())", script)
+        self.assertIn("\"plain\"", script)                                         # both off: Claude just answers
+        self.assertIn("fillBlocks", script)
+        self.assertIn("createElement(\"pre\")", script)                            # code blocks, built from nodes
+        self.assertNotIn("innerHTML", script)
+        css = css_of("project.css")
+        self.assertIn(".chat-mode[aria-pressed=\"true\"]", css)
+        self.assertIn(".chat-text pre", css)
     def test_tooltips_are_our_own(self):
         core, app = css_of("core.js"), css_of("app.css")
         for part in ('className = "tip"', "removeAttribute(\"title\")", "aria-label", "mouseover", "showTip", "focusin"):

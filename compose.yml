@@ -37,13 +37,33 @@ services:
       - "${HUB_CLAUDE_HOST_DIR:-/opt/agent-hub/claude}:${HUB_CLAUDE_HOST_DIR:-/opt/agent-hub/claude}"
     networks:
       - default
-      - agents
     depends_on:
       - web
+    restart: unless-stopped
+
+  # The only way out of the agent network (see runner/egress.py): the agent containers have no route to the
+  # outside, they reach the internet only through this filtering proxy (web: public hosts only, never the home
+  # network; api: only Anthropic). Same image as the runner, no secrets, no Docker socket, no volumes.
+  egress:
+    image: agent-hub-hub-runner
+    pull_policy: never
+    command: ["python", "-u", "-m", "runner.egress"]
+    user: "65534:65534"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 96m
+    networks:
+      default: {}
+      agents:
+        aliases: [egress]
+    depends_on:
+      - runner
     restart: unless-stopped
 
 networks:
   web:
     external: true
-  agents:                          # the network of the agent containers: no route to the hub
+  agents:                          # the network of the agent containers: no route anywhere except to "egress"
     name: agent-hub-agents
+    internal: true

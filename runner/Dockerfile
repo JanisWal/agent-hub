@@ -3,7 +3,7 @@
 # its HOME and CLAUDE_CONFIG_DIR are the mounted /claude folder of the user.
 FROM debian:trixie-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends curl ca-certificates git ripgrep \
+ && apt-get install -y --no-install-recommends curl ca-certificates git ripgrep python3 \
  && rm -rf /var/lib/apt/lists/*
 ENV HOME=/opt/claude-install
 RUN mkdir -p "$HOME" && curl -fsSL https://claude.ai/install.sh | bash \

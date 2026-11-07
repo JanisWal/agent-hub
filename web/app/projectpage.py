@@ -37,6 +37,10 @@ PROJECT = """<div class="project" data-id="%PID%">
   <p class="muted">%t.chat_hint%</p>
   <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
   <p class="error" id="chat-error" role="alert" hidden></p>
+  <div class="chat-modes" id="chat-modes" role="group" aria-label="%t.chat_title%">
+    <button class="chat-mode" type="button" data-mode="web" aria-pressed="true" title="%t.chat_mode_web_title%">%t.chat_mode_web%</button>
+    <button class="chat-mode" type="button" data-mode="code" aria-pressed="false" title="%t.chat_mode_code_title%">%t.chat_mode_code%</button>
+  </div>
   <form class="chat-form" id="chat-form" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
     <label><input name="prompt" required maxlength="2000" autocomplete="off" placeholder="%t.chat_placeholder%"></label>
     <button type="submit" id="chat-send">%t.chat_send%</button>

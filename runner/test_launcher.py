@@ -91,6 +91,44 @@ class ChatCommandTest(unittest.TestCase):
             self.assertNotIn(bad, text.split())
         self.assertIn("10002:10002", cmd)
 
+    def test_the_three_modes(self):
+        def build(mode):
+            return L.build_chat_command(chat_id=5, user_id=2, model="haiku", claude_dir="/data/claude/2", mode=mode)
+        plain, web, code = build("plain"), build("web"), build("code")
+        self.assertEqual(plain[plain.index("--tools") + 1], "")                    # just answers
+        self.assertNotIn("--allowedTools", plain)
+        self.assertEqual(web[web.index("--tools") + 1], "WebSearch,WebFetch")
+        self.assertEqual(code[code.index("--tools") + 1], "Bash")                  # run commands, nothing else
+        self.assertEqual(code[code.index("--allowedTools") + 1], "Bash")
+        for cmd in (plain, web, code):
+            self.assertNotIn("--dangerously-skip-permissions", cmd)
+            self.assertNotIn("Edit", cmd)
+            self.assertNotIn("Write", cmd)
+        # the way out: web may reach public hosts, plain and code only Anthropic (via the egress proxy, never directly)
+        self.assertIn("HTTPS_PROXY=http://egress:3128", web)
+        self.assertIn("HTTPS_PROXY=http://egress:3129", plain)
+        self.assertIn("HTTPS_PROXY=http://egress:3129", code)
+        self.assertNotIn("HTTPS_PROXY=http://egress:3128", code)
+        # code can not change the saved login of the user: mounted read-only (a hook planted there would run in
+        # later runs that reach the web)
+        self.assertTrue(any(part.endswith(",readonly") for part in code))
+        self.assertFalse(any(part.endswith(",readonly") for part in web))
+        self.assertIn("--read-only", code)                                         # and the container itself is read-only
+        self.assertIn("size=128m", " ".join(code))
+
+    def test_every_run_goes_through_the_proxy(self):
+        run = L.build_command(run_id=1, user_id=2, model="sonnet", work_dir="/w/1", claude_dir="/c/2")
+        login = L.build_login_command(user_id=2, claude_dir="/c/2")
+        for cmd in (run, login):
+            self.assertIn("HTTPS_PROXY=http://egress:3129", cmd)                   # agents and sign-ins: Anthropic only
+            self.assertIn("https_proxy=http://egress:3129", cmd)
+            self.assertNotIn("host", cmd)
+            self.assertNotIn("bridge", cmd)
+
+    def test_unknown_mode_is_refused(self):
+        for mode in ("", "root", "web,code", None, "CODE"):
+            with self.assertRaises(ValueError, msg=str(mode)):
+                L.build_chat_command(chat_id=5, user_id=2, model="haiku", claude_dir="/data/claude/2", mode=mode)
     def test_bad_values(self):
         for change in ({"chat_id": 0}, {"chat_id": "5"}, {"user_id": 0}, {"model": "gpt"},
                        {"claude_dir": "/a,b"}, {"memory": "x"}):
