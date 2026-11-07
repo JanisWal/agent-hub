@@ -12,7 +12,7 @@ Drei Bausteine, jeder ein Modul, alle ohne Abhängigkeit von außen:
 | Kette der Agenten | wer nach wem arbeitet, Rückläufe, Limits (reine Zustandsmaschine) | `workflow.py` |
 | Aufgaben und Läufe | Warteschlange in SQLite, Einstellungen pro Nutzer, Auftragsvergabe an den Runner | `agents.py` |
 
-**Gebaut und getestet (Branch `agent-core`):** alle drei Module, Tabellen, 25 neue Tests, darunter ein Fall in `test_isolation.py`. **Noch nicht gebaut:** der Runner selbst (Claude Code starten), die HTTP-Schnittstelle des Runners, die Oberfläche, Git-Worktrees und der Merge. Ohne Runner läuft die Kette nur in den Tests. Der Branch ist nicht in `main` gemergt und nicht ausgerollt.
+**Gebaut und getestet (Branch `agent-core`):** die drei Module, die Tabellen, die HTTP-Schnittstelle des Runners (`routes/runner.py`, mit Token), der Launcher für den Container je Lauf (`runner/launcher.py`) und das Image dafür (`runner/Dockerfile`, `agent-hub-agent`), dazu 173 Hub-Tests und 11 Launcher-Tests, darunter ein Fall in `test_isolation.py`. **Noch nicht gebaut:** die Schleife des Runners (Aufträge holen, Prompt bauen, Lauf starten, Ergebnis melden), Git-Arbeitsordner und Merge, die Oberfläche. Der Branch ist nicht in `main` gemergt und nicht ausgerollt.
 
 ## 2. Claude-Instanzen (eine pro Nutzer)
 
@@ -75,7 +75,16 @@ Programm.   Tester      Prüfer         Nutzer gibt frei      Dokumentator
 - `finish_run(run_id, result, report, tokens_in, tokens_out, seconds) -> bool`.
 - `claude_link.set_login_url`, `complete`, `mark_expired`.
 
-**HTTP für den Runner (nächstes Modul):** Der Runner ruft nur aus und fragt nach, wie der Mac-Runner später auch (gleiche Schnittstelle): `POST /runner/claim`, `POST /runner/runs/{id}/finish`, dazu die Anmelde-Aufrufe. Er weist sich mit einem eigenen Runner-Token aus der `.env` aus (nur als Hash verglichen, nie mit Nutzer-Sitzungen vermischt). Die Pfade liegen auf dem internen Docker-Netz, nicht im Tunnel.
+**HTTP für den Runner (gebaut, `routes/runner.py`):** Der Runner ruft nur aus und fragt nach, wie der Mac-Runner später auch (gleiche Schnittstelle).
+
+| Aufruf | Zweck |
+|---|---|
+| `POST /runner/claim` (`can_mac`) | nächster Auftrag oder `job: null` |
+| `POST /runner/runs/{id}/finish` (`result`, `report`, `tokens_in`, `tokens_out`, `seconds`) | Ergebnis melden; 400 bei unpassendem Ergebnis, 409 wenn der Lauf schon vorbei ist |
+| `GET /runner/logins` | Nutzer mit laufender Anmeldung (mit oder ohne Link) |
+| `POST /runner/logins/{user_id}/url` · `/code` · `/done` · `/expired` | Link melden, Code einmalig abholen, Anmeldung abschließen, Verbindung als abgelaufen melden |
+
+Schutz, weil die Seite öffentlich ist: (1) Anfragen durch den Tunnel (Header `CF-Connecting-IP`) bekommen 404, auch mit richtigem Token; (2) Token im Header `Authorization: Bearer`, der Hub kennt nur seinen SHA-256 (`HUB_RUNNER_TOKEN_HASH` in der `.env`, leer = Schnittstelle aus, 404); (3) falsche Token zählen pro IP mit eigenem Zähler (10 Fehlversuche sperren eine Stunde). Ein Test prüft, dass jede Route am Schutz hängt. Der Code, den der Nutzer nach der Anmeldung eintippt, bleibt im Arbeitsspeicher des Hubs (5 Minuten, einmal abholbar, nie in Datenbank oder Log); das setzt einen einzigen Hub-Prozess voraus (so läuft `uvicorn` jetzt).
 
 ## 6. Trennung der Konten, so umgesetzt
 
@@ -98,7 +107,11 @@ Aufbau:
 - **Beschränkungen:** `--cap-drop ALL`, `--security-opt no-new-privileges`, `--read-only` mit `tmpfs` für `/tmp`, eigener Benutzer ohne Root (UID `10000 + user_id`, damit auch die Ordner-Rechte `0700` zusätzlich greifen), `--memory` (z. B. 480m, ohne Swap), `--pids-limit`, `--rm`, Zeitlimit durch `RUN_SECONDS`.
 - **Netz:** eigenes Docker-Netz `agents`, getrennt von `web`. Ein Agent erreicht Claude (ausgehend), aber nicht den Hub (`agent-hub:8000`) und nicht den Tunnel. **Offen:** Das Heimnetz bleibt über die Weiterleitung des Pi erreichbar (nötig für spätere Geräte-Aufgaben); die Einschränkung auf freigegebene Ziele kommt mit dem Vermittler (Tresor).
 - **Docker-Socket:** Der Launcher braucht ihn und hat damit faktisch Root auf dem Pi. Gegenmaßnahmen: Der Socket hängt **nur** im Runner, nie im `web`-Container und nie im Lauf-Container; der Launcher nimmt keine freien Argumente an (feste Vorlage, geprüfte Werte, wird getestet); Aufträge und Berichte sind Daten. Später möglich: ein Socket-Proxy, der nur Start, Warten, Log und Löschen erlaubt (eine zusätzliche Abhängigkeit, erst bei Bedarf).
-- **Image:** das vorhandene `agent-hub-runner` (799 MB, Claude Code) dient als Grundlage; der Launcher-Test prüft, dass der Lauf-Container nur seinen Nutzerordner sieht.
+- **Image `agent-hub-agent`** (`runner/Dockerfile`, neu): Das alte `agent-hub-runner` taugt nicht, dort liegt Claude Code im Home von UID 1000, den Läufen (UID 10000+id) fehlt der Zugriff. Das neue Image installiert Claude Code nach `/opt/claude-install` (für alle lesbar), Auto-Update aus. Das alte Image bleibt unberührt.
+- **Geprüft auf dem Pi (07.11.2026)** mit dem echten Befehl der Vorlage (nur das Netz war `none`): Der Lauf ist UID 10002, `/` ist schreibgeschützt, sichtbar sind nur `/work` (schreibbar) und `/claude`, es gibt kein `/data` und keinen Docker-Socket, `claude --version` läuft (2.1.319). Nicht geprüft: ein echter Lauf mit Anmeldung, das Netz `agent-hub-agents` (wird beim Ausrollen angelegt, das ist eine Netzwerk-Änderung und wartet auf Janis’ Ja).
+- **Berechtigungen im Lauf:** `--dangerously-skip-permissions`, weil der Agent nur den Arbeitsordner und seinen Claude-Ordner sieht und im Container nicht Root ist (so ist es im Container üblich). Das ist die eine Stelle in der Vorlage, die man bei Bedenken auf `acceptEdits` mit Werkzeugliste umstellen kann.
+- **Ergebnis des Agenten:** Er beendet seine Antwort mit einer letzten Zeile `RESULT: <Wert>` (Werte je Rolle wie in Abschnitt 3). Fehlt sie, ist der Wert falsch, ist die Ausgabe kein lesbares JSON oder meldet Claude Code einen Fehler, gilt `failed` und die Aufgabe geht zu dir (`parse_output`). Jede Rolle darf `failed` melden. **Ungeprüft:** das genaue JSON von `claude -p --output-format json` (Felder `result`, `usage`); der Leser ist tolerant, aber erst der erste echte Lauf bestätigt es (PROJEKT.md Abschnitt 3 verlangt diese Prüfung).
+- **Git im Lauf:** Der Agent committet nicht, der Runner committet danach von außen. Ein Git-Worktree taugt dafür schlecht, weil seine `.git`-Datei auf einen Ordner außerhalb zeigt, der nicht eingehängt ist. Vorschlag für das Modul „Arbeitsordner“: pro Aufgabe ein eigener Klon des Projekt-Repos (`git clone --shared` spart Platz), dann ist der Ordner in sich geschlossen.
 
 ## 7. Offene Entscheidungen (Janis)
 
@@ -111,7 +124,7 @@ Aufbau:
 
 ## 8. Reihenfolge der nächsten Module
 
-1. Runner-Schnittstelle (HTTP, Runner-Token) und Runner mit Launcher (ein Container je Lauf, Abschnitt 6a), mit Isolationstest für zwei Nutzer.
+1. ~~Runner-Schnittstelle (HTTP, Runner-Token) und Launcher (ein Container je Lauf)~~ gebaut. Als Nächstes die **Schleife des Runners** (`runner/runner.py`, Prompt je Rolle, Anmeldekanal, Aufräumen), der Arbeitsordner je Aufgabe (eigener Klon) und der Isolationstest mit zwei echten Nutzern; Ausrollen mit Netz `agent-hub-agents`, Runner-Token und Compose-Dienst (Janis’ Ja nötig).
 2. Anmeldung in der Oberfläche („Claude verbinden“ in der Schublade statt des Platzhalters, Zustand „abgelaufen“).
 3. Worktrees und Merge.
 4. Station „Agenten“ in der Projektansicht (Aufgaben, Freigabe mit Klick-Aussagen, Verbrauch), danach Design.
