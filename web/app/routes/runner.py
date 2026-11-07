@@ -16,7 +16,7 @@ import os
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 
-from .. import agents, claude_link, throttle
+from .. import agents, chat, claude_link, throttle
 from ..deps import fail, ok
 
 TOKEN_HASH_ENV = "HUB_RUNNER_TOKEN_HASH"
@@ -54,6 +54,19 @@ def finish(run_id: int, result: str = Form(""), report: str = Form(""), tokens_i
     except ValueError:
         return fail(400)   # a result that does not fit the role
     return ok() if done else fail(409)   # the run is over already, or the task has moved on
+
+
+@router.post("/chat/claim")
+def chat_claim():
+    """TEMPORARY (see chat.py): the next question of the test chat, or null."""
+    job = chat.claim_next()
+    return ok(job=None if job is None else dataclasses.asdict(job))
+
+
+@router.post("/chat/{chat_id}/finish")
+def chat_finish(chat_id: int, success: str = Form("0"), answer: str = Form(""), tokens_in: int = Form(0),
+                tokens_out: int = Form(0)):
+    return ok() if chat.finish(chat_id, success == "1", answer, tokens_in, tokens_out) else fail(409)
 
 
 @router.get("/logins")

@@ -71,6 +71,51 @@ class CommandTest(unittest.TestCase):
                 L.prepare_folder("relative", 2)
 
 
+class ChatCommandTest(unittest.TestCase):
+    """TEMPORARY test chat: no project files, no tools."""
+
+    def test_no_work_folder_and_no_tools(self):
+        cmd = L.build_chat_command(chat_id=5, user_id=2, model="haiku", claude_dir="/data/claude/2")
+        text = " ".join(cmd)
+        self.assertEqual(sum(1 for c in cmd if c == "--mount"), 1)            # only the user's Claude folder
+        self.assertNotIn("dst=/work", text)
+        self.assertEqual(cmd[cmd.index("--tools") + 1], "")                  # every tool switched off
+        self.assertNotIn("--dangerously-skip-permissions", cmd)
+        for flag in ("--read-only", "--cap-drop", "--no-session-persistence", "-i"):
+            self.assertIn(flag, cmd)
+        for bad in ("--privileged", "--volume", "-v", "--device", "docker.sock"):
+            self.assertNotIn(bad, text.split())
+        self.assertIn("10002:10002", cmd)
+
+    def test_bad_values(self):
+        for change in ({"chat_id": 0}, {"chat_id": "5"}, {"user_id": 0}, {"model": "gpt"},
+                       {"claude_dir": "/a,b"}, {"memory": "x"}):
+            with self.assertRaises(ValueError, msg=str(change)):
+                L.build_chat_command(**{"chat_id": 5, "user_id": 2, "model": "haiku",
+                                        "claude_dir": "/data/claude/2", **change})
+
+
+class ChatOutputTest(unittest.TestCase):
+    def test_answer(self):
+        out = json.dumps({"result": " Hi! ", "usage": {"input_tokens": 3, "cache_read_input_tokens": 4,
+                                                          "output_tokens": 2}})
+        self.assertEqual(L.parse_chat_output(out), (True, "Hi!", 7, 2, False))
+
+    def test_errors_are_not_answers(self):
+        self.assertFalse(L.parse_chat_output(json.dumps({"is_error": True, "result": "Overloaded"}))[0])
+        self.assertFalse(L.parse_chat_output(json.dumps({"result": ""}))[0])
+        self.assertFalse(L.parse_chat_output("not json")[0])
+        self.assertFalse(L.parse_chat_output(json.dumps(["x"]))[0])
+
+    def test_a_lost_login_is_recognised(self):
+        for text in ("Invalid API key · Please run /login", "Not logged in", "OAuth token has expired",
+                     "authentication_error 401"):
+            out = json.dumps({"is_error": True, "result": text})
+            self.assertTrue(L.parse_chat_output(out)[4], text)
+        self.assertFalse(L.parse_chat_output(json.dumps({"is_error": True, "result": "Overloaded"}))[4])
+        self.assertFalse(L.parse_chat_output(json.dumps({"result": "You can log in with /login"}))[4])  # an answer
+
+
 class OutputTest(unittest.TestCase):
     def test_result_marker_report_and_tokens(self):
         result = L.parse_output("tester", answer("All good.\nChecked 3 things.\nRESULT: pass"))

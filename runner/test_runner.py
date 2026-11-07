@@ -2,6 +2,7 @@
 
     docker compose run --rm --no-deps -v "$PWD/runner:/app/runner" web python -W ignore -m unittest runner.test_runner
 """
+import json
 import os
 import tempfile
 import unittest
@@ -14,10 +15,12 @@ LINK = "https://claude.com/cai/oauth/authorize?code=true&client_id=abc&state=xyz
 
 class FakeApi:
     def __init__(self):
-        self.logins, self.wipes, self.codes, self.calls = [], [], {}, []
+        self.logins, self.wipes, self.codes, self.calls, self.chat_job = [], [], {}, [], None
 
     def call(self, method, path, **form):
         self.calls.append((method, path, form))
+        if path == "/runner/chat/claim":
+            return {"ok": True, "job": self.chat_job}
         if path == "/runner/logins":
             return {"ok": True, "logins": self.logins}
         if path == "/runner/wipes":
@@ -161,6 +164,71 @@ class RunnerTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.runner.handle_wipes()                                         # not a number: refused
         self.assertTrue(outside.exists())
+
+
+class Done:
+    def __init__(self, stdout, returncode=0):
+        self.stdout, self.returncode = stdout, returncode
+
+
+class ChatRunTest(unittest.TestCase):
+    """TEMPORARY test chat: the runner answers one question in a container."""
+
+    def setUp(self):
+        self.api, self.commands = FakeApi(), []
+        self.api.chat_job = {"chat_id": 5, "user_id": 2, "model": "haiku", "prompt": "Hello?"}
+        self.prepared = []
+        self.answer = Done(json.dumps({"result": "Hi!", "usage": {"input_tokens": 7, "output_tokens": 2}}))
+
+        def run_chat(command, prompt):
+            self.commands.append((command, prompt))
+            if isinstance(self.answer, Exception):
+                raise self.answer
+            return self.answer
+
+        self.runner = runner.Runner(self.api, "/data/claude", prepare=lambda p, u: self.prepared.append((p, u)),
+                                    run_chat=run_chat)
+
+    def test_answer_goes_back_with_tokens(self):
+        self.runner.handle_chat()
+        command, prompt = self.commands[0]
+        self.assertEqual(prompt, "Hello?")                                 # through stdin ...
+        self.assertNotIn("Hello?", command)                                # ... never on the command line
+        self.assertIn("src=/data/claude/2,dst=/claude", " ".join(command))
+        self.assertEqual(self.prepared, [("/data/claude/2", 2)])
+        self.assertEqual(self.api.posted("/chat/5/finish"),
+                         [{"success": "1", "answer": "Hi!", "tokens_in": 7, "tokens_out": 2}])
+
+    def test_nothing_to_do(self):
+        self.api.chat_job = None
+        self.runner.handle_chat()
+        self.assertEqual(self.commands, [])
+        self.assertEqual(self.api.posted("/finish"), [])
+
+    def test_lost_login_marks_the_connection_expired(self):
+        self.answer = Done(json.dumps({"is_error": True, "result": "Invalid API key · Please run /login"}))
+        self.runner.handle_chat()
+        self.assertEqual(self.api.posted("/2/expired"), [{}])
+        self.assertEqual(self.api.posted("/chat/5/finish")[0]["success"], "0")
+
+    def test_failures_are_reported_not_hidden(self):
+        self.answer = Done("", returncode=125)
+        self.runner.handle_chat()
+        sent = self.api.posted("/chat/5/finish")[0]
+        self.assertEqual((sent["success"], "125" in sent["answer"]), ("0", True))
+        self.assertEqual(self.api.posted("/2/expired"), [])                # an ordinary failure is no lost login
+
+    def test_timeout_removes_the_container(self):
+        calls = []
+        original = runner.subprocess.run
+        runner.subprocess.run = lambda cmd, **kw: calls.append(cmd)
+        try:
+            self.answer = runner.subprocess.TimeoutExpired("docker", 1)
+            self.runner.handle_chat()
+        finally:
+            runner.subprocess.run = original
+        self.assertEqual(calls, [["docker", "rm", "-f", "agent-chat-5"]])
+        self.assertEqual(self.api.posted("/chat/5/finish")[0]["success"], "0")
 
 
 class LoginTextTest(unittest.TestCase):

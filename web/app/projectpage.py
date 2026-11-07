@@ -6,7 +6,7 @@ from .layout import esc, fill
 from .projects import Project
 from .users import User
 
-SCRIPTS = ("motion.js", "sortable.js", "board.js")
+SCRIPTS = ("motion.js", "sortable.js", "board.js", "chat.js")
 STYLES = ("project.css",)
 
 COLUMN_LABEL = {"bug": "col_bug", "minor": "col_minor", "major": "col_major"}
@@ -26,6 +26,18 @@ PROJECT = """<div class="project" data-id="%PID%">
     <div class="board">
       %COLUMNS%
     </div>
+    <!-- TEMPORARY test chat (web/app/chat.py): remove together with chat.js once the agents run -->
+    <section class="chat glass" id="chat" data-you="%t.chat_you%" data-claude="%t.chat_claude%"
+             data-waiting="%t.chat_waiting%" data-failed="%t.chat_failed%">
+      <header class="chat-head"><h2>%t.chat_title%</h2><span class="chat-badge">%t.chat_temporary%</span></header>
+      <p class="muted">%t.chat_hint%</p>
+      <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
+      <p class="error" id="chat-error" role="alert" hidden></p>
+      <form class="chat-form" id="chat-form" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
+        <label><input name="prompt" required maxlength="2000" autocomplete="off" placeholder="%t.chat_placeholder%"></label>
+        <button type="submit" id="chat-send">%t.chat_send%</button>
+      </form>
+    </section>
   </div>
 </div>
 <dialog class="dialog" id="item-dialog" data-title-new="%t.new_item%" data-title-edit="%t.edit_item%"
