@@ -1,14 +1,28 @@
-"""HTML of the logged-in pages: settings bar, dashboard with project tiles, pager, quota bar."""
-import html
-
+"""HTML of the dashboard: settings drawer, project tiles, pager, quota bar."""
 from . import i18n
+from .layout import esc as _e
 from .layout import fill
 from .projects import Project
 from .users import User
 
 PAGE_SIZE = 6  # 2 rows x 3 columns
 
+# Linked AI accounts (name, connected). The real state comes with the runner (phase 2).
+SERVICES = (("Claude", False), ("ChatGPT", False))
+
 CHEVRON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>'
+ARROW_LEFT = '<svg class="drawer-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg>'
+GEAR = (
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/>'
+    '<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06'
+    "a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4"
+    "a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82"
+    " 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82"
+    "l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3"
+    "a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0"
+    " 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2"
+    'h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>'
+)
 TRASH = (
     '<svg viewBox="0 0 24 24" aria-hidden="true">'
     '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>'
@@ -17,60 +31,75 @@ TRIANGLE_LEFT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-8 6
 TRIANGLE_RIGHT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l8 6-8 6z"/></svg>'
 
 
-def _e(text: str) -> str:
-    """Escape for HTML text and attribute values."""
-    return html.escape(text, quote=True)
-
-
-def _validation_attrs(lang: str) -> str:
+def validation_attrs(lang: str) -> str:
     """Texts for the inline form validation in theme.js."""
     required = _e(i18n.t(lang, "msg_required"))
     email = _e(i18n.t(lang, "msg_email"))
     return f'data-msg-required="{required}" data-msg-email="{email}"'
 
 
-SETTINGS_BAR = """<div class="settings" id="settings">
-  <button class="settings-toggle" id="settings-toggle" type="button"
-          aria-expanded="false" aria-controls="settings-panel" aria-label="%L_TOGGLE%">
-    <span class="settings-name">%NAME%</span>%CHEVRON%
-  </button>
-  <div class="settings-panel glass" id="settings-panel" hidden>
+# Closed: only the gear and the arrow show at the top right. Open: the box slides out of
+# the corner and the handle rides along on its left edge (see theme.css).
+SETTINGS_BAR = """<div class="drawer" id="settings">
+  <button class="drawer-handle" id="settings-toggle" type="button"
+          aria-expanded="false" aria-controls="settings-panel" aria-label="%L_TOGGLE%">%GEAR%%ARROW%</button>
+  <div class="drawer-box glass" id="settings-panel">
     <form method="post" action="/settings" novalidate %VALIDATION%>
-      <label>%L_NAME%<input name="display_name" maxlength="40" value="%NAME_VALUE%" autocomplete="nickname"></label>
-      <fieldset class="lang">
-        <legend>%L_LANGUAGE%</legend>
-        <label class="seg"><input type="radio" name="language" value="de" %DE%><span>Deutsch</span></label>
-        <label class="seg"><input type="radio" name="language" value="en" %EN%><span>English</span></label>
-      </fieldset>
-      <button class="save" type="submit">%L_SAVE%</button>
+      <label class="setting">
+        <span class="setting-label">%L_NAME%</span>
+        <input name="display_name" maxlength="40" value="%NAME_VALUE%" placeholder="%NAME_SHOWN%" autocomplete="nickname">
+      </label>
+      <label class="setting has-select">
+        <span class="setting-label">%L_LANGUAGE%</span>
+        <select name="language">
+          <option value="de" %DE%>Deutsch</option>
+          <option value="en" %EN%>English</option>
+        </select>%CHEVRON%
+      </label>
+      %SERVICES%
+      <button class="primary save" type="submit">%L_SAVE%</button>
     </form>
-    <div class="settings-links">
-      <button class="link" type="button" disabled title="%L_SOON%">%L_CLAUDE%</button>
-      <button class="link" type="button" disabled title="%L_SOON%">%L_CHATGPT%</button>
-      <form method="post" action="/logout"><button class="link" type="submit">%L_LOGOUT%</button></form>
-    </div>
+    <form method="post" action="/logout"><button class="link" type="submit">%L_LOGOUT%</button></form>
   </div>
 </div>"""
 
 
+def _service_rows(lang: str) -> str:
+    rows = []
+    for name, connected in SERVICES:
+        status = _e(i18n.t(lang, "connected" if connected else "not_connected"))
+        action = (
+            ""
+            if connected
+            else f'<button class="link inline" type="button" disabled title="{_e(i18n.t(lang, "coming_soon"))}">'
+            f'{_e(i18n.t(lang, "connect"))}</button>'
+        )
+        rows.append(
+            f'<div class="setting service{" on" if connected else ""}">'
+            f'<span class="setting-label">{name}</span>'
+            f'<span class="service-line"><span class="status">{status}</span>{action}</span></div>'
+        )
+    return "\n      ".join(rows)
+
+
 def settings_bar(user: User) -> str:
-    """Quiet, collapsible settings bar for the top right of every logged-in page."""
+    """Settings drawer for the top right corner of every logged-in page."""
     lang = user.language
     return fill(
         SETTINGS_BAR,
         L_TOGGLE=_e(i18n.t(lang, "settings_toggle")),
-        NAME=_e(user.name),
-        CHEVRON=CHEVRON,
-        VALIDATION=_validation_attrs(lang),
+        GEAR=GEAR,
+        ARROW=ARROW_LEFT,
+        VALIDATION=validation_attrs(lang),
         L_NAME=_e(i18n.t(lang, "display_name")),
         NAME_VALUE=_e(user.display_name or ""),
+        NAME_SHOWN=_e(user.name),
         L_LANGUAGE=_e(i18n.t(lang, "language")),
-        DE="checked" if lang == "de" else "",
-        EN="checked" if lang == "en" else "",
+        DE="selected" if lang == "de" else "",
+        EN="selected" if lang == "en" else "",
+        CHEVRON=CHEVRON,
+        SERVICES=_service_rows(lang),
         L_SAVE=_e(i18n.t(lang, "save")),
-        L_SOON=_e(i18n.t(lang, "coming_soon")),
-        L_CLAUDE=_e(i18n.t(lang, "connect_claude")),
-        L_CHATGPT=_e(i18n.t(lang, "connect_chatgpt")),
         L_LOGOUT=_e(i18n.t(lang, "logout")),
     )
 
@@ -184,7 +213,7 @@ def render(user: User, projects: list[Project], page: int, pages: int, first_pro
 
     dialogs = fill(
         DIALOGS,
-        VALIDATION=_validation_attrs(lang),
+        VALIDATION=validation_attrs(lang),
         L_NEW=_e(i18n.t(lang, "new_project")),
         L_PROJECT_NAME=_e(i18n.t(lang, "project_name")),
         L_CANCEL=_e(i18n.t(lang, "cancel")),
@@ -210,22 +239,4 @@ def render(user: User, projects: list[Project], page: int, pages: int, first_pro
         L_QUOTA=_e(i18n.t(lang, "quota_title")),
         L_QUOTA_NONE=_e(i18n.t(lang, "quota_none")),
         DIALOGS=dialogs,
-    )
-
-
-PROJECT_PAGE = """<section class="glass">
-  <h1>%NAME%</h1>
-  <p class="subtitle">%SOON%</p>
-  <a class="link" href="/">%BACK%</a>
-</section>"""
-
-
-def project_page(user: User, project: Project) -> str:
-    """Placeholder project view; the kanban board comes later."""
-    lang = user.language
-    return fill(
-        PROJECT_PAGE,
-        NAME=_e(project.name),
-        SOON=_e(i18n.t(lang, "project_soon")),
-        BACK=_e("← " + i18n.t(lang, "back")),
     )
