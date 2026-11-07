@@ -143,6 +143,7 @@ Sonderregel für Swift (Entwurf): Swift-Code braucht Xcode und den Simulator und
 - Zusätzlich: Beim Anlegen kann der Hub direkt eine Einladungs-Mail mit Link zum Passwort-Setzen schicken (gleicher Baustein wie der Reset). Dann gibt der Admin nur die E-Mail-Adresse ein.
 - Nur der Owner kann Admin-Rechte per Schalter in der Benutzerliste vergeben oder entziehen. Das Owner-Konto kann niemand löschen oder herabstufen.
 - **Gebaut am 07.11.2026** (Branch `user-management`): Rollen `owner`/`admin`/`user` in `users.role`, Seite `/users` (Eintrag „Benutzer verwalten“ in der Einstellungs-Schublade, nur für Owner und Admins), Dialoge zum Hinzufügen, Zurücksetzen und Löschen. Zurücksetzen und Löschen verlangen das Passwort dessen, der es tut (mit der Sperre pro IP). Wer sich mit einem Startpasswort anmeldet, erreicht nur `/password`, bis er ein eigenes gesetzt hat; dabei enden seine anderen Sitzungen. Der Owner kann Admins ernennen und entziehen und alle anderen verwalten, Admins verwalten nur normale Nutzer, niemand rührt den Owner an. Beim Löschen eines Kontos verschwinden auch seine Projekte.
+- **Gebaut am 07.11.2026** (Branch `password-reset`): „Passwort vergessen?“ auf der Login-Seite führt zu `/forgot`, die Mail kommt über Resend (`mail.py`) mit einem Link `HUB_BASE_URL/reset/{token}` (1 Stunde gültig, einmalig, Sprache des Nutzers). Mit dem Link legt man ein Passwort nach den üblichen Regeln fest; danach enden alle Sitzungen und ein Startpasswort-Zwang entfällt.
 - **Passwortregeln** (Janis, 07.11.2026): für selbst gewählte Passwörter mindestens 6 Zeichen mit Groß- und Kleinbuchstaben, einem Sonderzeichen und zwei Zahlen (`users.password_problem`). Ein vom Admin vergebenes Startpasswort braucht nur 6 Zeichen, denn der Nutzer ersetzt es sofort. Für den Reset per E-Mail steht `users.set_password(user_id, neues_passwort)` bereit; wer ein Passwort wählen lässt, prüft vorher `password_problem`.
 - Das Owner-Konto entsteht bei der Installation (`docker compose exec web python -m app.create_admin` im Ordner der `compose.yml`: das erste Konto wird Owner, weitere werden Admins).
 
@@ -233,7 +234,7 @@ Phase 0 und der Großteil von Phase 1 sind erledigt und laufen live unter `https
 
 **Fertig:** Pi eingerichtet (Raspberry Pi OS Lite 64-Bit, Docker, Compose, SSH mit Schlüssel); Login mit Benutzerkonten; Dashboard mit Kacheln, Seiten, Drag and Drop, zweistufigem Löschen; Projektseite mit Kanban-Board und Papierkorb; Einstellungen (Nutzername, Sprache); Deutsch/Englisch; Hell/Dunkel; Cloudflare Tunnel mit HTTPS; Claude Code auf dem Pi angemeldet (Runner, noch nicht an die Website angebunden).
 
-**Noch Platzhalter in der Oberfläche:** Claude/ChatGPT verknüpfen, Token-Anzeige, Stationen Agenten/Dateiablage/Dokumentation, Passwort vergessen.
+**Noch Platzhalter in der Oberfläche:** Claude/ChatGPT verknüpfen, Token-Anzeige, Stationen Agenten/Dateiablage/Dokumentation.
 
 ### Aufbau des Codes
 
@@ -249,10 +250,14 @@ web/app/
   routes/projects.py         /, /projects, /projects/move, /projects/{id}, /projects/{id}/delete
   routes/board.py            Punkte anlegen, umbenennen, ordnen, annehmen, verwerfen, Papierkorb
   routes/accounts.py         /users (Benutzerverwaltung), /password
+  routes/resets.py           /forgot, /reset/{token} (Passwort vergessen)
   db.py                      SQLite-Verbindung, Schema, kleine Migrationen (schließt Verbindungen sicher)
   users.py  projects.py  board.py   Daten und Regeln (ohne HTTP)
   throttle.py                Sperre nach zu vielen falschen Passwörtern (pro IP, SQLite)
+  mail.py                    Mailversand über die Resend-API (`send_mail`), nur Standardbibliothek
+  resets.py                  Reset-Token (Hash in SQLite, 1 Stunde, einmalig)
   userspage.py               HTML von /users und /password
+  resetpages.py              HTML von /forgot und /reset/{token}
   layout.py                  Seitenhülle und Vorlagen-Ersetzung fill(): %NAME% = fertiger Wert, %t.schluessel% = übersetzter Text
   ui.py                      Login-Seite, Einstellungs-Schublade, angemeldeter Seitenrahmen
   dashboard.py  projectpage.py   HTML von Startseite und Projektseite
@@ -275,6 +280,7 @@ web/tests/                   Unit-Tests und integration_http.py (End-to-End übe
 - `projects`: id, user_id, name (höchstens 60), page, position. Sechs Kacheln pro Seite; eine volle Seite schiebt ihr letztes Projekt auf die nächste (`projects.move`). Seiten ohne Projekte gibt es nicht. Löschen ist endgültig und verlangt das Passwort.
 - `board_items`: id, project_id, kind (`bug`/`minor`/`major`), title (höchstens 200), source (`user`/`claude`), status (`open`/`proposed`/`trash`), position. Von Hand angelegte Punkte sind `open` und stehen oben, Vorschläge von Claude sind `proposed` und stehen unten. Jeder Zugriff prüft, dass das Projekt dem Nutzer gehört.
 - `login_attempts`: ip (Schlüssel), failures, window_start, locked_until. Zählt falsche Passwörter pro IP (hinter dem Tunnel aus `CF-Connecting-IP`). Zehn Fehlversuche innerhalb von 30 Minuten sperren die IP für eine Stunde, dann antworten Anmeldung und Projekt-Löschen mit 429 (auch bei richtigem Passwort). Ein richtiges Passwort setzt den Zähler nicht zurück, er läuft mit dem Zeitfenster ab. Gezählt wird nie pro E-Mail, damit niemand den Owner aussperren kann.
+- `password_resets`: token_hash (Schlüssel, SHA-256 des Tokens, der Token selbst steht nur in der Mail), user_id, created_at, expires_at. Gültig 1 Stunde, wird beim Benutzen gelöscht. Eine neue Anfrage ersetzt die alte; für dasselbe Konto geht frühestens nach 60 Sekunden eine neue Mail raus. Löscht man den Nutzer, verschwinden seine Tokens (Cascade).
 - Schemaänderungen laufen über `NEW_COLUMNS` in `db.py` (Spalten werden beim Start ergänzt). Vor jeder Änderung an Daten ein Backup.
 
 ### Routen
@@ -287,6 +293,8 @@ web/tests/                   Unit-Tests und integration_http.py (End-to-End übe
 | POST `/projects/move`, `/projects/{id}/delete`, `/projects/{id}/trash/empty`, `/items/reorder`, `/items/{id}/{accept,reject,discard,restore,delete}` | fetch-Aufrufe, antworten mit `{"ok": …}` | 401 |
 | GET `/users`, POST `/users/add`, `/users/{id}/reset`, `/users/{id}/delete`, `/users/{id}/admin` | Benutzerverwaltung für Owner und Admins (`/users` sonst 404, die POST-Aufrufe 403; Zurücksetzen und Löschen verlangen das eigene Passwort; `admin` nur für den Owner) | Umleitung auf `/login` bzw. 401 |
 | GET/POST `/password` | eigenes Passwort ändern (nach einem Startpasswort Pflicht, bis dahin ist nur diese Seite erreichbar) | Umleitung auf `/login` |
+| GET/POST `/forgot` | E-Mail-Adresse eingeben, Link per Mail anfordern. Antwort immer gleich, ob es das Konto gibt oder nicht (die Mail geht nach der Antwort raus, auch die Dauer verrät nichts); ohne `@` 400 | offen |
+| GET/POST `/reset/{token}` | Neues Passwort mit dem Link aus der Mail festlegen (Regeln wie bei `/password`); unbekannter, abgelaufener oder benutzter Link: 400. Danach enden alle Sitzungen, ein Startpasswort-Zwang entfällt, Umleitung auf `/login` | offen |
 | GET `/health` | Lebenszeichen | offen |
 
 `/docs`, `/redoc` und `/openapi.json` sind abgeschaltet. Alle Antworten tragen `X-Content-Type-Options`, `X-Frame-Options: SAMEORIGIN` und `Referrer-Policy`; Seiten (nicht `/static`) zusätzlich `Cache-Control: no-store`, bei HTTPS `Strict-Transport-Security`.
@@ -299,6 +307,7 @@ web/tests/                   Unit-Tests und integration_http.py (End-to-End übe
 - Produktiv läuft der Klon `/opt/agent-hub/workspaces/agent-hub` (`main`, entspricht GitHub). Daten liegen in dessen Ordner `data/`. Der Tunnel liegt getrennt unter `/home/admin/cloudflared` (Token in dessen `.env`, nie im Git).
 - Die Seite erreicht der Tunnel über das Docker-Netz `web` (Alias `agent-hub`, Port 8000). Cloudflare leitet `hub.janis-home.de` an `http://agent-hub:8000`. Port 8000 ist nur auf `127.0.0.1` des Pi offen, von außen und im LAN geschlossen.
 - GitHub: Deploy-Key auf dem Pi, Push von dort.
+- **E-Mail-Versand (Resend, Absender `Agent-Hub <noreply@janis-home.de>`):** Domain `janis-home.de` wird bei Resend verifiziert (DNS-Einträge in Cloudflare, „Nur DNS“, nicht über den Proxy). Die Einstellungen stehen in der `.env` im Klon-Ordner (nie im Git, nur für `admin` lesbar halten): `RESEND_API_KEY` (Schlüssel mit „Sending access“ nur für diese Domain), `MAIL_FROM` und `HUB_BASE_URL=https://hub.janis-home.de`. `compose.yml` reicht sie an `web` weiter; fehlen sie, passiert beim Versand nichts außer einer Logzeile (`docker compose logs web`). Der Link in der Mail kommt aus `HUB_BASE_URL`, nie aus der Anfrage (Schutz vor gefälschtem Host-Header). Nach Änderung der `.env`: `docker compose up -d web`.
 
 ### Update-Ablauf
 
@@ -310,7 +319,7 @@ web/tests/                   Unit-Tests und integration_http.py (End-to-End übe
 
 ### Tests
 
-- **Unit-Tests** (laufen im Container, ohne den Dienst anzufassen), im Klon-Ordner: `docker compose run --rm --no-deps -v "$PWD/web/tests:/app/tests" web python -W ignore -m unittest discover -s tests -t .`
+- **Unit-Tests** (laufen im Container, ohne den Dienst anzufassen), im Klon-Ordner (für Code, der noch nicht im Image steckt, zusätzlich `-v "$PWD/web/app:/app/app"` angeben): `docker compose run --rm --no-deps -v "$PWD/web/tests:/app/tests" web python -W ignore -m unittest discover -s tests -t .`
 - **HTTP-Test** gegen eine Wegwerf-Instanz mit eigener Datenbank und Testkonto, z. B. `docker run -d --name hub-test -p 8001:8000 -e HUB_DB=/tmp/test.db -e HUB_SECURE_COOKIE=0 agent-hub-web`, Testnutzer mit `users.create_user` anlegen, dann `python3 web/tests/integration_http.py http://127.0.0.1:8001 EMAIL PASSWORT`. Bei HTTP muss `HUB_SECURE_COOKIE=0` stehen, sonst sendet der Client den Cookie nicht zurück. Nie mit dem echten Konto testen.
 - **Browser-Prüfung** der Oberfläche in Claude in Chrome gegen die Testinstanz auf Port 8001 (Seite `http://home.local:8001`). Fenstergrößen werden über Rahmen (iframe) in der gewünschten Größe geprüft, weil `resize_window` das Fenster nicht ändert. In einem minimierten Test-Fenster pausiert Chrome `requestAnimationFrame` und CSS-Animationen: dann den Takt durch einen 16-ms-Zeitgeber ersetzen und endliche Animationen mit `getAnimations().finish()` beenden. Das Feld mit `autofocus` bekommt keinen Fokus, daher per `input.focus()` setzen und 2 bis 3 s nach dem Laden warten. Klicks per Koordinate: Bildschirmfoto ist skaliert (1568 px breit), also `getBoundingClientRect` über `javascript_tool` lesen und umrechnen.
 - Die Federn und die gefühlte Flüssigkeit kann nur Janis in einem sichtbaren Fenster beurteilen. Berührung am echten Handy ist ungeprüft.
@@ -339,7 +348,7 @@ Eine laufende Claude-Code-Sitzung zieht nicht um; der PC muss an bleiben, bis ei
 - Vorlagen für Janis’ Freigaben und die Tester-Checklisten: welche Klick-Aussagen, welche Felder.
 - Domain `janis-home.de` ist im Einsatz (Subdomain `hub`); Registrar und Cloudflare-Konditionen bei Gelegenheit prüfen. Optional Cloudflare Access (Code per E-Mail) als zusätzliche Hürde vor der Seite, bis eine Begrenzung der Anmeldeversuche gebaut ist.
 - SSD kaufen (120–240 GB) und Umzug von der SD-Karte planen.
-- E-Mail-Versand für Passwort-Reset: Dienst festlegen. Eigener Mailserver zu Hause scheidet aus (Privat-IPs landen im Spam oder auf Sperrlisten, Port 25 oft gesperrt). Gmail funktioniert, ist aber nicht sauber. Kandidaten: Versanddienst mit eigener Absender-Domain (z. B. noreply@janis-home.de) wie Brevo oder Resend im kostenlosen Tarif. Der Reset per E-Mail ist gesetzt (siehe Benutzerverwaltung), Favorit: Resend.
+- E-Mail-Versand für Passwort-Reset: **entschieden, Resend** mit Absender `noreply@janis-home.de` (Betrieb siehe Abschnitt 9). Eigener Mailserver zu Hause schied aus (Privat-IPs landen im Spam oder auf Sperrlisten, Port 25 oft gesperrt). Offen: Tarifgrenzen von Resend im Blick behalten; die Einladungs-Mail beim Anlegen eines Nutzers (statt Startpasswort) ist noch nicht gebaut; Anfragen für „Passwort vergessen“ sind nur pro Konto begrenzt (60 s), nicht pro IP.
 - Wie viele Nutzer langfristig (bestimmt Leistung des Pi und Rechtekonzept).
 - Arbeitsspeicher: Der Pi 4B hat nur 1 GB (905 MiB nutzbar), Claude Code verlangt laut Anleitung 4 GB. Erster Test am 07.11.2026: Claude Code (`claude -p`, Haiku) lief im Runner-Container mit hartem Limit von 480 MB ohne Swap zweimal fehlerfrei durch (je 11 s, Spitze mindestens 225 MiB, im Sekundentakt gemessen), danach waren weiter etwa 580 MiB frei und die Seite blieb erreichbar. Offen: lange Läufe, Sonnet, parallel laufende Tests und Git-Worktrees. Fällt er schlecht aus: Runner auf Mac oder PC (Variante B) oder Pi mit 4–8 GB (Variante C).
 - Aufräumen auf dem Pi: Codekopie `/opt/agent-hub/web` und alte Branches, doppelte `docker-compose.yml` unter `/home/admin/cloudflared`.
