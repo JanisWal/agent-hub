@@ -214,7 +214,7 @@ input:focus {
   box-shadow: inset 0 1px 3px rgba(80, 40, 10, 0.14), 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
-button {
+button, a.primary {   /* a link styled as the main button (e.g. "Sign in to Claude") looks exactly like one */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -230,8 +230,8 @@ button {
   box-shadow: var(--shadow);
   transition: transform 0.25s cubic-bezier(0.3, 1.5, 0.5, 1), filter 0.2s;
 }
-button:hover { transform: translateY(-1px); }
-button:active { transform: scale(0.97); }
+button:hover, a.primary:hover { transform: translateY(-1px); }
+button:active, a.primary:active { transform: scale(0.97); }
 
 /* One primary button per view: glossy accent with a soft sheen on top. */
 .primary {
