@@ -1,6 +1,6 @@
 # Agent-Hub – Projektsheet
 
-Stand: 06.11.2026 · Autor: Janis (mit Claude) · Zweck: Philosophie, Ziel, Entscheidungen und Reihenfolge, damit jeder Claude-Chat im Projekt denselben Stand hat.
+Stand: 07.11.2026 · Autor: Janis (mit Claude) · Zweck: Philosophie, Ziel, Entscheidungen und Reihenfolge, damit jeder Claude-Chat im Projekt denselben Stand hat.
 
 ## 1. Ziel und Philosophie
 
@@ -123,6 +123,13 @@ Sonderregel für Swift (Entwurf): Swift-Code braucht Xcode und den Simulator und
 - News pro Projekt: aktueller Stand, Probleme.
 - Einstellungen: Konto, Claude-Anbindung, Nutzungsanzeige.
 
+### Benutzerverwaltung (nur Admin)
+
+- Keine Selbstregistrierung: Neue Konten legt ausschließlich der Admin an.
+- In den Einstellungen des Admins: „Neuen Benutzer hinzufügen“ mit E-Mail-Adresse und vom Admin vergebenem Passwort.
+- Liste der Benutzer, Admin kann Passwörter zurücksetzen und Konten löschen.
+- Das Admin-Konto selbst entsteht bei der Installation (bisher per `python -m app.create_admin` auf dem Pi).
+
 ### Projektansicht
 
 - Links die Stationen; die erste ist das Kanban-Board.
@@ -211,7 +218,7 @@ Sonderregel für Swift (Entwurf): Swift-Code braucht Xcode und den Simulator und
 - Domain janis-home.de kaufen: Registrar mit .de-Unterstützung wählen, Nameserver auf Cloudflare.
 - GitHub-Konto anlegen (privat).
 - SSD kaufen (120–240 GB) und Umzug von der SD-Karte planen.
-- E-Mail-Versand für Passwort-Reset: Absender und Dienst festlegen.
+- E-Mail-Versand für Passwort-Reset: Dienst festlegen. Eigener Mailserver zu Hause scheidet aus (Privat-IPs landen im Spam oder auf Sperrlisten, Port 25 oft gesperrt). Gmail funktioniert, ist aber nicht sauber. Kandidaten: Versanddienst mit eigener Absender-Domain (z. B. noreply@janis-home.de) wie Brevo oder Resend im kostenlosen Tarif. Alternative für wenige Nutzer: kein Mailversand, der Admin setzt Passwörter zurück.
 - Wie viele Nutzer langfristig (bestimmt Leistung des Pi und Rechtekonzept).
 - Arbeitsspeicher: Der Pi 4B hat nur 1 GB (905 MiB nutzbar), Claude Code verlangt laut Anleitung 4 GB. Belastungstest mit einem echten Projekt und Docker steht aus. Fällt er schlecht aus: Runner auf Mac oder PC (Variante B) oder Pi mit 4–8 GB (Variante C).
 
