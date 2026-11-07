@@ -1,6 +1,6 @@
 # Agent-Hub – Projektsheet
 
-Stand: 06.11.2026 · Autor: Janis (mit Claude) · Zweck: Philosophie, Ziel, Entscheidungen und Reihenfolge, damit jeder Claude-Chat im Projekt denselben Stand hat.
+Stand: 07.11.2026 · Autor: Janis (mit Claude) · Zweck: Philosophie, Ziel, Entscheidungen und Reihenfolge, damit jeder Claude-Chat im Projekt denselben Stand hat.
 
 ## 1. Ziel und Philosophie
 
@@ -173,12 +173,12 @@ Sonderregel für Swift (Entwurf): Swift-Code braucht Xcode und den Simulator und
 
 ## 7. Reihenfolge der Umsetzung
 
-### Phase 0 – Grundlagen (selbst lernen)
+### Phase 0 – Grundlagen (selbst lernen) – erledigt
 
 - Pi einrichten, Linux-Basics, Git, SSH mit Schlüssel.
 - Eine einfache Website lokal bauen und verstehen (Seiten, Formulare, Datenbank).
 
-### Phase 1 – Grundgerüst
+### Phase 1 – Grundgerüst – größtenteils erledigt (Rest: Dateiablage, Backup)
 
 - Domain sichern, Tunnel einrichten, HTTPS.
 - Login mit Benutzerkonten und Passwort-Hash.
@@ -204,27 +204,131 @@ Sonderregel für Swift (Entwurf): Swift-Code braucht Xcode und den Simulator und
 - Benachrichtigungen aufs Handy bei Freigabe oder Problemen.
 - Weitere KI-Anbieter als eigene Anmeldung.
 
-## 8. Offene Punkte
+## 8. Stand der Umsetzung (07.11.2026)
 
-- Anbindung des Abos: Getestet am 06.11.2026: Claude Code lässt sich auf dem Pi (Debian trixie, arm64) installieren, starten und per Link und Code ohne Bildschirm mit dem Claude-Konto anmelden. Offen: Nutzungsbedingungen prüfen und ob die Anmeldung dauerhaft hält (Erneuerung).
+Phase 0 und der Großteil von Phase 1 sind erledigt und laufen live unter `https://hub.janis-home.de`.
+
+**Fertig:** Pi eingerichtet (Raspberry Pi OS Lite 64-Bit, Docker, Compose, SSH mit Schlüssel); Login mit Benutzerkonten; Dashboard mit Kacheln, Seiten, Drag and Drop, zweistufigem Löschen; Projektseite mit Kanban-Board und Papierkorb; Einstellungen (Nutzername, Sprache); Deutsch/Englisch; Hell/Dunkel; Cloudflare Tunnel mit HTTPS; Claude Code auf dem Pi angemeldet (Runner, noch nicht an die Website angebunden).
+
+**Noch Platzhalter in der Oberfläche:** Claude/ChatGPT verknüpfen, Token-Anzeige, Stationen Agenten/Dateiablage/Dokumentation, Passwort vergessen.
+
+### Aufbau des Codes
+
+Repo `JanisWal/agent-hub` (privat), Branch `main` = Produktiv, ein Branch je Aufgabe. Nur drei Abhängigkeiten: `fastapi`, `uvicorn`, `python-multipart`. Code, Kommentare und Dateinamen sind englisch, Oberfläche und Doku deutsch. Die Oberfläche entsteht serverseitig aus Textvorlagen, ohne Framework.
+
+```
+compose.yml                  web-Dienst (127.0.0.1:8000, Daten in ./data, Netz „web“ für den Tunnel)
+web/Dockerfile               python:3.13-slim, startet uvicorn app.main:app
+web/app/
+  main.py                    FastAPI-App, Sicherheits-Header, Fehlerumleitungen, /health
+  deps.py                    Cookie-Einstellungen, Anmeldeprüfung (page_user, api_user), Antwort-Helfer
+  routes/auth.py             /login, /logout, /settings
+  routes/projects.py         /, /projects, /projects/move, /projects/{id}, /projects/{id}/delete
+  routes/board.py            Punkte anlegen, umbenennen, ordnen, annehmen, verwerfen, Papierkorb
+  db.py                      SQLite-Verbindung, Schema, kleine Migrationen (schließt Verbindungen sicher)
+  users.py  projects.py  board.py   Daten und Regeln (ohne HTTP)
+  layout.py                  Seitenhülle und Vorlagen-Ersetzung fill(): %NAME% = fertiger Wert, %t.schluessel% = übersetzter Text
+  ui.py                      Login-Seite, Einstellungs-Schublade, angemeldeter Seitenrahmen
+  dashboard.py  projectpage.py   HTML von Startseite und Projektseite
+  icons.py                   alle SVG-Symbole an einer Stelle
+  i18n.py                    alle Texte in Deutsch und Englisch (ein Test prüft Gleichstand)
+  create_admin.py            python -m app.create_admin
+  static/app.css  dashboard.css  project.css   Gestaltung (Werte siehe DESIGN.md)
+  static/core.js             Theme, Formularprüfung, Schublade, Dialog-Schließen, window.AgentHub.reload
+  static/motion.js           Federn und FLIP;  sortable.js: Ziehen zum Ordnen
+  static/dashboard.js        Begrüßung, Dialoge;  pages.js: Seitenband, Seitenanzeige, Kachel-Ziehen;  board.js: Board
+web/tests/                   Unit-Tests und integration_http.py (End-to-End über HTTP)
+```
+
+**Schnittstellen für später:** Jede Route hängt an einem eigenen Router (`routes/`), neue Bereiche (Agenten, Dateiablage, Tresor) kommen als weiteres Modul plus Router dazu, ohne `main.py` umzubauen. Die Anmeldeprüfung ist eine Abhängigkeit (`page_user` für Seiten, `api_user` für fetch-Aufrufe), eine Rollenprüfung lässt sich dort ergänzen. Neue Seiten bauen auf `ui.logged_in_page()` auf, neue Texte kommen in `i18n.py` in beide Sprachen, neue Symbole in `icons.py`. Claude-Vorschläge legt der spätere Agenten-Code mit `board.create_suggestion(project_id, kind, title)` an.
+
+### Datenmodell (SQLite, `/data/hub.db`)
+
+- `users`: id, email (eindeutig), password_hash (scrypt), is_admin, display_name, language (`de`/`en`), had_project, created_at.
+- `sessions`: token, user_id, expires_at (14 Tage). Cookie `session`: HttpOnly, SameSite=Lax, Secure über `HUB_SECURE_COOKIE=1`.
+- `projects`: id, user_id, name (höchstens 60), page, position. Sechs Kacheln pro Seite; eine volle Seite schiebt ihr letztes Projekt auf die nächste (`projects.move`). Seiten ohne Projekte gibt es nicht. Löschen ist endgültig und verlangt das Passwort.
+- `board_items`: id, project_id, kind (`bug`/`minor`/`major`), title (höchstens 200), source (`user`/`claude`), status (`open`/`proposed`/`trash`), position. Von Hand angelegte Punkte sind `open` und stehen oben, Vorschläge von Claude sind `proposed` und stehen unten. Jeder Zugriff prüft, dass das Projekt dem Nutzer gehört.
+- Schemaänderungen laufen über `NEW_COLUMNS` in `db.py` (Spalten werden beim Start ergänzt). Vor jeder Änderung an Daten ein Backup.
+
+### Routen
+
+| Methode, Pfad | Zweck | Ohne Login |
+|---|---|---|
+| GET/POST `/login`, POST `/logout` | Anmelden (401 bei falschen Daten), Abmelden | offen |
+| GET `/`, GET `/projects/{id}` | Dashboard, Projektseite | Umleitung auf `/login` |
+| POST `/settings`, `/projects`, `/projects/{id}/items`, `/items/{id}` | Formulare, antworten mit Umleitung | Umleitung auf `/login` |
+| POST `/projects/move`, `/projects/{id}/delete`, `/projects/{id}/trash/empty`, `/items/reorder`, `/items/{id}/{accept,reject,discard,restore,delete}` | fetch-Aufrufe, antworten mit `{"ok": …}` | 401 |
+| GET `/health` | Lebenszeichen | offen |
+
+`/docs`, `/redoc` und `/openapi.json` sind abgeschaltet. Alle Antworten tragen `X-Content-Type-Options`, `X-Frame-Options: SAMEORIGIN` und `Referrer-Policy`; Seiten (nicht `/static`) zusätzlich `Cache-Control: no-store`, bei HTTPS `Strict-Transport-Security`.
+
+## 9. Betrieb
+
+### Pi, Zugriff und Ordner
+
+- Gerät im Heimnetz: `admin@home.local`, Anmeldung per SSH-Schlüssel (`~/.ssh/id_agenthub`, ohne Passphrase, auf dem Pi in `authorized_keys` mit Kommentar `agent-hub-claude`). `admin` ist in der Gruppe `docker`. Passwörter tippt Janis selbst, Claude kennt und speichert keine.
+- Produktiv läuft der Klon `/opt/agent-hub/workspaces/agent-hub` (`main`, entspricht GitHub). Daten liegen in dessen Ordner `data/`. Der Tunnel liegt getrennt unter `/home/admin/cloudflared` (Token in dessen `.env`, nie im Git).
+- Die Seite erreicht der Tunnel über das Docker-Netz `web` (Alias `agent-hub`, Port 8000). Cloudflare leitet `hub.janis-home.de` an `http://agent-hub:8000`. Port 8000 ist nur auf `127.0.0.1` des Pi offen, von außen und im LAN geschlossen.
+- GitHub: Deploy-Key auf dem Pi, Push von dort.
+
+### Update-Ablauf
+
+1. Backup der Datenbank: `cp data/hub.db /opt/agent-hub/backups/hub-$(date +%F).db` (im Klon-Ordner, Dienst darf laufen).
+2. Änderungen auf einem Branch entwickeln und testen, dann nach `main` mergen und pushen.
+3. Auf dem Pi im Klon-Ordner: `git pull`, dann `docker compose up -d --build web`.
+4. Prüfen: `curl -s http://127.0.0.1:8000/health` und `https://hub.janis-home.de/login`.
+5. Zurück: `git revert <Commit>`, erneut bauen; Daten notfalls aus dem Backup.
+
+### Tests
+
+- **Unit-Tests** (laufen im Container, ohne den Dienst anzufassen), im Klon-Ordner: `docker compose run --rm --no-deps -v "$PWD/web/tests:/app/tests" web python -W ignore -m unittest discover -s tests -t .`
+- **HTTP-Test** gegen eine Wegwerf-Instanz mit eigener Datenbank und Testkonto, z. B. `docker run -d --name hub-test -p 8001:8000 -e HUB_DB=/tmp/test.db -e HUB_SECURE_COOKIE=0 agent-hub-web`, Testnutzer mit `users.create_user` anlegen, dann `python3 web/tests/integration_http.py http://127.0.0.1:8001 EMAIL PASSWORT`. Bei HTTP muss `HUB_SECURE_COOKIE=0` stehen, sonst sendet der Client den Cookie nicht zurück. Nie mit dem echten Konto testen.
+- **Browser-Prüfung** der Oberfläche in Claude in Chrome gegen die Testinstanz auf Port 8001 (Seite `http://home.local:8001`). Fenstergrößen werden über Rahmen (iframe) in der gewünschten Größe geprüft, weil `resize_window` das Fenster nicht ändert. In einem minimierten Test-Fenster pausiert Chrome `requestAnimationFrame` und CSS-Animationen: dann den Takt durch einen 16-ms-Zeitgeber ersetzen und endliche Animationen mit `getAnimations().finish()` beenden. Das Feld mit `autofocus` bekommt keinen Fokus, daher per `input.focus()` setzen und 2 bis 3 s nach dem Laden warten. Klicks per Koordinate: Bildschirmfoto ist skaliert (1568 px breit), also `getBoundingClientRect` über `javascript_tool` lesen und umrechnen.
+- Die Federn und die gefühlte Flüssigkeit kann nur Janis in einem sichtbaren Fenster beurteilen. Berührung am echten Handy ist ungeprüft.
+- Aus PowerShell keine verschachtelten Anführungszeichen für `ssh`: längere Schritte als Skriptdatei per `scp` hochladen und mit `bash` ausführen.
+
+### Zusammenarbeit mit Claude (Regeln von Janis)
+
+- Commit, Merge, Push, Deploy und Testläufe ohne Rückfrage, danach kurz berichten. Fragen nur bei Berechtigungen, Sicherheit sowie Design- und Feature-Entscheidungen. Keine „Verständnisfragen“ am Ende einer Antwort. Bei Änderungen an der Infrastruktur klar sagen, was entfernt und was neu ist.
+- Destruktive oder systemweite Befehle (Löschen, Docker-Volumes, `sudo`, Netzwerk) vorher bestätigen lassen. Hardware am Fahrzeug nie autonom schalten.
+- Ein Thema pro Commit, kurze Commit-Nachrichten. Neue Abhängigkeiten nennen und begründen.
+- Oberfläche folgt den Apple Human Interface Guidelines und dem Skill `apple-design`, Werte in DESIGN.md.
+
+## 10. Arbeitsplatz wechseln (Windows-PC → MacBook)
+
+Eine laufende Claude-Code-Sitzung zieht nicht um; der PC muss an bleiben, bis ein Auftrag fertig ist. Danach lässt sich am Mac weiterarbeiten:
+
+1. Projektordner `Claude Projekte/Claude Board` ist per iCloud schon auf dem Mac (CLAUDE.md, PROJEKT.md, DESIGN.md und Skill `.claude/skills/apple-design`). Claude liest beim Start diese Dateien, damit hat jeder Chat den gleichen Stand.
+2. SSH-Schlüssel für den Pi: auf dem Mac `ssh-keygen -t ed25519 -f ~/.ssh/id_agenthub -N ""`, den öffentlichen Teil (`~/.ssh/id_agenthub.pub`) auf dem Pi in `~/.ssh/authorized_keys` ergänzen (einmalig mit Janis’ Passwort, das er selbst tippt). Danach `ssh -i ~/.ssh/id_agenthub admin@home.local`.
+3. Claude in Chrome: Erweiterung im Chrome des Macs installieren und anmelden, dann gilt dieselbe Prüfweise wie in Abschnitt 9.
+4. Die Erinnerungen von Claude (Auto-Memory) liegen nur auf dem PC (`C:\Users\janis\.claude\projects\…\memory`). Ihr Inhalt steht hier in Abschnitt 9, am Mac wird nichts davon benötigt.
+5. Repo am Mac klonen: `git clone git@github.com:JanisWal/agent-hub.git` (mit einem eigenen GitHub-Zugang des Macs).
+
+## 11. Offene Punkte
+
+- Anbindung des Abos: Claude Code lässt sich auf dem Pi (Debian trixie, arm64) installieren und per Link und Code ohne Bildschirm anmelden (getestet 06.11.2026). Offen: Nutzungsbedingungen prüfen und ob die Anmeldung dauerhaft hält.
 - Vorlagen für Janis’ Freigaben und die Tester-Checklisten: welche Klick-Aussagen, welche Felder.
-- Domain janis-home.de kaufen: Registrar mit .de-Unterstützung wählen, Nameserver auf Cloudflare.
-- GitHub-Konto anlegen (privat).
+- Domain `janis-home.de` ist im Einsatz (Subdomain `hub`); Registrar und Cloudflare-Konditionen bei Gelegenheit prüfen. Optional Cloudflare Access (Code per E-Mail) als zusätzliche Hürde vor der Seite, bis eine Begrenzung der Anmeldeversuche gebaut ist.
 - SSD kaufen (120–240 GB) und Umzug von der SD-Karte planen.
 - E-Mail-Versand für Passwort-Reset: Absender und Dienst festlegen.
 - Wie viele Nutzer langfristig (bestimmt Leistung des Pi und Rechtekonzept).
 - Arbeitsspeicher: Der Pi 4B hat nur 1 GB (905 MiB nutzbar), Claude Code verlangt laut Anleitung 4 GB. Belastungstest mit einem echten Projekt und Docker steht aus. Fällt er schlecht aus: Runner auf Mac oder PC (Variante B) oder Pi mit 4–8 GB (Variante C).
+- Aufräumen auf dem Pi: Codekopie `/opt/agent-hub/web` und alte Branches, doppelte `docker-compose.yml` unter `/home/admin/cloudflared`.
+- Oberfläche: siehe DESIGN.md, Abschnitt „Noch offen“.
 
 ### Checkliste vor dem Livegang
 
-- [ ] Cloudflare Tunnel mit HTTPS eingerichtet, Port nur auf 127.0.0.1 gebunden
-- [ ] Cookie mit Secure-Merkmal, per Einstellung umschaltbar (Test per HTTP, Betrieb per HTTPS)
+- [x] Cloudflare Tunnel mit HTTPS eingerichtet, Port nur auf 127.0.0.1 gebunden
+- [x] Cookie mit Secure-Merkmal, per Einstellung umschaltbar (`HUB_SECURE_COOKIE`)
+- [x] Geheimnisse nur in .env, nicht im Git
+- [x] Update-Ablauf festgelegt (Abschnitt 9)
+- [x] Erster Admin angelegt, Login getestet
+- [x] Sicherheits-Header gesetzt, API-Dokumentation abgeschaltet
+- [ ] Begrenzung falscher Anmeldeversuche (Anmeldung und Löschen) – von Janis noch nicht freigegeben
 - [ ] Versionen von fastapi, uvicorn und python-multipart festgenagelt
-- [ ] Web-Container läuft als eigener Benutzer ohne Sonderrechte, mit Speicherlimit
-- [ ] Geheimnisse nur in .env, nicht im Git
+- [ ] Web-Container läuft als eigener Benutzer ohne Sonderrechte (Datenordner-Rechte anpassen), mit Speicherlimit
+- [ ] Gesundheitsprüfung über `/health` in compose eingetragen
+- [ ] Content-Security-Policy (benötigt, dass das Theme-Skript im `<head>` ohne Inline-Code auskommt)
 - [ ] Tägliches Backup (restic) läuft, Wiederherstellung einmal getestet
-- [ ] Update-Ablauf festgelegt: Backup, git pull, docker compose up -d --build, Rückweg per Git
-- [ ] Gesundheitsprüfung über /health in compose eingetragen
 - [ ] System von SD-Karte auf SSD umgezogen
 - [ ] Nur noch eine Codekopie (Doppelung /opt/agent-hub/web und Klon in workspaces aufgelöst)
-- [ ] Erster Admin angelegt, Login getestet, Begrenzung falscher Anmeldeversuche aktiv

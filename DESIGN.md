@@ -1,6 +1,6 @@
 # Agent-Hub – Designrichtlinien
 
-Stand: 07.11.2026 · Entscheidungen von Janis. Die Login-Seite ist der abgenommene Referenzentwurf; alle Werte unten stammen aus ihr (`web/app/static/theme.css`, `theme.js`, `page()` in `web/app/main.py`). Wird ein Wert geändert, wird zuerst diese Datei angepasst, dann der Code. Änderungen am Design sind Entscheidungen von Janis.
+Stand: 07.11.2026 · Entscheidungen von Janis. Die Login-Seite ist der abgenommene Referenzentwurf; alle Werte unten stammen aus ihr (`web/app/static/app.css`, `core.js`, `page()` in `web/app/layout.py`). Wird ein Wert geändert, wird zuerst diese Datei angepasst, dann der Code. Änderungen am Design sind Entscheidungen von Janis.
 
 Legende: **Ist** = umgesetzt und geprüft. **Ziel** = gewollt, noch nicht gebaut. **Ungeprüft** = gebaut, aber nicht nachgemessen.
 
@@ -14,7 +14,7 @@ Zwei Welten gemischt, nicht Apple in Reinform:
 
 ## 2. Farben
 
-Nie reines Weiß (`#FFFFFF`) oder reines Schwarz. Alle Flächen sind warm getönt. Jeder Wert steht als CSS-Variable in `theme.css`, nirgends feste Farben im Code oder in Seiten.
+Nie reines Weiß (`#FFFFFF`) oder reines Schwarz. Alle Flächen sind warm getönt. Jeder Wert steht als CSS-Variable in `app.css`, nirgends feste Farben im Code oder in Seiten.
 
 | Variable | Rolle | Hell | Dunkel |
 |---|---|---|---|
@@ -74,13 +74,13 @@ Regeln:
 
 - Umschalter **fest unten rechts auf jeder Seite**, auch auf Login und in jedem Menü, ein Klick, immer sichtbar. (Früher in der Kopfleiste, am 07.11.2026 nach unten rechts verschoben.)
 - Erster Besuch: Stil der Geräteeinstellung (`prefers-color-scheme`). Danach gilt die Wahl, gespeichert im Browser (`localStorage`, Schlüssel `theme`, Werte `light` / `dark`), für alle Seiten.
-- Kein Aufblitzen: Ein kleines Inline-Skript im `<head>` setzt `data-theme` vor dem ersten Zeichnen. `theme.js` übernimmt nur den Klick.
+- Kein Aufblitzen: Ein kleines Inline-Skript im `<head>` setzt `data-theme` vor dem ersten Zeichnen. `core.js` übernimmt nur den Klick.
 - `localStorage` kann blockiert sein (private Fenster): jeder Zugriff steht in `try/catch`, die Seite funktioniert dann ohne Speichern.
 
 ## 6. Bewegung
 
 - Kurz, federnd, ruhig. Grundlage ist der Skill `apple-design` (Apple, „Designing Fluid Interfaces“).
-- **Alles, was man anfassen kann, bewegt sich mit Federn** (`web/app/static/motion.js`, ohne Bibliothek), nicht mit festen Dauern. Eine Feder hat zwei Werte, Dämpfung und Reaktionszeit, und hat keine feste Dauer:
+- **Alles, was man anfassen kann, bewegt sich mit Federn** (`motion.js` und `sortable.js` in `web/app/static/`, ohne Bibliothek), nicht mit festen Dauern. Eine Feder hat zwei Werte, Dämpfung und Reaktionszeit, und hat keine feste Dauer:
   - **Verschieben und Seitenwechsel** (`MOVE`): Dämpfung 1,0, Reaktionszeit 0,4 s, kein Überschwingen. Gemessen: Seitenwechsel per Punkt kommt nach etwa 0,7 s an, ohne Überschwingen.
   - **Anheben** (`LIFT`): Dämpfung 1,0, Reaktionszeit 0,25 s.
   - **Nach einem Wisch** (`SNAP`): Dämpfung 0,85, Reaktionszeit 0,35 s, etwas Nachschwingen (gemessen 3 px), **nur weil die Geste Schwung hatte**.
@@ -121,7 +121,7 @@ Regeln:
 
 ## 9. Formulare
 
-- **Keine Browser-Blasen** („Bitte füllen Sie dieses Feld aus“): Formulare tragen `novalidate`. `theme.js` prüft beim Absenden jedes Pflichtfeld und zeigt die Meldung im Design direkt unter dem Feld.
+- **Keine Browser-Blasen** („Bitte füllen Sie dieses Feld aus“): Formulare tragen `novalidate`. `core.js` prüft beim Absenden jedes Pflichtfeld und zeigt die Meldung im Design direkt unter dem Feld.
 - Meldungstexte: leeres Feld „Bitte ausfüllen.“, ungültige Adresse „Bitte eine gültige E-Mail-Adresse eingeben.“ Als leer gilt ein Feld, das nur Leerzeichen enthält, **außer Passwörter** (dort zählt jedes Zeichen).
 - Verhalten: Das erste fehlerhafte Feld bekommt den Fokus, die Meldung hat `role="alert"`, das Feld `aria-invalid="true"`, Rand und Ring in `--error` (Ring 4 px, 22 % Fehlerfarbe). Die Meldung verschwindet, sobald im Feld getippt wird.
 - Der Server prüft immer selbst; fehlende Felder gelten dort als leer (`Form("")`) und führen zur Fehlermeldung statt zu einer technischen Fehlerseite. Falsche Anmeldung liefert Status 401 und dieselbe Meldung für „E-Mail“ und „Passwort“.
@@ -209,15 +209,13 @@ Stand 07.11.2026, von Janis beauftragt, in Chrome mit Testkonto geprüft (Anlege
 
 ## 11. Umsetzung
 
-- `web/app/static/theme.css`: alle Werte als Variablen, alle Komponenten.
-- `web/app/static/theme.js`: Umschalter und Formularmeldungen (Texte kommen vom Server über `data-msg-*`). Keine Abhängigkeit, kein Framework.
-- `web/app/static/dashboard.js`: Begrüßung, Einstellungs-Schublade, Dialoge, Löschablauf, Drag and Drop der Kacheln.
-- `web/app/static/board.js`: Kanban-Board (Anlegen, Umbenennen, Akzeptieren, Papierkorb, Drag and Drop zwischen Spalten). Nur auf der Projektseite geladen.
-- `web/app/layout.py`: `page(title, body, lang, top_right, scripts)` ist die gemeinsame Hülle mit Meta-Tags, Inline-Skript für das Theme, Farbflächen, Kopfleiste und Umschalter. **Neue Seiten nutzen `page()`**, damit der Umschalter überall da ist. `fill()` setzt `%NAME%`-Platzhalter in einem Durchgang ein (Nutzertext kann so nichts einschleusen).
-- `web/app/dashboard.py`: HTML von Dashboard und Einstellungs-Schublade. `web/app/projectpage.py`: HTML der Projektseite mit Board. `web/app/i18n.py`: Texte. `web/app/projects.py`: Projekte, `web/app/board.py`: Board-Punkte (beides SQLite). Die Claude-Vorschläge legt später der Agenten-Code mit `board.create_suggestion()` an.
-- Reines CSS und JavaScript ohne Bibliotheken (Standardbibliothek zuerst, siehe CLAUDE.md), neue Abhängigkeiten nur nach Begründung.
-- Einbindung: `/static` wird von FastAPI (`StaticFiles`) ausgeliefert; nach Änderungen an Dateien im Ordner `static` muss der Web-Container neu gebaut werden (`docker compose up -d --build web`).
+Aufbau des Codes und Betrieb stehen in PROJEKT.md (Abschnitte 8 und 9). Für die Gestaltung gilt:
 
+- `web/app/static/app.css`: alle Werte als Variablen und alle Bausteine, die jede Seite braucht (Glas, Felder, Knöpfe, Dialoge, Schublade, getragene Kachel). `dashboard.css` und `project.css` enthalten nur, was die jeweilige Seite zusätzlich braucht. Die Reihenfolge der Regeln ist gewollt (Handy-Regeln stehen jeweils zuletzt).
+- `web/app/static/core.js`: Umschalter, Formularmeldungen (Texte vom Server über `data-msg-*`), Schublade, Schließen-Knöpfe und `AgentHub.reload` (Neuladen ohne Einblend-Animation, mit Scrollstand). `motion.js` (Federn, FLIP) und `sortable.js` (Ziehen zum Ordnen) sind die Bewegungsbasis. `dashboard.js` (Begrüßung, Dialoge), `pages.js` (Seitenband, Seitenanzeige, Kachel-Ziehen) und `board.js` (Board) laden nur auf ihrer Seite. Keine Abhängigkeit, kein Framework.
+- `web/app/layout.py`: `page(title, body, lang, top_right=, scripts=, styles=, body_class=)` ist die gemeinsame Hülle (Meta-Tags, Inline-Skript für das Theme, Farbflächen, Kopfleiste, Umschalter). `fill()` setzt `%NAME%` (fertige Werte) und `%t.schluessel%` (übersetzte Texte) in einem Durchgang ein, Nutzertext kann so nichts einschleusen. **Neue Seiten nutzen `ui.logged_in_page()` bzw. `page()`**, damit der Umschalter überall da ist.
+- Symbole kommen aus `web/app/icons.py`, Texte aus `web/app/i18n.py`.
+- Nach Änderungen an Dateien in `static` den Container neu bauen (`docker compose up -d --build web`); `/static` liefert FastAPI aus.
 ## 12. Noch offen (Janis entscheidet bei Bedarf)
 
 - **Berührung:** Ziehen und Wischen per Finger sind gebaut und mit selbst gesendeten Zeigerereignissen geprüft (Wisch mit Schwung, Gummiband, langes Drücken, Tragen über Spalten und Seiten). **Am echten Handy nicht geprüft**, besonders das Verhalten von iPhone-Safari (Scroll-Sperre beim Tragen, Kontextmenü beim langen Drücken). Umordnen per Tastatur gibt es noch nicht (nur Pfeiltasten für Seiten).
