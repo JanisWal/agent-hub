@@ -83,6 +83,7 @@ class Job:
     round: int
     note: str                       # the user's remark from his last rejection (data, not an order)
     reports: list[tuple[str, str]]  # (role, report) of the earlier runs of this task (data)
+    net: str = DEFAULT_NET          # web and code together (open internet) or apart, the role's switch
 
 
 def _task(row: sqlite3.Row) -> Task:
@@ -147,20 +148,20 @@ def autonomy_in(conn: sqlite3.Connection, user_id: int) -> str:
     return _setting(conn, user_id, "autonomy", DEFAULT_AUTONOMY)
 
 
-def net_in(conn: sqlite3.Connection, user_id: int) -> str:
-    """Web and code together or apart for the manager (see NET_MODES)."""
-    return _setting(conn, user_id, "net", DEFAULT_NET)
+def net_in(conn: sqlite3.Connection, user_id: int, role: str) -> str:
+    """Web and code together or apart for one role (see NET_MODES). Per agent, like the model (Janis, 08.11.2026):
+    the switch in the manager chat is the manager's ("chef"), the others come with the tabs of their roles."""
+    return _setting(conn, user_id, f"net.{role}", DEFAULT_NET)
 
 
 def settings(user_id: int) -> dict:
-    """{"strictness", "autonomy", "net", "roles": {role: {"enabled": bool, "model": str}}}, defaults filled in."""
+    """{"strictness", "autonomy", "roles": {role: {"enabled": bool, "model": str, "net": str}}}, defaults filled in."""
     with db.connect() as conn:
         enabled = _enabled(conn, user_id)
         return {
             "strictness": _strictness(conn, user_id),
             "autonomy": autonomy_in(conn, user_id),
-            "net": net_in(conn, user_id),
-            "roles": {r: {"enabled": r in enabled, "model": _model(conn, user_id, r)}
+            "roles": {r: {"enabled": r in enabled, "model": _model(conn, user_id, r), "net": net_in(conn, user_id, r)}
                       for r in workflow.ROLES},
         }
 
@@ -179,13 +180,13 @@ def configure(user_id: int, role: str | None = None, *, enabled: bool | None = N
         if autonomy not in AUTONOMY:
             raise ValueError("Unbekannte Selbstständigkeit")
         changes.append(("autonomy", autonomy))
-    if net is not None:
-        if net not in NET_MODES:
-            raise ValueError("Unbekannter Netzmodus")
-        changes.append(("net", net))
-    if enabled is not None or model is not None:
+    if enabled is not None or model is not None or net is not None:
         if role not in workflow.ROLES:
             raise ValueError("Unbekannte Rolle")
+        if net is not None:
+            if net not in NET_MODES:
+                raise ValueError("Unbekannter Netzmodus")
+            changes.append((f"net.{role}", net))
         if enabled is not None:
             if role == "programmer" and not enabled:
                 raise ValueError("Der Programmierer bleibt immer an")
@@ -430,7 +431,7 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
                 " ORDER BY id", (task["id"],))]
             return Job(run["id"], user_id, task["project_id"], task["id"], run["role"], run["model"],
                        branch_name(task["id"]), task["title"], task["kind"], task["round"],
-                       task["note"], reports)
+                       task["note"], reports, net_in(conn, user_id, run["role"]))
     return None
 
 

@@ -165,7 +165,8 @@ class ChatQueueTest(Base):
         self.assertIn(chat.TOOLS_TEXT["apart"], job.prompt)                    # the manager knows code is offline
         self.assertNotIn(chat.TOOLS_TEXT["all"], job.prompt)
         chat.finish(job.chat_id, True, "done")
-        self.assertEqual(agents.settings(self.b.id)["net"], "together")        # per user
+        self.assertEqual(agents.settings(self.b.id)["roles"]["chef"]["net"], "together")   # per user
+        self.assertEqual(agents.settings(self.a.id)["roles"]["programmer"]["net"], "together")  # and per agent
         self.assertEqual(manager_routes.manager_settings("", "", "always", user=self.a).status_code, 400)
         self.assertEqual(manager_routes.manager_settings("", "", "together", user=self.a)["net"], "together")
         chat.send(self.a.id, self.pa.id, "again")

@@ -65,10 +65,16 @@ def _proxy_env(url: str) -> list[str]:
     return ["-e", f"HTTPS_PROXY={url}", "-e", f"https_proxy={url}"]
 
 
-def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, claude_dir: str,
+RUN_PROXY = {"together": WEB_PROXY, "apart": API_PROXY}   # the role's switch "web + code together"
+
+
+def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, claude_dir: str, net: str = "together",
                   image: str = IMAGE, network: str = NETWORK, memory: str = "480m") -> list[str]:
-    """The `docker run` command for one run. Raises ValueError for anything unexpected."""
+    """The `docker run` command for one run. Raises ValueError for anything unexpected. `net` is the role's
+    switch: "together" = open internet (public hosts only), "apart" = only Anthropic (code without internet)."""
     run_id = _number(run_id, "run_id")
+    if net not in RUN_PROXY:
+        raise ValueError("unknown net mode")
     uid = run_uid(user_id)
     if model not in MODELS:
         raise ValueError("unknown model")
@@ -84,8 +90,8 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, claud
         "--network", network,
         "--mount", f"type=bind,src={work},dst=/work", "--workdir", "/work",
         "--mount", f"type=bind,src={claude},dst=/claude",
-        # Agents may use the internet (Janis, 08.11.2026): public hosts only, never the home network.
-        "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude", *_proxy_env(WEB_PROXY),
+        # Agents may use the internet (Janis, 08.11.2026): public hosts only, never the home network; per role switch.
+        "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude", *_proxy_env(RUN_PROXY[net]),
         image,
         # Inside the isolated container the agent may use its tools freely; the prompt comes via stdin.
         "claude", "-p", "--model", model, "--output-format", "json", "--dangerously-skip-permissions",

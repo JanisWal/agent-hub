@@ -150,7 +150,7 @@ def send(user_id: int, project_id: int, prompt: str, mode: str | None = None, no
         if conn.execute("SELECT 1 FROM projects WHERE id = ? AND user_id = ?", (project_id, user_id)).fetchone() is None:
             raise ValueError("project")
         model = model or agents.model_in(conn, user_id, "chef")
-        mode = mode or NET_TO_MODE.get(agents.net_in(conn, user_id), "apart")
+        mode = mode or NET_TO_MODE.get(agents.net_in(conn, user_id, "chef"), "apart")
         if not claude_link.connected_in(conn, user_id):
             raise ValueError("claude")
         _drop_stale(conn, now)
