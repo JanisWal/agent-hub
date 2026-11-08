@@ -442,8 +442,12 @@ main { padding-bottom: 96px; } /* room for the toggle */
   width: var(--w);
   max-width: none;
   max-height: calc(100vh - 96px);
-  overflow: auto;
-  padding: 20px;
+  /* The box itself never scrolls: the light edge (.glass::before) belongs to it and must stay on the rim.
+     Only the inner .drawer-scroll scrolls. */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
   border-radius: 24px;
   animation: none;
   opacity: 0;
@@ -451,6 +455,7 @@ main { padding-bottom: 96px; } /* room for the toggle */
   transition: opacity 0.3s, visibility 0s 0.55s;
 }
 .drawer.open .drawer-box { opacity: 1; visibility: visible; transition: opacity 0.3s 0.1s, visibility 0s; }
+.drawer-scroll { min-height: 0; padding: 20px; overflow-y: auto; overflow-x: hidden; }
 
 /* Every entry in the box is the same kind of block: small label, value below. */
 .setting {
@@ -566,20 +571,20 @@ a.primary { display: flex; align-items: center; justify-content: center; text-de
 .drawer-box form + a.link { margin-top: 12px; }
 /* Low windows (up to 640 px high): the box gets tighter so everything still fits without scrolling. */
 @media (max-height: 640px) {
-  .drawer .drawer-box { padding: 12px; }
+  .drawer-scroll { padding: 12px; }
   .setting { margin-bottom: 5px; padding: 6px 12px; }
   .setting-label { margin-bottom: 0; font-size: 0.74rem; }
   .setting input, .setting select, .service-line { min-height: 24px; }
   .has-select > svg { bottom: 9px; }
   .drawer-box .clear-btn { margin-bottom: 5px; }
   .drawer-box .save { min-height: 44px; margin-top: 6px; }
-  .drawer-box > a.link, .drawer-box > form > .link { min-height: 32px; margin-top: 0; }
+  .drawer-scroll > a.link, .drawer-scroll > form > .link { min-height: 32px; margin-top: 0; }
   .drawer-box form + a.link { margin-top: 6px; }
 }
 /* Low and wide (not a phone held upright): the setting blocks stand two by two, the box gets wider. */
 @media (max-height: 640px) and (min-width: 561px) {
   .drawer { --w: min(420px, calc(100vw - 96px)); }
-  .drawer-box > form:first-child { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8px; }
+  .drawer-scroll > form:first-child { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8px; }
   .drawer-box .clear-btn, .drawer-box .save { grid-column: 1 / -1; }
   .drawer-box .clear-btn { order: 1; }   /* under both service blocks, so Claude and ChatGPT share a row */
   .drawer-box .save { order: 2; }
