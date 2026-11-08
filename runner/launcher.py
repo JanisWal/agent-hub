@@ -27,15 +27,15 @@ UID_BASE = 10000                  # run user = UID_BASE + user_id, never root
 MAX_REPORT = 20000
 # The agent network has no route to the outside: everything goes through the egress proxy (runner/egress.py).
 WEB_PROXY = "http://egress:3128"   # any public host on 443, never the home network or the Pi itself
-API_PROXY = "http://egress:3129"   # only Anthropic: Claude Code can reach its API, code it runs can reach nothing
-# What the manager chat may do: tools, proxy and steps (model turns) per question. The single modes "plain",
-# "web" and "code" of the old chat window were removed on 08.11.2026 (WEB_PROXY stays for later agent runs).
+API_PROXY = "http://egress:3129"   # only Anthropic (sign-ins)
+# What the manager chat may do: tools, proxy and steps (model turns) per question.
 CHAT_MODES = {
-    # The manager chat (Janis, 07.11.2026): web search and code always, Claude uses them only when needed.
-    # Safe together because the web search runs on Anthropic's side (API traffic only) and the container's
-    # only way out is still the Anthropic proxy: code reaches no web page, so nothing it reads can leave.
-    # WebFetch (reading any page from here) would need the open web proxy, so it is left out on purpose.
-    "all": {"tools": ("WebSearch", "Bash"), "proxy": API_PROXY, "turns": 10},
+    # The manager chat (Janis, 07.11.2026/08.11.2026): web search, reading pages and code with internet, always;
+    # Claude uses them only when needed. The way out is the public-only proxy: the open internet, never the home
+    # network. Accepted risk (Janis chose "open internet" on 08.11.2026): code can read the user's Claude login
+    # (mounted read-only) and could send it out if a web page talked Claude into it; the damage is his own quota
+    # until he disconnects and connects again. The Pi, the hub and the home network stay out of reach.
+    "all": {"tools": ("WebSearch", "WebFetch", "Bash"), "proxy": WEB_PROXY, "turns": 12},
 }
 _BAD_PATH = re.compile(r"[,\s\x00=:]")   # would confuse --mount parsing or hide something
 _MARKER = re.compile(r"^RESULT:\s*([a-z_]+)\s*$")
@@ -81,7 +81,8 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, claud
         "--network", network,
         "--mount", f"type=bind,src={work},dst=/work", "--workdir", "/work",
         "--mount", f"type=bind,src={claude},dst=/claude",
-        "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude", *_proxy_env(API_PROXY),
+        # Agents may use the internet (Janis, 08.11.2026): public hosts only, never the home network.
+        "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude", *_proxy_env(WEB_PROXY),
         image,
         # Inside the isolated container the agent may use its tools freely; the prompt comes via stdin.
         "claude", "-p", "--model", model, "--output-format", "json", "--dangerously-skip-permissions",

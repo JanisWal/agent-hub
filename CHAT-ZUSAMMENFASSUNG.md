@@ -9,10 +9,10 @@ Ein selbst gehostetes Verwaltungstool auf einem Raspberry Pi 4B (1 GB), live unt
 ## Was seit der letzten Übergabe (07.11.2026, Mittag) dazugekommen ist
 
 1. **Claude verknüpfen** pro Nutzer (Schublade, Link und Code), Trennen räumt den Ordner auf; Runner-Dienst, ein Container je Lauf, Image `agent-hub-agent`.
-2. **Netz:** Agenten-Netz intern, einziger Ausgang der Filter-Proxy `egress` (3129 nur Anthropic, 3128 öffentliche Seiten, derzeit ungenutzt). Heimnetz gesperrt.
+2. **Netz:** Agenten-Netz intern, einziger Ausgang der Filter-Proxy `egress` (3128 öffentliche Seiten für Manager-Chat und Agenten, 3129 nur Anthropic für die Anmeldung). Heimnetz gesperrt. Akzeptiertes Risiko: Code kann das eigene Claude-Login lesen.
 3. **Projektseite neu** nach Janis’ Skizze: Titel am goldenen Schnitt mit **Stift** (Drop-down für Name und Beschreibung), runde Knöpfe für Archiv und Papierkorb am Zahnrad, Board als Linien mit grünen/roten Knöpfen, Stationen links als zwei Ansichten **Board** und **Manager** (`#board`, `#manager`), eigene Tooltips und Scrollleisten, geprüft von 360 bis 1920 px.
 4. **Manager-Ansicht** in drei Spalten: Status, Geräte | Regelmäßige Prüfungen, Dateien | **Manager-Chat**, „Wartet auf dich“. Geräte, Prüfungen und Dateien sind angekündigt, Status und „Wartet auf dich“ noch leer.
-5. **Manager-Chat:** ersetzt das alte Einzelfragen-Fenster. Kennt Name, Beschreibung, offene Board-Punkte und die letzten 6 Fragen des Projekts; Web (Suche bei Anthropic) und Code (ohne Internet) immer an, nutzt sie nur bei Bedarf. **Modell** und **Selbstständigkeit** als Drop-downs im eigenen Glas-Stil, Einstellungen des Managers pro Nutzer. Echter Lauf auf dem Pi bestanden.
+5. **Manager-Chat:** ersetzt das alte Einzelfragen-Fenster. Kennt Name, Beschreibung, offene Board-Punkte und die letzten 6 Fragen des Projekts; Websuche, Seiten lesen und Code mit offenem Internet (Janis’ Entscheidung, nie Heimnetz) immer an, nutzt sie nur bei Bedarf. **Modell** und **Selbstständigkeit** als Drop-downs im eigenen Glas-Stil, Einstellungen des Managers pro Nutzer. Echter Lauf auf dem Pi bestanden.
 6. **Säuberung** (`cleanup-manager`): Rolle Dokumentator aus dem Code, alte Chat-Modi entfernt, ungenutzter Text entfernt.
 
 ## Entscheidungen von Janis (neu, alle in PROJEKT.md oder KONZEPT-AGENTEN.md)

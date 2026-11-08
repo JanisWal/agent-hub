@@ -79,7 +79,7 @@ class ChatCommandTest(unittest.TestCase):
         text = " ".join(cmd)
         self.assertEqual(sum(1 for c in cmd if c == "--mount"), 1)            # only the user's Claude folder
         self.assertNotIn("dst=/work", text)
-        for tool in ("WebFetch", "Edit", "Write", "Read", "Glob", "Grep", "NotebookEdit", "Task"):
+        for tool in ("Edit", "Write", "Read", "Glob", "Grep", "NotebookEdit", "Task"):
             self.assertNotIn(tool, text)
         self.assertNotIn("--dangerously-skip-permissions", cmd)
         for flag in ("--read-only", "--cap-drop", "--no-session-persistence", "-i"):
@@ -94,23 +94,24 @@ class ChatCommandTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 L.build_chat_command(chat_id=5, user_id=2, model="haiku", claude_dir="/data/claude/2", mode=old)
 
-    def test_the_manager_chat_has_search_and_code_but_no_open_web(self):
+    def test_the_manager_chat_has_the_open_internet_but_never_the_home_network(self):
         cmd = L.build_chat_command(chat_id=6, user_id=2, model="sonnet", claude_dir="/data/claude/2", mode="all")
-        self.assertEqual(cmd[cmd.index("--tools") + 1], "WebSearch,Bash")          # no WebFetch: it would need the open web
-        self.assertEqual(cmd[cmd.index("--allowedTools") + 1], "WebSearch Bash")
-        self.assertIn("HTTPS_PROXY=http://egress:3129", cmd)                       # Anthropic only, the search runs there
-        self.assertNotIn("HTTPS_PROXY=http://egress:3128", cmd)
+        self.assertEqual(cmd[cmd.index("--tools") + 1], "WebSearch,WebFetch,Bash")   # Janis chose the open internet
+        self.assertEqual(cmd[cmd.index("--allowedTools") + 1], "WebSearch WebFetch Bash")
+        self.assertIn("HTTPS_PROXY=http://egress:3128", cmd)                       # public hosts only (egress.py)
+        self.assertEqual(cmd[cmd.index("--network") + 1], "agent-hub-agents")      # internal network: the proxy is the only way
         self.assertTrue(any(part.endswith(",readonly") for part in cmd))           # code never changes the login
         self.assertIn("size=128m", " ".join(cmd))
-        self.assertEqual(cmd[cmd.index("--max-turns") + 1], "10")
+        self.assertEqual(cmd[cmd.index("--max-turns") + 1], "12")
         self.assertEqual(cmd[cmd.index("--model") + 1], "sonnet")
 
     def test_every_run_goes_through_the_proxy(self):
         run = L.build_command(run_id=1, user_id=2, model="sonnet", work_dir="/w/1", claude_dir="/c/2")
         login = L.build_login_command(user_id=2, claude_dir="/c/2")
+        self.assertIn("HTTPS_PROXY=http://egress:3128", run)                       # agents: public internet, no home network
+        self.assertIn("HTTPS_PROXY=http://egress:3129", login)                     # sign-ins: Anthropic only
         for cmd in (run, login):
-            self.assertIn("HTTPS_PROXY=http://egress:3129", cmd)                   # agents and sign-ins: Anthropic only
-            self.assertIn("https_proxy=http://egress:3129", cmd)
+            self.assertIn("https_proxy=http://egress:" + ("3128" if cmd is run else "3129"), cmd)
             self.assertNotIn("host", cmd)
             self.assertNotIn("bridge", cmd)
 

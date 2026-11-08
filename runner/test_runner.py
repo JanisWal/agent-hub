@@ -199,14 +199,13 @@ class ChatRunTest(unittest.TestCase):
         self.assertEqual(self.api.posted("/chat/5/finish"),
                          [{"success": "1", "answer": "Hi!", "tokens_in": 7, "tokens_out": 2}])
 
-    def test_every_question_runs_with_search_and_code_behind_the_anthropic_proxy(self):
+    def test_every_question_runs_behind_the_public_only_proxy(self):
         for job in ({"mode": "all"}, {}):                                       # a job without a mode is "all" too
             self.commands.clear()
             self.api.chat_job = {"chat_id": 5, "user_id": 2, "model": "haiku", "prompt": "x", **job}
             self.runner.handle_chat()
             command = " ".join(self.commands[0][0])
-            self.assertIn("egress:3129", command)
-            self.assertNotIn("egress:3128", command)
+            self.assertIn("egress:3128", command)
             self.assertIn(",readonly", command)
     def test_nothing_to_do(self):
         self.api.chat_job = None
