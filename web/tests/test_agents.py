@@ -213,6 +213,20 @@ class ChainTest(Base):
         self.assertEqual(agents.settings(self.a.id)["roles"]["reviewer"]["model"], "opus")
         self.assertEqual(agents.settings(self.b.id)["roles"]["reviewer"]["model"], "sonnet")
 
+    def test_each_agent_has_its_own_web_and_code_switch(self):
+        self.connect(self.a)
+        agents.configure(self.a.id, "programmer", net="apart")
+        roles = agents.settings(self.a.id)["roles"]
+        self.assertEqual((roles["programmer"]["net"], roles["chef"]["net"], roles["tester"]["net"]),
+                         ("apart", "together", "together"))                    # per agent, the others untouched
+        self.assertEqual(agents.settings(self.b.id)["roles"]["programmer"]["net"], "together")   # per user
+        agents.start_task(self.a.id, self.project.id, self.item.id)
+        self.assertEqual(agents.claim_next(can_mac=True).net, "apart")        # the run learns the switch of its role
+        for call in (lambda: agents.configure(self.a.id, "tester", net="open"),
+                     lambda: agents.configure(self.a.id, None, net="apart")):  # a switch always belongs to a role
+            with self.assertRaises(ValueError):
+                call()
+
     def test_bad_results_are_refused(self):
         self.connect(self.a)
         agents.start_task(self.a.id, self.project.id, self.item.id)

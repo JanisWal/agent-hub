@@ -19,4 +19,5 @@ def manager_settings(model: str = Form(""), autonomy: str = Form(""), net: str =
     except ValueError:
         return fail(400)
     current = agents.settings(user.id)
-    return ok(model=current["roles"]["chef"]["model"], autonomy=current["autonomy"], net=current["net"])
+    manager = current["roles"]["chef"]
+    return ok(model=manager["model"], autonomy=current["autonomy"], net=manager["net"])

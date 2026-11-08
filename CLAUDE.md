@@ -35,7 +35,7 @@ Ziel, Entscheidungen, Reihenfolge, Codeaufbau, Betrieb, Tests und offene Punkte:
 - **Datenbank:** Schemaänderungen über `db.py`; Umwandlungen alter Daten laufen einmalig, nie bei jedem Start; eine Migration wird vor dem Deploy an einer Kopie der echten Datenbank geprobt; vor jedem Deploy ein Backup.
 - **Text an Claude** (Projektkontext, Berichte, Fragen) geht nur über die Standardeingabe und ist als Information markiert, nie über die Befehlszeile; der Kontext kommt nur aus Daten des Besitzers. Der Launcher nimmt nur geprüfte Werte (Zahlen, Modell aus `MODELS`, Modus aus `CHAT_MODES`).
 - **Oberfläche:** Auswahlfelder immer im eigenen Stil (`.has-select`, Liste aus `core.js`), nie die Liste des Browsers, und ohne `title` (der Hinweis deckt sonst die Liste zu). Klassen in einer Ansicht mit Präfix, wenn ein Name schon vergeben ist (Manager: `m-`).
-- **Board und Manager:** Das Board ist nur für Software (Bugs, kleine und Major-Updates). Hardware-To-Dos, Checklisten und regelmäßige Prüfungen gehören dem Manager. Einstellungen des Managers (Modell, Selbstständigkeit) gelten pro Nutzer für alles, was er tut (Rolle `chef`, `agents.configure`).
+- **Board und Manager:** Das Board ist nur für Software (Bugs, kleine und Major-Updates). Hardware-To-Dos, Checklisten und regelmäßige Prüfungen gehören dem Manager. Einstellungen gelten pro Nutzer und pro Agent: Modell und Schalter „Web + Code zusammen“ hat jede Rolle selbst (`agents.configure(user, rolle, ...)`, der Manager ist `chef`); die Selbstständigkeit gehört dem Manager.
 - Nur ein Thema pro Commit, kurze englische Commit-Nachrichten, ein Branch pro Aufgabe.
 - Backups und Rückrollen sind Teil jeder Änderung, die Daten betrifft.
 

@@ -113,6 +113,14 @@ class ChatCommandTest(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--max-turns") + 1], "12")
         self.assertEqual(cmd[cmd.index("--model") + 1], "sonnet")
 
+    def test_each_agent_has_its_own_switch(self):
+        apart = L.build_command(run_id=1, user_id=2, model="sonnet", work_dir="/w/1", claude_dir="/c/2", net="apart")
+        self.assertIn("HTTPS_PROXY=http://egress:3129", apart)                     # code without internet
+        self.assertNotIn("HTTPS_PROXY=http://egress:3128", apart)
+        for bad in ("", "open", "together; x", None):
+            with self.assertRaises(ValueError):
+                L.build_command(run_id=1, user_id=2, model="sonnet", work_dir="/w/1", claude_dir="/c/2", net=bad)
+
     def test_every_run_goes_through_the_proxy(self):
         run = L.build_command(run_id=1, user_id=2, model="sonnet", work_dir="/w/1", claude_dir="/c/2")
         login = L.build_login_command(user_id=2, claude_dir="/c/2")

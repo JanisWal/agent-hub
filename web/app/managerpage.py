@@ -96,6 +96,6 @@ def render(lang: str, settings: dict) -> str:
         DEVICES=_soon(lang, "manager_devices", "manager_devices_hint", "m-grow"),
         CHECKS=_soon(lang, "manager_checks", "manager_checks_hint"),
         FILES=_soon(lang, "manager_files", "manager_files_hint", "m-grow"),
-        CHAT=fill(CHAT, lang, MODEL=model, NET=_net_switch(lang, settings["net"])),
+        CHAT=fill(CHAT, lang, MODEL=model, NET=_net_switch(lang, settings["roles"]["chef"]["net"])),
         AUTONOMY=autonomy,
     )
