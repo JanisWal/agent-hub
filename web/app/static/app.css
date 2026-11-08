@@ -391,7 +391,11 @@ main { padding-bottom: 96px; } /* room for the toggle */
   gap: 8px;
   transform: translateX(calc(var(--w) + 8px));
   transition: transform 0.55s cubic-bezier(0.3, 1.15, 0.5, 1);
+  /* The closed drawer is an invisible box as tall as its panel: it must not catch clicks meant for the page
+     below (it covered the send button of the manager chat). Only its own parts take clicks. */
+  pointer-events: none;
 }
+.drawer > * { pointer-events: auto; }
 .drawer.open { transform: none; }
 /* Small round buttons to the left of the gear (trash and archive on the project page). They sit in the
    drawer, so they slide out together with it and always stay right next to the gear. */
