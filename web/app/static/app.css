@@ -564,6 +564,26 @@ a.primary { display: flex; align-items: center; justify-content: center; text-de
 .drawer-box .link { width: 100%; justify-content: center; margin-top: 4px; }
 .drawer-box .link.inline { width: auto; margin-top: 0; }
 .drawer-box form + a.link { margin-top: 12px; }
+/* Low windows (up to 640 px high): the box gets tighter so everything still fits without scrolling. */
+@media (max-height: 640px) {
+  .drawer .drawer-box { padding: 12px; }
+  .setting { margin-bottom: 5px; padding: 6px 12px; }
+  .setting-label { margin-bottom: 0; font-size: 0.74rem; }
+  .setting input, .setting select, .service-line { min-height: 24px; }
+  .has-select > svg { bottom: 9px; }
+  .drawer-box .clear-btn { margin-bottom: 5px; }
+  .drawer-box .save { min-height: 44px; margin-top: 6px; }
+  .drawer-box > a.link, .drawer-box > form > .link { min-height: 32px; margin-top: 0; }
+  .drawer-box form + a.link { margin-top: 6px; }
+}
+/* Low and wide (not a phone held upright): the setting blocks stand two by two, the box gets wider. */
+@media (max-height: 640px) and (min-width: 561px) {
+  .drawer { --w: min(420px, calc(100vw - 96px)); }
+  .drawer-box > form:first-child { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8px; }
+  .drawer-box .clear-btn, .drawer-box .save { grid-column: 1 / -1; }
+  .drawer-box .clear-btn { order: 1; }   /* under both service blocks, so Claude and ChatGPT share a row */
+  .drawer-box .save { order: 2; }
+}
 .count { min-width: 22px; padding: 0 7px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; line-height: 22px; text-align: center; color: var(--muted); background: var(--field); }
 
 /* ===== Dialogs ===== */
