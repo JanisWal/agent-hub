@@ -36,6 +36,7 @@ SETTINGS = """<div class="drawer" id="settings" data-theme-saved="%THEME%">
   <button class="drawer-handle" id="settings-toggle" type="button"
           aria-expanded="false" aria-controls="settings-panel" aria-label="%t.settings_toggle%">%GEAR%%ARROW%</button>
   <div class="drawer-box glass" id="settings-panel">
+   <div class="drawer-scroll">
     <form method="post" action="/settings" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
       <label class="setting">
         <span class="setting-label">%t.display_name%</span>
@@ -53,6 +54,7 @@ SETTINGS = """<div class="drawer" id="settings" data-theme-saved="%THEME%">
     </form>
     %ACCOUNT_LINKS%
     <form method="post" action="/logout"><button class="link" type="submit">%t.logout%</button></form>
+   </div>
   </div>
 </div>
 %CLAUDE_DIALOG%"""
