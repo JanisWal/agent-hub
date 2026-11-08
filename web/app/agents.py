@@ -25,6 +25,9 @@ NEEDS = ("any", "mac")
 # things too. It is a threshold, not a switch: the manager first tries to derive the answer from the project.
 AUTONOMY = ("auto", "major", "all")
 DEFAULT_AUTONOMY = "major"
+# Web and code together (code has the open internet) or apart (web search, code without internet). Janis, 08.11.2026.
+NET_MODES = ("together", "apart")
+DEFAULT_NET = "together"
 KIND_ORDER = ("bug", "minor", "major")   # the programmer works in this order
 TASK_SECONDS = 2 * 3600                  # time limit per task, then it goes to the user
 RUN_SECONDS = 20 * 60                    # a run that reports nothing for so long is dead
@@ -144,20 +147,27 @@ def autonomy_in(conn: sqlite3.Connection, user_id: int) -> str:
     return _setting(conn, user_id, "autonomy", DEFAULT_AUTONOMY)
 
 
+def net_in(conn: sqlite3.Connection, user_id: int) -> str:
+    """Web and code together or apart for the manager (see NET_MODES)."""
+    return _setting(conn, user_id, "net", DEFAULT_NET)
+
+
 def settings(user_id: int) -> dict:
-    """{"strictness": ..., "autonomy": ..., "roles": {role: {"enabled": bool, "model": str}}}, defaults filled in."""
+    """{"strictness", "autonomy", "net", "roles": {role: {"enabled": bool, "model": str}}}, defaults filled in."""
     with db.connect() as conn:
         enabled = _enabled(conn, user_id)
         return {
             "strictness": _strictness(conn, user_id),
             "autonomy": autonomy_in(conn, user_id),
+            "net": net_in(conn, user_id),
             "roles": {r: {"enabled": r in enabled, "model": _model(conn, user_id, r)}
                       for r in workflow.ROLES},
         }
 
 
 def configure(user_id: int, role: str | None = None, *, enabled: bool | None = None,
-              model: str | None = None, strictness: str | None = None, autonomy: str | None = None) -> None:
+              model: str | None = None, strictness: str | None = None, autonomy: str | None = None,
+              net: str | None = None) -> None:
     """Change a setting of this user. Raises ValueError for unknown values or for switching the
     programmer off."""
     changes: list[tuple[str, str]] = []
@@ -169,6 +179,10 @@ def configure(user_id: int, role: str | None = None, *, enabled: bool | None = N
         if autonomy not in AUTONOMY:
             raise ValueError("Unbekannte Selbstständigkeit")
         changes.append(("autonomy", autonomy))
+    if net is not None:
+        if net not in NET_MODES:
+            raise ValueError("Unbekannter Netzmodus")
+        changes.append(("net", net))
     if enabled is not None or model is not None:
         if role not in workflow.ROLES:
             raise ValueError("Unbekannte Rolle")

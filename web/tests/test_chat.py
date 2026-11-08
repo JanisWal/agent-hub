@@ -140,24 +140,36 @@ class ChatQueueTest(Base):
         self.assertEqual((mine, oldest, theirs), (chat.MAX_STORED, None, 1))   # the oldest are gone, B is untouched
     def test_modes(self):
         self.connect(self.a)
-        self.assertEqual(chat.MODES, ("all",))                                 # the old single modes are gone
+        self.assertEqual(chat.MODES, ("all", "apart"))                         # the old single modes are gone
         m = chat.send(self.a.id, self.pa.id, "q")
-        self.assertEqual(m.mode, "all")                                        # web search and code, always
+        self.assertEqual(m.mode, "all")                                        # switch on by default: together
         job = chat.claim_next()
         self.assertEqual(job.mode, "all")                                      # the runner learns the mode from the database
         self.assertTrue(job.prompt.endswith("\nq"))
+        self.assertIn(chat.TOOLS_TEXT["all"], job.prompt)
+        chat.finish(job.chat_id, True, "a")
         for bad in ("", "plain", "web", "code", "root", "web,code", "code; rm -rf /"):
             with self.assertRaises(ValueError) as problem:
                 chat.send(self.a.id, self.pa.id, "x", bad)
             self.assertEqual(str(problem.exception), "mode")
 
-    def test_route_takes_the_mode_and_refuses_unknown_ones(self):
+    def test_the_switch_decides_web_and_code_together_or_apart(self):
+        from app import agents
+        from app.routes import manager as manager_routes
         self.connect(self.a)
-        self.assertTrue(routes.ask(self.pa.id, "run it", "all", user=self.a)["ok"])
-        self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"][0]["mode"], "all")
-        claimed = chat.claim_next()
-        chat.finish(claimed.chat_id, True, "done")
-        self.assertEqual(routes.ask(self.pa.id, "x", "everything", user=self.a).status_code, 400)
+        self.assertEqual(manager_routes.manager_settings("", "", "apart", user=self.a)["net"], "apart")
+        self.assertTrue(routes.ask(self.pa.id, "run it", user=self.a)["ok"])
+        self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"][0]["mode"], "apart")
+        job = chat.claim_next()
+        self.assertEqual(job.mode, "apart")
+        self.assertIn(chat.TOOLS_TEXT["apart"], job.prompt)                    # the manager knows code is offline
+        self.assertNotIn(chat.TOOLS_TEXT["all"], job.prompt)
+        chat.finish(job.chat_id, True, "done")
+        self.assertEqual(agents.settings(self.b.id)["net"], "together")        # per user
+        self.assertEqual(manager_routes.manager_settings("", "", "always", user=self.a).status_code, 400)
+        self.assertEqual(manager_routes.manager_settings("", "", "together", user=self.a)["net"], "together")
+        chat.send(self.a.id, self.pa.id, "again")
+        self.assertEqual(chat.claim_next().mode, "all")
 
     def test_an_existing_database_gets_the_mode_column(self):
         import sqlite3
@@ -184,8 +196,8 @@ class ChatQueueTest(Base):
         self.connect(self.a)
         self.assertEqual(chat.send(self.a.id, self.pa.id, "q").model, "sonnet")   # the manager's default
         chat.finish(chat.claim_next().chat_id, True, "a")
-        self.assertEqual(manager_routes.manager_settings("opus", "", user=self.a), {"ok": True, "model": "opus", "autonomy": "major"})
-        self.assertTrue(routes.ask(self.pa.id, "via route", "all", user=self.a)["ok"])
+        self.assertEqual(manager_routes.manager_settings("opus", "", "", user=self.a), {"ok": True, "model": "opus", "autonomy": "major", "net": "together"})
+        self.assertTrue(routes.ask(self.pa.id, "via route", user=self.a)["ok"])
         self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"][-1]["model"], "opus")
         job = chat.claim_next()
         self.assertEqual(job.model, "opus")                                    # from the database, not the runner
@@ -195,7 +207,7 @@ class ChatQueueTest(Base):
             with self.assertRaises(ValueError) as problem:
                 chat.send(self.a.id, self.pa.id, "x", model=bad)
             self.assertEqual(str(problem.exception), "mode")
-            self.assertEqual(manager_routes.manager_settings(bad, "", user=self.a).status_code, 400)
+            self.assertEqual(manager_routes.manager_settings(bad, "", "", user=self.a).status_code, 400)
         self.assertEqual(agents.settings(self.a.id)["roles"]["chef"]["model"], "opus")      # nothing bad was stored
 
     def test_the_autonomy_is_a_setting_and_the_manager_reads_it(self):
@@ -203,8 +215,8 @@ class ChatQueueTest(Base):
         from app.routes import manager as manager_routes
         self.connect(self.a)
         self.assertEqual(agents.AUTONOMY, ("auto", "major", "all"))
-        self.assertEqual(manager_routes.manager_settings("", "auto", user=self.a)["autonomy"], "auto")
-        self.assertEqual(manager_routes.manager_settings("", "everything", user=self.a).status_code, 400)
+        self.assertEqual(manager_routes.manager_settings("", "auto", "", user=self.a)["autonomy"], "auto")
+        self.assertEqual(manager_routes.manager_settings("", "everything", "", user=self.a).status_code, 400)
         chat.send(self.a.id, self.pa.id, "q")
         text = chat.claim_next().prompt
         self.assertIn(chat.AUTONOMY_TEXT["auto"], text)
@@ -223,7 +235,7 @@ class ChatQueueTest(Base):
         chat.finish(first.chat_id, True, "A 12 V automotive relay.")
         chat.send(self.a.id, self.pa.id, "And the fuse?")
         text = chat.claim_next().prompt
-        self.assertTrue(text.startswith(chat.ROLE))
+        self.assertTrue(text.startswith(chat.role_for("all")))
         project = text[text.index("<project>"):text.index("</project>")]
         for part in ("Roadster", "Heater control on an ESP32", "[bug] Heater does not switch off",
                      "[major] Diagnosis page", "User: Which relay?", "Manager: A 12 V automotive relay."):
@@ -259,25 +271,25 @@ class ChatRoutesTest(Base):
     def test_ask_and_poll(self):
         self.connect(self.a)
         self.assertEqual(routes.messages(self.pa.id, user=self.a), {"ok": True, "messages": []})
-        sent = routes.ask(self.pa.id, "Hello", "all", user=self.a)
+        sent = routes.ask(self.pa.id, "Hello", user=self.a)
         self.assertTrue(sent["ok"])
         got = routes.messages(self.pa.id, user=self.a)["messages"]
         self.assertEqual([(m["prompt"], m["status"]) for m in got], [("Hello", "queued")])
-        busy = routes.ask(self.pa.id, "again", "all", user=self.a)
+        busy = routes.ask(self.pa.id, "again", user=self.a)
         self.assertEqual(busy.status_code, 409)
         self.assertIn("Frage", busy.body.decode())                     # message in the user's language
 
     def test_problems_are_answered_not_raised(self):
-        self.assertEqual(routes.ask(self.pa.id, "x", "all", user=self.a).status_code, 409)      # not connected
+        self.assertEqual(routes.ask(self.pa.id, "x", user=self.a).status_code, 409)      # not connected
         self.connect(self.a)
-        self.assertEqual(routes.ask(self.pa.id, "  ", "all", user=self.a).status_code, 400)
-        self.assertEqual(routes.ask(self.pb.id, "x", "all", user=self.a).status_code, 404)      # B's project
+        self.assertEqual(routes.ask(self.pa.id, "  ", user=self.a).status_code, 400)
+        self.assertEqual(routes.ask(self.pb.id, "x", user=self.a).status_code, 404)      # B's project
         english = dataclasses.replace(self.b, language="en")
-        self.assertIn("not connected", routes.ask(self.pb.id, "x", "all", user=english).body.decode())  # B has no Claude
+        self.assertIn("not connected", routes.ask(self.pb.id, "x", user=english).body.decode())  # B has no Claude
 
     def test_delete_history_route(self):
         self.connect(self.a)
-        routes.ask(self.pa.id, "Hello", "all", user=self.a)
+        routes.ask(self.pa.id, "Hello", user=self.a)
         self.assertEqual(routes.delete_history(user=self.a), {"ok": True, "deleted": 1})
         self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"], [])
         self.assertEqual(routes.delete_history(user=self.b), {"ok": True, "deleted": 0})   # B has nothing, A's is gone

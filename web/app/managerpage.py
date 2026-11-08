@@ -39,7 +39,7 @@ MANAGER = """<section class="manager" id="manager-view" aria-label="%t.station_m
 CHAT = """<section class="mtile glass m-chat" id="chat" data-you="%t.chat_you%" data-claude="%t.station_manager%"
              data-waiting="%t.chat_waiting%" data-failed="%t.chat_failed%">
       <header><h2>%t.manager_chat%</h2>%MODEL%</header>
-      <p class="muted">%t.manager_chat_hint%</p>
+      <div class="m-chat-sub"><p class="muted">%t.manager_chat_hint%</p>%NET%</div>
       <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
       <p class="error" id="chat-error" role="alert" hidden></p>
       <form class="chat-form" id="chat-form" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
@@ -75,6 +75,17 @@ def _soon(lang: str, title: str, hint: str, css: str = "") -> str:
     )
 
 
+def _net_switch(lang: str, current: str) -> str:
+    """The switch "web and code together" (on: code has the open internet; off: web search, code offline)."""
+    label = esc(i18n.t(lang, "net_together"))
+    checked = " checked" if current == "together" else ""
+    return (
+        f'<label class="m-switch"><input type="checkbox" role="switch" id="manager-net" data-setting="net" '
+        f'data-on="together" data-off="apart"{checked}><span class="m-switch-track" aria-hidden="true"></span>'
+        f'<span class="m-switch-label">{label}</span></label>'
+    )
+
+
 def render(lang: str, settings: dict) -> str:
     """`settings` is agents.settings(user_id): the manager is the role "chef"."""
     model = _select(lang, "model", "chat_model", MODELS, settings["roles"]["chef"]["model"])
@@ -85,6 +96,6 @@ def render(lang: str, settings: dict) -> str:
         DEVICES=_soon(lang, "manager_devices", "manager_devices_hint", "m-grow"),
         CHECKS=_soon(lang, "manager_checks", "manager_checks_hint"),
         FILES=_soon(lang, "manager_files", "manager_files_hint", "m-grow"),
-        CHAT=fill(CHAT, lang, MODEL=model),
+        CHAT=fill(CHAT, lang, MODEL=model, NET=_net_switch(lang, settings["net"])),
         AUTONOMY=autonomy,
     )

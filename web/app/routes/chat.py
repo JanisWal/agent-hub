@@ -26,10 +26,10 @@ def messages(project_id: int, user: users.User = Depends(api_user)):
 
 
 @router.post("/projects/{project_id}/chat")
-def ask(project_id: int, prompt: str = Form(""), mode: str = Form("all"), user: users.User = Depends(api_user)):
-    """A question to the manager; the model is the user's setting for the manager (routes/manager.py)."""
+def ask(project_id: int, prompt: str = Form(""), user: users.User = Depends(api_user)):
+    """A question to the manager; model and the web/code switch are the user's settings (routes/manager.py)."""
     try:
-        message = chat.send(user.id, project_id, prompt, mode)
+        message = chat.send(user.id, project_id, prompt)
     except ValueError as problem:
         key, status = _PROBLEMS.get(str(problem), (None, 404))   # "project": not found
         return error(user.language, key, status) if key else fail(404)

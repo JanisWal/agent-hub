@@ -36,6 +36,9 @@ CHAT_MODES = {
     # (mounted read-only) and could send it out if a web page talked Claude into it; the damage is his own quota
     # until he disconnects and connects again. The Pi, the hub and the home network stay out of reach.
     "all": {"tools": ("WebSearch", "WebFetch", "Bash"), "proxy": WEB_PROXY, "turns": 12},
+    # Web and code apart (switch off): the web search runs on Anthropic's side, the container only reaches
+    # Anthropic, so code has no internet and nothing it reads can leave. No WebFetch: it would need the open web.
+    "apart": {"tools": ("WebSearch", "Bash"), "proxy": API_PROXY, "turns": 10},
 }
 _BAD_PATH = re.compile(r"[,\s\x00=:]")   # would confuse --mount parsing or hide something
 _MARKER = re.compile(r"^RESULT:\s*([a-z_]+)\s*$")
