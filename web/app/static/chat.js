@@ -104,14 +104,13 @@
     errorBox.textContent = text || "";
   }
 
-  // Web search and code are always available; the manager uses them only when a question needs them. The model
-  // is the manager's setting (drop-down in the tile header, saved by manager.js), the server picks it up.
+  // The manager uses web and code only when a question needs them. The model and the web/code switch are the
+  // manager's settings (tile header, saved by manager.js); the server picks them up for every question.
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     if (!window.AgentHub.validate(form)) return;
     problem("");
     var data = new FormData(form);
-    data.append("mode", "all");
     fetch(url, { method: "POST", body: data })
       .then(function (r) { return r.json().catch(function () { return {}; }); })
       .then(function (data) {

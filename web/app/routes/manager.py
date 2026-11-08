@@ -12,10 +12,11 @@ router = APIRouter()
 
 
 @router.post("/manager/settings")
-def manager_settings(model: str = Form(""), autonomy: str = Form(""), user: users.User = Depends(api_user)):
+def manager_settings(model: str = Form(""), autonomy: str = Form(""), net: str = Form(""),
+                     user: users.User = Depends(api_user)):
     try:
-        agents.configure(user.id, "chef", model=model or None, autonomy=autonomy or None)
+        agents.configure(user.id, "chef", model=model or None, autonomy=autonomy or None, net=net or None)
     except ValueError:
         return fail(400)
     current = agents.settings(user.id)
-    return ok(model=current["roles"]["chef"]["model"], autonomy=current["autonomy"])
+    return ok(model=current["roles"]["chef"]["model"], autonomy=current["autonomy"], net=current["net"])

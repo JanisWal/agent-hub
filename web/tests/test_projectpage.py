@@ -197,14 +197,23 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn("pointer-events: none;", drawer)                          # it covered the send button
         self.assertIn(".drawer > * { pointer-events: auto; }", app)             # its buttons and panel still work
 
-    def test_web_and_code_are_always_on_without_switches(self):
+    def test_one_switch_for_web_and_code_together_or_apart(self):
+        from app import agents
         page = self.html()
         for gone in ("chat-mode", "data-mode=", 'id="chat-modes"'):
-            self.assertNotIn(gone, page)
-        script = css_of("chat.js")
-        self.assertIn('data.append("mode", "all")', script)
-        self.assertNotIn("chatMode", script)
-        self.assertNotIn(".chat-mode", css_of("project.css"))
+            self.assertNotIn(gone, page)                                       # the old Web/Code buttons are gone
+        header = page[page.index('id="chat"'):]
+        header = header[:header.index('id="chat-log"')]
+        self.assertIn('id="manager-net"', header)                              # at the top of the chat, beside the hint
+        self.assertIn('role="switch"', header)
+        self.assertIn('data-on="together" data-off="apart" checked', header)   # on by default (Janis: open internet)
+        self.assertIn("Web + Code zusammen", header)
+        agents.configure(self.user.id, "chef", net="apart")
+        off = self.html()
+        self.assertNotIn('data-off="apart" checked', off)
+        self.assertNotIn("chatMode", css_of("chat.js"))
+        self.assertIn("box.dataset.on", css_of("manager.js"))
+        self.assertIn(".m-switch input:checked + .m-switch-track::after { transform: translateX(16px);", css_of("project.css"))
 
     def test_stations_script_swaps_the_views_by_the_address(self):
         script = css_of("stations.js")

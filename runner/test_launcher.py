@@ -88,8 +88,16 @@ class ChatCommandTest(unittest.TestCase):
             self.assertNotIn(bad, text.split())
         self.assertIn("10002:10002", cmd)
 
-    def test_only_the_manager_mode_exists(self):
-        self.assertEqual(tuple(L.CHAT_MODES), ("all",))                      # the old single modes are gone
+    def test_web_and_code_apart_has_no_internet_for_code(self):
+        cmd = L.build_chat_command(chat_id=7, user_id=2, model="haiku", claude_dir="/data/claude/2", mode="apart")
+        self.assertEqual(cmd[cmd.index("--tools") + 1], "WebSearch,Bash")          # search runs at Anthropic
+        self.assertIn("HTTPS_PROXY=http://egress:3129", cmd)                       # Anthropic only: code is offline
+        self.assertNotIn("HTTPS_PROXY=http://egress:3128", cmd)
+        self.assertNotIn("WebFetch", " ".join(cmd))
+        self.assertTrue(any(part.endswith(",readonly") for part in cmd))
+
+    def test_only_the_manager_modes_exist(self):
+        self.assertEqual(tuple(L.CHAT_MODES), ("all", "apart"))              # the old single modes are gone
         for old in ("plain", "web", "code", "everything"):
             with self.assertRaises(ValueError):
                 L.build_chat_command(chat_id=5, user_id=2, model="haiku", claude_dir="/data/claude/2", mode=old)
