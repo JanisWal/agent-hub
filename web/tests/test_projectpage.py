@@ -191,6 +191,12 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn("manager.js", page)
         self.assertIn("Decides alone", self.html("en"))
 
+    def test_the_closed_drawer_does_not_cover_the_page(self):
+        app = css_of("app.css")
+        drawer = app[app.index(".drawer {"):app.index(".drawer.open")]
+        self.assertIn("pointer-events: none;", drawer)                          # it covered the send button
+        self.assertIn(".drawer > * { pointer-events: auto; }", app)             # its buttons and panel still work
+
     def test_web_and_code_are_always_on_without_switches(self):
         page = self.html()
         for gone in ("chat-mode", "data-mode=", 'id="chat-modes"'):
