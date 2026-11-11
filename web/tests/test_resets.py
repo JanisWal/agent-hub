@@ -6,7 +6,7 @@ import unittest
 import urllib.error
 from unittest import mock
 
-from app import db, i18n, mail, mailtext, resetpages, resets, ui, userspage, users
+from app import adminpage, db, i18n, mail, mailtext, resetpages, resets, ui, userspage, users
 from app.routes import accounts
 from app.routes import auth as auth_routes
 
@@ -355,6 +355,6 @@ class PasswordPageTest(unittest.TestCase):
             users.change_own_password(self.settled, "", "Mein!Pass12")
         self.assertEqual(problem.exception.code, "wrong_password")
 
-    def test_users_page_back_button(self):
+    def test_administration_page_back_button(self):
         owner = users.get_by_id(1)
-        self.assertIn(">Zurück</a>", userspage.render(owner, users.list_users(owner)))
+        self.assertIn(">Zurück</a>", adminpage.render(owner, users.list_users(owner)))

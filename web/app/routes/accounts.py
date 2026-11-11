@@ -1,26 +1,17 @@
-"""User management for owner and admins, and everybody's own password."""
+"""User management actions for owner and admins (the page itself is /admin, routes/admin.py), and everybody's
+own password."""
 import secrets
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 
-from .. import i18n, mailtext, resets, throttle, ui, userspage, users
-from ..deps import COOKIE_NAME, api_user, error, fail, ok, page_user, reauth, redirect, session_user
+from .. import i18n, mailtext, resets, throttle, userspage, users
+from ..deps import COOKIE_NAME, api_user, error, fail, ok, reauth, redirect, session_user
 
 router = APIRouter()
 
 _ADD_ERRORS = {"email": "msg_email", "taken": "err_email_taken"}
 _PASSWORD_ERRORS = {"short": "err_pw_rules", "policy": "err_pw_rules", "same": "err_pw_same"}
-
-
-@router.get("/users", response_class=HTMLResponse)
-def users_page(user: users.User = Depends(page_user)):
-    if not user.is_admin:
-        raise HTTPException(404)
-    return ui.logged_in_page(
-        user, i18n.t(user.language, "users_title"), userspage.render(user, users.list_users(user)),
-        scripts=("users.js",), styles=("users.css",),
-    )
 
 
 @router.post("/users/add")

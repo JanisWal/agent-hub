@@ -115,9 +115,10 @@ class DrawerTest(unittest.TestCase):
             self.assertIn('class="dialog danger"', html)
             self.assertIn(yes, html)
             self.assertNotIn("%t.", html)
-        # The button sits directly under the Claude box and above ChatGPT, inside the form but never submitting it
-        self.assertLess(html.index('id="claude-open"'), html.index('id="chat-clear-open"'))
-        self.assertLess(html.index('id="chat-clear-open"'), html.index("ChatGPT"))
+        # The button sits under the Claude box and its folded list of other AIs (11.11.2026), inside the form but
+        # never submitting it
+        self.assertLess(html.index('id="claude-open"'), html.index("ChatGPT"))
+        self.assertLess(html.index("ChatGPT"), html.index('id="chat-clear-open"'))
         self.assertLess(html.index('<form method="post" action="/settings"'), html.index('id="chat-clear-open"'))
         self.assertLess(html.index('id="chat-clear-open"'), html.index('class="primary save"'))
         # Cancel is the default focus, the red button is the only one that deletes

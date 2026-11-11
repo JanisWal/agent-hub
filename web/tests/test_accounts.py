@@ -166,11 +166,18 @@ class AccountsTest(unittest.TestCase):
                     self.assertNotIn("<img src=x", page)
                     self.assertNotIn("<b>err</b>", page)
 
-    def test_drawer_links_depend_on_role(self):
-        self.assertIn('href="/users"', ui.settings_bar(self.admin))
-        self.assertIn('href="/password"', ui.settings_bar(self.admin))
-        self.assertNotIn('href="/users"', ui.settings_bar(self.user))
-        self.assertIn('href="/password"', ui.settings_bar(self.user))
+    def test_drawer_has_one_text_link_and_a_quiet_button_for_the_administration(self):
+        for who in (self.owner, self.admin):
+            bar = ui.settings_bar(who)
+            self.assertIn('<a class="admin-btn" href="/admin">Verwaltung</a>', bar)
+            self.assertLess(bar.index('class="admin-btn"'), bar.index('class="primary save"'))   # above "Save"
+        self.assertNotIn("/admin", ui.settings_bar(self.user))                                 # normal users: no button at all
+        for who in (self.owner, self.admin, self.user):
+            bar = ui.settings_bar(who)
+            self.assertIn('href="/password"', bar)
+            self.assertEqual(bar.count('<a class="link"'), 1)                                  # only "change password"
+            for old in ('href="/users"', 'href="/system"'):
+                self.assertNotIn(old, bar)
 
     def test_rows_show_only_allowed_buttons(self):
         admin_view = userspage.render(self.admin, users.list_users(self.admin))
