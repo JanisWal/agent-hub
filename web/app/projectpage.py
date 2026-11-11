@@ -6,7 +6,7 @@ from .layout import esc, fill
 from .projects import MAX_DESCRIPTION, MAX_NAME, Project
 from .users import User
 
-SCRIPTS = ("motion.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "manager.js")
+SCRIPTS = ("motion.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "manager.js", "checks.js")
 STYLES = ("project.css",)
 
 COLUMN_LABEL = {"bug": "col_bug", "minor": "col_minor", "major": "col_major"}
@@ -42,6 +42,7 @@ PROJECT = """<div class="project" data-id="%PID%">
     </div>
   </form>
 </dialog>
+%MANAGER_DIALOGS%
 <dialog class="dialog danger" id="confirm-dialog" data-msg-item="%t.confirm_delete_item%" data-msg-empty="%t.confirm_empty_trash%">
   <h2 id="confirm-text"></h2>
   <div class="actions">
@@ -199,8 +200,8 @@ def drawer_buttons(lang: str) -> str:
     return button("archive", "archive", "done") + button("trash", "trash", "trash")
 
 
-def render(user: User, project: Project, items: list[Item]) -> str:
-    """Project page body with the kanban board."""
+def render(user: User, project: Project, items: list[Item], regular_checks: list | None = None) -> str:
+    """Project page body with the kanban board and the Manager view (with the regular checks)."""
     lang = user.language
     trashed = [i for i in items if i.status == "trash"]
     archived = [i for i in items if i.status == "archived"]
@@ -210,7 +211,8 @@ def render(user: User, project: Project, items: list[Item]) -> str:
         lang,
         PID=str(project.id),
         STATIONS=_stations(lang),
-        MANAGER=managerpage.render(lang, agents.settings(user.id)),
+        MANAGER=managerpage.render(lang, agents.settings(user.id), regular_checks or []),
+        MANAGER_DIALOGS=managerpage.dialogs(lang),
         TRASH=_trash(trashed, lang),
         ARCHIVE=_archive(archived, lang),
         COLUMNS="\n      ".join(_column(kind, live, lang) for kind in KINDS),
