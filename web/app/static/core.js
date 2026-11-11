@@ -105,6 +105,17 @@
     if (event.target.matches("label.has-error input")) show(event.target, "");
   });
 
+  // "More AIs": the arrow in the Claude block of the drawer opens or closes the list of the other services.
+  var aiToggle = document.getElementById("ai-toggle");
+  var aiMore = document.getElementById("ai-more");
+  if (aiToggle && aiMore) {
+    aiToggle.addEventListener("click", function () {
+      var open = aiMore.hidden;
+      aiMore.hidden = !open;
+      aiToggle.setAttribute("aria-expanded", String(open));
+    });
+  }
+
   // Settings drawer: slides out of the top right corner, the handle rides along.
   var drawer = document.getElementById("settings");
   var toggle = document.getElementById("settings-toggle");

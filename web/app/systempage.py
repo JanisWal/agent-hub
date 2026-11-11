@@ -3,10 +3,9 @@ from . import i18n
 from .layout import fill
 from .users import User
 
-SYSTEM = """<div class="sys-wrap" data-network="%t.err_network%">
-  <a class="link back" href="/">%t.back%</a>
-  <header class="sys-head"><h1>%t.system_title%</h1></header>
-  <section class="sys-list glass">
+SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
+  <header class="sys-head"><h2>%t.system_title%</h2></header>
+  <div class="sys-list glass">
     <div class="sys-row">
       <div class="sys-main"><span class="sys-name">%t.sys_reboot%</span><span class="sys-hint">%t.sys_reboot_hint%</span></div>
       <button type="button" data-power="reboot">%t.sys_reboot%</button>
@@ -15,10 +14,10 @@ SYSTEM = """<div class="sys-wrap" data-network="%t.err_network%">
       <div class="sys-main"><span class="sys-name">%t.sys_poweroff%</span><span class="sys-hint">%t.sys_poweroff_hint%</span></div>
       <button type="button" data-power="poweroff">%t.sys_poweroff%</button>
     </div>
-  </section>
+  </div>
   <p class="sys-note" role="status" hidden
      data-done-reboot="%t.sys_reboot_done%" data-done-poweroff="%t.sys_poweroff_done%"></p>
-</div>
+</section>
 <dialog class="dialog" id="power-reboot-dialog">
   <form novalidate data-url="/system/power" data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
     <h2>%t.sys_reboot_title%</h2>
@@ -48,5 +47,5 @@ SYSTEM = """<div class="sys-wrap" data-network="%t.err_network%">
 
 
 def render(user: User) -> str:
-    """Body of /system (owner only; the route checks that)."""
+    """The system block with its dialogs (a part of /admin, only for the owner; adminpage.py checks that)."""
     return fill(SYSTEM, user.language)

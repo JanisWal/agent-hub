@@ -1,21 +1,10 @@
-"""The owner's system page: restart or shut down the Pi."""
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse
+"""The owner's system actions: restart or shut down the Pi (the page itself is /admin, routes/admin.py)."""
+from fastapi import APIRouter, Depends, Form, Request
 
-from .. import i18n, power, systempage, ui, users
-from ..deps import api_user, error, fail, ok, page_user, reauth
+from .. import power, users
+from ..deps import api_user, error, fail, ok, reauth
 
 router = APIRouter()
-
-
-@router.get("/system", response_class=HTMLResponse)
-def system_page(user: users.User = Depends(page_user)):
-    if user.role != "owner":
-        raise HTTPException(404)
-    return ui.logged_in_page(
-        user, i18n.t(user.language, "system_title"), systempage.render(user),
-        scripts=("system.js",), styles=("system.css",),
-    )
 
 
 @router.post("/system/power")

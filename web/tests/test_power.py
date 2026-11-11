@@ -8,8 +8,8 @@ from unittest import mock
 
 from fastapi import HTTPException
 
-from app import db, i18n, power, systempage, ui, users
-from app.routes import runner, system
+from app import adminpage, db, i18n, power, systempage, users
+from app.routes import admin as admin_routes, runner, system
 
 
 class PowerTest(unittest.TestCase):
@@ -79,11 +79,12 @@ class PowerTest(unittest.TestCase):
         self.assertEqual(again.status_code, 409)
 
     # --- the page and the menu
-    def test_the_page_is_for_the_owner_only(self):
-        self.assertIn("data-power=\"reboot\"", system.system_page(self.owner))
+    def test_the_old_address_leads_to_the_administration_page_for_the_owner_only(self):
+        answer = admin_routes.system_old_address(self.owner)
+        self.assertEqual((answer.status_code, answer.headers["location"]), (303, "/admin"))
         for who in (self.admin, self.user):
             with self.assertRaises(HTTPException) as refused:
-                system.system_page(who)
+                admin_routes.system_old_address(who)
             self.assertEqual(refused.exception.status_code, 404)
 
     def test_the_page_has_both_actions_and_asks_for_the_password(self):
@@ -93,11 +94,9 @@ class PowerTest(unittest.TestCase):
             self.assertIn(part, html)
         self.assertNotIn("%t.", html)   # every text was filled in
 
-    def test_only_the_owner_sees_the_menu_link(self):
-        link = 'href="/system"'
-        self.assertIn(link, ui.settings_bar(self.owner))
-        self.assertNotIn(link, ui.settings_bar(self.admin))
-        self.assertNotIn(link, ui.settings_bar(self.user))
+    def test_only_the_owner_gets_the_system_block_on_the_administration_page(self):
+        self.assertIn('data-power="reboot"', adminpage.render(self.owner, users.list_users(self.owner)))
+        self.assertNotIn("data-power", adminpage.render(self.admin, users.list_users(self.admin)))
 
     def test_texts_exist_in_both_languages(self):
         self.assertEqual(i18n.t("de", "system_title"), i18n.t("en", "system_title"))   # the same word in both

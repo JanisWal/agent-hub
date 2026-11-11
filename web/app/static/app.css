@@ -491,6 +491,20 @@ main { padding-bottom: 96px; } /* room for the toggle */
 .setting select option { color: var(--text); background: var(--bg); }
 .setting select:focus-visible { outline: none; } /* the whole block shows the focus ring (:focus-within) */
 .has-select > svg { position: absolute; right: 12px; bottom: 13px; width: 18px; height: 18px; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+/* Both arrows of the drawer sit at the same spot (Janis, 11.11.2026): top right, on the line of the small label.
+   Language: the arrow of the select. Claude: the button that opens the list of the other AIs (core.js). */
+.setting.has-select > svg { top: 10px; bottom: auto; }
+.ai-toggle {
+  position: absolute; top: 0; right: 0; width: 42px; height: 38px; min-width: 0; min-height: 0; margin: 0; padding: 0;
+  display: grid; place-items: center; color: var(--muted); background: none; border: 0; box-shadow: none;
+  border-radius: 0 var(--radius-button) 0 0; cursor: pointer;
+}
+.ai-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform 0.45s cubic-bezier(0.3, 1.4, 0.5, 1); }
+.ai-toggle:hover { color: var(--text); transform: none; }
+.ai-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.ai-toggle:focus-visible { outline: 3px solid var(--accent); outline-offset: -3px; }
+.ai-more[hidden] { display: none; }
+.ai-more:not([hidden]) { animation: fade 0.25s ease-out; }
 /* Own list instead of the browser's select popup (core.js builds it, the select stays as the form field). */
 .select-menu {
   position: absolute;
@@ -566,6 +580,17 @@ a.primary { display: flex; align-items: center; justify-content: center; text-de
 }
 .drawer-box .clear-btn::after { content: ""; position: absolute; inset: -8px 0; }
 .drawer-box .clear-btn:hover { background: color-mix(in srgb, var(--danger) 24%, var(--glass)); }
+/* The way to the administration page (owner and admins): a quiet button, less colour than "Save", above it. */
+.drawer-box .admin-btn {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 40px; margin: 0 0 8px; padding: 0 12px;
+  font-size: 0.88rem; font-weight: 600; color: var(--text); text-decoration: none;
+  background: var(--field); border: 1px solid var(--glass-border); border-radius: var(--radius-button);
+  transition: border-color 0.2s;
+}
+.drawer-box .admin-btn::after { content: ""; position: absolute; inset: -2px 0; }
+.drawer-box .admin-btn:hover { border-color: var(--accent); }
+.drawer-box .admin-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .drawer-box .link { width: 100%; justify-content: center; margin-top: 4px; }
 .drawer-box .link.inline { width: auto; margin-top: 0; }
 .drawer-box form + a.link { margin-top: 12px; }
@@ -576,6 +601,9 @@ a.primary { display: flex; align-items: center; justify-content: center; text-de
   .setting-label { margin-bottom: 0; font-size: 0.74rem; }
   .setting input, .setting select, .service-line { min-height: 24px; }
   .has-select > svg { bottom: 9px; }
+  .setting.has-select > svg { top: 6px; bottom: auto; }
+  .ai-toggle { height: 30px; }
+  .drawer-box .admin-btn { height: 32px; margin-bottom: 5px; }
   .drawer-box .clear-btn { margin-bottom: 5px; }
   .drawer-box .save { min-height: 44px; margin-top: 6px; }
   .drawer-scroll > a.link, .drawer-scroll > form > .link { min-height: 32px; margin-top: 0; }
@@ -585,9 +613,10 @@ a.primary { display: flex; align-items: center; justify-content: center; text-de
 @media (max-height: 640px) and (min-width: 561px) {
   .drawer { --w: min(420px, calc(100vw - 96px)); }
   .drawer-scroll > form:first-child { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8px; }
-  .drawer-box .clear-btn, .drawer-box .save { grid-column: 1 / -1; }
-  .drawer-box .clear-btn { order: 1; }   /* under both service blocks, so Claude and ChatGPT share a row */
-  .drawer-box .save { order: 2; }
+  .drawer-box .setting.service, .drawer-box .clear-btn, .drawer-box .save, .drawer-box .admin-btn, .ai-more { grid-column: 1 / -1; }
+  .drawer-box .clear-btn { order: 1; }   /* under the Claude block and its list of other AIs */
+  .drawer-box .admin-btn { order: 2; }
+  .drawer-box .save { order: 3; }
 }
 .count { min-width: 22px; padding: 0 7px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; line-height: 22px; text-align: center; color: var(--muted); background: var(--field); }
 

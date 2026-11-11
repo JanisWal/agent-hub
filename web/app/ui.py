@@ -50,6 +50,7 @@ SETTINGS = """<div class="drawer" id="settings" data-theme-saved="%THEME%">
         </select>%CHEVRON%
       </label>
       %SERVICES%
+      %ADMIN%
       <button class="primary save" type="submit">%t.save%</button>
     </form>
     %ACCOUNT_LINKS%
@@ -115,10 +116,15 @@ CLAUDE_STATES = {
 
 
 def _claude_row(lang: str, state: str) -> str:
+    """The Claude block. The arrow at the top right (the same place as the arrow of the language block) opens the
+    list of the other AIs below it (core.js); it is a button inside the block, so the block stays one box."""
     style, text_key, action_key = CLAUDE_STATES.get(state, ("", "not_connected", "connect"))
+    more = esc(i18n.t(lang, "ai_more"))
     return (
         f'<div class="setting service {style}">'
         f'<span class="setting-label">Claude</span>'
+        f'<button class="ai-toggle" type="button" id="ai-toggle" aria-expanded="false" aria-controls="ai-more" '
+        f'aria-label="{more}">{icon("chevron_down")}</button>'
         f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>'
         f'<button class="link inline" type="button" id="claude-open" data-status="{esc(state)}">'
         f'{esc(i18n.t(lang, action_key))}</button></span></div>'
@@ -126,31 +132,32 @@ def _claude_row(lang: str, state: str) -> str:
 
 
 def _service_rows(lang: str, claude_state: str) -> str:
-    # The chat history button sits directly under the Claude box (type="button": it never submits the form).
+    """Claude, the folded list of the other AIs (Janis, 11.11.2026: it grows with every AI that is added, so it
+    stays closed) and the chat history button. The button is type="button": it never submits the form."""
     clear = (f'<button class="clear-btn" type="button" id="chat-clear-open">'
              f'{esc(i18n.t(lang, "chat_clear"))}</button>')
-    rows = [_claude_row(lang, claude_state), clear]
-    for name in PLACEHOLDER_SERVICES:
-        rows.append(
-            '<div class="setting service">'
-            f'<span class="setting-label">{name}</span>'
-            f'<span class="service-line"><span class="status">{esc(i18n.t(lang, "not_connected"))}</span>'
-            f'<button class="link inline" type="button" disabled title="{esc(i18n.t(lang, "coming_soon"))}">'
-            f'{esc(i18n.t(lang, "connect"))}</button></span></div>'
-        )
-    return "\n      ".join(rows)
+    others = "\n        ".join(
+        '<div class="setting service">'
+        f'<span class="setting-label">{name}</span>'
+        f'<span class="service-line"><span class="status">{esc(i18n.t(lang, "not_connected"))}</span>'
+        f'<button class="link inline" type="button" disabled title="{esc(i18n.t(lang, "coming_soon"))}">'
+        f'{esc(i18n.t(lang, "connect"))}</button></span></div>'
+        for name in PLACEHOLDER_SERVICES
+    )
+    more = f'<div class="ai-more" id="ai-more" hidden>\n        {others}\n      </div>'
+    return "\n      ".join([_claude_row(lang, claude_state), more, clear])
+
+
+def _admin_button(user: User) -> str:
+    """The way to the administration page: only for owner and admins, a quiet button above "Save"."""
+    if not user.is_admin:
+        return ""
+    return f'<a class="admin-btn" href="/admin">{esc(i18n.t(user.language, "admin_title"))}</a>'
 
 
 def _account_links(user: User) -> str:
-    """Links under the save button: user management (owner and admins), the system page (owner) and
-    the own password."""
-    lang = user.language
-    links = [("/password", "change_password")]
-    if user.role == "owner":
-        links.insert(0, ("/system", "system_title"))
-    if user.is_admin:
-        links.insert(0, ("/users", "manage_users"))
-    return "\n    ".join(f'<a class="link" href="{href}">{esc(i18n.t(lang, key))}</a>' for href, key in links)
+    """The link under the save button: the own password (everybody). Logging out sits below it."""
+    return f'<a class="link" href="/password">{esc(i18n.t(user.language, "change_password"))}</a>'
 
 
 def settings_bar(user: User, extras: str = "") -> str:
@@ -170,6 +177,7 @@ def settings_bar(user: User, extras: str = "") -> str:
         DE="selected" if lang == "de" else "",
         EN="selected" if lang == "en" else "",
         SERVICES=_service_rows(lang, claude_link.status(user.id)),
+        ADMIN=_admin_button(user),
         ACCOUNT_LINKS=_account_links(user),
         CLAUDE_DIALOG=fill(CLAUDE_DIALOG, lang),
     )

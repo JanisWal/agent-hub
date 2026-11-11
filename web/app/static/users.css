@@ -1,8 +1,6 @@
-/* User management page (loaded only there). Values and colours come from app.css. */
-.users-wrap { width: 100%; max-width: 760px; align-self: start; }
-.users-wrap .back { margin: 0 0 calc(var(--space) * 2); justify-content: flex-start; padding: 0; }
-.users-head { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--space) * 2); margin-bottom: calc(var(--space) * 3); }
-.users-head h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); }
+/* User block of the administration page (loaded only there). Values and colours come from app.css. */
+.users-wrap { min-width: 0; }
+.users-head { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--space) * 2); margin-bottom: calc(var(--space) * 2); min-height: 48px; }
 .users-head .primary { width: auto; min-height: 48px; margin: 0; padding: 0 calc(var(--space) * 3); white-space: nowrap; }
 .users-list { max-width: none; padding: calc(var(--space) * 1.5); display: flex; flex-direction: column; gap: var(--space); border-radius: 24px; }
 .user-row {

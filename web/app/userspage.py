@@ -1,4 +1,5 @@
-"""HTML of the user management page (owner and admins) and of the password page."""
+"""HTML of the user management block (owner and admins; it is part of the administration page, adminpage.py)
+and of the password page."""
 from . import i18n, ui
 from .icons import icon
 from .layout import esc, fill
@@ -6,16 +7,15 @@ from .users import User, can_manage
 
 ROLE_LABEL = {"owner": "role_owner", "admin": "role_admin", "user": "role_user"}
 
-USERS = """<div class="users-wrap" data-network="%t.err_network%">
-  <a class="link back" href="/">%t.back%</a>
+USERS = """<section class="users-wrap" data-network="%t.err_network%">
   <header class="users-head">
-    <h1>%t.users_title%</h1>
+    <h2>%t.users_title%</h2>
     <button class="primary" id="add-user" type="button">%t.add_user%</button>
   </header>
-  <section class="users-list glass">
+  <div class="users-list glass">
     %ROWS%
-  </section>
-</div>
+  </div>
+</section>
 <dialog class="dialog" id="add-dialog">
   <form novalidate data-url="/users/add" data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
     <h2>%t.add_user%</h2>
@@ -117,7 +117,7 @@ def _row(actor: User, account: User, lang: str) -> str:
 
 
 def render(actor: User, accounts: list[User]) -> str:
-    """Body of /users."""
+    """The user management block with its dialogs (a part of /admin)."""
     lang = actor.language
     return fill(USERS, lang, ROWS="\n    ".join(_row(actor, account, lang) for account in accounts))
 
