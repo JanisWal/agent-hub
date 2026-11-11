@@ -4,7 +4,9 @@
 #   1. Write Raspberry Pi OS Lite 64-bit to the new SD card with the Raspberry Pi Imager (set the user "admin",
 #      the host name and your SSH key there), start the Pi, log in over SSH.
 #   2. Plug in the USB stick and mount it:   sudo mkdir -p /mnt/stick && sudo mount /dev/sda1 /mnt/stick
-#   3. Copy this file onto the Pi (it is on the stick in the folder of the repository) and run:
+#   3. This file must be on the stick as well: the new Pi cannot fetch it from GitHub (the key for that is
+#      in the backup). Copy it from the PC onto the stick once (it is in the project folder, deploy/restore.sh,
+#      and in the repository). Then run, with the stick mounted at /mnt/stick:
 #        sudo bash restore.sh /mnt/stick/agent-hub            # the newest backup in that folder
 #        sudo bash restore.sh /mnt/stick/agent-hub/hub-2026-11-12.tar.gz.gpg   # or one file
 #      It asks for the backup password (the one backup.sh showed once, in your password manager).
