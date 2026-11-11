@@ -182,6 +182,14 @@
       select.focus();
       if (isOpen()) close(); else open();
     });
+    // The whole block opens the list, not only the line with the value: the arrow, the small label and the
+    // padding count too (Janis, 11.11.2026: same click area as the arrow of the AI list).
+    select.parentNode.addEventListener("mousedown", function (event) {
+      if (event.target === select || menu.contains(event.target)) return;
+      event.preventDefault();
+      select.focus();
+      if (isOpen()) close(); else open();
+    });
     select.addEventListener("keydown", function (event) {
       var key = event.key;
       if (!isOpen()) {
