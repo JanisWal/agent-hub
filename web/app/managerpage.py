@@ -7,7 +7,9 @@ old chat window used to sit: the manager chat (big) above "waiting for you". The
 description are not here but in the drop-down at the pencil next to the title (projectpage.title_html).
 The manager chat works (chat.py); status and "waiting for you" are empty, devices, checks and files announced.
 """
-from . import i18n
+import time
+
+from . import checks, i18n
 from .icons import icon
 from .layout import esc, fill
 
@@ -75,6 +77,85 @@ def _soon(lang: str, title: str, hint: str, css: str = "") -> str:
     )
 
 
+CYCLES = (("daily", "cycle_daily"), ("weekly", "cycle_weekly"), ("monthly", "cycle_monthly"),
+          ("quarterly", "cycle_quarterly"))
+
+CHECK_DIALOGS = """<dialog class="dialog" id="check-dialog" data-title-new="%t.checks_new%" data-title-edit="%t.checks_edit%"
+        data-btn-new="%t.create%" data-btn-edit="%t.save%">
+  <form method="post" action="" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
+    <h2 id="check-dialog-title">%t.checks_new%</h2>
+    <label>%t.checks_text%<input name="text" required maxlength="%MAX_TEXT%" autocomplete="off" placeholder="%t.checks_placeholder%"></label>
+    <label class="setting has-select">
+      <span class="setting-label">%t.checks_cycle%</span>
+      <select name="cycle">%CYCLES%</select>
+      %CHEVRON%
+    </label>
+    <div class="actions">
+      <button type="button" data-close>%t.cancel%</button>
+      <button class="primary" type="submit" id="check-dialog-button">%t.create%</button>
+    </div>
+  </form>
+</dialog>
+<dialog class="dialog danger" id="check-confirm">
+  <h2>%t.checks_confirm_delete%</h2>
+  <div class="actions">
+    <button type="button" data-close autofocus>%t.cancel%</button>
+    <button class="danger-btn" type="button" id="check-confirm-yes">%t.yes%</button>
+  </div>
+</dialog>"""
+
+
+def dialogs(lang: str) -> str:
+    """The dialogs of the Manager view. They sit outside the view: a modal dialog inside a hidden element
+    would not show (projectpage puts them next to the other dialogs)."""
+    options = "".join(
+        f'<option value="{value}">{esc(i18n.t(lang, key))}</option>' for value, key in CYCLES
+    )
+    return fill(CHECK_DIALOGS, lang, MAX_TEXT=str(checks.MAX_TEXT), CYCLES=options, CHEVRON=icon("chevron_down"))
+
+
+def _ago(lang: str, last_done: int, now: int) -> str:
+    days = max(0, (now - last_done) // checks.DAY)
+    if days == 0:
+        return i18n.t(lang, "checks_done_today")
+    if days == 1:
+        return i18n.t(lang, "checks_done_yesterday")
+    return i18n.t(lang, "checks_done_days", n=days)
+
+
+def _check_row(lang: str, check: checks.Check, now: int) -> str:
+    cycle = i18n.t(lang, "cycle_" + check.cycle)
+    due = check.is_due(now)
+    state = i18n.t(lang, "checks_due") if due else _ago(lang, check.last_done, now)
+    done_label = esc(i18n.t(lang, "checks_done"))
+    delete_label = esc(i18n.t(lang, "checks_delete"))
+    flag = " due" if due else ""
+    return (
+        f'<li class="check-row{flag}" data-id="{check.id}" data-cycle="{check.cycle}">'
+        f'<span class="check-text"><span class="check-title">{esc(check.text)}</span>'
+        f'<small>{esc(cycle)} · {esc(state)}</small></span>'
+        f'<button class="icon-button card-btn" type="button" data-check="done" aria-label="{done_label}" '
+        f'title="{done_label}">{icon("check")}</button>'
+        f'<button class="icon-button card-btn no" type="button" data-check="delete" aria-label="{delete_label}" '
+        f'title="{delete_label}">{icon("trash")}</button></li>'
+    )
+
+
+def _checks_tile(lang: str, regular: list, now: int) -> str:
+    """The regular checks: a list with the plus in the header (Janis, 07.11.2026); due ones are marked."""
+    add = esc(i18n.t(lang, "checks_add"))
+    if regular:
+        body = f'<ul class="check-list">{"".join(_check_row(lang, c, now) for c in regular)}</ul>'
+    else:
+        body = f'<p class="muted">{esc(i18n.t(lang, "manager_checks_hint"))}</p>'
+    return (
+        f'<section class="mtile glass m-checks" id="checks"><header><h2>{esc(i18n.t(lang, "manager_checks"))}</h2>'
+        f'<span class="count">{len(regular)}</span>'
+        f'<button class="icon-button m-add" id="check-add" type="button" aria-label="{add}" title="{add}">'
+        f'{icon("plus")}</button></header>{body}</section>'
+    )
+
+
 def _net_switch(lang: str, current: str) -> str:
     """The switch "web and code together" (on: code has the open internet; off: web search, code offline)."""
     label = esc(i18n.t(lang, "net_together"))
@@ -86,15 +167,16 @@ def _net_switch(lang: str, current: str) -> str:
     )
 
 
-def render(lang: str, settings: dict) -> str:
-    """`settings` is agents.settings(user_id): the manager is the role "chef"."""
+def render(lang: str, settings: dict, regular_checks: list | None = None, now: int | None = None) -> str:
+    """`settings` is agents.settings(user_id): the manager is the role "chef". `regular_checks` are the
+    project's checks (checks.list_checks)."""
     model = _select(lang, "model", "chat_model", MODELS, settings["roles"]["chef"]["model"])
     autonomy = _select(lang, "autonomy", "autonomy", AUTONOMY, settings["autonomy"])
     return fill(
         MANAGER,
         lang,
         DEVICES=_soon(lang, "manager_devices", "manager_devices_hint", "m-grow"),
-        CHECKS=_soon(lang, "manager_checks", "manager_checks_hint"),
+        CHECKS=_checks_tile(lang, regular_checks or [], int(now if now is not None else time.time())),
         FILES=_soon(lang, "manager_files", "manager_files_hint", "m-grow"),
         CHAT=fill(CHAT, lang, MODEL=model, NET=_net_switch(lang, settings["roles"]["chef"]["net"])),
         AUTONOMY=autonomy,

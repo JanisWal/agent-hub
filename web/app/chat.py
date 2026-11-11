@@ -14,7 +14,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-from . import agents, claude_link, db
+from . import agents, checks, claude_link, db
 from .agents import MODELS
 
 DEFAULT_MODEL = agents.DEFAULT_MODEL["chef"]   # the manager is the role "chef"; its model is a setting of the user
@@ -23,6 +23,7 @@ MAX_CONTEXT = 12000       # characters of project context in front of a question
 HISTORY = 6               # earlier questions and answers of the project the manager remembers
 HISTORY_CUT = 1500        # characters kept of each of them
 ITEMS = 40                # open board items listed at most
+CHECKS = 20               # regular checks listed at most
 ROLE = (
     "You are the manager of the software and hardware project described below, in the user's Agent-Hub. "
     "Advise the user: whether something makes sense, how to build it, what to watch out for, also for "
@@ -106,6 +107,9 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
         "SELECT kind, title FROM board_items WHERE project_id = ? AND status IN ('open', 'proposed')"
         " ORDER BY kind, position, id LIMIT ?", (project_id, ITEMS),
     ).fetchall()
+    regular = conn.execute(   # the project is the user's (checked above)
+        "SELECT text, cycle, last_done FROM checks WHERE project_id = ? ORDER BY id LIMIT ?", (project_id, CHECKS),
+    ).fetchall()
     history = conn.execute(
         "SELECT prompt, answer FROM chat_messages WHERE user_id = ? AND project_id = ? AND status = 'done'"
         " AND id < ? ORDER BY id DESC LIMIT ?", (user_id, project_id, row["id"], HISTORY),
@@ -114,11 +118,17 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
     head = (f"Project: {project['name']}\nDescription: {project['description'] or '(none yet)'}\n"
             f"How freely you decide: {autonomy} {AUTONOMY_RULE}")
     board = "\n".join(f"- [{i['kind']}] {i['title']}" for i in items) or "(no open items)"
+    now = int(time.time())
+    routine = "\n".join(
+        f"- {c['text']} ({c['cycle']}, {'due' if checks.is_due(c['cycle'], c['last_done'], now) else 'not due yet'})"
+        for c in regular
+    ) or "(none)"
     talks = [f"User: {_clip(h['prompt'], HISTORY_CUT)}\nManager: {_clip(h['answer'], HISTORY_CUT)}" for h in history]
 
     def context() -> str:
         memory = "\n\n".join(talks) or "(no earlier questions)"
-        return f"{head}\n\nOpen board items:\n{board}\n\nEarlier questions in this project:\n{memory}"
+        return (f"{head}\n\nOpen board items:\n{board}\n\nRegular checks (your recurring to-dos, not board items):\n"
+                f"{routine}\n\nEarlier questions in this project:\n{memory}")
 
     while len(context()) > MAX_CONTEXT and talks:
         talks.pop(0)

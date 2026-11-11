@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from .. import board, dashboard, i18n, projectpage, projects, ui, users
+from .. import board, checks, dashboard, i18n, projectpage, projects, ui, users
 from ..deps import api_user, fail, ok, page_user, reauth, redirect
 
 router = APIRouter()
@@ -44,7 +44,9 @@ def project_view(project_id: int, user: users.User = Depends(page_user)):
     project = projects.get_project(user.id, project_id)
     if project is None:
         raise HTTPException(status_code=404)
-    body = projectpage.render(user, project, board.list_items(user.id, project.id))
+    body = projectpage.render(
+        user, project, board.list_items(user.id, project.id), checks.list_checks(user.id, project.id)
+    )
     return ui.logged_in_page(
         user, project.name, body, scripts=projectpage.SCRIPTS, styles=projectpage.STYLES,
         top_center=projectpage.title_html(project, user.language), top_left=projectpage.back_html(user.language), drawer_extras=projectpage.drawer_buttons(user.language),

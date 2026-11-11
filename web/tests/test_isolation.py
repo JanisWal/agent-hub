@@ -10,8 +10,8 @@ import unittest
 
 from fastapi import HTTPException
 
-from app import board, dashboard, db, projectpage, projects, resets, throttle, ui, users
-from app.routes import board as board_routes, projects as project_routes, resets as reset_routes
+from app import board, checks, dashboard, db, projectpage, projects, resets, throttle, ui, users
+from app.routes import board as board_routes, checks as check_routes, projects as project_routes, resets as reset_routes
 
 
 def snapshot() -> dict:
@@ -20,6 +20,7 @@ def snapshot() -> dict:
         return {
             "projects": [tuple(r) for r in conn.execute("SELECT * FROM projects ORDER BY id")],
             "items": [tuple(r) for r in conn.execute("SELECT * FROM board_items ORDER BY id")],
+            "checks": [tuple(r) for r in conn.execute("SELECT * FROM checks ORDER BY id")],
         }
 
 
@@ -38,6 +39,8 @@ class IsolationTest(unittest.TestCase):
         self.trashed = dropped
         self.mine = projects.create_project(self.b.id, "Project of B")
         self.mine_item = board.create_item(self.b.id, self.mine.id, "bug", "Item of B")
+        self.check = checks.create(self.a.id, self.project.id, "Secret check of A", "weekly")
+        self.my_check = checks.create(self.b.id, self.mine.id, "Check of B", "daily")
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -85,6 +88,34 @@ class IsolationTest(unittest.TestCase):
         self.assertEqual(chat.delete_all(self.b.id), 0)                        # B's "delete all" never reaches A
         self.assertEqual([m.prompt for m in chat.list_messages(self.a.id, self.project.id)],
                          ["private question of A"])
+
+    def test_b_cannot_touch_the_regular_checks_of_a(self):
+        before = snapshot()
+        self.assertEqual(checks.list_checks(self.b.id, self.project.id), [])
+        self.assertIsNone(checks.update(self.b.id, self.check.id, "hacked", "daily"))
+        self.assertFalse(checks.mark_done(self.b.id, self.check.id))
+        self.assertFalse(checks.delete(self.b.id, self.check.id))
+        with self.assertRaises(ValueError):
+            checks.create(self.b.id, self.project.id, "planted", "daily")          # A's project
+        check_routes.create_check(self.project.id, "planted", "daily", self.b)      # silently refused
+        check_routes.change_check(self.check.id, "hacked", "daily", self.b)
+        self.assertEqual(check_routes.check_done(self.check.id, self.b).status_code, 404)
+        self.assertEqual(check_routes.check_delete(self.check.id, self.b).status_code, 404)
+        self.assertEqual(snapshot(), before)
+        page = projectpage.render(self.b, self.mine, [], checks.list_checks(self.b.id, self.mine.id))
+        self.assertIn("Check of B", page)
+        self.assertNotIn("Secret check", page)
+
+    def test_the_manager_of_b_never_sees_the_checks_of_a(self):
+        from app import chat, claude_link
+        from pathlib import Path
+        claude_link.BASE_DIR = Path(self.tmp.name) / "claude"
+        claude_link.begin(self.b.id)
+        claude_link.complete(self.b.id, True)
+        chat.send(self.b.id, self.mine.id, "Question of B")
+        text = chat.claim_next().prompt
+        self.assertIn("Check of B", text)
+        self.assertNotIn("Secret check", text)
 
     # --- the data layer
     def test_the_manager_of_b_never_sees_the_project_of_a(self):

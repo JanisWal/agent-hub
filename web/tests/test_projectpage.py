@@ -117,7 +117,7 @@ class ProjectPageTest(unittest.TestCase):
             titles = [column.index(f"<h2>{t}</h2>") for t in ("Status", "Regelmäßige Prüfungen", "Manager-Chat")
                       if f"<h2>{t}</h2>" in column]
             self.assertEqual(titles, sorted(titles))
-        self.assertEqual(manager.count('class="mtile glass m-soon'), 3)       # devices, checks, files (the chat works)
+        self.assertEqual(manager.count('class="mtile glass m-soon'), 2)       # devices and files (chat and checks work)
         for tall in ("m-grow", "m-chat"):
             self.assertIn(tall, manager)
         self.assertIn("nicht Teil des Boards", manager)                       # the checks are not board items
