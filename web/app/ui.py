@@ -142,9 +142,12 @@ def _service_rows(lang: str, claude_state: str) -> str:
 
 
 def _account_links(user: User) -> str:
-    """Links under the save button: user management (owner and admins) and the own password."""
+    """Links under the save button: user management (owner and admins), the system page (owner) and
+    the own password."""
     lang = user.language
     links = [("/password", "change_password")]
+    if user.role == "owner":
+        links.insert(0, ("/system", "system_title"))
     if user.is_admin:
         links.insert(0, ("/users", "manage_users"))
     return "\n    ".join(f'<a class="link" href="{href}">{esc(i18n.t(lang, key))}</a>' for href, key in links)

@@ -18,6 +18,26 @@ def answer(text, **extra):
                                                   "output_tokens": 3}, **extra})
 
 
+class PowerCommandTest(unittest.TestCase):
+    def test_the_two_commands(self):
+        for action in ("reboot", "poweroff"):
+            cmd = L.build_power_command(action)
+            self.assertEqual(cmd[:2], ["docker", "run"])
+            self.assertEqual(cmd[-3:], ["systemctl", "--no-block", action])   # a fixed command, nothing else
+            self.assertIn("agent-hub-hub-runner", cmd)
+            self.assertIn("--pull=never", cmd)                                # never fetches an image at that moment
+            self.assertIn("--network=none", cmd)
+
+    def test_nothing_else_is_accepted(self):
+        for bad in ("", "halt", "REBOOT", "reboot; id", "poweroff --force", None):
+            with self.assertRaises(ValueError):
+                L.build_power_command(bad)
+
+    def test_an_agent_run_never_gets_these_rights(self):
+        for flag in ("--privileged", "--pid=host", "nsenter"):
+            self.assertNotIn(flag, L.build_command(**GOOD))
+
+
 class CommandTest(unittest.TestCase):
     def test_template(self):
         cmd = L.build_command(**GOOD)

@@ -16,7 +16,7 @@ import os
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 
-from .. import agents, chat, claude_link, throttle
+from .. import agents, chat, claude_link, power, throttle
 from ..deps import fail, ok
 
 TOKEN_HASH_ENV = "HUB_RUNNER_TOKEN_HASH"
@@ -103,6 +103,12 @@ def wipes():
 @router.post("/wipes/{user_id}/done")
 def wipe_done(user_id: int):
     return ok() if claude_link.wiped(user_id) else fail(409)
+
+
+@router.post("/power/claim")
+def power_claim():
+    """The restart or shutdown the owner asked for (once), or null."""
+    return ok(action=power.claim_next())
 
 
 @router.post("/logins/{user_id}/expired")

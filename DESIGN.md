@@ -264,6 +264,15 @@ Stand 07.11.2026, von Janis beauftragt, in Chrome mit Testkonten geprüft (Hell 
 - **Dialoge:** Hinzufügen (E-Mail, Startpasswort sichtbar im Klartext, damit der Admin ein einfaches vergibt, Hinweis darunter) und Zurücksetzen (neues Startpasswort, dein Passwort) sind normale Dialoge mit Hauptknopf; **Löschen** ist der rote Dialog (Titel, E-Mail, dein Passwort, „Endgültig löschen“). Fehler stehen in der getönten Fehlerbox im Dialog, in der Sprache des Nutzers, vom Server.
 - **Seite `/password`:** wie die Login-Seite eine Glaskarte mit Überschrift „Neues Passwort“ und Unterzeile; nach einem Startpasswort lautet sie „Bitte lege ein eigenes Passwort fest, bevor du weitermachst.“ Felder: aktuelles Passwort, neues Passwort, wiederholen; darunter die Regel in `--muted`. Fehler in der Fehlerbox oben.
 
+## 10c2. System (nur Owner)
+
+Stand 11.11.2026, erster Vorschlag von Claude, auf Wunsch von Janis sofort gebaut; Janis prüft und ändert (Platz im Menü, Aufbau). Die Seite ist als Heimat für alle Owner-Funktionen gedacht (später Update, Backup-Status), `/users` bleibt davon getrennt, weil es auch Admins brauchen.
+
+- **Schublade:** Der Textlink **System** steht nur beim Owner, über „Benutzer verwalten“.
+- **Seite `/system`:** Aufbau wie `/users`: Textlink „Zurück“, Überschrift **System**, darunter eine Glasfläche mit einer Zeile je Aktion (Name Gewicht 600, Hinweis klein in `--muted`, rechts ein normaler Knopf). Es gibt **keinen Hauptknopf**: **Neu starten** und **Ausschalten** sind beide normale Knöpfe, weil keine Aktion die „richtige“ ist. Breite höchstens 760 px, auf dem Handy stehen die Knöpfe unter dem Text in voller Breite. Auf dem Handy bei 375 px ohne seitliches Scrollen geprüft (Hell und Dunkel).
+- **Dialoge:** Je Aktion ein Dialog mit dem Passwort des Owners. **Neu starten** ist ein normaler Dialog mit Hauptknopf „Jetzt neu starten“, **Ausschalten** der rote Dialog mit „Jetzt ausschalten“ (Löschen-Muster). Der Hinweis nennt, dass der Pi nach dem Ausschalten nur durch Strom trennen und wieder anstecken startet. Nach der Bestätigung schließt der Dialog, eine Meldung (`role="status"`) sagt, was jetzt passiert, und beide Knöpfe sind gesperrt.
+- Alle Texte in `i18n.py` (Schlüssel `system_title`, `sys_*`, `err_power_busy`).
+
 ## 10b2. Passwortseiten
 
 Stand 07.11.2026, von Janis beauftragt. Gleiche Glaskarte wie die Anmeldung. `/password`: Felder „Aktuelles Passwort“, „Neues Passwort“, „wiederholen“; wer ein Startpasswort hat, sieht nur die letzten beiden. Unter dem Hauptknopf steht als Textlink **Abbrechen** (normal zum Dashboard, bei Startpasswort Abmelden). `/reset/{token}` (Link aus der Mail) und `/forgot` haben ebenfalls einen Textlink zurück zur Anmeldung. Die Benutzerverwaltung hat oben links den Textlink **Zurück** (zum Dashboard), nicht „Alle Projekte“.

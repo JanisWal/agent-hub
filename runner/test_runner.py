@@ -5,6 +5,7 @@
 import json
 import os
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
@@ -16,9 +17,12 @@ LINK = "https://claude.com/cai/oauth/authorize?code=true&client_id=abc&state=xyz
 class FakeApi:
     def __init__(self):
         self.logins, self.wipes, self.codes, self.calls, self.chat_job = [], [], {}, [], None
+        self.power = None
 
     def call(self, method, path, **form):
         self.calls.append((method, path, form))
+        if path == "/runner/power/claim":
+            return {"ok": True, "action": self.power}
         if path == "/runner/chat/claim":
             return {"ok": True, "job": self.chat_job}
         if path == "/runner/logins":
@@ -68,6 +72,27 @@ class RunnerTest(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+
+    def test_power_requests_run_one_fixed_command(self):
+        ran = []
+        self.runner.run_power = lambda command: ran.append(command) or types.SimpleNamespace(returncode=0, stderr="")
+        self.runner.handle_power()
+        self.assertEqual(ran, [])                                               # nothing asked: nothing happens
+        self.api.power = "reboot"
+        self.runner.handle_power()
+        self.assertEqual(ran, [launcher.build_power_command("reboot")])
+
+    def test_unknown_power_actions_are_ignored(self):
+        ran = []
+        self.runner.run_power = lambda command: ran.append(command)
+        self.api.power = "format-everything"
+        self.runner.handle_power()
+        self.assertEqual(ran, [])
+
+    def test_a_failing_power_command_does_not_stop_the_runner(self):
+        self.runner.run_power = lambda command: types.SimpleNamespace(returncode=1, stderr="denied")
+        self.api.power = "poweroff"
+        self.runner.handle_power()   # reports on stderr, raises nothing
 
     def test_successful_sign_in(self):
         self.api.logins = [{"user_id": 2, "login_url": None}]
