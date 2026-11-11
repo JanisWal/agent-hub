@@ -490,7 +490,9 @@ main { padding-bottom: 96px; } /* room for the toggle */
 .setting select { padding-right: 28px; appearance: none; -webkit-appearance: none; cursor: pointer; }
 .setting select option { color: var(--text); background: var(--bg); }
 .setting select:focus-visible { outline: none; } /* the whole block shows the focus ring (:focus-within) */
-.has-select > svg { position: absolute; right: 12px; bottom: 13px; width: 18px; height: 18px; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+.has-select > svg { position: absolute; right: 12px; bottom: 13px; width: 18px; height: 18px; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; transition: transform 0.45s cubic-bezier(0.3, 1.4, 0.5, 1); }
+/* The arrow turns around while the list is open, like the arrow of the AI list and of the drawer (core.js sets .open). */
+.has-select.open > svg { transform: rotate(180deg); }
 /* Both arrows of the drawer sit at the same spot (Janis, 11.11.2026): top right, on the line of the small label.
    Language: the arrow of the select. Claude: the button that opens the list of the other AIs (core.js). */
 .setting.has-select > svg { top: 10px; bottom: auto; }
