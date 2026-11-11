@@ -1,6 +1,7 @@
 /* Stations of the project page: a click on "Board" or "Manager" swaps the main window, the list stays.
    The view lives in the address (#board, #manager), so a reload, the back button and a link keep it.
-   The trash and archive buttons belong to the board: while the manager is open they bring the board back. */
+   Each area keeps its own controls (Janis, 11.11.2026): the trash and archive buttons belong to the board and
+   are not shown while the manager is open (body class "view-manager", see project.css). */
 (function () {
   "use strict";
   var project = document.querySelector(".project");
@@ -20,6 +21,7 @@
       if (open) open.click();
     }
     current = name;
+    document.body.classList.toggle("view-manager", name === "manager");
     Object.keys(panels).forEach(function (key) { panels[key].hidden = key !== name; });
     Array.prototype.forEach.call(links, function (link) {
       var on = link.dataset.station === name;
@@ -30,7 +32,7 @@
       panels[name].classList.remove("appear");
       void panels[name].offsetWidth;
       panels[name].classList.add("appear");
-      try { history.replaceState(null, "", "#" + name); } catch (e) {}   // also when the trash button brings the board back
+      try { history.replaceState(null, "", "#" + name); } catch (e) {}
     }
   }
 
@@ -40,11 +42,6 @@
       if (link.dataset.station === current) return;
       show(link.dataset.station, true);
     });
-  });
-
-  // Trash and archive: switch to the board first; board.js then opens the list (it was closed above).
-  Array.prototype.forEach.call(document.querySelectorAll(".drawer-extra"), function (button) {
-    button.addEventListener("click", function () { if (current !== "board") show("board", true); }, true);
   });
 
   show(location.hash === "#manager" ? "manager" : "board", false);

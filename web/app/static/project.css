@@ -221,3 +221,6 @@ html .card.drag-clone::after { display: none; }
 .check-text small { display: block; font-size: 0.78rem; font-weight: 500; color: var(--muted); }
 .check-row.due .check-text small { font-weight: 700; color: var(--text); }/* The hidden list of the cycle drop-down must not make the dialog scroll (the browser gives dialogs overflow: auto). */
 #check-dialog { overflow: visible; }
+
+/* One design language (Janis, 11.11.2026): trash and archive belong to the board, so they are not shown in the Manager view. */
+.view-manager .drawer-extra { display: none; }
