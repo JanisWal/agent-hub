@@ -3,11 +3,12 @@
 (function () {
   function $(selector, root) { return (root || document).querySelector(selector); }
 
-  // Greeting by the visitor's local time: 5-11 morning, 11-17 midday, otherwise evening.
+  // Greeting by the visitor's local time: 6-12 morning, 12-17 midday, 17-23 evening, 23-6 night.
   var greeting = $("#greeting");
   if (greeting) {
     var hour = new Date().getHours();
-    var part = hour >= 5 && hour < 11 ? "morning" : hour >= 11 && hour < 17 ? "noon" : "evening";
+    var part = hour >= 6 && hour < 12 ? "morning" : hour >= 12 && hour < 17 ? "noon"
+      : hour >= 17 && hour < 23 ? "evening" : "night";
     greeting.textContent = greeting.dataset[part] + ", " + greeting.dataset.name;
   }
 

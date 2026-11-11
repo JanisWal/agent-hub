@@ -142,7 +142,7 @@ Regeln:
 Stand 07.11.2026, von Janis beauftragt, mit Testkonten im Browser geprüft (Dunkel und Hell, Deutsch und Englisch).
 
 **Begrüßung**
-- Große Überschrift `.greeting`: Größe `clamp(2.2rem, 5.5vw, 3.6rem)`, Laufweite −0,035 em. Text „Guten Morgen / Guten Mittag / Guten Abend, Name“, bestimmt im Browser nach der **lokalen Uhrzeit** des Besuchers: 5–11 Uhr Morgen, 11–17 Uhr Mittag, sonst Abend. Ohne JavaScript steht „Hallo, Name“.
+- Große Überschrift `.greeting`: Größe `clamp(2.2rem, 5.5vw, 3.6rem)`, Laufweite −0,035 em. Text „Guten Morgen / Guten Mittag / Guten Abend / Gute Nacht, Name“, bestimmt im Browser nach der **lokalen Uhrzeit** des Besuchers: 6:00–11:59 Morgen, 12:00–16:59 Mittag, 17:00–22:59 Abend, 23:00–5:59 Nacht (Janis, 11.11.2026). Ohne JavaScript steht „Hallo, Name“.
 - Name: der gewählte Nutzername, sonst der Teil der E-Mail vor dem `@`.
 
 **Einstellungs-Schublade (oben rechts, auf jeder angemeldeten Seite)** (neu gestaltet am 07.11.2026, ersetzt die frühere Pille)

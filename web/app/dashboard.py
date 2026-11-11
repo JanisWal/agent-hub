@@ -10,7 +10,7 @@ STYLES = ("dashboard.css",)
 
 DASHBOARD = """<div class="dash">
   <h1 class="greeting" id="greeting" data-morning="%t.greet_morning%" data-noon="%t.greet_noon%"
-      data-evening="%t.greet_evening%" data-name="%NAME%">%t.greet_fallback%, %NAME%</h1>
+      data-evening="%t.greet_evening%" data-night="%t.greet_night%" data-name="%NAME%">%t.greet_fallback%, %NAME%</h1>
   <div class="pages" id="pages" data-size="%SIZE%" data-current="%CURRENT%">
     <div class="track" id="track" style="--page:%PAGE_INDEX%">
     %GRIDS%
