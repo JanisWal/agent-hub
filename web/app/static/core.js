@@ -162,10 +162,12 @@
       items.forEach(function (item, i) { item.setAttribute("aria-selected", String(i === select.selectedIndex)); });
       mark(select.selectedIndex);
       menu.classList.add("open");
+      select.parentNode.classList.add("open");   // turns the arrow
       select.setAttribute("aria-expanded", "true");
     }
     function close() {
       menu.classList.remove("open");
+      select.parentNode.classList.remove("open");
       select.setAttribute("aria-expanded", "false");
     }
     function choose(index) {
