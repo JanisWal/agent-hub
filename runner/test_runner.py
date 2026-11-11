@@ -4,6 +4,7 @@
 """
 import json
 import os
+import subprocess
 import tempfile
 import types
 import unittest
@@ -22,7 +23,7 @@ class FakeApi:
     def call(self, method, path, **form):
         self.calls.append((method, path, form))
         if path == "/runner/power/claim":
-            return {"ok": True, "action": self.power}
+            return {"ok": True, "id": 7 if self.power else None, "action": self.power}
         if path == "/runner/chat/claim":
             return {"ok": True, "job": self.chat_job}
         if path == "/runner/logins":
@@ -81,6 +82,29 @@ class RunnerTest(unittest.TestCase):
         self.api.power = "reboot"
         self.runner.handle_power()
         self.assertEqual(ran, [launcher.build_power_command("reboot")])
+
+    def test_a_backup_reports_how_it_ended(self):
+        for code, expected in ((0, "1"), (1, "0")):
+            self.api.calls.clear()
+            self.runner.run_power = lambda command, code=code: types.SimpleNamespace(returncode=code, stderr="")
+            self.api.power = "backup"
+            self.runner.handle_power()
+            self.assertEqual(self.api.posted("/7/result"), [{"success": expected}])
+
+    def test_a_backup_that_takes_too_long_is_reported_as_failed(self):
+        def too_slow(command):
+            raise subprocess.TimeoutExpired(command, 240)
+        self.runner.run_power = too_slow
+        self.api.power = "backup"
+        self.runner.handle_power()
+        self.assertEqual(self.api.posted("/7/result"), [{"success": "0"}])
+
+    def test_restart_and_shutdown_report_nothing(self):
+        self.runner.run_power = lambda command: types.SimpleNamespace(returncode=0, stderr="")
+        for action in ("reboot", "poweroff"):
+            self.api.power = action
+            self.runner.handle_power()
+        self.assertEqual(self.api.posted("/result"), [])
 
     def test_unknown_power_actions_are_ignored(self):
         ran = []

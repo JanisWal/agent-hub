@@ -7,6 +7,10 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
   <header class="sys-head"><h2>%t.system_title%</h2></header>
   <div class="sys-list glass">
     <div class="sys-row">
+      <div class="sys-main"><span class="sys-name">%t.sys_backup%</span><span class="sys-hint">%t.sys_backup_hint%</span></div>
+      <button type="button" data-backup>%t.sys_backup%</button>
+    </div>
+    <div class="sys-row">
       <div class="sys-main"><span class="sys-name">%t.sys_reboot%</span><span class="sys-hint">%t.sys_reboot_hint%</span></div>
       <button type="button" data-power="reboot">%t.sys_reboot%</button>
     </div>
@@ -15,7 +19,9 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
       <button type="button" data-power="poweroff">%t.sys_poweroff%</button>
     </div>
   </div>
-  <p class="sys-note" role="status" hidden
+  <p class="sys-note" id="sys-backup-note" role="status" hidden
+     data-running="%t.sys_backup_running%" data-ok="%t.sys_backup_ok%" data-failed="%t.sys_backup_failed%"></p>
+  <p class="sys-note" id="sys-power-note" role="status" hidden
      data-done-reboot="%t.sys_reboot_done%" data-done-poweroff="%t.sys_poweroff_done%"></p>
 </section>
 <dialog class="dialog" id="power-reboot-dialog">

@@ -107,8 +107,15 @@ def wipe_done(user_id: int):
 
 @router.post("/power/claim")
 def power_claim():
-    """The restart or shutdown the owner asked for (once), or null."""
-    return ok(action=power.claim_next())
+    """What the owner asked for on the Pi (restart, shutdown, backup; once), or null."""
+    job = power.claim_next()
+    return ok(id=None if job is None else job[0], action=None if job is None else job[1])
+
+
+@router.post("/power/{request_id}/result")
+def power_result(request_id: int, success: str = Form("0")):
+    """How a manual backup ended."""
+    return ok() if power.finish(request_id, success == "1") else fail(409)
 
 
 @router.post("/logins/{user_id}/expired")
