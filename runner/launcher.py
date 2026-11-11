@@ -43,20 +43,27 @@ CHAT_MODES = {
 # Restart and shutdown of the Pi (owner's request, see web/app/power.py). The host is reached through the
 # Docker socket: a short-lived privileged container joins the host's namespaces and runs `systemctl`.
 # Only these two fixed commands exist; nothing from the request reaches the command line but the choice.
-POWER_ACTIONS = ("reboot", "poweroff")
+POWER_COMMANDS = {
+    "reboot": ["systemctl", "--no-block", "reboot"],
+    "poweroff": ["systemctl", "--no-block", "poweroff"],
+    # The unit made by deploy/setup-backup.sh. Without --no-block the command ends when the backup is done, and its
+    # exit code says how it went (the runner reports that to the hub).
+    "backup": ["systemctl", "start", "agent-hub-backup.service"],
+}
+POWER_ACTIONS = tuple(POWER_COMMANDS)
 POWER_IMAGE = "agent-hub-hub-runner"   # the runner's own image (python:3.13-slim has nsenter), never pulled
 _BAD_PATH = re.compile(r"[,\s\x00=:]")   # would confuse --mount parsing or hide something
 _MARKER = re.compile(r"^RESULT:\s*([a-z_]+)\s*$")
 
 
 def build_power_command(action: str) -> list[str]:
-    """The `docker run` command that restarts or shuts down the Pi. ValueError for any other action."""
-    if action not in POWER_ACTIONS:
+    """The `docker run` command that restarts or shuts down the Pi or starts its backup. ValueError for any other
+    action."""
+    if action not in POWER_COMMANDS:
         raise ValueError("unknown power action")
     return [
         "docker", "run", "--rm", "--pull=never", "--privileged", "--pid=host", "--network=none", POWER_IMAGE,
-        "nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid",
-        "systemctl", "--no-block", action,
+        "nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", *POWER_COMMANDS[action],
     ]
 
 

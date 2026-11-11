@@ -28,6 +28,12 @@ class PowerCommandTest(unittest.TestCase):
             self.assertIn("--pull=never", cmd)                                # never fetches an image at that moment
             self.assertIn("--network=none", cmd)
 
+    def test_the_backup_command_starts_the_unit_and_waits_for_it(self):
+        cmd = L.build_power_command("backup")
+        self.assertEqual(cmd[-3:], ["systemctl", "start", "agent-hub-backup.service"])
+        self.assertNotIn("--no-block", cmd)                                  # the exit code must tell how it went
+        self.assertEqual(L.POWER_ACTIONS, ("reboot", "poweroff", "backup"))  # the same three as web/app/power.py
+
     def test_nothing_else_is_accepted(self):
         for bad in ("", "halt", "REBOOT", "reboot; id", "poweroff --force", None):
             with self.assertRaises(ValueError):

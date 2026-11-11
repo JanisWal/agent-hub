@@ -23,6 +23,7 @@ from . import launcher, login
 LOGIN_TIMEOUT_AFTER_CODE = 90   # seconds Claude Code gets to accept the code
 LINK_TIMEOUT = 30               # seconds until the sign-in prints its link
 CHAT_TIMEOUT = 200              # seconds a chat answer may take (a web search takes several steps)
+POWER_TIMEOUT = 240             # seconds a manual backup may take (the nightly one needs a few seconds)
 
 
 class Api:
@@ -143,12 +144,13 @@ class Runner:
         self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="1" if ok else "0", answer=text,
                       tokens_in=tokens_in, tokens_out=tokens_out)
 
-    # --- restart or shutdown of the Pi, asked for by the owner (web/app/power.py)
+    # --- restart, shutdown or backup of the Pi, asked for by the owner (web/app/power.py)
     def _run_power(self, command: list[str]):
-        return subprocess.run(command, capture_output=True, text=True, timeout=60)
+        return subprocess.run(command, capture_output=True, text=True, timeout=POWER_TIMEOUT)
 
     def handle_power(self) -> None:
-        action = self.api.call("POST", "/runner/power/claim").get("action")
+        job = self.api.call("POST", "/runner/power/claim")
+        action = job.get("action")
         if not action:
             return
         try:
@@ -157,9 +159,15 @@ class Runner:
             print(f"runner: ignored unknown power action {action!r}", file=sys.stderr, flush=True)
             return
         print(f"runner: {action} of the Pi on the owner's request", file=sys.stderr, flush=True)
-        done = self.run_power(command)
-        if done.returncode:
-            print(f"runner: {action} failed: {done.stderr.strip()}", file=sys.stderr, flush=True)
+        try:
+            done = self.run_power(command)
+            success, problem = done.returncode == 0, (done.stderr or "").strip()
+        except subprocess.TimeoutExpired:
+            success, problem = False, "timeout"
+        if not success:
+            print(f"runner: {action} failed: {problem}", file=sys.stderr, flush=True)
+        if action == "backup" and job.get("id"):   # restart and shutdown end this very Pi: nothing to report
+            self.api.call("POST", f"/runner/power/{int(job['id'])}/result", success="1" if success else "0")
 
     def step(self) -> None:
         self.handle_power()

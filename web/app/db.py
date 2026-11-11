@@ -152,6 +152,7 @@ NEW_COLUMNS = {
     "projects": {"page": "INTEGER NOT NULL DEFAULT 0", "description": "TEXT NOT NULL DEFAULT ''"},
     "chat_messages": {"mode": "TEXT NOT NULL DEFAULT 'web'", "model": "TEXT NOT NULL DEFAULT 'haiku'"},
     "checks": {"days": "TEXT NOT NULL DEFAULT '1111111'"},   # weekdays of a daily check, Monday first (checks.py)
+    "power_requests": {"result": "TEXT"},                    # how a manual backup ended: 'ok' or 'failed' (power.py)
 }
 
 # The three statements below run once, when a database from before the feature is opened for the
