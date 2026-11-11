@@ -10,7 +10,7 @@ import unittest
 
 from fastapi import HTTPException
 
-from app import board, checks, dashboard, db, projectpage, projects, resets, throttle, ui, users
+from app import board, checks, dashboard, db, power, projectpage, projects, resets, throttle, ui, users
 from app.routes import board as board_routes, checks as check_routes, projects as project_routes, resets as reset_routes
 
 
@@ -216,6 +216,14 @@ class IsolationTest(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 call()
         self.assertIsNotNone(users.check_login("a@example.com", "Aaaa!pass12"))
+
+    def test_nobody_but_the_owner_restarts_or_shuts_down_the_pi(self):
+        admin = users.create_user("admin@example.com", "Adm1n!pass", role="admin")
+        for who in (self.a, self.b, admin):
+            for action in power.ACTIONS:
+                with self.assertRaises(PermissionError):
+                    power.request_action(who, action)
+        self.assertIsNone(power.claim_next())
 
     def test_profile_theme_and_password_only_change_the_own_account(self):
         users.set_profile(self.b.id, "Bee", "en")

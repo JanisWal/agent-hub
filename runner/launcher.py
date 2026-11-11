@@ -40,8 +40,24 @@ CHAT_MODES = {
     # Anthropic, so code has no internet and nothing it reads can leave. No WebFetch: it would need the open web.
     "apart": {"tools": ("WebSearch", "Bash"), "proxy": API_PROXY, "turns": 10},
 }
+# Restart and shutdown of the Pi (owner's request, see web/app/power.py). The host is reached through the
+# Docker socket: a short-lived privileged container joins the host's namespaces and runs `systemctl`.
+# Only these two fixed commands exist; nothing from the request reaches the command line but the choice.
+POWER_ACTIONS = ("reboot", "poweroff")
+POWER_IMAGE = "agent-hub-hub-runner"   # the runner's own image (python:3.13-slim has nsenter), never pulled
 _BAD_PATH = re.compile(r"[,\s\x00=:]")   # would confuse --mount parsing or hide something
 _MARKER = re.compile(r"^RESULT:\s*([a-z_]+)\s*$")
+
+
+def build_power_command(action: str) -> list[str]:
+    """The `docker run` command that restarts or shuts down the Pi. ValueError for any other action."""
+    if action not in POWER_ACTIONS:
+        raise ValueError("unknown power action")
+    return [
+        "docker", "run", "--rm", "--pull=never", "--privileged", "--pid=host", "--network=none", POWER_IMAGE,
+        "nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid",
+        "systemctl", "--no-block", action,
+    ]
 
 
 def run_uid(user_id: int) -> int:

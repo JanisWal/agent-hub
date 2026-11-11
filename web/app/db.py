@@ -129,6 +129,14 @@ CREATE TABLE IF NOT EXISTS claude_wipes (
     user_id    INTEGER PRIMARY KEY,
     created_at INTEGER NOT NULL
 );
+-- Restart or shutdown of the Pi, asked for by the owner and fetched once by the runner (power.py).
+CREATE TABLE IF NOT EXISTS power_requests (
+    id           INTEGER PRIMARY KEY,
+    action       TEXT NOT NULL,
+    requested_by INTEGER NOT NULL,
+    created_at   INTEGER NOT NULL,
+    taken_at     INTEGER
+);
 """
 
 # Columns added after the first release; added to existing databases on first use.

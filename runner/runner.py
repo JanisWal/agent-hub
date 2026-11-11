@@ -47,13 +47,14 @@ class Api:
 
 class Runner:
     def __init__(self, api, claude_base: str, prepare=launcher.prepare_folder, start_session=None,
-                 clock=time.time, run_chat=None):
+                 clock=time.time, run_chat=None, run_power=None):
         self.api = api
         self.claude_base = Path(claude_base)
         self.prepare = prepare
         self.start_session = start_session or self._docker_session
         self.clock = clock
         self.run_chat = run_chat or self._run_chat
+        self.run_power = run_power or self._run_power
         self.sessions: dict[int, login.LoginSession] = {}
 
     def folder(self, user_id: int) -> str:
@@ -142,7 +143,26 @@ class Runner:
         self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="1" if ok else "0", answer=text,
                       tokens_in=tokens_in, tokens_out=tokens_out)
 
+    # --- restart or shutdown of the Pi, asked for by the owner (web/app/power.py)
+    def _run_power(self, command: list[str]):
+        return subprocess.run(command, capture_output=True, text=True, timeout=60)
+
+    def handle_power(self) -> None:
+        action = self.api.call("POST", "/runner/power/claim").get("action")
+        if not action:
+            return
+        try:
+            command = launcher.build_power_command(action)
+        except ValueError:
+            print(f"runner: ignored unknown power action {action!r}", file=sys.stderr, flush=True)
+            return
+        print(f"runner: {action} of the Pi on the owner's request", file=sys.stderr, flush=True)
+        done = self.run_power(command)
+        if done.returncode:
+            print(f"runner: {action} failed: {done.stderr.strip()}", file=sys.stderr, flush=True)
+
     def step(self) -> None:
+        self.handle_power()
         self.handle_wipes()
         self.handle_logins()
         self.handle_chat()
