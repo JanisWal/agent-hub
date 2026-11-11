@@ -108,7 +108,8 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
         " ORDER BY kind, position, id LIMIT ?", (project_id, ITEMS),
     ).fetchall()
     regular = conn.execute(   # the project is the user's (checked above)
-        "SELECT text, cycle, last_done FROM checks WHERE project_id = ? ORDER BY id LIMIT ?", (project_id, CHECKS),
+        "SELECT text, cycle, days, last_done FROM checks WHERE project_id = ? ORDER BY id LIMIT ?",
+        (project_id, CHECKS),
     ).fetchall()
     history = conn.execute(
         "SELECT prompt, answer FROM chat_messages WHERE user_id = ? AND project_id = ? AND status = 'done'"
@@ -119,8 +120,14 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
             f"How freely you decide: {autonomy} {AUTONOMY_RULE}")
     board = "\n".join(f"- [{i['kind']}] {i['title']}" for i in items) or "(no open items)"
     now = int(time.time())
+    def cycle_text(c) -> str:   # a daily check on some weekdays only says which ones
+        if c["cycle"] == "daily" and c["days"] != checks.ALL_DAYS:
+            return "daily on " + ", ".join(checks.DAY_NAMES[n] for n in checks.day_numbers(c["days"]))
+        return c["cycle"]
+
     routine = "\n".join(
-        f"- {c['text']} ({c['cycle']}, {'due' if checks.is_due(c['cycle'], c['last_done'], now) else 'not due yet'})"
+        f"- {c['text']} ({cycle_text(c)}, "
+        f"{'due' if checks.is_due(c['cycle'], c['last_done'], now, c['days']) else 'not due yet'})"
         for c in regular
     ) or "(none)"
     talks = [f"User: {_clip(h['prompt'], HISTORY_CUT)}\nManager: {_clip(h['answer'], HISTORY_CUT)}" for h in history]
