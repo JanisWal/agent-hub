@@ -90,6 +90,12 @@ CHECK_DIALOGS = """<dialog class="dialog" id="check-dialog" data-title-new="%t.c
       <select name="cycle">%CYCLES%</select>
       %CHEVRON%
     </label>
+    <div class="setting check-days" id="check-days" role="group" aria-label="%t.checks_days%">
+      <span class="setting-label">%t.checks_days%</span>
+      <div class="check-days-row">%DAYS%</div>
+    </div>
+    <p class="error" role="alert" id="check-days-error" hidden>%t.checks_days_none%</p>
+    <button class="link" type="button" id="check-dialog-done" hidden>%t.checks_mark_done%</button>
     <div class="actions">
       <button type="button" data-close>%t.cancel%</button>
       <button class="primary" type="submit" id="check-dialog-button">%t.create%</button>
@@ -111,7 +117,14 @@ def dialogs(lang: str) -> str:
     options = "".join(
         f'<option value="{value}">{esc(i18n.t(lang, key))}</option>' for value, key in CYCLES
     )
-    return fill(CHECK_DIALOGS, lang, MAX_TEXT=str(checks.MAX_TEXT), CYCLES=options, CHEVRON=icon("chevron_down"))
+    days = "".join(   # seven circles with two letters; the box is hidden and the circle shows the state
+        f'<label class="check-day"><input type="checkbox" name="day" value="{n}" checked '
+        f'aria-label="{esc(i18n.t(lang, f"day_full_{n}"))}">'
+        f'<span aria-hidden="true">{esc(i18n.t(lang, f"day_short_{n}"))}</span></label>'
+        for n in range(7)
+    )
+    return fill(CHECK_DIALOGS, lang, MAX_TEXT=str(checks.MAX_TEXT), CYCLES=options, DAYS=days,
+                CHEVRON=icon("chevron_down"))
 
 
 def _ago(lang: str, last_done: int, now: int) -> str:
@@ -125,17 +138,19 @@ def _ago(lang: str, last_done: int, now: int) -> str:
 
 def _check_row(lang: str, check: checks.Check, now: int) -> str:
     cycle = i18n.t(lang, "cycle_" + check.cycle)
+    if check.cycle == "daily" and check.days != checks.ALL_DAYS:   # "Mo, Mi, Fr" instead of "Täglich"
+        cycle = ", ".join(i18n.t(lang, f"day_short_{n}") for n in checks.day_numbers(check.days))
     due = check.is_due(now)
     state = i18n.t(lang, "checks_due") if due else _ago(lang, check.last_done, now)
-    done_label = esc(i18n.t(lang, "checks_done"))
+    edit_label = esc(i18n.t(lang, "checks_edit"))
     delete_label = esc(i18n.t(lang, "checks_delete"))
     flag = " due" if due else ""
     return (
-        f'<li class="check-row{flag}" data-id="{check.id}" data-cycle="{check.cycle}">'
+        f'<li class="check-row{flag}" data-id="{check.id}" data-cycle="{check.cycle}" data-days="{check.days}">'
         f'<span class="check-text"><span class="check-title">{esc(check.text)}</span>'
         f'<small>{esc(cycle)} · {esc(state)}</small></span>'
-        f'<button class="icon-button card-btn" type="button" data-check="done" aria-label="{done_label}" '
-        f'title="{done_label}">{icon("check")}</button>'
+        f'<button class="icon-button card-btn" type="button" data-check="edit" aria-label="{edit_label}" '
+        f'title="{edit_label}">{icon("pencil")}</button>'
         f'<button class="icon-button card-btn no" type="button" data-check="delete" aria-label="{delete_label}" '
         f'title="{delete_label}">{icon("trash")}</button></li>'
     )
