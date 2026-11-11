@@ -1,7 +1,7 @@
 /* Stations of the project page: a click on "Board" or "Manager" swaps the main window, the list stays.
    The view lives in the address (#board, #manager), so a reload, the back button and a link keep it.
    Each area keeps its own controls (Janis, 11.11.2026): the trash and archive buttons belong to the board and
-   are not shown while the manager is open (body class "view-manager", see project.css). */
+   are not shown while the manager is open (body class "manager-open", see project.css). */
 (function () {
   "use strict";
   var project = document.querySelector(".project");
@@ -21,7 +21,7 @@
       if (open) open.click();
     }
     current = name;
-    document.body.classList.toggle("view-manager", name === "manager");
+    document.body.classList.toggle("manager-open", name === "manager");
     Object.keys(panels).forEach(function (key) { panels[key].hidden = key !== name; });
     Array.prototype.forEach.call(links, function (link) {
       var on = link.dataset.station === name;

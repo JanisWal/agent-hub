@@ -225,9 +225,9 @@ class ProjectPageTest(unittest.TestCase):
     def test_trash_and_archive_buttons_belong_to_the_board_only(self):
         """Janis, 11.11.2026: each area keeps its own controls; the Manager view has no trash and no archive."""
         script = css_of("stations.js")
-        self.assertIn('document.body.classList.toggle("view-manager", name === "manager")', script)
+        self.assertIn('document.body.classList.toggle("manager-open", name === "manager")', script)
         self.assertNotIn('show("board", true)', script)                        # no longer a way back to the board
-        self.assertIn(".view-manager .drawer-extra { display: none; }", css_of("project.css"))
+        self.assertIn(".manager-open .drawer-extra { display: none; }", css_of("project.css"))
 
     def test_manager_tile_classes_do_not_clash_with_the_settings_bar(self):
         css = css_of("project.css")
