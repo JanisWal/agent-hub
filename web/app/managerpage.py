@@ -130,7 +130,8 @@ def dialogs(lang: str) -> str:
     )
     return fill(CHECK_DIALOGS, lang, MAX_TEXT=str(checks.MAX_TEXT), CYCLES=options, DAYS=days,
                 CHEVRON=icon("chevron_down")) + "\n" + fill(FILE_DIALOGS, lang, AREAS=areas, CHEVRON=icon("chevron_down"),
-                                                         DOWNLOAD=icon("download"), CROSS=icon("cross"), PENCIL=icon("pencil"))
+                                                         DOWNLOAD=icon("download"), CROSS=icon("cross"), PENCIL=icon("pencil"),
+                                                         PREV=icon("arrow_left"), NEXT=icon("chevron_right"))
 
 
 def _ago(lang: str, last_done: int, now: int) -> str:
@@ -230,6 +231,8 @@ FILE_DIALOGS = """<dialog class="dialog" id="file-dialog" data-title-link="%t.fi
     <button class="icon-button card-btn" type="button" data-close aria-label="%t.files_close%" title="%t.files_close%">%CROSS%</button>
   </div>
   <div class="viewer-body" id="file-viewer-body"></div>
+  <button class="icon-button viewer-nav prev" type="button" id="file-viewer-prev" aria-label="%t.files_prev%" title="%t.files_prev%" hidden>%PREV%</button>
+  <button class="icon-button viewer-nav next" type="button" id="file-viewer-next" aria-label="%t.files_next%" title="%t.files_next%" hidden>%NEXT%</button>
 </dialog>"""
 
 

@@ -303,9 +303,13 @@ html .card.drag-clone::after { display: none; }
 .m-files.dropping .file-drop { display: block; text-align: center; padding: 8px 0 2px; }
 #file-dialog { overflow: visible; }
 /* The viewer: the picture or the player on a big glass sheet, over the dimmed page. */
-/* The big dialogs (reader, viewer) cover exactly the Manager area; files.js sets the rectangle and follows the window.
-   The values here are only a fallback. `display: flex` only while open: a closed dialog must stay display: none. */
-.dialog.viewer { max-width: none; width: min(96vw, 1180px); height: min(92vh, 1000px); padding: 14px 16px 16px; box-sizing: border-box; }
+/* The big dialogs (reader, viewer) take the whole window (Janis, 13.11.2026: the page behind is blurred anyway).
+   `display: flex` only while open: a closed dialog must stay display: none. */
+.dialog.viewer, .dialog.reader { position: fixed; inset: 0; margin: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; border-radius: 0; padding: 14px 18px 18px; box-sizing: border-box; }
+.viewer-nav { position: absolute; top: 50%; translate: 0 -50%; z-index: 2; width: 52px; height: 52px; }
+.viewer-nav.prev { left: 16px; }
+.viewer-nav.next { right: 16px; }
+.viewer-nav[hidden] { display: none; }
 .dialog.viewer[open] { display: flex; flex-direction: column; }
 .viewer-head { flex: none; display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
 .viewer-head h2 { flex: 1; min-width: 0; margin: 0; font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

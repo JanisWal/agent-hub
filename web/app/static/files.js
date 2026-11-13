@@ -56,28 +56,6 @@
   function reload() { AgentHub.reload(); }
   function say(box, text) { box.textContent = text; box.hidden = !text; }
 
-  // The big dialogs (reader, viewer) cover exactly the Manager area, not a new page: its rectangle, kept inside the
-  // window, and it follows the window while the dialog is open. Too small a window: the whole window.
-  var covering = null;
-  function placeCover() {
-    if (!covering) return;
-    var host = document.getElementById("manager-view");
-    var r = host && host.offsetParent !== null ? host.getBoundingClientRect() : { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
-    var left = Math.max(0, r.left), top = Math.max(0, r.top);
-    var right = Math.min(window.innerWidth, r.right), bottom = Math.min(window.innerHeight, r.bottom);
-    if (right - left < 280 || bottom - top < 240) { left = 0; top = 0; right = window.innerWidth; bottom = window.innerHeight; }
-    var style = covering.style;
-    style.position = "fixed";
-    style.margin = "0";
-    style.maxWidth = style.maxHeight = "none";
-    style.left = left + "px";
-    style.top = top + "px";
-    style.width = (right - left) + "px";
-    style.height = (bottom - top) + "px";
-  }
-  function cover(element) { covering = element; placeCover(); }
-  function uncover(element) { if (covering === element) covering = null; element.removeAttribute("style"); }
-  window.addEventListener("resize", placeCover);
 
   // After an upload, a change or a delete only the lists and counters of this tile are swapped (the new page is
   // fetched and read, nothing is reloaded), so nothing flickers. If that fails, the page reloads as a fallback.
@@ -558,7 +536,13 @@
   var viewerBody = document.getElementById("file-viewer-body");
   var viewerTitle = document.getElementById("file-viewer-title");
   var viewerId = null;
-  function openViewer(row) {
+  var viewerPrev = document.getElementById("file-viewer-prev");
+  var viewerNext = document.getElementById("file-viewer-next");
+  function viewable(row) { return ["image", "video", "audio"].indexOf(row.dataset.kind) >= 0; }
+  function neighbours() {      // the pictures, videos and sounds of the list that is showing, in the order shown
+    return Array.prototype.filter.call(tile.querySelectorAll(".file-list:not([hidden]) .file-row"), viewable);
+  }
+  function showInViewer(row) {
     var kind = row.dataset.kind;
     var node = document.createElement(kind === "image" ? "img" : kind);
     if (kind === "image") node.alt = ""; else { node.controls = true; node.preload = "metadata"; node.playsInline = true; }
@@ -567,10 +551,30 @@
     viewerBody.appendChild(node);
     viewerTitle.textContent = row.dataset.name;
     viewerId = row.dataset.id;
-    cover(viewer);
-    viewer.showModal();
+    var all = neighbours();
+    var at = all.map(function (r) { return r.dataset.id; }).indexOf(viewerId);
+    viewerPrev.hidden = at <= 0;                             // no arrow where there is nothing further
+    viewerNext.hidden = at < 0 || at >= all.length - 1;
   }
-  viewer.addEventListener("close", function () { viewerBody.textContent = ""; viewerId = null; uncover(viewer); });   // stops the player
+  function openViewer(row) { showInViewer(row); if (!viewer.open) viewer.showModal(); }
+  function stepViewer(delta) {
+    var all = neighbours();
+    var next = all[all.map(function (r) { return r.dataset.id; }).indexOf(viewerId) + delta];
+    if (next) showInViewer(next);
+  }
+  viewerPrev.addEventListener("click", function () { stepViewer(-1); });
+  viewerNext.addEventListener("click", function () { stepViewer(1); });
+  viewer.addEventListener("keydown", function (event) {
+    if (event.key === "ArrowLeft") { event.preventDefault(); stepViewer(-1); }
+    else if (event.key === "ArrowRight") { event.preventDefault(); stepViewer(1); }
+  });
+  var swipeFrom = null;        // a swipe over the picture goes to the next or the previous one
+  viewerBody.addEventListener("pointerdown", function (event) { if (event.pointerType !== "mouse") swipeFrom = event.clientX; });
+  viewerBody.addEventListener("pointerup", function (event) {
+    if (swipeFrom !== null && Math.abs(event.clientX - swipeFrom) > 60) stepViewer(event.clientX < swipeFrom ? 1 : -1);
+    swipeFrom = null;
+  });
+  viewer.addEventListener("close", function () { viewerBody.textContent = ""; viewerId = null; });   // stops the player
   document.getElementById("file-viewer-download").addEventListener("click", function () {
     if (viewerId) location.href = "/files/" + viewerId + "?download=1";
   });
@@ -676,7 +680,6 @@
     readerBody.textContent = "";
     say(readerError, "");
     readerMode(false);
-    cover(reader);
     reader.showModal();
     call("/files/" + readerId + "/text", null, "GET").then(function (data) {
       readerSource = data.text;
@@ -700,7 +703,7 @@
   document.getElementById("file-reader-download").addEventListener("click", function () {
     if (readerId) location.href = "/files/" + readerId + "?download=1";
   });
-  reader.addEventListener("close", function () { readerId = null; readerBody.textContent = ""; readerText.value = ""; uncover(reader); });
+  reader.addEventListener("close", function () { readerId = null; readerBody.textContent = ""; readerText.value = ""; });
 
   document.getElementById("file-confirm-yes").addEventListener("click", function () {
     var id = pendingId;

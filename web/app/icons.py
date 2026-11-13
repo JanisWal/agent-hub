@@ -16,6 +16,7 @@ _GEAR = (
 ICONS = {
     "gear": _GEAR,
     "chevron_down": '<path d="M6 9l6 6 6-6"/>',
+    "chevron_right": '<path d="M9 6l6 6-6 6"/>',
     "arrow_left": '<path d="M15 6l-6 6 6 6"/>',
     "trash": '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>',
     "key": '<circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3L21 2M16 7l3 3M13.5 9.5l2.5 2.5"/>',
