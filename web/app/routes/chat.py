@@ -20,7 +20,8 @@ def delete_history(user: users.User = Depends(api_user)):
 @router.get("/projects/{project_id}/chat")
 def messages(project_id: int, user: users.User = Depends(api_user)):
     return ok(messages=[
-        {"id": m.id, "prompt": m.prompt, "status": m.status, "answer": m.answer, "mode": m.mode, "model": m.model}
+        {"id": m.id, "prompt": m.prompt, "status": m.status, "answer": m.answer, "mode": m.mode, "model": m.model,
+         "memory": m.memory_saved}
         for m in chat.list_messages(user.id, project_id)
     ])
 

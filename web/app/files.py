@@ -248,6 +248,30 @@ def add_link(user_id: int, project_id: int, url: str, name: str = "", now: int |
     return _to_file(row)
 
 
+def create_text_file(user_id: int, project_id: int, name: str, text: str, now: int | None = None) -> StoredFile:
+    """Make a finished text file at once, without an upload (the manager's memory file). Raises FileError:
+    bad_name, not_found (not his project), too_big (over TEXT_MAX), disk_full."""
+    name = _clean_name(name)
+    data = text.encode("utf-8")
+    if len(data) > TEXT_MAX:
+        raise FileError("too_big")
+    with db.connect() as conn:
+        if not _own_project(conn, user_id, project_id):
+            raise FileError("not_found")
+        if free_bytes() - len(data) < MIN_FREE:
+            raise FileError("disk_full")
+        cur = conn.execute(
+            "INSERT INTO files (project_id, name, category, size, status, created_at, parts)"
+            " VALUES (?, ?, ?, ?, 'ready', ?, '')",
+            (project_id, name, category_for(name), len(data), int(now if now is not None else time.time())),
+        )
+        row = conn.execute("SELECT * FROM files WHERE id = ?", (cur.lastrowid,)).fetchone()
+    target = path_of(project_id, row["id"])
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    target.write_bytes(data)
+    return _to_file(row)
+
+
 def update(user_id: int, file_id: int, name: str, url: str | None = None, category: str | None = None) -> StoredFile:
     """Rename a file or link; a link may get a new address, any row may be moved to another area. Raises FileError."""
     name = _clean_name(name)

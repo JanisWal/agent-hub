@@ -85,6 +85,7 @@
         log.appendChild(line("claude failed", box.dataset.claude, box.dataset.failed + (m.answer ? ": " + m.answer : "")));
       } else {
         log.appendChild(line("claude", box.dataset.claude, m.answer, true));
+        if (m.memory) log.appendChild(line("note", "", box.dataset.memory));   // the answer updated MEMORY.md
       }
     });
     send.disabled = open;

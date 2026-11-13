@@ -314,3 +314,7 @@ html .card.drag-clone::after { display: none; }
 @media (prefers-reduced-transparency: reduce) {
   .file-row, .file-up, .file-tabs, .m-files.dropping .file-tab { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }
+
+/* A small note under an answer of the manager chat ("Memory updated"): no bubble, quiet. */
+.chat-msg.note { align-self: flex-start; padding: 0 6px; background: none; border: 0; font-size: 0.78rem; font-weight: 600; color: var(--muted); }
+.chat-msg.note .chat-who { display: none; }
