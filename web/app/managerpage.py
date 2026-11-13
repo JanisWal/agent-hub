@@ -335,7 +335,8 @@ def _files_tile(lang: str, items: list, files_confirm: bool = True) -> str:
         ("eta-s", "files_eta_s"), ("eta-m", "files_eta_m"), ("eta-h", "files_eta_h"), ("drop-to", "files_drop_to"),
         ("starting", "files_starting"), ("expand", "files_expand"), ("collapse", "files_collapse"),
         ("note-no-ask", "files_note_no_ask"), ("note-ask", "files_note_ask"), ("delete-selected", "files_delete_selected"),
-        ("drop", "files_drop"), ("marked", "files_marked"), ("zip-name", "files_zip_name")))
+        ("drop", "files_drop"), ("marked", "files_marked"), ("zip-name", "files_zip_name"),
+        ("download-marked", "files_download_marked")))
     parallel = serversettings.upload()[0]           # how uploads are cut: the owner's choice for the whole server
     attrs += (f' data-block="{filestore.BLOCK_SIZE}" data-parallel="{parallel}" data-max-request="{filestore.max_request()}"'
               f' data-confirm-delete="{1 if files_confirm else 0}"')
@@ -343,6 +344,8 @@ def _files_tile(lang: str, items: list, files_confirm: bool = True) -> str:
         f'<section class="mtile glass m-files m-grow" id="files" {attrs}>'
         f'<header><h2>{esc(i18n.t(lang, "manager_files"))}</h2><span class="file-area" aria-hidden="true"></span>'
         f'<span class="file-tools">'
+        f'<button class="icon-button card-btn file-dl" id="file-download" type="button" tabindex="-1" aria-hidden="true">'
+        f'{icon("download")}</button>'                     # shown while files are marked (files.js)
         f'<button class="icon-button m-add file-trash-mode" id="file-trash-mode" type="button" aria-pressed="false" '
         f'aria-label="{esc(i18n.t(lang, "files_ask_toggle"))}" title="{esc(i18n.t(lang, "files_ask_toggle"))}">{icon("trash")}</button>'
         f'<button class="icon-button m-add file-expand" id="file-expand" type="button" aria-pressed="false" '
