@@ -131,6 +131,7 @@ def dialogs(lang: str) -> str:
     return fill(CHECK_DIALOGS, lang, MAX_TEXT=str(checks.MAX_TEXT), CYCLES=options, DAYS=days,
                 CHEVRON=icon("chevron_down")) + "\n" + fill(FILE_DIALOGS, lang, AREAS=areas, CHEVRON=icon("chevron_down"),
                                                          DOWNLOAD=icon("download"), CROSS=icon("cross"), PENCIL=icon("pencil"),
+                                                         MANY=esc(i18n.t(lang, "files_confirm_delete_many", n="{n}")),
                                                          PREV=icon("arrow_left"), NEXT=icon("chevron_right"))
 
 
@@ -202,7 +203,7 @@ FILE_DIALOGS = """<dialog class="dialog" id="file-dialog" data-title-link="%t.fi
     </div>
   </form>
 </dialog>
-<dialog class="dialog danger" id="file-confirm" data-text-file="%t.files_confirm_delete%" data-text-link="%t.files_confirm_delete_link%">
+<dialog class="dialog danger" id="file-confirm" data-text-file="%t.files_confirm_delete%" data-text-link="%t.files_confirm_delete_link%" data-text-many="%MANY%">
   <h2>%t.files_confirm_delete%</h2>
   <div class="actions">
     <button type="button" data-close autofocus>%t.cancel%</button>
@@ -323,7 +324,7 @@ def _files_tile(lang: str, items: list, files_confirm: bool = True) -> str:
         ("add-file", "files_add_file"), ("add-link", "files_add_link"), ("err-net", "files_err_net"),
         ("eta-s", "files_eta_s"), ("eta-m", "files_eta_m"), ("eta-h", "files_eta_h"), ("drop-to", "files_drop_to"),
         ("starting", "files_starting"), ("expand", "files_expand"), ("collapse", "files_collapse"),
-        ("note-no-ask", "files_note_no_ask"), ("note-ask", "files_note_ask")))
+        ("note-no-ask", "files_note_no_ask"), ("note-ask", "files_note_ask"), ("delete-selected", "files_delete_selected")))
     attrs += f' data-block="{filestore.BLOCK_SIZE}" data-confirm-delete="{1 if files_confirm else 0}"'
     return (
         f'<section class="mtile glass m-files m-grow" id="files" {attrs}>'

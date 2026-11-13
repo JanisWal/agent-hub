@@ -261,6 +261,11 @@ html .card.drag-clone::after { display: none; }
    take the whole Manager area (the other tiles step aside). */
 .m-files .file-trash-mode.armed { color: var(--on-danger); background: var(--danger); border-color: color-mix(in srgb, var(--danger) 70%, white); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 32%, transparent), 0 0 20px color-mix(in srgb, var(--danger) 65%, transparent); }
 .m-files .file-trash-mode.armed:hover { color: var(--on-danger); }
+/* A shift click marks files (Janis, 13.11.2026): the row is lit in green, and the trash circle changes its job from the
+   switch "do not ask" (red) to "delete everything marked" (green, with a label that says how many). */
+.file-row.selected { border-color: var(--go); background: color-mix(in srgb, var(--go) 16%, var(--glass)); box-shadow: 0 0 0 1px var(--go), var(--file-soft); }
+.file-row.selected .file-tile { border-color: var(--go); color: var(--go); }
+.m-files .file-trash-mode.bulk, .m-files .file-trash-mode.bulk:hover { color: var(--on-go); background: var(--go); border-color: color-mix(in srgb, var(--go) 70%, white); box-shadow: 0 0 0 3px color-mix(in srgb, var(--go) 32%, transparent), 0 0 20px color-mix(in srgb, var(--go) 65%, transparent); }
 .m-files .file-expand .ic-collapse { display: none; }
 .m-files .file-expand.on .ic-expand { display: none; }
 .m-files .file-expand.on .ic-collapse { display: inline; }

@@ -312,6 +312,15 @@ class FilesTest(unittest.TestCase):
             self.assertIn('id="file-note"', html)
             self.assertNotIn("%t.", html)
 
+    def test_the_tile_and_the_dialogs_carry_the_texts_for_marking_and_deleting_many(self):
+        for lang in ("de", "en"):
+            self.assertIn('data-delete-selected="', self.tile(lang))
+            dialogs = managerpage.dialogs(lang)
+            self.assertIn('data-text-many="', dialogs)
+            self.assertIn("{n}", dialogs[dialogs.index('data-text-many="'):dialogs.index('data-text-many="') + 80])   # filled in by the script
+            self.assertNotIn("%t.", dialogs)
+            self.assertNotIn("%MANY%", dialogs)
+
     def test_a_click_on_the_name_downloads_a_link_opens_in_a_new_tab(self):
         item = self.upload("a.pdf", b"x")
         link = files.add_link(self.user.id, self.project.id, "https://example.org/doc")
