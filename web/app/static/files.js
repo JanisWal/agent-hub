@@ -595,7 +595,20 @@
   var trashMode = document.getElementById("file-trash-mode");
   var noteBox = document.getElementById("file-note");
   var noteTimer = null;
-  function showNote(text) { say(noteBox, text); clearTimeout(noteTimer); noteTimer = setTimeout(function () { say(noteBox, ""); }, 4500); }
+  // The note floats over the tile (it does not push anything away) and comes in with a spring: it rises into place,
+  // grows from 96 % and fades in; after a few seconds it goes the same way back. `prefers-reduced-motion`: no movement.
+  var noteSpring = Motion.spring(0, Motion.MOVE, function (v) {
+    noteBox.style.opacity = String(Math.max(0, Math.min(1, v)));
+    noteBox.style.transform = "translateY(" + ((1 - v) * -8) + "px) scale(" + (0.96 + 0.04 * v) + ")";
+    if (v < 0.01 && noteSpring.target === 0) noteBox.hidden = true;
+  }, 0.002);
+  function showNote(text) {
+    noteBox.textContent = text;
+    noteBox.hidden = false;
+    noteSpring.to(1);
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(function () { noteSpring.to(0); }, 3500);
+  }
   function markedIds() { return Object.keys(selected); }
   function renderTrashMode() {
     var asks = tile.dataset.confirmDelete !== "0";
@@ -641,9 +654,8 @@
   renderTrashMode();
   trashMode.addEventListener("click", function () {
     var marked = markedIds();
-    if (marked.length) {                                       // marked files: delete them (asking once, unless switched off)
-      if (tile.dataset.confirmDelete === "0") { deleteMarked(marked); return; }
-      pendingMany = marked;
+    if (marked.length) {                                       // marked files: delete them, always asking once (also when the
+      pendingMany = marked;                                    // switch says "do not ask": that is for single files)
       confirmDialog.querySelector("h2").textContent = confirmDialog.dataset.textMany.replace("{n}", marked.length);
       confirmDialog.showModal();
       return;
@@ -659,19 +671,28 @@
   var expandButton = document.getElementById("file-expand");
   var managerView = document.getElementById("manager-view");
   var column = tile.closest(".mcol");
-  function setExpanded(on) {
-    managerView.classList.toggle("files-expanded", on);
-    column.classList.add("has-files");
-    expandButton.classList.toggle("on", on);
-    expandButton.setAttribute("aria-pressed", on ? "true" : "false");
-    var label = tile.dataset[on ? "collapse" : "expand"];
-    expandButton.setAttribute("aria-label", label);
-    expandButton.title = label;
-    store("files-expanded", on ? "1" : "0");
-    placeThumb(true);
+  function setExpanded(on, animate) {
+    function apply() {
+      managerView.classList.toggle("files-expanded", on);
+      column.classList.add("has-files");
+      expandButton.classList.toggle("on", on);
+      expandButton.setAttribute("aria-pressed", on ? "true" : "false");
+      var label = tile.dataset[on ? "collapse" : "expand"];
+      expandButton.setAttribute("aria-label", label);
+      expandButton.title = label;
+      store("files-expanded", on ? "1" : "0");
+      placeThumb(true);
+    }
+    if (animate !== false && document.startViewTransition && !Motion.reduced()) {
+      tile.style.viewTransitionName = "files-tile";             // this tile glides, the page around it blends
+      var settled = function () { tile.style.viewTransitionName = ""; placeThumb(true); };
+      document.startViewTransition(apply).finished.then(settled, settled);
+    } else {
+      apply();
+    }
   }
   expandButton.addEventListener("click", function () { setExpanded(!managerView.classList.contains("files-expanded")); });
-  if (load("files-expanded") === "1") setExpanded(true);
+  if (load("files-expanded") === "1") setExpanded(true, false);
 
   ensureThumbs();
 })();
