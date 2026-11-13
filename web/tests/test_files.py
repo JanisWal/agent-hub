@@ -309,7 +309,10 @@ class FilesTest(unittest.TestCase):
             head = html[start:html.index("</header>", start)]
             self.assertLess(head.index('id="file-trash-mode"'), head.index('id="file-expand"'))
             self.assertLess(head.index('id="file-expand"'), head.index('id="file-add"'))     # the plus stays on the right
-            self.assertIn('id="file-note"', html)
+            self.assertIn('id="file-status"', html)                                  # one quiet line, nothing that floats over things
+            self.assertNotIn('id="file-note"', html)
+            self.assertIn('data-marked="', html)
+            self.assertIn('data-drop="', html)
             self.assertNotIn("%t.", html)
 
     def test_the_tile_and_the_dialogs_carry_the_texts_for_marking_and_deleting_many(self):

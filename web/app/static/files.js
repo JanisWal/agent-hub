@@ -35,8 +35,8 @@
   var errorBox = document.getElementById("file-error");
   var uploads = document.getElementById("file-uploads");
   var template = document.getElementById("file-up-template");
-  var dropHint = tile.querySelector(".file-drop");
-  var dropText = dropHint.textContent;
+  var statusBox = document.getElementById("file-status");
+  var dropText = tile.dataset.drop;
   var dialog = document.getElementById("file-dialog");
   var form = dialog.querySelector("form");
   var nameInput = form.querySelector('input[name="name"]');
@@ -58,6 +58,32 @@
   function load(key) { try { return sessionStorage.getItem(key); } catch (e) { return null; } }
   function reload() { AgentHub.reload(); }
   function say(box, text) { box.textContent = text; box.hidden = !text; }
+
+  // The status line at the foot of the tile: one line with its own place, so nothing moves when it speaks. It says, in
+  // this order of importance, where a dragged file lands, a note about what a circle just did, or how many are marked.
+  // A new text rises in with a spring and the line fades out when there is nothing to say.
+  var dragText = "";
+  var flashText = "";
+  var flashTimer = null;
+  var statusNow = "";
+  var statusSpring = Motion.spring(0, Motion.MOVE, function (v) {
+    statusBox.style.opacity = String(Math.max(0, Math.min(1, v)));
+    statusBox.style.transform = "translateY(" + ((1 - v) * 5) + "px)";
+  }, 0.002);
+  function renderStatus() {
+    var marked = Object.keys(selected).length;
+    var text = dragText || flashText || (marked ? tile.dataset.marked.replace("{n}", marked) : "");
+    if (text === statusNow) return;
+    statusNow = text;
+    if (text) { statusBox.textContent = text; statusSpring.set(0); statusSpring.to(1); }
+    else statusSpring.to(0);
+  }
+  function flash(text) {
+    flashText = text;
+    renderStatus();
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(function () { flashText = ""; renderStatus(); }, 3500);
+  }
 
 
   // After an upload, a change or a delete only the lists and counters of this tile are swapped (the new page is
@@ -177,7 +203,7 @@
     area.textContent = " · " + name;             // "Dateien · Medien" while the tabs only show symbols
     var label = tile.dataset[category === "links" ? "addLink" : "addFile"];
     addButton.setAttribute("aria-label", label);
-    addButton.title = label;
+    addButton.dataset.tip = label;                    // our own tooltip (core.js), never `title`: that is the browser's grey box
     placeThumb(instant);
     if (!instant) scroller.scrollTop = 0;              // a new tab starts at its top
     store("files-tab", category);
@@ -296,7 +322,8 @@
   function setHot(tab) {
     if (tab === hot && dragging) return;
     hot = tab;
-    dropHint.textContent = tab ? tile.dataset.dropTo.replace("{name}", tab.dataset.name) : dropText;
+    dragText = tab ? tile.dataset.dropTo.replace("{name}", tab.dataset.name) : dropText;
+    renderStatus();
     tabs.forEach(function (other) {
       other.classList.toggle("hot", other === tab);
       pop(other, !dragging ? 1 : other === tab ? 1.16 : 1.06);
@@ -306,7 +333,8 @@
     dragging = false;
     tile.classList.remove("dropping");
     hot = null;
-    dropHint.textContent = dropText;
+    dragText = "";
+    renderStatus();
     tabs.forEach(function (tab) { tab.classList.remove("hot"); pop(tab, 1); });
   }
   tile.addEventListener("dragover", function (event) {
@@ -598,22 +626,7 @@
 
   // --- the trash circle: pressed (glowing red) = deleting does not ask any more; the account remembers it
   var trashMode = document.getElementById("file-trash-mode");
-  var noteBox = document.getElementById("file-note");
-  var noteTimer = null;
-  // The note floats over the tile (it does not push anything away) and comes in with a spring: it rises into place,
-  // grows from 96 % and fades in; after a few seconds it goes the same way back. `prefers-reduced-motion`: no movement.
-  var noteSpring = Motion.spring(0, Motion.MOVE, function (v) {
-    noteBox.style.opacity = String(Math.max(0, Math.min(1, v)));
-    noteBox.style.transform = "translateY(" + ((1 - v) * -8) + "px) scale(" + (0.96 + 0.04 * v) + ")";
-    if (v < 0.01 && noteSpring.target === 0) noteBox.hidden = true;
-  }, 0.002);
-  function showNote(text) {
-    noteBox.textContent = text;
-    noteBox.hidden = false;
-    noteSpring.to(1);
-    clearTimeout(noteTimer);
-    noteTimer = setTimeout(function () { noteSpring.to(0); }, 3500);
-  }
+
   function markedIds() { return Object.keys(selected); }
   function renderTrashMode() {
     var asks = tile.dataset.confirmDelete !== "0";
@@ -623,7 +636,8 @@
     trashMode.classList.toggle("bulk", marked > 0);               // marked files: the circle deletes them (green)
     var label = marked > 0 ? tile.dataset.deleteSelected.replace("{n}", marked) : trashMode.dataset.label;
     trashMode.setAttribute("aria-label", label);
-    trashMode.title = label;
+    trashMode.dataset.tip = label;
+    renderStatus();
   }
   trashMode.dataset.label = trashMode.getAttribute("aria-label");
   // Marking works as everywhere: a shift click marks everything from the row clicked last to this one (as the list shows
@@ -685,7 +699,7 @@
     var asks = tile.dataset.confirmDelete !== "0";
     tile.dataset.confirmDelete = asks ? "0" : "1";
     renderTrashMode();
-    showNote(tile.dataset[asks ? "noteNoAsk" : "noteAsk"]);
+    flash(tile.dataset[asks ? "noteNoAsk" : "noteAsk"]);
     call("/files/preferences", fields({ confirm: asks ? "0" : "1" })).catch(nothing);
   });
 
@@ -701,13 +715,14 @@
       expandButton.setAttribute("aria-pressed", on ? "true" : "false");
       var label = tile.dataset[on ? "collapse" : "expand"];
       expandButton.setAttribute("aria-label", label);
-      expandButton.title = label;
+      expandButton.dataset.tip = label;
       store("files-expanded", on ? "1" : "0");
       placeThumb(true);
     }
     if (animate !== false && document.startViewTransition && !Motion.reduced()) {
       tile.style.viewTransitionName = "files-tile";             // this tile glides, the page around it blends
-      var settled = function () { tile.style.viewTransitionName = ""; placeThumb(true); };
+      tile.classList.add("vt-run");                             // no shadow and no edge light in the gliding picture
+      var settled = function () { tile.style.viewTransitionName = ""; tile.classList.remove("vt-run"); placeThumb(true); };
       document.startViewTransition(apply).finished.then(settled, settled);
     } else {
       apply();

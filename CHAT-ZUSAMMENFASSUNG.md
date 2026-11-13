@@ -1,6 +1,6 @@
 # Agent-Hub – Übergabe an einen neuen Chat
 
-Stand: 13.11.2026, Ende der Sitzung (letzter Merge `file-select-range`, 351 Web-Tests grün) · Zweck: Einstieg in einen neuen Chat oder auf einem anderen Rechner. Quelle der Wahrheit: `PROJEKT.md` („Auf einen Blick“, **Abschnitt 11b für die Dateiablage**, Änderungsprotokoll in Abschnitt 12), `KONZEPT-AGENTEN.md` (Agenten, Netz, Geräte, Mac, Dateizugriff), `DESIGN.md` (Gestaltung) und `CLAUDE.md` (Regeln). Frühere Übergaben liegen im Ordner `archiv/`.
+Stand: 13.11.2026, Ende der Sitzung (letzter Merge `files-status`, 351 Web-Tests grün) · Zweck: Einstieg in einen neuen Chat oder auf einem anderen Rechner. Quelle der Wahrheit: `PROJEKT.md` („Auf einen Blick“, **Abschnitt 11b für die Dateiablage**, Änderungsprotokoll in Abschnitt 12), `KONZEPT-AGENTEN.md` (Agenten, Netz, Geräte, Mac, Dateizugriff), `DESIGN.md` (Gestaltung) und `CLAUDE.md` (Regeln). Frühere Übergaben liegen im Ordner `archiv/`.
 
 ## In einem Satz
 
@@ -25,6 +25,7 @@ Ein selbst gehostetes Verwaltungstool auf einem Raspberry Pi 4B (1 GB, per **WLA
 - Markieren wie überall; der Papierkorb-Kreis wechselt seine Aufgabe (rot = nicht nachfragen, grün = Markierte löschen), kein zusätzlicher Knopf.
 - Betrachter und Leser füllen das ganze Fenster, mit Pfeilen zum Weiterblättern.
 - Bewegungen sollen weich sein (Federn, Apple-Richtlinien), auch Hinweise und das Vergrößern der Kachel.
+- **Keine Browser-eigenen Ausgaben** (kein `title` per Skript, kein `confirm`): Hinweise über `data-tip`; Meldungen in einer **Statuszeile am Fuß der Kachel** statt einer schwebenden Fläche. Beim Zoomen der Kachel soll kein eckiger Rahmen sichtbar sein (Fix vorsorglich eingebaut, von Janis noch zu bestätigen).
 - Janis hat eine 600er-Leitung; der Engpass beim Upload liegt woanders (Untersuchung in PROJEKT.md 11b).
 - Superadmin (4a), modulare Modellauswahl (4b), universelle Erinnerung (4c) stehen weiter in PROJEKT.md 11a.
 

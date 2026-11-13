@@ -324,7 +324,8 @@ def _files_tile(lang: str, items: list, files_confirm: bool = True) -> str:
         ("add-file", "files_add_file"), ("add-link", "files_add_link"), ("err-net", "files_err_net"),
         ("eta-s", "files_eta_s"), ("eta-m", "files_eta_m"), ("eta-h", "files_eta_h"), ("drop-to", "files_drop_to"),
         ("starting", "files_starting"), ("expand", "files_expand"), ("collapse", "files_collapse"),
-        ("note-no-ask", "files_note_no_ask"), ("note-ask", "files_note_ask"), ("delete-selected", "files_delete_selected")))
+        ("note-no-ask", "files_note_no_ask"), ("note-ask", "files_note_ask"), ("delete-selected", "files_delete_selected"),
+        ("drop", "files_drop"), ("marked", "files_marked")))
     attrs += f' data-block="{filestore.BLOCK_SIZE}" data-confirm-delete="{1 if files_confirm else 0}"'
     return (
         f'<section class="mtile glass m-files m-grow" id="files" {attrs}>'
@@ -336,12 +337,11 @@ def _files_tile(lang: str, items: list, files_confirm: bool = True) -> str:
         f'aria-label="{esc(i18n.t(lang, "files_expand"))}" title="{esc(i18n.t(lang, "files_expand"))}">'
         f'{icon("expand", "ic-expand")}{icon("collapse", "ic-collapse")}</button>'
         f'<button class="icon-button m-add" id="file-add" type="button">{icon("plus")}</button></span></header>'
-        f'<p class="file-note" id="file-note" role="status" hidden></p>'
         f'<div class="file-tabs" role="tablist"><span class="file-thumb" aria-hidden="true"></span>{"".join(tabs)}</div>'
         f'<p class="error" id="file-error" role="alert" hidden></p>'
         f'<div class="file-scroll"><ul class="file-uploads" id="file-uploads" hidden></ul>'
         f'{"".join(panels)}</div><input type="file" id="file-picker" multiple hidden>{_upload_template(lang)}'
-        f'<p class="file-drop muted" aria-hidden="true">{esc(i18n.t(lang, "files_drop"))}</p></section>'
+        f'<p class="file-status" id="file-status" role="status" aria-live="polite"></p></section>'
     )
 
 
