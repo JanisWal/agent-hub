@@ -99,7 +99,9 @@ def save_memory(user_id: int, project_id: int, text: str) -> bool:
         row = _find(conn, user_id, project_id, MEMORY_NAME)
     try:
         if row is not None:
-            return files.write_text(user_id, row["id"], text + "\n")
+            if files.write_text(user_id, row["id"], text + "\n"):
+                return True
+            files.delete(user_id, row["id"])          # a row whose file is gone: make the memory file anew
         files.create_text_file(user_id, project_id, MEMORY_NAME, text + "\n")
         return True
     except files.FileError:

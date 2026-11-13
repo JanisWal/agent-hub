@@ -33,6 +33,25 @@ class FilesTest(unittest.TestCase):
             files.append_chunk(user.id, item.id, offset, data[offset:offset + files.BLOCK_SIZE])
         return files.finish_upload(user.id, item.id)
 
+    # --- the folder is tied to the database: a test can never reach the real files
+    def test_the_folder_of_the_files_follows_the_database(self):
+        from unittest import mock
+        files.FILES_DIR = None
+        with mock.patch.dict(os.environ):
+            os.environ.pop("HUB_FILES_DIR", None)
+            self.assertEqual(files.files_dir(), Path(db.DB_PATH).parent / "files")
+            os.environ["HUB_FILES_DIR"] = "/somewhere/else"
+            self.assertEqual(files.files_dir(), Path("/somewhere/else"))
+
+    def test_removing_orphans_only_touches_folders_named_like_a_dead_project(self):
+        item = self.upload("a.txt", b"x")
+        (files.files_dir() / "99").mkdir()                       # a project that does not exist
+        (files.files_dir() / "keep-me").mkdir()                  # not a project folder at all
+        files.remove_orphans()
+        self.assertFalse((files.files_dir() / "99").exists())
+        self.assertTrue((files.files_dir() / "keep-me").exists())
+        self.assertTrue(files.path_of(self.project.id, item.id).exists())
+
     # --- sorting by ending
     def test_new_files_are_sorted_by_their_ending(self):
         wanted = {"a.md": "memory", "a.py": "code", "a.swift": "code", "a.PNG": "media", "a.mp4": "media",
