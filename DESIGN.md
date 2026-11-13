@@ -100,6 +100,7 @@ Regeln:
 - `prefers-reduced-motion: reduce` wird beachtet, **Ist:** dann entfallen **alle** Übergänge und Animationen, auch das Einblenden, und die Federn springen sofort auf ihr Ziel (nichts bewegt sich, alles steht sofort).
 - **Seiten und Ziehen** haben eigene Regeln, siehe Abschnitt 10 („Seitenband“, „Ziehen“).
 - **Mehrere Dateien hinausziehen (Dateiablage, 13.11.2026):** Die markierten Zeilen fliegen wie im Finder zum Griffpunkt zusammen: Feder `MOVE`, Verschieben zum Zeiger, Skalierung auf 0,7, Deckkraft auf 0,1, als Welle nach Entfernung (Entfernung/10 ms, höchstens 110 ms). Das Bild unter dem Zeiger ist ein Stapel aus bis zu drei Karten (200 px breit, Rundung 10 px, Fläche 88 % `--bg` mit `--accent`, Schatten; die hinteren um 5 px versetzt und um −3° bzw. 3° gedreht, deckend, weil das Bild des Browsers kein Glas zeigt) mit dem Zähler als Pille in `--accent` oben rechts. Endet das Ziehen, federn die Zeilen mit derselben Feder zurück.
+- **Download-Symbol bei Markierung (Dateiablage, 14.11.2026):** links neben dem Papierkorb-Kreis, bewusst **kein** Kreis, sondern das ruhige Symbol wie im Betrachter (`card-btn`, 32 px, `--muted`, beim Darüberfahren `--text`). Es erscheint nur, solange Dateien markiert sind, federt mit `LIFT` herein und hinaus (Deckkraft 0 → 1, Skalierung 0,6 → 1) und belegt seinen Platz immer, damit die Kreise nicht springen.
 
 ## 7. Typografie
 

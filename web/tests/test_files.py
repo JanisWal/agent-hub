@@ -418,6 +418,9 @@ class FilesTest(unittest.TestCase):
             html = self.tile(lang)
             start = html.index('class="file-tools"')
             head = html[start:html.index("</header>", start)]
+            self.assertLess(head.index('id="file-download"'), head.index('id="file-trash-mode"'))   # quiet, left of the bin
+            self.assertIn('aria-hidden="true"', head[:head.index('id="file-trash-mode"')])      # hidden until files are marked
+            self.assertIn('data-download-marked="', html)
             self.assertLess(head.index('id="file-trash-mode"'), head.index('id="file-expand"'))
             self.assertLess(head.index('id="file-expand"'), head.index('id="file-add"'))     # the plus stays on the right
             self.assertIn('id="file-status"', html)                                  # one quiet line, nothing that floats over things

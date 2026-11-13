@@ -459,10 +459,9 @@
       gather(carried, event.clientX, event.clientY);
     }
     if (fileRows.length > 1) {
-      var ids = fileRows.map(function (r) { return r.dataset.id; }).join(",");
       var zipName = tile.dataset.zipName.replace("{n}", fileRows.length) + ".zip";
       event.dataTransfer.setData("DownloadURL", "application/zip:" + zipName + ":" + location.origin +
-                                 "/projects/" + projectId + "/files/zip?ids=" + ids);
+                                 zipUrl(fileRows.map(function (r) { return r.dataset.id; })));
     } else if (fileRows.length === 1) {
       event.dataTransfer.setData("DownloadURL", "application/octet-stream:" + fileRows[0].dataset.name + ":" +
                                  location.origin + "/files/" + fileRows[0].dataset.id);
@@ -730,6 +729,44 @@
   var trashMode = document.getElementById("file-trash-mode");
 
   function markedIds() { return Object.keys(selected); }
+
+  // --- the quiet download symbol left of the trash circle (Janis, 14.11.2026): it springs in while files are marked and
+  // downloads them, one as itself, several as one ZIP. Works in every browser (dragging out only in Chrome and Edge).
+  var downloadButton = document.getElementById("file-download");
+  var downloadShown = false;
+  var downloadSpring = Motion.spring(0, Motion.LIFT, function (p) {
+    downloadButton.style.opacity = String(Math.max(0, Math.min(1, p)));
+    downloadButton.style.transform = "scale(" + (0.6 + 0.4 * p) + ")";
+    downloadButton.style.visibility = p < 0.01 ? "hidden" : "";
+  }, 0.002);
+  function markedFileIds() {
+    return markedIds().filter(function (id) {
+      var row = tile.querySelector('.file-row[data-id="' + id + '"]');
+      return row && row.dataset.kind !== "link";
+    });
+  }
+  function zipUrl(ids) { return "/projects/" + projectId + "/files/zip?ids=" + ids.join(","); }
+  function renderDownload() {
+    var count = markedFileIds().length;
+    if (count) {
+      var label = tile.dataset.downloadMarked.replace("{n}", count);
+      downloadButton.setAttribute("aria-label", label);
+      downloadButton.dataset.tip = label;
+    }
+    if (!!count === downloadShown) return;
+    downloadShown = !!count;
+    downloadButton.setAttribute("aria-hidden", downloadShown ? "false" : "true");
+    downloadButton.tabIndex = downloadShown ? 0 : -1;
+    downloadSpring.to(downloadShown ? 1 : 0);
+  }
+  downloadButton.style.visibility = "hidden";
+  downloadButton.style.opacity = "0";
+  downloadButton.addEventListener("click", function () {
+    var ids = markedFileIds();
+    if (!ids.length) return;
+    location.assign(ids.length === 1 ? "/files/" + ids[0] + "?download=1" : zipUrl(ids));   // a download, the page stays
+  });
+
   function renderTrashMode() {
     var asks = tile.dataset.confirmDelete !== "0";
     var marked = markedIds().length;
@@ -739,6 +776,7 @@
     var label = marked > 0 ? tile.dataset.deleteSelected.replace("{n}", marked) : trashMode.dataset.label;
     trashMode.setAttribute("aria-label", label);
     trashMode.dataset.tip = label;
+    renderDownload();
     renderStatus();
   }
   trashMode.dataset.label = trashMode.getAttribute("aria-label");
