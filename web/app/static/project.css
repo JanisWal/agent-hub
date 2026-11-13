@@ -270,12 +270,17 @@ html .card.drag-clone::after { display: none; }
 .m-files .file-expand.on .ic-expand { display: none; }
 .m-files .file-expand.on .ic-collapse { display: inline; }
 .m-files .file-expand.on { background: color-mix(in srgb, var(--accent) 24%, transparent); }
-/* The note floats over the tile as a small glass pill and does not move the content; files.js brings it in with a spring. */
+/* The status line at the foot of the tile (Janis, 13.11.2026: no pill that floats over things). One quiet line that always
+   has its place, so nothing moves when it speaks: how many are marked, what the circles did, where a dragged file lands.
+   files.js lets the text rise in with a spring. */
 .m-files { position: relative; }
-.file-note { position: absolute; top: 66px; left: 50%; translate: -50% 0; z-index: 3; max-width: calc(100% - 24px); margin: 0; padding: 8px 16px; border-radius: 999px; border: 1px solid var(--glass-border); background: var(--glass); box-shadow: var(--shadow); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); font-size: 0.85rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; opacity: 0; }
-.file-note[hidden] { display: none; }
+.file-status { flex: none; min-height: 1.35em; margin: 0; font-size: 0.82rem; font-weight: 600; letter-spacing: 0.01em; text-align: center; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0; }
 /* Enlarging or shrinking the tile: the browser's view transition glides the tile and blends the page around it. */
 ::view-transition-group(files-tile) { animation-duration: 0.5s; animation-timing-function: cubic-bezier(0.3, 1.12, 0.5, 1); }
+::view-transition-group(files-tile) { border-radius: var(--radius-card, 28px); overflow: clip; }
+::view-transition-old(files-tile), ::view-transition-new(files-tile) { mix-blend-mode: normal; }
+.m-files.vt-run { box-shadow: none; }
+.m-files.vt-run::before { opacity: 0; }
 ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.28s; }
 @media (prefers-reduced-motion: reduce) { ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none; } }
 .manager.files-expanded { grid-template-columns: minmax(0, 1fr); }
@@ -326,8 +331,6 @@ html .card.drag-clone::after { display: none; }
 .file-up-x { margin: -4px 0; }
 .file-bar { grid-column: 1 / -1; display: block; height: 5px; margin-right: 4px; border-radius: 3px; background: var(--field); box-shadow: inset 0 1px 2px rgba(80, 40, 10, 0.2); overflow: hidden; }
 .file-bar i { display: block; height: 100%; background: var(--accent); transform: scaleX(0); transform-origin: left; }
-.file-drop { display: none; }
-.m-files.dropping .file-drop { display: block; text-align: center; padding: 8px 0 2px; }
 #file-dialog { overflow: visible; }
 /* The viewer: the picture or the player on a big glass sheet, over the dimmed page. */
 /* The big dialogs (reader, viewer) take the whole window (Janis, 13.11.2026: the page behind is blurred anyway).
