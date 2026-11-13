@@ -301,15 +301,35 @@ html .card.drag-clone::after { display: none; }
 .file-bar i { display: block; height: 100%; background: var(--accent); transform: scaleX(0); transform-origin: left; }
 .file-drop { display: none; }
 .m-files.dropping .file-drop { display: block; text-align: center; padding: 8px 0 2px; }
-#file-dialog textarea { width: 100%; box-sizing: border-box; min-height: 180px; font: inherit; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.88rem; }
 #file-dialog { overflow: visible; }
 /* The viewer: the picture or the player on a big glass sheet, over the dimmed page. */
-.dialog.viewer { max-width: min(92vw, 980px); width: min(92vw, 980px); padding: 14px 16px 16px; }
+.dialog.viewer { max-width: none; width: min(96vw, 1180px); padding: 14px 16px 16px; }
 .viewer-head { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
 .viewer-head h2 { flex: 1; min-width: 0; margin: 0; font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .viewer-body { display: grid; place-items: center; }
-.viewer-body img, .viewer-body video { display: block; max-width: 100%; max-height: 72vh; border-radius: 8px; box-shadow: var(--shadow); }
+.viewer-body img, .viewer-body video { display: block; max-width: 100%; max-height: calc(92vh - 96px); border-radius: 8px; box-shadow: var(--shadow); }
 .viewer-body audio { width: 100%; }
+/* The reader of a Markdown or text file (Janis, 13.11.2026): almost the whole window, the content as text; the pencil
+   in it switches to a plain editor. The example text of an empty area goes away while files are uploading. */
+.file-uploads:not([hidden]) ~ .file-list .file-empty { display: none; }
+.dialog.reader { width: min(96vw, 1180px); max-width: none; height: min(92vh, 1000px); display: flex; flex-direction: column; }
+.reader .viewer-head { flex: none; }
+.reader-body { flex: 1; min-height: 0; overflow: auto; padding: 4px 8px 12px; line-height: 1.6; overflow-wrap: anywhere; scrollbar-width: thin; }
+.reader-body > :first-child { margin-top: 0; }
+.reader-body h1, .reader-body h2, .reader-body h3, .reader-body h4 { margin: 1.2em 0 0.4em; letter-spacing: -0.02em; line-height: 1.2; }
+.reader-body h1 { font-size: 1.7rem; } .reader-body h2 { font-size: 1.35rem; } .reader-body h3 { font-size: 1.1rem; } .reader-body h4 { font-size: 1rem; }
+.reader-body p, .reader-body ul, .reader-body ol, .reader-body blockquote, .reader-body pre { margin: 0 0 0.9em; }
+.reader-body p { white-space: pre-line; }
+.reader-body ul, .reader-body ol { padding-left: 1.4em; }
+.reader-body blockquote { padding: 2px 0 2px 12px; border-left: 3px solid var(--file-line-hover); color: var(--muted); }
+.reader-body hr { border: 0; height: 1px; margin: 1.2em 0; background: var(--file-line); }
+.reader-body code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.88em; padding: 1px 5px; border-radius: 4px; background: var(--field); }
+.reader-body pre { padding: 10px 12px; border-radius: 8px; background: var(--field); overflow: auto; }
+.reader-body pre code { padding: 0; background: none; }
+.reader-body.plain { white-space: pre-wrap; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.9rem; }
+.reader-edit { flex: 1; min-height: 0; width: 100%; box-sizing: border-box; padding: 12px; border-radius: 8px; border: 1px solid var(--file-line); background: var(--field); color: var(--text); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.9rem; line-height: 1.5; resize: none; }
+.reader-edit[hidden], .reader-body[hidden] { display: none; }
+.reader .actions { flex: none; margin-top: 10px; }
 @media (prefers-reduced-motion: reduce) { .file-row, .file-tab, .file-row::before { transition: none; } .file-row:active { scale: 1; } }
 @media (prefers-reduced-transparency: reduce) {
   .file-row, .file-up, .file-tabs, .m-files.dropping .file-tab { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }

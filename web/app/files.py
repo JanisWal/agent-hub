@@ -7,9 +7,10 @@ Areas (`CATEGORIES`): memory (notes the agents read, Markdown), code, media (ima
 
 There is no size or type limit (Janis: his own server). The only protection is the free space: an upload is
 refused when less than MIN_FREE would stay free, so a big file cannot choke the database. Big files come in
-chunks of CHUNK_SIZE (`start_upload`, `append_chunk`, `finish_upload`): the file is made at its full size, the
-chunks may arrive in any order, several at a time, and one can be sent again; `finish_upload` checks that
-all of them are in. Files live in FILES_DIR/<project id>/<file id>, outside the web folder, never under
+parts (`start_upload`, `append_chunk`, `finish_upload`): the file is made at its full size and counted in blocks
+of BLOCK_SIZE; a request carries any run of whole blocks (the last one may end the file), runs may arrive in
+any order, several at a time, and one can be sent again. The browser picks the size of a request from the
+speed it measures, so a slow line gets small ones; `finish_upload` checks that every block is in. Files live in FILES_DIR/<project id>/<file id>, outside the web folder, never under
 their display name (a name can not reach a path). Like every data module, each function gets the `user_id` and
 the project must be his: foreign things are "not found" (None, False or FileError). Standard library only.
 """
@@ -26,8 +27,9 @@ from . import db
 FILES_DIR = Path(os.environ.get("HUB_FILES_DIR", "/data/files"))
 CATEGORIES = ("memory", "code", "media", "documents", "links")
 MIN_FREE = 1024 ** 3             # an upload is refused when less than this would stay free
-CHUNK_SIZE = 5 * 1024 ** 2       # every chunk of an upload has this size, the last one is what is left. 5 MiB = 20 x 256 KiB, the
-                                 # smallest chunk of Cloudflare Stream and tus uploaders: one takes seconds, far inside the tunnel's 100 s limit
+BLOCK_SIZE = 256 * 1024          # an upload is counted in blocks of this size (the unit of Cloudflare Stream and tus uploaders)
+MAX_REQUEST = 64 * 1024 ** 2     # the most one request may carry (the tunnel allows about 100 MB, and a request must end in
+                                 # about 100 s: the browser sizes requests so that one takes seconds)
 THUMB_MAX = 256 * 1024            # largest preview picture (the browser makes them: 96 x 96 JPEG, a few KB)
 TEXT_MAX = 1024 ** 2             # largest file the text editor opens (also the limit of one form field)
 STALE = 24 * 3600                # an unfinished upload older than this is thrown away
@@ -165,14 +167,14 @@ def list_files(user_id: int, project_id: int) -> list[StoredFile]:
 
 
 def start_upload(user_id: int, project_id: int, name: str, size: int, now: int | None = None) -> StoredFile:
-    """Make the file for an upload that follows in chunks of CHUNK_SIZE. It exists at its full size from the
-    start (the rest is filled in), so the chunks may come in any order. Raises FileError: bad_name, not_found
-    (not his project), disk_full (the file would not fit and leave MIN_FREE)."""
+    """Make the file for an upload that follows in runs of blocks. It exists at its full size from the start (the rest
+    is filled in), so the runs may come in any order. Raises FileError: bad_name, not_found (not his project),
+    disk_full (the file would not fit and leave MIN_FREE)."""
     name = _clean_name(name)
     now = int(now if now is not None else time.time())
     if size < 0:
         raise FileError("bad_name")
-    parts = "0" * -(-size // CHUNK_SIZE)          # one flag per chunk, "1" = it is in
+    parts = "0" * -(-size // BLOCK_SIZE)          # one flag per block, "1" = it is in
     with db.connect() as conn:
         if not _own_project(conn, user_id, project_id):
             raise FileError("not_found")
@@ -194,33 +196,35 @@ def start_upload(user_id: int, project_id: int, name: str, size: int, now: int |
 
 
 def append_chunk(user_id: int, file_id: int, offset: int, data: bytes) -> int:
-    """Put one chunk of an unfinished upload in its place and return how many chunks are in. The offset must be
-    a multiple of CHUNK_SIZE and the chunk exactly as long as it should be, so a chunk can safely be sent again.
-    Raises FileError: not_found, bad_offset, too_big (over CHUNK_SIZE), disk_full."""
-    if len(data) > CHUNK_SIZE:
+    """Put a run of whole blocks of an unfinished upload in its place and return how many blocks are in. The offset
+    must be a multiple of BLOCK_SIZE, the run must lie inside the file and be a whole number of blocks unless it
+    ends the file, so a run can safely be sent again (or cut differently). Raises FileError: not_found,
+    bad_offset, too_big (over MAX_REQUEST), disk_full."""
+    if len(data) > MAX_REQUEST:
         raise FileError("too_big")
     with db.connect() as conn:
         row = _owned(conn, user_id, file_id)
         if row is None or row["status"] != "uploading":
             raise FileError("not_found")
-        size = row["size"]
-        if offset < 0 or offset % CHUNK_SIZE or offset >= size or len(data) != min(CHUNK_SIZE, size - offset):
+        size, end = row["size"], offset + len(data)
+        if (offset < 0 or offset % BLOCK_SIZE or offset >= size or not data or end > size
+                or (end < size and len(data) % BLOCK_SIZE)):
             raise FileError("bad_offset")
         if free_bytes() - len(data) < MIN_FREE:
             raise FileError("disk_full")
         with open(path_of(row["project_id"], file_id), "r+b") as handle:
             handle.seek(offset)
             handle.write(data)
-        index = offset // CHUNK_SIZE
-        conn.execute("UPDATE files SET parts = substr(parts, 1, ?) || '1' || substr(parts, ?) WHERE id = ?",
-                     (index, index + 2, file_id))
+        first, count = offset // BLOCK_SIZE, -(-len(data) // BLOCK_SIZE)
+        conn.execute("UPDATE files SET parts = substr(parts, 1, ?) || ? || substr(parts, ?) WHERE id = ?",
+                     (first, "1" * count, first + count + 1, file_id))
         parts = conn.execute("SELECT parts FROM files WHERE id = ?", (file_id,)).fetchone()[0]
     return parts.count("1")
 
 
 def finish_upload(user_id: int, file_id: int) -> StoredFile:
     """Mark an upload as complete. Raises FileError: not_found (not an unfinished upload of the user),
-    incomplete (a chunk is missing)."""
+    incomplete (a block is missing)."""
     with db.connect() as conn:
         row = _owned(conn, user_id, file_id)
         if row is None or row["status"] != "uploading":

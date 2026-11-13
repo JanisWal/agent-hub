@@ -13,23 +13,24 @@ class FilesTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         db.DB_PATH = os.path.join(self.tmp.name, "test.db")
-        self.original = (files.FILES_DIR, files.free_bytes, files.CHUNK_SIZE)
+        self.original = (files.FILES_DIR, files.free_bytes, files.BLOCK_SIZE, files.MAX_REQUEST)
         files.FILES_DIR = Path(self.tmp.name) / "files"
-        files.CHUNK_SIZE = 4                       # small chunks, so a few bytes make several
+        files.BLOCK_SIZE = 4                       # small blocks, so a few bytes make several
+        files.MAX_REQUEST = 16
         self.free = 10 * 1024 ** 3
         files.free_bytes = lambda: self.free
         self.user = users.create_user("a@example.com", "Aaaa!pass12")
         self.project = projects.create_project(self.user.id, "Project")
 
     def tearDown(self):
-        files.FILES_DIR, files.free_bytes, files.CHUNK_SIZE = self.original
+        files.FILES_DIR, files.free_bytes, files.BLOCK_SIZE, files.MAX_REQUEST = self.original
         self.tmp.cleanup()
 
     def upload(self, name="notes.md", data=b"hello", user=None, project=None):
         user, project = user or self.user, project or self.project
         item = files.start_upload(user.id, project.id, name, len(data))
-        for offset in range(0, len(data), files.CHUNK_SIZE):
-            files.append_chunk(user.id, item.id, offset, data[offset:offset + files.CHUNK_SIZE])
+        for offset in range(0, len(data), files.BLOCK_SIZE):
+            files.append_chunk(user.id, item.id, offset, data[offset:offset + files.BLOCK_SIZE])
         return files.finish_upload(user.id, item.id)
 
     # --- sorting by ending
@@ -70,12 +71,21 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(files.open_file(uid, done.id)[0].read_bytes(), data)
 
     def test_wrong_offsets_and_lengths_are_refused(self):
-        item = files.start_upload(self.user.id, self.project.id, "a.bin", 10)    # chunks of 4, 4 and 2
-        for offset, data in ((1, b"abcd"), (4, b"ab"), (8, b"abcd"), (12, b"ab"), (-4, b"abcd"), (0, b"abc")):
+        item = files.start_upload(self.user.id, self.project.id, "a.bin", 10)    # blocks of 4, 4 and 2
+        for offset, data in ((1, b"abcd"), (4, b"ab"), (8, b"abcd"), (12, b"ab"), (-4, b"abcd"), (0, b"abc"), (0, b"")):
             with self.assertRaises(files.FileError, msg=(offset, data)) as caught:
                 files.append_chunk(self.user.id, item.id, offset, data)
             self.assertEqual(caught.exception.code, "bad_offset")
 
+    def test_a_request_may_carry_any_run_of_blocks_and_runs_may_overlap(self):
+        data = bytes(range(10))
+        uid = self.user.id
+        item = files.start_upload(uid, self.project.id, "a.bin", 10)             # blocks of 4, 4 and 2
+        self.assertEqual(files.append_chunk(uid, item.id, 4, data[4:10]), 2)      # two blocks at once, the tail among them
+        self.assertEqual(files.append_chunk(uid, item.id, 0, data[0:8]), 3)       # overlaps what is in, cut differently
+        self.assertEqual(files.append_chunk(uid, item.id, 0, data[0:4]), 3)       # sent again
+        done = files.finish_upload(uid, item.id)
+        self.assertEqual(files.open_file(uid, done.id)[0].read_bytes(), data)
     def test_chunks_sent_at_the_same_time_are_all_counted(self):
         import threading
         data = bytes(range(64))                                                 # 16 chunks of 4
@@ -106,7 +116,7 @@ class FilesTest(unittest.TestCase):
     def test_a_chunk_over_the_limit_is_refused(self):
         item = files.start_upload(self.user.id, self.project.id, "big.bin", 1)
         with self.assertRaises(files.FileError) as caught:
-            files.append_chunk(self.user.id, item.id, 0, b"x" * (files.CHUNK_SIZE + 1))
+            files.append_chunk(self.user.id, item.id, 0, b"x" * (files.MAX_REQUEST + 1))
         self.assertEqual(caught.exception.code, "too_big")
 
     # --- the only protection: free space
@@ -236,6 +246,18 @@ class FilesTest(unittest.TestCase):
         self.assertIn(f'src="/files/{pic.id}/thumb"', html)
         self.assertNotIn(f'src="/files/{pic.id}"', html)                             # the original is never in the list
 
+    def test_the_tile_counts_in_blocks_and_the_pencil_dialog_has_no_text_but_the_reader_exists(self):
+        html = self.tile()
+        self.assertIn(f'data-block="{files.BLOCK_SIZE}"', html)
+        self.assertNotIn("data-chunk", html)
+        self.assertIn('data-starting="', html)
+        for lang in ("de", "en"):
+            dialogs = managerpage.dialogs(lang)
+            pencil = dialogs[dialogs.index('id="file-dialog"'):dialogs.index('id="file-confirm"')]
+            self.assertNotIn("<textarea", pencil)                         # the pencil changes name and area only
+            self.assertIn('id="file-reader"', dialogs)                    # a click on Markdown opens the big reader
+            self.assertIn('id="file-reader-text"', dialogs)
+            self.assertNotIn("%t.", dialogs)
     def test_a_click_on_the_name_downloads_a_link_opens_in_a_new_tab(self):
         item = self.upload("a.pdf", b"x")
         link = files.add_link(self.user.id, self.project.id, "https://example.org/doc")

@@ -39,7 +39,7 @@ def start_upload(project_id: int, name: str = Form(""), size: int = Form(0), use
 
 @router.post("/files/{file_id}/chunk")
 async def upload_chunk(file_id: int, offset: int, request: Request, user: users.User = Depends(api_user)):
-    if int(request.headers.get("content-length") or 0) > files.CHUNK_SIZE:
+    if int(request.headers.get("content-length") or 0) > files.MAX_REQUEST:
         return _fail(user, files.FileError("too_big"))
     try:
         body = await request.body()
