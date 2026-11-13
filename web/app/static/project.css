@@ -270,8 +270,14 @@ html .card.drag-clone::after { display: none; }
 .m-files .file-expand.on .ic-expand { display: none; }
 .m-files .file-expand.on .ic-collapse { display: inline; }
 .m-files .file-expand.on { background: color-mix(in srgb, var(--accent) 24%, transparent); }
-.file-note { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--muted); }
+/* The note floats over the tile as a small glass pill and does not move the content; files.js brings it in with a spring. */
+.m-files { position: relative; }
+.file-note { position: absolute; top: 66px; left: 50%; translate: -50% 0; z-index: 3; max-width: calc(100% - 24px); margin: 0; padding: 8px 16px; border-radius: 999px; border: 1px solid var(--glass-border); background: var(--glass); box-shadow: var(--shadow); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); font-size: 0.85rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; opacity: 0; }
 .file-note[hidden] { display: none; }
+/* Enlarging or shrinking the tile: the browser's view transition glides the tile and blends the page around it. */
+::view-transition-group(files-tile) { animation-duration: 0.5s; animation-timing-function: cubic-bezier(0.3, 1.12, 0.5, 1); }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.28s; }
+@media (prefers-reduced-motion: reduce) { ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none; } }
 .manager.files-expanded { grid-template-columns: minmax(0, 1fr); }
 .manager.files-expanded .mcol { display: none; }
 .manager.files-expanded .mcol.has-files { display: flex; }
