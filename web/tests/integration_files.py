@@ -54,6 +54,9 @@ status, _, body = call(f"/projects/{project}/files/start", form(name="clip.mp4",
 info = json.loads(body)
 check("start upload", status == 200 and info["ok"] and info["category"] == "media", body)
 fid = info["id"]
+status, _, body = call(f"/files/{fid}/progress")
+progress = json.loads(body)
+check("progress tells what the server has", status == 200 and progress["parts"] == "0" * -(-len(payload) // progress["block"]), body)
 
 
 def send(offset):
@@ -71,6 +74,8 @@ status, _, body = call(f"/files/{fid}/chunk?offset=5", b"zz", "POST")
 check("a chunk at a wrong offset is refused", status == 409, status)
 status, _, body = call(f"/files/{fid}/finish", b"", "POST")
 check("finish", status == 200 and json.loads(body)["size"] == len(payload), body)
+status, _, _ = call(f"/files/{fid}/progress")
+check("a finished upload has nothing to resume", status == 404, status)
 
 status, headers, body = call(f"/files/{fid}")
 check("download is the same bytes", status == 200 and body == payload, status)

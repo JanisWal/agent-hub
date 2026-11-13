@@ -125,6 +125,20 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(problems, [])
         done = files.finish_upload(self.user.id, item.id)
         self.assertEqual(files.open_file(self.user.id, done.id)[0].read_bytes(), data)
+    def test_an_interrupted_upload_can_ask_what_the_server_has_and_keeps_it_alive(self):
+        uid = self.user.id
+        item = files.start_upload(uid, self.project.id, "a.bin", 10, now=1000)    # blocks of 4, 4 and 2
+        self.assertEqual(files.upload_progress(uid, item.id, now=1000 + files.STALE - 5), (10, "000"))
+        files.append_chunk(uid, item.id, 4, b"abcd")
+        self.assertEqual(files.upload_progress(uid, item.id, now=1000 + files.STALE - 5), (10, "010"))
+        files.start_upload(uid, self.project.id, "b.bin", 1, now=1000 + files.STALE + 100)   # a later start drops stale uploads
+        self.assertEqual(files.upload_progress(uid, item.id), (10, "010"))        # asking had kept it alive
+        files.append_chunk(uid, item.id, 0, b"abcd")
+        files.append_chunk(uid, item.id, 8, b"ab")
+        files.finish_upload(uid, item.id)
+        self.assertIsNone(files.upload_progress(uid, item.id))                    # finished: nothing to resume
+        self.assertIsNone(files.upload_progress(uid, 9999))
+
     def test_an_empty_file_is_fine(self):
         self.assertEqual(self.upload("empty.txt", b"").size, 0)
 
@@ -277,6 +291,27 @@ class FilesTest(unittest.TestCase):
             self.assertIn('id="file-reader"', dialogs)                    # a click on Markdown opens the big reader
             self.assertIn('id="file-reader-text"', dialogs)
             self.assertNotIn("%t.", dialogs)
+    def test_the_trash_circle_setting_is_kept_with_the_account_and_shows_in_the_tile(self):
+        self.assertTrue(users.get_by_id(self.user.id).files_confirm)                 # asking is the default
+        file_routes.preferences("0", self.user)
+        self.assertFalse(users.get_by_id(self.user.id).files_confirm)
+        stored = files.list_files(self.user.id, self.project.id)
+        settings = {"roles": {"chef": {"model": "sonnet", "net": "together"}}, "autonomy": "major"}
+        self.assertIn('data-confirm-delete="0"', managerpage.render("en", settings, stored_files=stored, files_confirm=False))
+        self.assertIn('data-confirm-delete="1"', managerpage.render("en", settings, stored_files=stored, files_confirm=True))
+        file_routes.preferences("1", self.user)
+        self.assertTrue(users.get_by_id(self.user.id).files_confirm)
+
+    def test_the_tile_header_has_the_trash_and_the_enlarge_circle_next_to_the_plus(self):
+        for lang in ("de", "en"):
+            html = self.tile(lang)
+            start = html.index('class="file-tools"')
+            head = html[start:html.index("</header>", start)]
+            self.assertLess(head.index('id="file-trash-mode"'), head.index('id="file-expand"'))
+            self.assertLess(head.index('id="file-expand"'), head.index('id="file-add"'))     # the plus stays on the right
+            self.assertIn('id="file-note"', html)
+            self.assertNotIn("%t.", html)
+
     def test_a_click_on_the_name_downloads_a_link_opens_in_a_new_tab(self):
         item = self.upload("a.pdf", b"x")
         link = files.add_link(self.user.id, self.project.id, "https://example.org/doc")

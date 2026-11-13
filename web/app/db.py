@@ -160,6 +160,7 @@ NEW_COLUMNS = {
         "role": "TEXT NOT NULL DEFAULT 'user'",
         "must_change_password": "INTEGER NOT NULL DEFAULT 0",
         "theme": "TEXT NOT NULL DEFAULT 'light'",
+        "files_confirm": "INTEGER NOT NULL DEFAULT 1",    # does deleting a file ask first? (the trash circle of the file tile)
     },
     "projects": {"page": "INTEGER NOT NULL DEFAULT 0", "description": "TEXT NOT NULL DEFAULT ''"},
     "chat_messages": {"mode": "TEXT NOT NULL DEFAULT 'web'", "model": "TEXT NOT NULL DEFAULT 'haiku'",
