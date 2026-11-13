@@ -16,7 +16,7 @@ ERRORS = {
     "bad_name": (400, "files_err_name"), "bad_url": (400, "files_err_url"), "bad_category": (400, "files_err_category"),
     "disk_full": (507, "files_err_disk_full"), "not_found": (404, "files_err_missing"),
     "too_big": (413, "files_err_too_big"), "bad_offset": (409, "files_err_offset"),
-    "incomplete": (409, "files_err_offset"),
+    "incomplete": (409, "files_err_offset"), "bad_type": (400, "files_err_type"),
 }
 
 
@@ -95,10 +95,31 @@ def write_text(file_id: int, text: str = Form(""), user: users.User = Depends(ap
         return _fail(user, problem)
 
 
+@router.post("/files/{file_id}/thumb")
+async def save_thumb(file_id: int, request: Request, user: users.User = Depends(api_user)):
+    """The small preview picture, made by the browser (JPEG, a few KB)."""
+    if int(request.headers.get("content-length") or 0) > files.THUMB_MAX:
+        return _fail(user, files.FileError("too_big"))
+    try:
+        return ok() if files.save_thumb(user.id, file_id, await request.body()) else fail(404)
+    except files.FileError as problem:
+        return _fail(user, problem)
+
+
+@router.get("/files/{file_id}/thumb")
+def thumb(file_id: int, user: users.User = Depends(api_user)):
+    path = files.open_thumb(user.id, file_id)
+    if path is None:
+        return fail(404)
+    return FileResponse(path, media_type="image/jpeg", content_disposition_type="inline", headers={
+        "Content-Security-Policy": "sandbox; default-src 'none'", "Cache-Control": "private, max-age=86400"})
+
+
 @router.get("/files/{file_id}")
-def serve(file_id: int, user: users.User = Depends(api_user)):
+def serve(file_id: int, download: int = 0, user: users.User = Depends(api_user)):
     """The file itself. Type from a fixed table, `nosniff`, and a sandbox policy so that even an SVG or HTML
-    file can run nothing here; only images, video and audio are shown, the rest is a download."""
+    file can run nothing here; only images, video and audio are shown (for the viewer), the rest is a download,
+    and `?download=1` makes any file a download."""
     found = files.open_file(user.id, file_id)
     if found is None:
         return fail(404)
@@ -106,7 +127,7 @@ def serve(file_id: int, user: users.User = Depends(api_user)):
     media_type, inline = files.content_type(item.name)
     return FileResponse(
         path, media_type=media_type, filename=item.name,
-        content_disposition_type="inline" if inline else "attachment",
+        content_disposition_type="inline" if inline and not download else "attachment",
         headers={"Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'",
                  "Cache-Control": "private, max-age=60"},
     )

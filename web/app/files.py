@@ -26,7 +26,9 @@ from . import db
 FILES_DIR = Path(os.environ.get("HUB_FILES_DIR", "/data/files"))
 CATEGORIES = ("memory", "code", "media", "documents", "links")
 MIN_FREE = 1024 ** 3             # an upload is refused when less than this would stay free
-CHUNK_SIZE = 16 * 1024 ** 2      # every chunk of an upload has this size, the last one is what is left
+CHUNK_SIZE = 5 * 1024 ** 2       # every chunk of an upload has this size, the last one is what is left. 5 MiB = 20 x 256 KiB, the
+                                 # smallest chunk of Cloudflare Stream and tus uploaders: one takes seconds, far inside the tunnel's 100 s limit
+THUMB_MAX = 256 * 1024            # largest preview picture (the browser makes them: 96 x 96 JPEG, a few KB)
 TEXT_MAX = 1024 ** 2             # largest file the text editor opens (also the limit of one form field)
 STALE = 24 * 3600                # an unfinished upload older than this is thrown away
 MAX_NAME = 120
@@ -44,7 +46,7 @@ EDITABLE = {"md", "txt"}          # the pencil opens an editor for these
 
 
 class FileError(ValueError):
-    """The reason is the `code`: bad_name, bad_url, bad_category, disk_full, not_found, too_big, bad_offset, incomplete."""
+    """The reason is the `code`: bad_name, bad_url, bad_category, disk_full, not_found, too_big, bad_offset, incomplete, bad_type."""
 
     def __init__(self, code: str):
         super().__init__(code)
@@ -267,6 +269,42 @@ def update(user_id: int, file_id: int, name: str, url: str | None = None, catego
     return _to_file(row)
 
 
+def thumb_path(project_id: int, file_id: int) -> Path:
+    return FILES_DIR / str(project_id) / f"{file_id}.thumb"
+
+
+def has_thumb(item: "StoredFile") -> bool:
+    return item.url is None and thumb_path(item.project_id, item.id).is_file()
+
+
+def save_thumb(user_id: int, file_id: int, data: bytes) -> bool:
+    """Keep the small preview picture of an image or video (a JPEG made by the browser). False if the file is not
+    the user's, not finished, or not an image or video. Raises FileError: too_big, bad_type (not a JPEG). It is
+    served with a fixed type, so even a wrong body can run nothing."""
+    if len(data) > THUMB_MAX:
+        raise FileError("too_big")
+    if not data.startswith(b"\xff\xd8\xff"):
+        raise FileError("bad_type")
+    with db.connect() as conn:
+        row = _owned(conn, user_id, file_id)
+    if row is None or row["status"] != "ready":
+        return False
+    item = _to_file(row)
+    if item.kind not in ("image", "video"):
+        return False
+    thumb_path(item.project_id, item.id).write_bytes(data)
+    return True
+
+
+def open_thumb(user_id: int, file_id: int) -> Path | None:
+    with db.connect() as conn:
+        row = _owned(conn, user_id, file_id)
+    if row is None or row["url"] is not None:
+        return None
+    path = thumb_path(row["project_id"], file_id)
+    return path if path.is_file() else None
+
+
 def delete(user_id: int, file_id: int) -> bool:
     """Delete for good (no trash can). False if it is not the user's."""
     with db.connect() as conn:
@@ -275,6 +313,7 @@ def delete(user_id: int, file_id: int) -> bool:
             return False
         conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
     path_of(row["project_id"], file_id).unlink(missing_ok=True)
+    thumb_path(row["project_id"], file_id).unlink(missing_ok=True)
     return True
 
 
