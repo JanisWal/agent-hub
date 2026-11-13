@@ -199,7 +199,7 @@ Stand 07.11.2026, von Janis beauftragt, mit Testkonten im Browser geprüft (Dunk
 - Balken (10 px hoch, voll rund, Akzentverlauf), darüber links „Geschätztes Token-Kontingent“, rechts „Noch keine Messdaten“. Breite höchstens 560 px, mittig.
 - **Ist:** Der Balken ist leer, es gibt noch keine Messung. Angebunden wird er mit dem Runner (Phase 2).
 
-**Dialoge allgemein (`.dialog`):** höchstens 440 px, Rundung 28 px, Fläche 82 % `--bg` mit Weichzeichner, gleiche Lichtkante wie Glas, federnde Einblendung (0,45 s). Knöpfe in Dialogen sind gleich breit nebeneinander (Höhe 48 px). Pro Dialog genau ein Hauptknopf.
+**Dialoge allgemein (`.dialog`):** höchstens 440 px, Rundung 28 px, Fläche 82 % `--bg` mit Weichzeichner, gleiche Lichtkante wie Glas, federnde Einblendung (0,45 s). Knöpfe in Dialogen sind gleich breit nebeneinander (Höhe 48 px). Pro Dialog genau ein Hauptknopf. **Drei Antworten** (`.actions.three`, z. B. „Gibt es schon“ in der Dateiablage): der Hauptknopf steht als volle Zeile oben, die beiden anderen gleich breit darunter. Geht es um bestimmte Dinge (Dateinamen), stehen sie als kurze Liste in einem Feld (Feldfarbe, Rand, Rundung 16 px, Schrift 600, scrollt ab 30 % der Fensterhöhe).
 
 **Sprache**
 - Deutsch und Englisch, pro Nutzer gespeichert (`users.language`). Alle Texte stehen in `web/app/i18n.py`. **Jeder neue Text kommt in beide Sprachen.** Ein Test prüft, dass beide Wörterbücher dieselben Schlüssel haben. Die Login-Seite ist noch nur Deutsch.
