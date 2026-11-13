@@ -7,8 +7,9 @@ Areas (`CATEGORIES`): memory (notes the agents read, Markdown), code, media (ima
 
 There is no size or type limit (Janis: his own server). The only protection is the free space: an upload is
 refused when less than MIN_FREE would stay free, so a big file cannot choke the database. Big files come in
-chunks (`start_upload`, `append_chunk`, `finish_upload`): the chunk must start exactly where the file ends, so an
-interrupted upload can go on. Files live in FILES_DIR/<project id>/<file id>, outside the web folder, never under
+chunks of CHUNK_SIZE (`start_upload`, `append_chunk`, `finish_upload`): the file is made at its full size, the
+chunks may arrive in any order, several at a time, and one can be sent again; `finish_upload` checks that
+all of them are in. Files live in FILES_DIR/<project id>/<file id>, outside the web folder, never under
 their display name (a name can not reach a path). Like every data module, each function gets the `user_id` and
 the project must be his: foreign things are "not found" (None, False or FileError). Standard library only.
 """
@@ -25,7 +26,7 @@ from . import db
 FILES_DIR = Path(os.environ.get("HUB_FILES_DIR", "/data/files"))
 CATEGORIES = ("memory", "code", "media", "documents", "links")
 MIN_FREE = 1024 ** 3             # an upload is refused when less than this would stay free
-CHUNK_MAX = 16 * 1024 ** 2       # largest chunk one request may carry
+CHUNK_SIZE = 16 * 1024 ** 2      # every chunk of an upload has this size, the last one is what is left
 TEXT_MAX = 1024 ** 2             # largest file the text editor opens (also the limit of one form field)
 STALE = 24 * 3600                # an unfinished upload older than this is thrown away
 MAX_NAME = 120
@@ -43,7 +44,7 @@ EDITABLE = {"md", "txt"}          # the pencil opens an editor for these
 
 
 class FileError(ValueError):
-    """The reason is the `code`: bad_name, bad_url, bad_category, disk_full, not_found, too_big, bad_offset."""
+    """The reason is the `code`: bad_name, bad_url, bad_category, disk_full, not_found, too_big, bad_offset, incomplete."""
 
     def __init__(self, code: str):
         super().__init__(code)
@@ -162,12 +163,14 @@ def list_files(user_id: int, project_id: int) -> list[StoredFile]:
 
 
 def start_upload(user_id: int, project_id: int, name: str, size: int, now: int | None = None) -> StoredFile:
-    """Make the (empty) file for an upload that follows in chunks. Raises FileError: bad_name, not_found (not his
-    project), disk_full (the file would not fit and leave MIN_FREE)."""
+    """Make the file for an upload that follows in chunks of CHUNK_SIZE. It exists at its full size from the
+    start (the rest is filled in), so the chunks may come in any order. Raises FileError: bad_name, not_found
+    (not his project), disk_full (the file would not fit and leave MIN_FREE)."""
     name = _clean_name(name)
     now = int(now if now is not None else time.time())
     if size < 0:
         raise FileError("bad_name")
+    parts = "0" * -(-size // CHUNK_SIZE)          # one flag per chunk, "1" = it is in
     with db.connect() as conn:
         if not _own_project(conn, user_id, project_id):
             raise FileError("not_found")
@@ -175,44 +178,53 @@ def start_upload(user_id: int, project_id: int, name: str, size: int, now: int |
         if free_bytes() - size < MIN_FREE:
             raise FileError("disk_full")
         cur = conn.execute(
-            "INSERT INTO files (project_id, name, category, size, status, created_at) VALUES (?, ?, ?, 0, 'uploading', ?)",
-            (project_id, name, category_for(name), now),
+            "INSERT INTO files (project_id, name, category, size, status, created_at, parts)"
+            " VALUES (?, ?, ?, ?, 'uploading', ?, ?)",
+            (project_id, name, category_for(name), size, now, parts),
         )
         file_id = cur.lastrowid
         row = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
     target = path_of(project_id, file_id)
     target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-    target.write_bytes(b"")
+    with open(target, "wb") as handle:
+        handle.truncate(size)
     return _to_file(row)
 
 
 def append_chunk(user_id: int, file_id: int, offset: int, data: bytes) -> int:
-    """Add a chunk at the end of an unfinished upload and return the new size. Raises FileError: not_found,
-    bad_offset (the chunk must start where the file ends), too_big (over CHUNK_MAX), disk_full."""
-    if len(data) > CHUNK_MAX:
+    """Put one chunk of an unfinished upload in its place and return how many chunks are in. The offset must be
+    a multiple of CHUNK_SIZE and the chunk exactly as long as it should be, so a chunk can safely be sent again.
+    Raises FileError: not_found, bad_offset, too_big (over CHUNK_SIZE), disk_full."""
+    if len(data) > CHUNK_SIZE:
         raise FileError("too_big")
     with db.connect() as conn:
         row = _owned(conn, user_id, file_id)
         if row is None or row["status"] != "uploading":
             raise FileError("not_found")
-        target = path_of(row["project_id"], file_id)
-        have = target.stat().st_size if target.exists() else 0
-        if offset != have:
+        size = row["size"]
+        if offset < 0 or offset % CHUNK_SIZE or offset >= size or len(data) != min(CHUNK_SIZE, size - offset):
             raise FileError("bad_offset")
         if free_bytes() - len(data) < MIN_FREE:
             raise FileError("disk_full")
-        with open(target, "ab") as handle:
+        with open(path_of(row["project_id"], file_id), "r+b") as handle:
+            handle.seek(offset)
             handle.write(data)
-        conn.execute("UPDATE files SET size = ? WHERE id = ?", (have + len(data), file_id))
-    return have + len(data)
+        index = offset // CHUNK_SIZE
+        conn.execute("UPDATE files SET parts = substr(parts, 1, ?) || '1' || substr(parts, ?) WHERE id = ?",
+                     (index, index + 2, file_id))
+        parts = conn.execute("SELECT parts FROM files WHERE id = ?", (file_id,)).fetchone()[0]
+    return parts.count("1")
 
 
 def finish_upload(user_id: int, file_id: int) -> StoredFile:
-    """Mark an upload as complete. Raises FileError(not_found) if it is not an unfinished upload of the user."""
+    """Mark an upload as complete. Raises FileError: not_found (not an unfinished upload of the user),
+    incomplete (a chunk is missing)."""
     with db.connect() as conn:
         row = _owned(conn, user_id, file_id)
         if row is None or row["status"] != "uploading":
             raise FileError("not_found")
+        if "0" in row["parts"]:
+            raise FileError("incomplete")
         conn.execute("UPDATE files SET status = 'ready' WHERE id = ?", (file_id,))
         row = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
     return _to_file(row)
