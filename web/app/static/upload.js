@@ -183,7 +183,8 @@
       var known = activeKeys[job.key] ? null : recall(job);   // a second copy of the same file starts afresh
       activeKeys[job.key] = true;
       function fresh() {
-        return call(urls.start, form({ name: job.file.name, size: job.file.size })).then(function (info) { job.id = info.id; remember(job); });
+        var name = (job.meta && job.meta.name) || job.file.name;   // files.js may give another name ("keep both")
+        return call(urls.start, form({ name: name, size: job.file.size })).then(function (info) { job.id = info.id; remember(job); });
       }
       var begin = known ? call(urls.progress(known), null, "GET").then(function (data) {
         if (data.size !== job.file.size) throw new Error("other file");
