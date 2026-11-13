@@ -234,6 +234,35 @@ class FilesTest(unittest.TestCase):
         other = users.create_user("b@example.com", "Bbbb!pass12")
         self.assertEqual(file_routes.check_names(self.project.id, ["a.txt"], "", other).status_code, 404)
 
+    # --- several files out as one ZIP
+    def test_marked_files_come_as_one_zip_with_the_original_bytes(self):
+        import io
+        import zipfile
+        a = self.upload("a.txt", b"first file")
+        pic = self.upload("a.png", bytes(range(256)) * 4)
+        same = self.upload("a.txt", b"other area")                      # documents first, then moved to code
+        files.update(self.user.id, same.id, "a.txt", category="code")
+        link = files.add_link(self.user.id, self.project.id, "https://example.org", "Link")
+        entries = files.zip_entries(self.user.id, self.project.id, [pic.id, a.id, same.id, link.id, 9999, a.id])
+        self.assertEqual([name for _, name in entries], ["a.png", "a.txt", "a (2).txt"])   # no link, no doubles
+        pieces = list(files.zip_stream(entries, piece=1000))
+        self.assertGreater(len(pieces), 5)                                  # sent in pieces, not built whole first
+        archive = zipfile.ZipFile(io.BytesIO(b"".join(pieces)))
+        self.assertIsNone(archive.testzip())
+        self.assertEqual(archive.read("a.png"), bytes(range(256)) * 4)      # the original, unchanged
+        self.assertEqual(archive.read("a (2).txt"), b"other area")
+        self.assertEqual({i.compress_type for i in archive.infolist()}, {zipfile.ZIP_STORED})
+
+    def test_the_zip_route_answers_only_for_own_files(self):
+        a = self.upload("a.txt", b"x")
+        b = self.upload("b.txt", b"y")
+        answer = file_routes.download_zip(self.project.id, f"{a.id},{b.id},x", self.user)
+        self.assertEqual(answer.media_type, "application/zip")
+        self.assertIn("filename*=UTF-8''2%20Dateien.zip", answer.headers["content-disposition"])
+        other = users.create_user("b@example.com", "Bbbb!pass12")
+        self.assertEqual(file_routes.download_zip(self.project.id, f"{a.id}", other).status_code, 404)
+        self.assertEqual(file_routes.download_zip(self.project.id, "", self.user).status_code, 404)
+
     # --- the only protection: free space
     def test_nothing_is_stored_when_the_disk_would_be_nearly_full(self):
         self.free = files.MIN_FREE + 5

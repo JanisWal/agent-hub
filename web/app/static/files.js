@@ -400,17 +400,76 @@
     if (list.length) addJobs(list, category);
   });
 
-  // --- drag a file out of the tile onto the desktop or a folder: the browser downloads it there (Chrome and
-  // Edge understand "DownloadURL"; Safari and Firefox do not and simply do nothing). A link drags its address.
+  // --- drag files out of the tile onto the desktop or a folder: the browser downloads them there (Chrome and Edge
+  // understand "DownloadURL"; Safari and Firefox do not and simply do nothing). "DownloadURL" carries one file only, so
+  // several marked files come as one ZIP that the server makes while sending (like Google Drive). Links drag addresses.
+  // Several rows dragged out flow together into the pointer like a stack in the Finder (Janis, 13.11.2026): each row
+  // glides to the grip and fades (spring MOVE, a wave by distance as with the tiles), the picture under the pointer is a
+  // small stack with the count; when the drag ends they spring back. Only transform and opacity; interruptible.
+  var gathered = [];
+  function gatherShow(row, p) {
+    if (p < 0.001) { row.style.transform = ""; row.style.opacity = ""; return; }
+    row.style.transform = "translate(" + (row.__dx * p) + "px," + (row.__dy * p) + "px) scale(" + (1 - 0.3 * p) + ")";
+    row.style.opacity = String(1 - 0.9 * p);
+  }
+  function gather(rows, x, y) {
+    gathered = rows;
+    rows.forEach(function (r) {
+      var box = r.getBoundingClientRect();
+      r.__dx = x - (box.left + box.width / 2);
+      r.__dy = y - (box.top + box.height / 2);
+      if (!r.__gather) r.__gather = Motion.spring(0, Motion.MOVE, function (p) { gatherShow(r, p); }, 0.002);
+      clearTimeout(r.__gatherTimer);
+      r.__gatherTimer = setTimeout(function () { r.__gather.to(1); }, Math.min(110, Math.hypot(r.__dx, r.__dy) / 10));
+    });
+  }
+  function release() {
+    gathered.forEach(function (r) { clearTimeout(r.__gatherTimer); if (r.__gather) r.__gather.to(0); });
+    gathered = [];
+  }
+  function dragStack(rows) {
+    var stack = document.createElement("div");
+    stack.className = "file-drag-stack";
+    rows.slice(0, 3).reverse().forEach(function (r, i, all) {   // the first row lies on top
+      var card = document.createElement("div");
+      var depth = all.length - 1 - i;
+      card.className = "file-drag-card";
+      card.textContent = r.dataset.name;
+      card.style.transform = "translate(" + (depth * 5) + "px," + (depth * 5) + "px) rotate(" + [0, -3, 3][depth] + "deg)";
+      stack.appendChild(card);
+    });
+    var count = document.createElement("span");
+    count.className = "file-drag-count";
+    count.textContent = rows.length;
+    stack.appendChild(count);
+    document.body.appendChild(stack);
+    setTimeout(function () { stack.remove(); }, 0);              // the browser took its picture already
+    return stack;
+  }
+  tile.addEventListener("dragend", release);
+
   tile.addEventListener("dragstart", function (event) {
     var row = event.target.closest ? event.target.closest(".file-row") : null;
     if (!row) return;
-    if (row.dataset.kind === "link") {
-      event.dataTransfer.setData("text/uri-list", row.dataset.url);
-      event.dataTransfer.setData("text/plain", row.dataset.url);
+    var rows = row.classList.contains("selected") ? Array.prototype.slice.call(tile.querySelectorAll(".file-row.selected")) : [row];
+    var fileRows = rows.filter(function (r) { return r.dataset.kind !== "link"; });
+    var carried = fileRows.length > 1 ? fileRows : !fileRows.length && rows.length > 1 ? rows : null;
+    if (carried) {
+      event.dataTransfer.setDragImage(dragStack(carried), 28, 22);
+      gather(carried, event.clientX, event.clientY);
+    }
+    if (fileRows.length > 1) {
+      var ids = fileRows.map(function (r) { return r.dataset.id; }).join(",");
+      var zipName = tile.dataset.zipName.replace("{n}", fileRows.length) + ".zip";
+      event.dataTransfer.setData("DownloadURL", "application/zip:" + zipName + ":" + location.origin +
+                                 "/projects/" + projectId + "/files/zip?ids=" + ids);
+    } else if (fileRows.length === 1) {
+      event.dataTransfer.setData("DownloadURL", "application/octet-stream:" + fileRows[0].dataset.name + ":" +
+                                 location.origin + "/files/" + fileRows[0].dataset.id);
     } else {
-      var url = location.origin + "/files/" + row.dataset.id;
-      event.dataTransfer.setData("DownloadURL", "application/octet-stream:" + row.dataset.name + ":" + url);
+      var urls = rows.map(function (r) { return r.dataset.url; }).join("\r\n");
+      event.dataTransfer.setData("text/uri-list", urls);
+      event.dataTransfer.setData("text/plain", urls);
     }
     event.dataTransfer.effectAllowed = "copy";
   });

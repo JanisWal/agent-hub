@@ -130,6 +130,8 @@ class IsolationTest(unittest.TestCase):
                 call()
         self.assertIsNone(files.open_file(self.b.id, item.id))
         self.assertIsNone(files.check_names(self.b.id, self.project.id, ["secret.md"]))   # B learns no names of A
+        self.assertIsNone(files.zip_entries(self.b.id, self.project.id, [item.id]))       # nor gets A's files as a ZIP
+        self.assertEqual(files.zip_entries(self.b.id, self.mine.id, [item.id]), [])       # not even through his own project
         self.assertIsNone(files.read_text(self.b.id, item.id))
         self.assertFalse(files.write_text(self.b.id, item.id, "hacked"))
         self.assertFalse(files.delete(self.b.id, item.id))
