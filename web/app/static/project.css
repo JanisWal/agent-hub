@@ -248,35 +248,40 @@ html .card.drag-clone::after { display: none; }
 /* One design language (Janis, 11.11.2026): trash and archive belong to the board, so they are not shown in the Manager view. */
 .manager-open .drawer-extra { display: none; }
 
-/* Files and links of the Manager view (Janis, 12.11.2026): five tabs, rows like the checks (thin lines), a small rounded
-   tile with the type symbol, a preview next to it only where there is something to see. Dragging files onto the tile
-   makes the tabs pop up (spring in files.js), the one under the pointer pops more. */
-.file-tabs { display: flex; flex-wrap: wrap; gap: 8px; }
-.file-tab { position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 6px 12px; border-radius: 16px; border: 1px solid transparent; background: none; box-shadow: none; color: var(--muted); font-size: 0.88rem; font-weight: 600; will-change: transform; }
-.file-tab:hover { transform: none; color: var(--text); }
-.file-tab[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--text); }
-.file-count { font-size: 0.74rem; font-weight: 700; color: var(--muted); }
-.m-files.dropping .file-tab { background: var(--glass); border-color: var(--glass-border); box-shadow: var(--shadow); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); color: var(--text); }
-.m-files.dropping .file-tab.hot { border-color: var(--accent); box-shadow: var(--shadow), 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent); }
-.file-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+/* Files and links of the Manager view (Janis, 12.11.2026, sharper and bordered on 13.11.2026): five tabs in ONE row
+   (a symbol each; the names when the tile is wide, container query), the files as small bordered cards with sharp
+   corners. A card gets a thicker border and a glass lift on hover. Dragging files onto the tile makes the tabs pop
+   up (spring in files.js), the one under the pointer pops more. */
+.m-files { container-type: inline-size; --file-line: color-mix(in srgb, var(--text) 18%, transparent); --file-line-hover: color-mix(in srgb, var(--text) 42%, transparent); }
+.file-tabs { display: flex; flex-wrap: nowrap; gap: 6px; }
+.file-tab { flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 40px; padding: 6px 6px; border-radius: 8px; border: 1px solid var(--file-line); background: color-mix(in srgb, var(--field) 55%, transparent); box-shadow: none; color: var(--muted); font-size: 0.84rem; font-weight: 600; will-change: transform; transition: border-color 0.2s, box-shadow 0.2s, color 0.2s, background-color 0.2s; }
+.file-tab svg { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.file-tab-label { display: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@container (min-width: 500px) { .file-tab-label { display: inline; } .file-tab svg { display: none; } }
+.file-tab:hover { transform: none; color: var(--text); border-color: var(--file-line-hover); box-shadow: 0 0 0 1px var(--file-line-hover); }
+.file-tab[aria-selected="true"] { color: var(--text); background: color-mix(in srgb, var(--accent) 30%, transparent); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.file-count { font-size: 0.72rem; font-weight: 700; color: var(--muted); }
+.m-files.dropping .file-tab { background: var(--glass); box-shadow: var(--shadow); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); color: var(--text); }
+.m-files.dropping .file-tab.hot { border-color: var(--accent); box-shadow: var(--shadow), 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+.file-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .file-list[hidden], .file-uploads[hidden] { display: none; }
 .file-empty { padding: 10px 4px; }
-.file-row { position: relative; display: flex; align-items: center; gap: 10px; padding: 9px 4px 9px 6px; min-height: 58px; box-sizing: border-box; }
-.file-row::after { content: ""; position: absolute; left: 2%; right: 2%; bottom: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--line-core) 50%, transparent); box-shadow: 0 0 8px var(--line-glow); }
-.file-list > .file-row:last-child::after { display: none; }
-.file-tile { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 14px; background: var(--field); border: 1px solid var(--glass-border); color: var(--muted); }
+.file-row { position: relative; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 8px; min-height: 52px; box-sizing: border-box; border: 1px solid var(--file-line); border-radius: 8px; background: color-mix(in srgb, var(--field) 40%, transparent); transition: translate 0.25s cubic-bezier(0.3, 1.5, 0.5, 1), box-shadow 0.25s, border-color 0.2s, background-color 0.2s; }
+.file-row:hover { translate: 0 -2px; border-color: var(--file-line-hover); box-shadow: 0 0 0 1px var(--file-line-hover), var(--shadow); background: var(--glass); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); }
+.file-tile { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 6px; background: var(--field); border: 1px solid var(--file-line); color: var(--muted); }
 .file-tile svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-.file-preview { flex: none; width: 40px; height: 40px; border-radius: 12px; object-fit: cover; background: var(--field); border: 1px solid var(--glass-border); pointer-events: none; }
+.file-preview { flex: none; width: 38px; height: 38px; border-radius: 6px; object-fit: cover; background: var(--field); border: 1px solid var(--file-line); pointer-events: none; }
 .file-text { flex: 1; min-width: 0; color: inherit; text-decoration: none; }
 .file-text .check-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-text small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.78rem; font-weight: 500; color: var(--muted); }
-.file-uploads { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.file-up { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; font-weight: 600; }
+.file-uploads { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.file-up { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 8px 10px; border: 1px solid var(--file-line); border-radius: 8px; font-size: 0.85rem; font-weight: 600; }
 .file-up-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-bar { display: block; height: 6px; border-radius: 999px; background: var(--field); overflow: hidden; }
-.file-bar i { display: block; height: 100%; border-radius: 999px; background: var(--accent); transform: scaleX(0); transform-origin: left; transition: transform 0.25s; }
+.file-up-meta { font-size: 0.78rem; font-weight: 500; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.file-bar { grid-column: 1 / -1; display: block; height: 5px; border-radius: 3px; background: var(--field); overflow: hidden; }
+.file-bar i { display: block; height: 100%; background: var(--accent); transform: scaleX(0); transform-origin: left; }
 .file-drop { display: none; }
 .m-files.dropping .file-drop { display: block; text-align: center; padding: 8px 0 2px; }
 #file-dialog textarea { width: 100%; box-sizing: border-box; min-height: 180px; font: inherit; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.88rem; }
 #file-dialog { overflow: visible; }
-@media (prefers-reduced-motion: reduce) { .file-bar i { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .file-row, .file-tab { transition: none; } }

@@ -2,9 +2,9 @@
 
     python tests/integration_files.py http://127.0.0.1:8001 EMAIL PASSWORD PROJECT_ID
 
-Run against a throwaway instance with its own database (see PROJEKT.md, "Tests"). Uploads a file in chunks,
-reads it back (also a byte range, as a video player does), checks the headers and that a second login is
-refused, then deletes everything it made.
+Run against a throwaway instance with its own database (see PROJEKT.md, "Tests"). Uploads a file in several
+chunks sent at the same time and out of order, reads it back (also a byte range, as a video player does), checks
+the headers, and deletes everything it made.
 """
 import http.cookiejar
 import json
@@ -12,8 +12,10 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 base, email, password, project = sys.argv[1].rstrip("/"), sys.argv[2], sys.argv[3], sys.argv[4]
+CHUNK = 16 * 1024 * 1024                                # files.CHUNK_SIZE
 jar = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
 failures = []
@@ -47,19 +49,26 @@ quiet = urllib.request.build_opener(NoRedirect, urllib.request.HTTPCookieProcess
 status, _, _ = call("/login", form(email=email, password=password), client=quiet)
 check("login", status in (302, 303), status)
 
-payload = bytes(range(256)) * 3000                      # 768,000 bytes
+payload = bytes(range(256)) * (CHUNK * 5 // 2 // 256)   # 2.5 chunks: 40 MB
 status, _, body = call(f"/projects/{project}/files/start", form(name="clip.mp4", size=len(payload)))
 info = json.loads(body)
 check("start upload", status == 200 and info["ok"] and info["category"] == "media", body)
 fid = info["id"]
 
-step = 300_000
-for offset in range(0, len(payload), step):
-    status, _, body = call(f"/files/{fid}/chunk?offset={offset}", payload[offset:offset + step], "POST",
-                           {"Content-Type": "application/octet-stream"})
-    check(f"chunk at {offset}", status == 200 and json.loads(body)["size"] == min(offset + step, len(payload)), body)
+
+def send(offset):
+    return call(f"/files/{fid}/chunk?offset={offset}", payload[offset:offset + CHUNK], "POST",
+                {"Content-Type": "application/octet-stream"})
+
+
+status, _, body = call(f"/files/{fid}/finish", b"", "POST")
+check("finish before all chunks are in is refused", status == 409, status)
+with ThreadPoolExecutor(3) as pool:                      # all three at once, the last (short) one first
+    results = list(pool.map(send, [2 * CHUNK, 0, CHUNK]))
+check("chunks at the same time and out of order", all(r[0] == 200 for r in results), [r[0] for r in results])
+check("a chunk can be sent again", send(CHUNK)[0] == 200)
 status, _, body = call(f"/files/{fid}/chunk?offset=5", b"zz", "POST")
-check("chunk at a wrong offset is refused", status == 409, status)
+check("a chunk at a wrong offset is refused", status == 409, status)
 status, _, body = call(f"/files/{fid}/finish", b"", "POST")
 check("finish", status == 200 and json.loads(body)["size"] == len(payload), body)
 

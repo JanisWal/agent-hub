@@ -13,22 +13,23 @@ class FilesTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         db.DB_PATH = os.path.join(self.tmp.name, "test.db")
-        self.original = (files.FILES_DIR, files.free_bytes)
+        self.original = (files.FILES_DIR, files.free_bytes, files.CHUNK_SIZE)
         files.FILES_DIR = Path(self.tmp.name) / "files"
+        files.CHUNK_SIZE = 4                       # small chunks, so a few bytes make several
         self.free = 10 * 1024 ** 3
         files.free_bytes = lambda: self.free
         self.user = users.create_user("a@example.com", "Aaaa!pass12")
         self.project = projects.create_project(self.user.id, "Project")
 
     def tearDown(self):
-        files.FILES_DIR, files.free_bytes = self.original
+        files.FILES_DIR, files.free_bytes, files.CHUNK_SIZE = self.original
         self.tmp.cleanup()
 
-    def upload(self, name="notes.md", data=b"hello", chunk=2, user=None, project=None):
+    def upload(self, name="notes.md", data=b"hello", user=None, project=None):
         user, project = user or self.user, project or self.project
         item = files.start_upload(user.id, project.id, name, len(data))
-        for offset in range(0, len(data), chunk):
-            files.append_chunk(user.id, item.id, offset, data[offset:offset + chunk])
+        for offset in range(0, len(data), files.CHUNK_SIZE):
+            files.append_chunk(user.id, item.id, offset, data[offset:offset + files.CHUNK_SIZE])
         return files.finish_upload(user.id, item.id)
 
     # --- sorting by ending
@@ -40,7 +41,7 @@ class FilesTest(unittest.TestCase):
 
     # --- upload in chunks
     def test_a_file_comes_in_chunks_and_is_stored_under_its_id(self):
-        item = self.upload("notes.md", b"hello world", chunk=4)
+        item = self.upload("notes.md", b"hello world")
         self.assertEqual((item.name, item.category, item.size, item.status), ("notes.md", "memory", 11, "ready"))
         path, _ = files.open_file(self.user.id, item.id)
         self.assertEqual(path.read_bytes(), b"hello world")
@@ -53,15 +54,48 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(files.list_files(self.user.id, self.project.id), [])
         self.assertIsNone(files.open_file(self.user.id, item.id))
 
-    def test_a_chunk_must_start_where_the_file_ends(self):
-        item = files.start_upload(self.user.id, self.project.id, "a.bin", 6)
-        files.append_chunk(self.user.id, item.id, 0, b"abc")
-        for offset in (0, 5):
-            with self.assertRaises(files.FileError) as caught:
-                files.append_chunk(self.user.id, item.id, offset, b"def")
-            self.assertEqual(caught.exception.code, "bad_offset")
-        self.assertEqual(files.append_chunk(self.user.id, item.id, 3, b"def"), 6)
+    def test_chunks_may_come_in_any_order_and_be_sent_again(self):
+        data = b"0123456789ab"                        # 12 bytes = 3 chunks of 4
+        uid = self.user.id
+        item = files.start_upload(uid, self.project.id, "a.bin", 12)
+        self.assertEqual(files.append_chunk(uid, item.id, 8, data[8:]), 1)
+        self.assertEqual(files.append_chunk(uid, item.id, 0, data[:4]), 2)
+        self.assertEqual(files.append_chunk(uid, item.id, 0, data[:4]), 2)      # sent again: nothing changes
+        with self.assertRaises(files.FileError) as caught:
+            files.finish_upload(uid, item.id)                                    # the middle chunk is missing
+        self.assertEqual(caught.exception.code, "incomplete")
+        files.append_chunk(uid, item.id, 4, data[4:8])
+        done = files.finish_upload(uid, item.id)
+        self.assertEqual(done.size, 12)
+        self.assertEqual(files.open_file(uid, done.id)[0].read_bytes(), data)
 
+    def test_wrong_offsets_and_lengths_are_refused(self):
+        item = files.start_upload(self.user.id, self.project.id, "a.bin", 10)    # chunks of 4, 4 and 2
+        for offset, data in ((1, b"abcd"), (4, b"ab"), (8, b"abcd"), (12, b"ab"), (-4, b"abcd"), (0, b"abc")):
+            with self.assertRaises(files.FileError, msg=(offset, data)) as caught:
+                files.append_chunk(self.user.id, item.id, offset, data)
+            self.assertEqual(caught.exception.code, "bad_offset")
+
+    def test_chunks_sent_at_the_same_time_are_all_counted(self):
+        import threading
+        data = bytes(range(64))                                                 # 16 chunks of 4
+        item = files.start_upload(self.user.id, self.project.id, "a.bin", 64)
+        problems = []
+
+        def send(offset):
+            try:
+                files.append_chunk(self.user.id, item.id, offset, data[offset:offset + 4])
+            except Exception as problem:                                        # noqa: BLE001
+                problems.append(problem)
+
+        threads = [threading.Thread(target=send, args=(offset,)) for offset in range(0, 64, 4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        self.assertEqual(problems, [])
+        done = files.finish_upload(self.user.id, item.id)
+        self.assertEqual(files.open_file(self.user.id, done.id)[0].read_bytes(), data)
     def test_an_empty_file_is_fine(self):
         self.assertEqual(self.upload("empty.txt", b"").size, 0)
 
@@ -72,7 +106,7 @@ class FilesTest(unittest.TestCase):
     def test_a_chunk_over_the_limit_is_refused(self):
         item = files.start_upload(self.user.id, self.project.id, "big.bin", 1)
         with self.assertRaises(files.FileError) as caught:
-            files.append_chunk(self.user.id, item.id, 0, b"x" * (files.CHUNK_MAX + 1))
+            files.append_chunk(self.user.id, item.id, 0, b"x" * (files.CHUNK_SIZE + 1))
         self.assertEqual(caught.exception.code, "too_big")
 
     # --- the only protection: free space
@@ -81,12 +115,12 @@ class FilesTest(unittest.TestCase):
         with self.assertRaises(files.FileError) as caught:
             files.start_upload(self.user.id, self.project.id, "big.bin", 10)
         self.assertEqual(caught.exception.code, "disk_full")
-        item = files.start_upload(self.user.id, self.project.id, "ok.bin", 5)
+        item = files.start_upload(self.user.id, self.project.id, "ok.bin", 4)
         self.free = files.MIN_FREE + 1          # it filled up in the meantime
         with self.assertRaises(files.FileError) as caught:
-            files.append_chunk(self.user.id, item.id, 0, b"abcde")
+            files.append_chunk(self.user.id, item.id, 0, b"abcd")
         self.assertEqual(caught.exception.code, "disk_full")
-        self.assertEqual(files.path_of(self.project.id, item.id).stat().st_size, 0)
+        self.assertEqual(files.path_of(self.project.id, item.id).read_bytes(), b"\0\0\0\0")      # nothing was written
 
     def test_old_unfinished_uploads_are_thrown_away(self):
         old = files.start_upload(self.user.id, self.project.id, "old.bin", 1, now=1000)
@@ -96,7 +130,7 @@ class FilesTest(unittest.TestCase):
         self.assertFalse(files.path_of(self.project.id, old.id).exists())
         self.assertTrue(files.path_of(self.project.id, recent.id).exists())
         with self.assertRaises(files.FileError):
-            files.append_chunk(self.user.id, old.id, 1, b"y")
+            files.append_chunk(self.user.id, old.id, 0, b"y")
 
     # --- names
     def test_names_are_cleaned_and_cannot_reach_a_path(self):
@@ -152,7 +186,7 @@ class FilesTest(unittest.TestCase):
 
     # --- text editor
     def test_markdown_and_text_can_be_read_and_changed_others_cannot(self):
-        note = self.upload("note.md", b"# Hi", chunk=10)
+        note = self.upload("note.md", b"# Hi")
         self.assertEqual(files.read_text(self.user.id, note.id), "# Hi")
         self.assertTrue(files.write_text(self.user.id, note.id, "# Changed"))
         self.assertEqual(files.read_text(self.user.id, note.id), "# Changed")

@@ -176,6 +176,7 @@ def _checks_tile(lang: str, regular: list, now: int) -> str:
 
 FILE_TABS = (("memory", "files_tab_memory"), ("code", "files_tab_code"), ("media", "files_tab_media"),
              ("documents", "files_tab_documents"), ("links", "files_tab_links"))
+TAB_ICON = {"memory": "note", "code": "code", "media": "photo", "documents": "file", "links": "link"}
 KIND_ICON = {"link": "link", "image": "photo", "video": "film", "audio": "music", "code": "code", "text": "note",
              "other": "file"}
 
@@ -235,10 +236,10 @@ def _file_row(lang: str, item: filestore.StoredFile) -> str:
         href, sub = src, esc(_size(lang, item.size))
         target = ' target="_blank" rel="noopener noreferrer"' if filestore.content_type(item.name)[1] else ""
     return (
-        f'<li class="file-row" data-id="{item.id}" data-cat="{item.category}" data-kind="{kind}" '
+        f'<li class="file-row" draggable="true" data-id="{item.id}" data-cat="{item.category}" data-kind="{kind}" '
         f'data-name="{esc(item.name)}" data-url="{esc(item.url or "")}" data-editable="{1 if item.editable else 0}">'
         f'<span class="file-tile">{icon(KIND_ICON[kind])}</span>{preview}'
-        f'<a class="file-text" href="{href}"{target}><span class="check-title">{esc(item.name)}</span><small>{sub}</small></a>'
+        f'<a class="file-text" href="{href}"{target} draggable="false"><span class="check-title">{esc(item.name)}</span><small>{sub}</small></a>'
         f'<button class="icon-button card-btn" type="button" data-file="edit" aria-label="{edit_label}" '
         f'title="{edit_label}">{icon("pencil")}</button>'
         f'<button class="icon-button card-btn no" type="button" data-file="delete" aria-label="{delete_label}" '
@@ -252,15 +253,19 @@ def _files_tile(lang: str, items: list) -> str:
     tabs, panels = [], []
     for category, key in FILE_TABS:
         mine = [f for f in items if f.category == category]
-        tabs.append(
-            f'<button class="file-tab" type="button" role="tab" data-cat="{category}" aria-selected="false">'
-            f'{esc(i18n.t(lang, key))}<span class="file-count">{len(mine)}</span></button>'
+        name = esc(i18n.t(lang, key))
+        tabs.append(   # symbol when the tile is narrow, name when it is wide (CSS container query), always one row
+            f'<button class="file-tab" type="button" role="tab" data-cat="{category}" data-name="{name}" title="{name}" '
+            f'aria-label="{name}" aria-selected="false">{icon(TAB_ICON[category])}'
+            f'<span class="file-tab-label">{name}</span><span class="file-count">{len(mine)}</span></button>'
         )
         body = "".join(_file_row(lang, f) for f in mine) or \
             f'<li class="file-empty muted">{esc(i18n.t(lang, "files_hint_" + category))}</li>'
         panels.append(f'<ul class="file-list" data-cat="{category}" hidden>{body}</ul>')
-    attrs = " ".join(f'data-{name}="{esc(i18n.t(lang, key))}"' for name, key in (
-        ("add-file", "files_add_file"), ("add-link", "files_add_link"), ("err-net", "files_err_net")))
+    attrs = " ".join(f'data-{name}="{esc(i18n.t(lang, key, n="{n}", name="{name}"))}"' for name, key in (
+        ("add-file", "files_add_file"), ("add-link", "files_add_link"), ("err-net", "files_err_net"),
+        ("eta-s", "files_eta_s"), ("eta-m", "files_eta_m"), ("eta-h", "files_eta_h"), ("drop-to", "files_drop_to")))
+    attrs += f' data-chunk="{filestore.CHUNK_SIZE}"'
     return (
         f'<section class="mtile glass m-files m-grow" id="files" {attrs}>'
         f'<header><h2>{esc(i18n.t(lang, "manager_files"))}</h2>'

@@ -3,6 +3,7 @@
 All calls are fetch() calls (answers `{"ok": ...}`); the file itself is served by GET /files/{id}.
 """
 from fastapi import APIRouter, Depends, Form, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 
 from .. import files, users
@@ -15,6 +16,7 @@ ERRORS = {
     "bad_name": (400, "files_err_name"), "bad_url": (400, "files_err_url"), "bad_category": (400, "files_err_category"),
     "disk_full": (507, "files_err_disk_full"), "not_found": (404, "files_err_missing"),
     "too_big": (413, "files_err_too_big"), "bad_offset": (409, "files_err_offset"),
+    "incomplete": (409, "files_err_offset"),
 }
 
 
@@ -37,10 +39,11 @@ def start_upload(project_id: int, name: str = Form(""), size: int = Form(0), use
 
 @router.post("/files/{file_id}/chunk")
 async def upload_chunk(file_id: int, offset: int, request: Request, user: users.User = Depends(api_user)):
-    if int(request.headers.get("content-length") or 0) > files.CHUNK_MAX:
+    if int(request.headers.get("content-length") or 0) > files.CHUNK_SIZE:
         return _fail(user, files.FileError("too_big"))
     try:
-        return ok(size=files.append_chunk(user.id, file_id, offset, await request.body()))
+        body = await request.body()
+        return ok(received=await run_in_threadpool(files.append_chunk, user.id, file_id, offset, body))
     except files.FileError as problem:
         return _fail(user, problem)
 
