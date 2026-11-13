@@ -1,23 +1,28 @@
 // Files and links in the Manager view: five areas as tabs (a sliding highlight like an iOS segmented control),
-// upload in small chunks with speed and time left, several files at once under each other with a cross to cancel,
-// drag files onto the tile (the tabs pop up and the one under the pointer takes the file) or paste them, drag a
-// file out to the desktop or a folder (Chrome and Edge), rename or edit with one dialog (the pencil), delete after
-// a confirmation. Needs core.js and motion.js.
+// upload with requests sized to the line, several files at once under each other with a cross to cancel, drag files
+// onto the tile (the tabs pop up and the one under the pointer takes the file) or paste them, drag a file out to the
+// desktop or a folder (Chrome and Edge), the pencil renames and moves, a click opens a big reader for Markdown and text
+// or a viewer for pictures, video and sound, delete after a confirmation. Needs core.js and motion.js.
 //
-// Upload: the proven way (tus, Uppy, Cloudflare Stream): small chunks (5 MiB, a multiple of 256 KiB), a failed
-// chunk is sent again after growing pauses, the server is the source of truth (it keeps a flag per chunk), and the
-// speed counts only bytes the server has confirmed (the browser's own progress also counts what it has merely
-// queued, which looks fast at first and then falls). A request that runs too long is cut after 90 s here, before
-// the tunnel's own limit of about 100 s cuts it for us.
+// Upload (Janis, 13.11.2026): the file is counted in blocks of 256 KiB on the server; a request carries any run of
+// blocks. The size of a request follows the measured speed so that one takes about 15 seconds: a slow line gets small
+// ones (little is lost when one fails, none gets near the tunnel's limit of about 100 s), a fast line gets big ones
+// (up to 32 MiB). A failed request is sent again after growing pauses (tus, Uppy). The speed shown is what the
+// browser has sent over the last 10 s. A request that makes no progress for 45 s is given up and sent again.
 (function () {
   var tile = document.getElementById("files");
   var project = document.querySelector(".project");
   if (!tile || !project) return;
   var projectId = project.dataset.id;
-  var CHUNK = parseInt(tile.dataset.chunk, 10);   // the size the server expects (files.CHUNK_SIZE)
+  var BLOCK = parseInt(tile.dataset.block, 10);   // the unit the server counts in (files.BLOCK_SIZE)
+  var START_REQUEST = 1048576;                    // size of the first requests, before the speed is known
+  var MIN_REQUEST = 524288;
+  var MAX_REQUEST = 33554432;
+  var TARGET_SECONDS = 15;                        // what one request should take
   var PARALLEL = 2;                               // requests on their way at the same time, over all files
-  var DELAYS = [0, 1000, 3000, 5000, 10000];      // pauses before each new try of a chunk (tus-js-client, Uppy)
-  var STALL = 25000;                              // no progress for this long: give up on the request and try again
+  var DELAYS = [0, 1000, 3000, 5000, 10000];      // pauses before each new try of a request
+  var STALL = 45000;                              // no progress for this long: give up on the request and try again
+  var TIMEOUT = 90000;                            // longest a request may take (the tunnel cuts at about 100 s)
   var CANCELLED = new Error("cancelled");
   var tabsBox = tile.querySelector(".file-tabs");
   var tabs = Array.prototype.slice.call(tile.querySelectorAll(".file-tab"));
@@ -39,13 +44,10 @@
   var urlInput = form.querySelector('input[name="url"]');
   var areaBox = document.getElementById("file-area-box");
   var areaSelect = form.querySelector('select[name="category"]');
-  var textBox = document.getElementById("file-text-box");
-  var textInput = form.querySelector('textarea[name="text"]');
   var dialogError = document.getElementById("file-dialog-error");
   var confirmDialog = document.getElementById("file-confirm");
   var active = "memory";
-  var editing = null;        // the row being edited, or null for a new link
-  var textLoaded = false;
+  var editing = null;        // the row in the pencil dialog, or null for a new link
   var pendingId = null;
   var lang = document.documentElement.lang || "de";
 
@@ -76,10 +78,10 @@
   var refreshTimer = null;
   function refreshSoon() { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 300); }
 
-  // --- small preview pictures (Janis, 13.11.2026): made in the browser, so the Pi does no image work and the list
-  // never loads the originals. A picture or the first moments of a video are scaled down to a square of THUMB
-  // pixels (JPEG) and kept by the server next to the file. New files get theirs right after the upload; older files
-  // (and anything that failed) get theirs once when the list is first shown.
+  // --- small preview pictures: made in the browser, so the Pi does no image work and the list never loads the
+  // originals. A picture or the first moments of a video are scaled down to a square of THUMB pixels (JPEG) and kept
+  // by the server next to the file. New files get theirs right after the upload; older files (and anything that
+  // failed) get theirs once when the list is first shown.
   var THUMB = 96;
   var thumbBusy = false;
   var thumbFailed = {};
@@ -202,13 +204,25 @@
   // --- upload: a queue of files, a few requests at a time over all of them
   var jobs = [];
   var running = 0;
-  var samples = [];        // [time, bytes the server has confirmed] over the last 20 s, for the speed
-  var confirmed = 0;
+  var samples = [];        // [time, bytes the browser has sent] over the last 10 s
+  var speed = 0;           // bytes per second over those 10 s, 0 while it is not known yet
   var ticker = null;
 
-  function sendChunk(job, index, onProgress) {
-    var start = index * CHUNK;
-    var blob = job.file.slice(start, Math.min(start + CHUNK, job.file.size));
+  function sentOf(job) {
+    var sum = job.confirmed;
+    Object.keys(job.loaded).forEach(function (key) { sum += job.loaded[key]; });
+    return sum;
+  }
+
+  // How much one request carries now: what the line sends in TARGET_SECONDS (per request, as PARALLEL share it).
+  function requestSize() {
+    var bytes = speed > 0 ? speed * TARGET_SECONDS / PARALLEL : START_REQUEST;
+    bytes = Math.max(MIN_REQUEST, Math.min(MAX_REQUEST, bytes));
+    return Math.max(BLOCK, Math.floor(bytes / BLOCK) * BLOCK);
+  }
+
+  function sendRun(job, offset, length, onProgress) {
+    var blob = job.file.slice(offset, offset + length);
     return new Promise(function (resolve, reject) {
       var attempt = 0;
       function go() {
@@ -227,8 +241,8 @@
           setTimeout(go, DELAYS[attempt++]);
         }
         job.xhrs.push(xhr);
-        xhr.open("POST", "/files/" + job.id + "/chunk?offset=" + start);
-        xhr.timeout = 90000;
+        xhr.open("POST", "/files/" + job.id + "/chunk?offset=" + offset);
+        xhr.timeout = TIMEOUT;
         xhr.upload.onprogress = function (event) { last = Date.now(); if (event.lengthComputable) onProgress(event.loaded); };
         xhr.onerror = xhr.ontimeout = xhr.onabort = again;
         xhr.onload = function () {
@@ -249,11 +263,15 @@
     for (var n = 0; n < jobs.length; n++) {
       var job = jobs[n];
       if (job.state === "new") { job.state = "starting"; return function () { return startJob(job); }; }
-      if (job.state === "sending" && job.next < job.count) {
-        var index = job.next++;
-        return function () { return sendJobChunk(job, index); };
+      if (job.state !== "sending") continue;
+      if (job.cursor < job.file.size) {
+        var offset = job.cursor;
+        var length = Math.min(requestSize(), job.file.size - offset);
+        job.cursor += length;
+        job.pending++;
+        return function () { return sendPiece(job, offset, length); };
       }
-      if (job.state === "sending" && job.acked === job.count) { job.state = "finishing"; return function () { return finishJob(job); }; }
+      if (job.pending === 0 && job.confirmed === job.file.size) { job.state = "finishing"; return function () { return finishJob(job); }; }
     }
     return null;
   }
@@ -275,14 +293,11 @@
     }, function (problem) { failJob(job, problem); });
   }
 
-  function sendJobChunk(job, index) {
-    var size = Math.min(CHUNK, job.file.size - index * CHUNK);
-    return sendChunk(job, index, function (bytes) { job.loaded[index] = bytes; }).then(function () {
-      job.loaded[index] = size;
-      job.acked++;
-      job.confirmed += size;
-      confirmed += size;
-      samples.push([Date.now(), confirmed]);
+  function sendPiece(job, offset, length) {
+    return sendRun(job, offset, length, function (bytes) { job.loaded[offset] = bytes; }).then(function () {
+      delete job.loaded[offset];
+      job.confirmed += length;
+      job.pending--;
     }, function (problem) { failJob(job, problem); });
   }
 
@@ -301,6 +316,8 @@
   function drop(job, state) {
     job.state = state;
     job.xhrs.slice().forEach(function (xhr) { xhr.abort(); });
+    job.loaded = {};
+    job.confirmed = 0;
     job.row.remove();
     if (job.id) call("/files/" + job.id + "/delete").catch(function () {});      // the unfinished file goes too
   }
@@ -320,14 +337,13 @@
     if (!jobs.length) return;
     jobs = [];
     samples = [];
-    confirmed = 0;
+    speed = 0;
     clearInterval(ticker);
     ticker = null;
     uploads.hidden = true;
     refresh();
   }
 
-  // Speed over the last 20 s of what the server confirmed, and the time that is left for the files up to this one.
   function formatSpeed(bytesPerSecond) {
     var mb = bytesPerSecond / 1048576;
     var value = mb >= 1 ? mb : bytesPerSecond / 1024;
@@ -340,20 +356,19 @@
   }
   function tick() {
     var now = Date.now();
-    while (samples.length > 1 && now - samples[0][0] > 20000) samples.shift();
-    var speed = 0;
-    if (samples.length) {
-      var span = (now - Math.min(samples[0][0], now - 1000)) / 1000;
-      var base = samples.length > 1 || now - samples[0][0] > 20000 ? samples[0][1] : 0;
-      speed = (confirmed - base) / Math.max(span, 1);
-    }
+    var sent = 0;
+    jobs.forEach(function (job) { sent += sentOf(job); });
+    if (samples.length && sent < samples[samples.length - 1][1]) samples = [];     // a request was started again
+    samples.push([now, sent]);
+    while (samples.length > 2 && now - samples[0][0] > 10000) samples.shift();
+    var span = (now - samples[0][0]) / 1000;
+    if (span >= 3) speed = Math.max(0, (sent - samples[0][1]) / span);
     var ahead = 0;
     jobs.forEach(function (job) {
-      var sum = 0;
-      job.loaded.forEach(function (bytes) { sum += bytes; });
-      job.bar.style.transform = "scaleX(" + (job.file.size ? Math.min(sum / job.file.size, 1) : 1) + ")";
-      ahead += job.file.size - job.confirmed;
-      job.meta.textContent = speed > 0 && job.state !== "failed" ? formatSpeed(speed) + " · " + formatLeft(Math.round(ahead / speed)) : "";
+      var done = sentOf(job);
+      job.bar.style.transform = "scaleX(" + (job.file.size ? Math.min(done / job.file.size, 1) : 1) + ")";
+      ahead += job.file.size - done;
+      job.meta.textContent = speed > 0 ? formatSpeed(speed) + " · " + formatLeft(Math.round(ahead / speed)) : tile.dataset.starting;
     });
   }
 
@@ -363,9 +378,9 @@
       row.querySelector(".file-up-name").textContent = file.name;
       var job = {
         file: file, category: category, row: row, meta: row.querySelector(".file-up-meta"), bar: row.querySelector("i"),
-        id: null, state: "new", count: Math.ceil(file.size / CHUNK), next: 0, acked: 0, confirmed: 0, loaded: [], xhrs: [], cancelled: false
+        id: null, state: "new", cursor: 0, confirmed: 0, pending: 0, loaded: {}, xhrs: [], cancelled: false
       };
-      for (var n = 0; n < job.count; n++) job.loaded.push(0);
+      job.meta.textContent = tile.dataset.starting;       // there is something to read from the first moment
       row.querySelector(".file-up-x").addEventListener("click", function () { cancelJob(job); });
       uploads.appendChild(row);          // every file gets its row at once, one under the other
       jobs.push(job);
@@ -455,11 +470,10 @@
     event.dataTransfer.effectAllowed = "copy";
   });
 
-  // --- the dialog: new link, rename, move, edit text
+  // --- the pencil dialog: a new link, or rename and move (the content is read and edited in the reader)
   function openDialog(row) {
     editing = row;
     var link = !row || row.dataset.kind === "link";
-    var text = !!row && row.dataset.editable === "1";
     dialog.querySelector("h2").textContent = dialog.dataset[!row ? "titleLink" : link ? "titleEditLink" : "titleEdit"];
     document.getElementById("file-dialog-button").textContent = dialog.dataset[row ? "btnEdit" : "btnNew"];
     nameInput.value = row ? row.dataset.name : "";
@@ -468,24 +482,14 @@
     urlInput.required = link;
     areaBox.hidden = link;
     areaSelect.value = row ? row.dataset.cat : active;
-    textBox.hidden = !text;
-    textInput.value = "";
-    textLoaded = !text;
     say(dialogError, "");
     dialog.showModal();
     (link && !row ? urlInput : nameInput).focus();
-    if (text) {
-      call("/files/" + row.dataset.id + "/text", null, "GET").then(function (data) {
-        textInput.value = data.text;
-        textLoaded = true;
-      }, function (problem) { say(dialogError, problem.message); });
-    }
   }
   dialog.addEventListener("close", function () { form.reset(); AgentHub.clear(form); say(dialogError, ""); editing = null; });
 
   form.addEventListener("submit", function (event) {
     event.preventDefault();
-    if (!textLoaded) return;
     var request;
     var next = !editing || editing.dataset.kind === "link" ? "links" : areaSelect.value;   // the tab to show afterwards
     if (!editing) {
@@ -494,16 +498,14 @@
       var values = { name: nameInput.value };
       if (editing.dataset.kind === "link") values.url = urlInput.value; else values.category = areaSelect.value;
       request = call("/files/" + editing.dataset.id, fields(values));
-      if (editing.dataset.editable === "1") {
-        var id = editing.dataset.id;
-        request = request.then(function () { return call("/files/" + id + "/text", fields({ text: textInput.value })); });
-      }
     }
     request.then(function () { show(next); dialog.close(); return refresh(); },
       function (problem) { say(dialogError, problem.message); });
   });
 
-  // --- rows: pencil (or a click on a text file) edits, the bin asks first
+  // --- clicks on a row: the pencil changes name and area, the bin asks first; the name downloads a file (its link
+  // says `?download=1`) and opens a link in a new tab; Markdown and text open in the big reader; the symbol and
+  // the preview open the viewer of a picture, video or sound, and for anything else do what the name does.
   tile.addEventListener("click", function (event) {
     var button = event.target.closest("[data-file]");
     var row = event.target.closest(".file-row");
@@ -517,21 +519,18 @@
       }
       return;
     }
-    // The name downloads a file (its link says `?download=1`), opens a link in a new tab and opens the editor of a
-    // text. The symbol and the preview open the viewer of a picture, video or sound; for anything else they do what
-    // the name does (Janis, 13.11.2026: a click should download, not just open a new window).
     var name = event.target.closest(".file-text");
     var picture = event.target.closest(".file-tile, .file-preview");
     if (!row || (!name && !picture)) return;
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;   // with a key held the browser decides
     var viewable = ["image", "video", "audio"].indexOf(row.dataset.kind) >= 0;
-    if (row.dataset.editable === "1") { event.preventDefault(); openDialog(row); }
+    if (row.dataset.editable === "1") { event.preventDefault(); openReader(row); }
     else if (picture && viewable) { event.preventDefault(); openViewer(row); }
     else if (picture && row.dataset.kind === "link") { window.open(row.dataset.url, "_blank", "noopener,noreferrer"); }
     else if (picture) { location.href = "/files/" + row.dataset.id + "?download=1"; }
   });
 
-  // --- the viewer: a picture is shown, a video or sound gets a small player (Janis, 13.11.2026)
+  // --- the viewer: a picture is shown, a video or sound gets a small player
   var viewer = document.getElementById("file-viewer");
   var viewerBody = document.getElementById("file-viewer-body");
   var viewerTitle = document.getElementById("file-viewer-title");
@@ -552,7 +551,131 @@
     if (viewerId) location.href = "/files/" + viewerId + "?download=1";
   });
 
-  ensureThumbs();
+  // --- the reader: Markdown and text over almost the whole window; its pencil switches to a plain editor
+  var reader = document.getElementById("file-reader");
+  var readerBody = document.getElementById("file-reader-body");
+  var readerTitle = document.getElementById("file-reader-title");
+  var readerText = document.getElementById("file-reader-text");
+  var readerActions = document.getElementById("file-reader-actions");
+  var readerError = document.getElementById("file-reader-error");
+  var readerEdit = document.getElementById("file-reader-edit");
+  var readerId = null;
+  var readerName = "";
+  var readerSource = "";
+  var readerLoaded = false;
+
+  // Inline marks of Markdown: **bold**, `code`, [text](link) and bare links; built from DOM nodes only, never from HTML.
+  var INLINE = /\*\*([^*\n]+)\*\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s)<>\]]+)|`([^`\n]+)`/g;
+  function inline(target, text) {
+    var last = 0;
+    var m;
+    INLINE.lastIndex = 0;
+    while ((m = INLINE.exec(text))) {
+      if (m.index > last) target.appendChild(document.createTextNode(text.slice(last, m.index)));
+      if (m[1] !== undefined) {
+        var strong = document.createElement("strong");
+        strong.textContent = m[1];
+        target.appendChild(strong);
+      } else if (m[5] !== undefined) {
+        var code = document.createElement("code");
+        code.textContent = m[5];
+        target.appendChild(code);
+      } else {
+        var link = document.createElement("a");
+        link.href = m[3] || m[4];
+        link.textContent = m[2] || m[4];
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        target.appendChild(link);
+      }
+      last = INLINE.lastIndex;
+    }
+    if (last < text.length) target.appendChild(document.createTextNode(text.slice(last)));
+  }
+  var BLOCK_START = /^(```|#{1,4}\s|\s*[-*+]\s+|\s*\d+[.)]\s+|>\s?|\s*([-*_])\2{2,}\s*$)/;
+  function markdown(target, text) {
+    var lines = text.replace(/\r\n?/g, "\n").split("\n");
+    var i = 0;
+    function add(tag, parent) { var node = document.createElement(tag); (parent || target).appendChild(node); return node; }
+    while (i < lines.length) {
+      var line = lines[i];
+      var m;
+      if (/^```/.test(line)) {
+        var code = [];
+        i++;
+        while (i < lines.length && !/^```/.test(lines[i])) code.push(lines[i++]);
+        i++;
+        add("code", add("pre")).textContent = code.join("\n");
+      } else if ((m = /^(#{1,4})\s+(.*)$/.exec(line))) {
+        inline(add("h" + m[1].length), m[2]);
+        i++;
+      } else if (/^\s*([-*_])\1{2,}\s*$/.test(line)) {
+        add("hr");
+        i++;
+      } else if (/^\s*[-*+]\s+/.test(line) || /^\s*\d+[.)]\s+/.test(line)) {
+        var ordered = /^\s*\d+[.)]\s+/.test(line);
+        var list = add(ordered ? "ol" : "ul");
+        var item = ordered ? /^\s*\d+[.)]\s+/ : /^\s*[-*+]\s+/;
+        while (i < lines.length && item.test(lines[i])) { inline(add("li", list), lines[i].replace(item, "")); i++; }
+      } else if (/^>\s?/.test(line)) {
+        var quote = [];
+        while (i < lines.length && /^>\s?/.test(lines[i])) quote.push(lines[i++].replace(/^>\s?/, ""));
+        inline(add("blockquote"), quote.join("\n"));
+      } else if (!line.trim()) {
+        i++;
+      } else {
+        var para = [];
+        while (i < lines.length && lines[i].trim() && (para.length === 0 || !BLOCK_START.test(lines[i]))) para.push(lines[i++]);
+        inline(add("p"), para.join("\n"));
+      }
+    }
+  }
+
+  function showReader() {
+    readerBody.textContent = "";
+    readerBody.classList.toggle("plain", !/\.md$/i.test(readerName));
+    if (/\.md$/i.test(readerName)) markdown(readerBody, readerSource); else readerBody.textContent = readerSource;
+  }
+  function readerMode(edit) {
+    readerBody.hidden = edit;
+    readerText.hidden = !edit;
+    readerActions.hidden = !edit;
+    readerEdit.hidden = edit || !readerLoaded;
+    if (edit) { readerText.value = readerSource; readerText.focus(); }
+  }
+  function openReader(row) {
+    readerId = row.dataset.id;
+    readerName = row.dataset.name;
+    readerTitle.textContent = readerName;
+    readerSource = "";
+    readerLoaded = false;
+    readerBody.textContent = "";
+    say(readerError, "");
+    readerMode(false);
+    reader.showModal();
+    call("/files/" + readerId + "/text", null, "GET").then(function (data) {
+      readerSource = data.text;
+      readerLoaded = true;
+      showReader();
+      readerMode(false);
+    }, function (problem) { say(readerError, problem.message); });
+  }
+  readerEdit.addEventListener("click", function () { readerMode(true); });
+  document.getElementById("file-reader-cancel").addEventListener("click", function () { say(readerError, ""); readerMode(false); });
+  document.getElementById("file-reader-save").addEventListener("click", function () {
+    var text = readerText.value;
+    call("/files/" + readerId + "/text", fields({ text: text })).then(function () {
+      readerSource = text;
+      say(readerError, "");
+      showReader();
+      readerMode(false);
+      refreshSoon();                       // the size changed
+    }, function (problem) { say(readerError, problem.message); });
+  });
+  document.getElementById("file-reader-download").addEventListener("click", function () {
+    if (readerId) location.href = "/files/" + readerId + "?download=1";
+  });
+  reader.addEventListener("close", function () { readerId = null; readerBody.textContent = ""; readerText.value = ""; });
 
   document.getElementById("file-confirm-yes").addEventListener("click", function () {
     var id = pendingId;
@@ -560,4 +683,6 @@
     if (id) call("/files/" + id + "/delete").then(refresh, refresh);
   });
   confirmDialog.addEventListener("close", function () { pendingId = null; });
+
+  ensureThumbs();
 })();

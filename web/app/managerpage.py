@@ -130,7 +130,7 @@ def dialogs(lang: str) -> str:
     )
     return fill(CHECK_DIALOGS, lang, MAX_TEXT=str(checks.MAX_TEXT), CYCLES=options, DAYS=days,
                 CHEVRON=icon("chevron_down")) + "\n" + fill(FILE_DIALOGS, lang, AREAS=areas, CHEVRON=icon("chevron_down"),
-                                                         DOWNLOAD=icon("download"), CROSS=icon("cross"))
+                                                         DOWNLOAD=icon("download"), CROSS=icon("cross"), PENCIL=icon("pencil"))
 
 
 def _ago(lang: str, last_done: int, now: int) -> str:
@@ -194,7 +194,6 @@ FILE_DIALOGS = """<dialog class="dialog" id="file-dialog" data-title-link="%t.fi
       <select name="category">%AREAS%</select>
       %CHEVRON%
     </label>
-    <label id="file-text-box" hidden>%t.files_text%<textarea name="text" rows="12" spellcheck="false"></textarea></label>
     <p class="error" role="alert" id="file-dialog-error" hidden></p>
     <div class="actions">
       <button type="button" data-close>%t.cancel%</button>
@@ -207,6 +206,21 @@ FILE_DIALOGS = """<dialog class="dialog" id="file-dialog" data-title-link="%t.fi
   <div class="actions">
     <button type="button" data-close autofocus>%t.cancel%</button>
     <button class="danger-btn" type="button" id="file-confirm-yes">%t.yes%</button>
+  </div>
+</dialog>
+<dialog class="dialog viewer reader" id="file-reader">
+  <div class="viewer-head">
+    <h2 id="file-reader-title"></h2>
+    <button class="icon-button card-btn" type="button" id="file-reader-edit" aria-label="%t.files_edit_text%" title="%t.files_edit_text%">%PENCIL%</button>
+    <button class="icon-button card-btn" type="button" id="file-reader-download" aria-label="%t.files_download%" title="%t.files_download%">%DOWNLOAD%</button>
+    <button class="icon-button card-btn" type="button" data-close aria-label="%t.files_close%" title="%t.files_close%">%CROSS%</button>
+  </div>
+  <div class="reader-body" id="file-reader-body"></div>
+  <textarea class="reader-edit" id="file-reader-text" spellcheck="false" hidden></textarea>
+  <p class="error" role="alert" id="file-reader-error" hidden></p>
+  <div class="actions" id="file-reader-actions" hidden>
+    <button type="button" id="file-reader-cancel">%t.cancel%</button>
+    <button class="primary" type="button" id="file-reader-save">%t.save%</button>
   </div>
 </dialog>
 <dialog class="dialog viewer" id="file-viewer">
@@ -304,8 +318,9 @@ def _files_tile(lang: str, items: list) -> str:
         panels.append(f'<ul class="file-list" data-cat="{category}" hidden>{body}</ul>')
     attrs = " ".join(f'data-{name}="{esc(i18n.t(lang, key, n="{n}", name="{name}"))}"' for name, key in (
         ("add-file", "files_add_file"), ("add-link", "files_add_link"), ("err-net", "files_err_net"),
-        ("eta-s", "files_eta_s"), ("eta-m", "files_eta_m"), ("eta-h", "files_eta_h"), ("drop-to", "files_drop_to")))
-    attrs += f' data-chunk="{filestore.CHUNK_SIZE}"'
+        ("eta-s", "files_eta_s"), ("eta-m", "files_eta_m"), ("eta-h", "files_eta_h"), ("drop-to", "files_drop_to"),
+        ("starting", "files_starting")))
+    attrs += f' data-block="{filestore.BLOCK_SIZE}"'
     return (
         f'<section class="mtile glass m-files m-grow" id="files" {attrs}>'
         f'<header><h2>{esc(i18n.t(lang, "manager_files"))}</h2><span class="file-area" aria-hidden="true"></span>'
