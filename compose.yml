@@ -24,7 +24,7 @@ services:
   # folders of the users: they live outside ./data on purpose, so the web service cannot see them.
   # Needs RUNNER_TOKEN in .env (and its SHA-256 as HUB_RUNNER_TOKEN_HASH for web); see KONZEPT-AGENTEN.md.
   runner:
-    image: agent-hub-hub-runner      # own name: "agent-hub-runner" belongs to the old runner in /opt/agent-hub
+    image: agent-hub-hub-runner      # not "agent-hub-runner": that was the old runner (removed 13.11.2026)
     build:
       context: .
       dockerfile: runner/Dockerfile.runner
