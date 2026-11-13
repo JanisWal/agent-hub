@@ -1,56 +1,51 @@
 # Agent-Hub – Übergabe an einen neuen Chat
 
-Stand: 08.11.2026, Ende der Sitzung (letzter Merge `net-per-agent`, 248 Web- und 54 Runner-Tests grün) · Zweck: Einstieg in einen neuen Chat oder auf einem anderen Rechner. Quelle der Wahrheit bleiben `PROJEKT.md` (Entscheidungen, Aufbau, Betrieb, „Auf einen Blick“, Änderungsprotokoll in Abschnitt 12), `KONZEPT-AGENTEN.md` (Agenten, Netz, Geräte, Mac), `DESIGN.md` (Gestaltung, Abschnitt 10b Projektseite und Manager) und `CLAUDE.md` (Regeln). Frühere Übergaben liegen im Ordner `archiv/`.
+Stand: 13.11.2026, Ende der Sitzung (letzter Merge `file-select-range`, 351 Web-Tests grün) · Zweck: Einstieg in einen neuen Chat oder auf einem anderen Rechner. Quelle der Wahrheit: `PROJEKT.md` („Auf einen Blick“, **Abschnitt 11b für die Dateiablage**, Änderungsprotokoll in Abschnitt 12), `KONZEPT-AGENTEN.md` (Agenten, Netz, Geräte, Mac, Dateizugriff), `DESIGN.md` (Gestaltung) und `CLAUDE.md` (Regeln). Frühere Übergaben liegen im Ordner `archiv/`.
 
 ## In einem Satz
 
-Ein selbst gehostetes Verwaltungstool auf einem Raspberry Pi 4B (1 GB), live unter `https://hub.janis-home.de`: Projekte als Kacheln, Board für Software, ein Manager pro Projekt (Chat mit dem eigenen Claude), später feste KI-Agenten pro Nutzer. Repo `JanisWal/agent-hub` (privat), `main` = Produktiv.
+Ein selbst gehostetes Verwaltungstool auf einem Raspberry Pi 4B (1 GB, per **WLAN**), live unter `https://hub.janis-home.de`: Projekte als Kacheln, Board für Software, pro Projekt ein Manager (Chat mit dem eigenen Claude) und eine **Dateiablage**, später feste KI-Agenten. Repo `JanisWal/agent-hub` (privat), `main` = Produktiv.
 
-## Was seit der letzten Übergabe (07.11.2026, Mittag) dazugekommen ist
+## Was seit der Übergabe vom 08.11.2026 dazugekommen ist (Auswahl, Einzelheiten in PROJEKT.md Abschnitt 12)
 
-1. **Claude verknüpfen** pro Nutzer (Schublade, Link und Code), Trennen räumt den Ordner auf; Runner-Dienst, ein Container je Lauf, Image `agent-hub-agent`.
-2. **Netz:** Agenten-Netz intern, einziger Ausgang der Filter-Proxy `egress` (3128 öffentliches Internet bei Schalter an, 3129 nur Anthropic bei Schalter aus und für die Anmeldung). Heimnetz gesperrt.
-3. **Projektseite neu** nach Janis’ Skizze: Titel am goldenen Schnitt mit **Stift** (Drop-down für Name und Beschreibung), runde Knöpfe für Archiv und Papierkorb am Zahnrad, Board als Linien mit grünen/roten Knöpfen, Stationen links als zwei Ansichten **Board** und **Manager** (`#board`, `#manager`), eigene Tooltips und Scrollleisten, geprüft von 360 bis 1920 px.
-4. **Manager-Ansicht** in drei Spalten: Status, Geräte | Regelmäßige Prüfungen, Dateien | **Manager-Chat**, „Wartet auf dich“. Geräte, Prüfungen und Dateien sind angekündigt, Status und „Wartet auf dich“ noch leer.
-5. **Manager-Chat:** ersetzt das alte Einzelfragen-Fenster. Kennt Name, Beschreibung, offene Board-Punkte und die letzten 6 Fragen des Projekts; Schalter „Web + Code zusammen“: an (Standard) = Websuche, Seiten lesen und Code mit offenem Internet; aus = Websuche und Code ohne Internet; nie Heimnetz; Werkzeuge nur bei Bedarf. **Modell** und **Selbstständigkeit** als Drop-downs im eigenen Glas-Stil, Einstellungen des Managers pro Nutzer. Echter Lauf auf dem Pi bestanden.
-6. **Säuberung** (`cleanup-manager`): Rolle Dokumentator aus dem Code, alte Chat-Modi entfernt, ungenutzter Text entfernt.
-7. **Offenes Internet** (`open-internet`): Janis hat für Code das offene Internet gewählt (Weg 2 von 3). Echter Lauf: PyPI erreichbar, `192.168.178.1`, `10.0.0.1` und der Proxy selbst mit 403 abgelehnt.
-8. **Schalter „Web + Code zusammen“** (`net-switch`, dann `net-per-agent`): an = offenes Internet, aus = Websuche und Code ohne Internet; **pro Agent** wie das Modell (Manager-Chat = Schalter des Managers, die anderen in den künftigen Tabs; ein Agentenlauf nutzt den Schalter seiner Rolle).
-9. **Fehler behoben** (`fix-drawer-clicks`): Die zugeklappte Einstellungs-Schublade fing unsichtbar Klicks rechts oben ab („Senden“ ging nicht).
+- **Verwaltung:** Rollen Owner, Admin, Nutzer, Einladung und Passwort-Reset per Mail, Seite `/admin`, Neustart und Ausschalten für den Owner, manuelles Backup, nächtliches verschlüsseltes Backup auf den USB-Stick (`deploy/backup.sh`, Stick nur für root lesbar).
+- **Manager:** Regelmäßige Prüfungen mit Wochentagen, Manager-Chat mit Einstellungen pro Agent, **Gedächtnis** (`MEMORY.md` wird vor jeder Frage gelesen und nachgeführt, der Hub speichert).
+- **Dateiablage** (der große Teil dieser Sitzung): fünf Reiter als Segmentschalter, Zeilen als Glas-Karten, Vorschau, Leser, Betrachter mit Pfeilen, **Upload-Motor** `upload.js` (Fortsetzen, Anfragegröße nach Tempo, Messung), mehrere Dateien mit Abbrechen, Ziehen hinein und hinaus, Markieren (Umschalt Bereich, Strg/Cmd einzeln), **drei Kreise** (Papierkorb als Schalter oder „Markierte löschen“, Vollbild, Plus), weiche Bewegungen, Einstellung „Rückfrage beim Löschen“ am Konto.
 
-## Entscheidungen von Janis (neu, alle in PROJEKT.md oder KONZEPT-AGENTEN.md)
+## Zwei Vorfälle, die man kennen muss
 
-- Heimnetz bleibt gesperrt; Geräte über eine **Geräteliste im Manager** (Hostname, Auflösung durch den Hub, Freigabe, SSH-Schlüssel verschlüsselt auf dem Pi, nie für die KI). Fremde Netze per VPN sternförmig mit Isolation; Technik **Tailscale**, weil auf der Fritzbox **kein Port** geöffnet wird.
-- **Mac:** Knopf in der Website startet die lokale Entwicklung ohne zweite Anmeldung (unsichtbares Einmal-Ticket); Ergebnis kommt als Git-Bundle über den Hub zurück ins Projekt.
-- **Alle Agenten dürfen ins Internet**, nur über `egress`, nie ins Heimnetz. **Code mit offenem Internet** ist Janis’ bewusste Wahl; das Risiko (Code kann das eigene Claude-Login lesen und hinausschicken, Schaden = eigenes Kontingent bis zum Neuverknüpfen) ist akzeptiert. Pro Agent abschaltbar.
-- **Einstellungen pro Agent:** Modell und Schalter hat jede Rolle selbst; Selbstständigkeit gehört dem Manager; alles pro Nutzer.
-- **Manager:** berät auch zu Hardware, pflegt Doku und Projektstand (legt sie über den Hub in Git ab), verteilt Aufgaben über den Hub, schreibt Statusmeldungen mit Ampel, liefert die Infos für die Kachel; Rolle **Dokumentator entfällt**. Hardware-To-Dos, Checklisten und regelmäßige Prüfungen gehören zum Manager, **das Board bleibt Software**. Der Manager-Tab ist Koexistenz: Janis managt Geräte, Schlüssel und Einstellungen, der Manager seine Aufgaben.
-- **Kachel im Dashboard (geplant):** Titel oben, News des Managers, Zahl der Bugs/kleinen/Major-Updates, Ampel; Vorschläge: Verbrauch, „wartet auf dich“, letzte Aktivität.
-- **Verbrauch:** aus der Ausgabe von Claude Code; der Rest des Kontingents nur geschätzt.
-- Tabs Programmierer, Tester, Prüfer bleiben, auch wenn ihr Inhalt noch offen ist.
+1. **Testläufe haben echte Dateien gelöscht** (13.11.2026). Ursache: Der Testbefehl hängte den echten `./data` ein und die Aufräumfunktion lief mit festem Pfad. Behoben: Der Dateiordner hängt an der Datenbank, der Testbefehl hängt ein leeres `/data` ein (**Pflicht**, steht in `CLAUDE.md`). Verloren: hochgeladene Dateien und Vorschaubilder; Rückweg wäre das nächtliche Backup auf dem Stick (braucht `sudo`, Janis entscheidet).
+2. **Ein Diagnosebefehl zeigte den Tunnel-Token** (gekürzt, nicht gespeichert). Janis kann ihn im Cloudflare-Dashboard erneuern. Diagnosebefehle geben nie Geheimnisse aus (`CLAUDE.md`).
+
+## Entscheidungen von Janis seit dem 08.11.2026 (alle in PROJEKT.md oder DESIGN.md)
+
+- Dateiablage: jeder Dateityp, jede Größe; fünf Bereiche (Erinnerungen, Code, Medien, Dokumente, Links), automatisch nach Endung einsortiert, von Hand umsortierbar; kein Papierkorb; Hochladen in Stücken; Löschen fragt nach (abschaltbar über den roten Kreis), **mehrere Dateien fragen immer**.
+- **Die KI soll alle Dateien selbst lesen** (auch Bilder und PDF, Unterordner inklusive), über einen **eingehängten Ordner** (PROJEKT.md 11b Punkt 2, KONZEPT-AGENTEN.md). Das hat nichts mit den Netzregeln zu tun.
+- **Ordner und Unterordner** (Leiste in halber Höhe unter den Reitern, die sich nach Zahl und Länge der Namen aufteilt, zuletzt scrollbar; Unterordner als Zeilen mit Zurück-Pfeil; Ordner hineinziehen; Anlegen per Knopf): genaue Beschreibung in PROJEKT.md 11b und DESIGN.md.
+- Markieren wie überall; der Papierkorb-Kreis wechselt seine Aufgabe (rot = nicht nachfragen, grün = Markierte löschen), kein zusätzlicher Knopf.
+- Betrachter und Leser füllen das ganze Fenster, mit Pfeilen zum Weiterblättern.
+- Bewegungen sollen weich sein (Federn, Apple-Richtlinien), auch Hinweise und das Vergrößern der Kachel.
+- Janis hat eine 600er-Leitung; der Engpass beim Upload liegt woanders (Untersuchung in PROJEKT.md 11b).
+- Superadmin (4a), modulare Modellauswahl (4b), universelle Erinnerung (4c) stehen weiter in PROJEKT.md 11a.
 
 ## Einstieg in einen neuen Chat
 
-1. `CLAUDE.md` (Regeln), dann `PROJEKT.md` „Auf einen Blick“, dann diese Datei.
-2. Für Agenten, Netz, Geräte, Mac: `KONZEPT-AGENTEN.md`. Für Oberflächen: `DESIGN.md` Abschnitt 10b.
-3. Code holen: der iCloud-Ordner enthält nur die Doku. Den aktuellen Code aus dem Klon auf dem Pi (`/opt/agent-hub/workspaces/agent-hub`, Branch `main`) per `scp` in einen frischen Arbeitsordner kopieren, dort ändern, zurückkopieren (Ablauf unten).
-4. Die erste offene Aufgabe ist Janis’ Test des Manager-Chats mit Sonnet; danach das Gespräch über den USB-Stick (nichts vorher anschließen).
+1. `CLAUDE.md` (Regeln), dann `PROJEKT.md` „Auf einen Blick“ und **Abschnitt 11b**, dann diese Datei.
+2. Für Agenten, Netz, Geräte, Mac und den Dateizugriff der KI: `KONZEPT-AGENTEN.md`. Für Oberflächen: `DESIGN.md` (Abschnitt 10b und die Absätze zur Kachel „Dateien“).
+3. Code: Der iCloud-Ordner enthält nur die Doku; der aktuelle Code liegt im Klon auf dem Pi (`/opt/agent-hub/workspaces/agent-hub`, Branch `main`). Auf dem PC gibt es kein Git.
+4. **Als Erstes fragen:** Hat Janis die große Datei hochgeladen? Dann `window.__uploadLog` und das Protokoll des Hubs lesen (PROJEKT.md 11b, „Upload“). Dann die Reihenfolge der offenen Wünsche klären (Ordner, KI-Zugriff, Verschieben der Markierten; sein abgebrochener Satz dazu ist offen).
 
-## Wie Claude hier arbeitet (Kurzfassung, Details in PROJEKT.md Abschnitt 9)
+## Wie Claude hier arbeitet (Kurzfassung)
 
-- Deutsch antworten, kurz erklären, **keine Verständnisfragen am Ende**; erst Schnittstelle zeigen, dann Code; kleinste Lösung; ein Thema pro Commit.
-- Commit, Merge, Push, Deploy und Tests ohne Rückfrage, danach berichten. Fragen nur bei Berechtigungen, Sicherheit, Design und Features.
-- Am Windows-PC gibt es kein Git: Dateien im Arbeitsordner bearbeiten, per `scp` in den Klon auf dem Pi (`/opt/agent-hub/workspaces/agent-hub`), dort Branch, Tests im Container (Ergebnis über den Exit-Code prüfen), Backup `data/hub.db` nach `/opt/agent-hub/backups/`, Merge `--no-ff`, Push, `docker compose up -d --build web` (bei Änderungen am Runner auch `runner`), Prüfung von `/health` und `/login`.
-- Vorschau ohne offenen Port: Seite im Container als Datei rendern (Skript mit Testdaten), lokal über `127.0.0.1` im eingebauten Browser ansehen.
-- Zugang zum Pi: `ssh -i ~/.ssh/id_agenthub admin@home.local`. Passwörter und Schlüssel nie ausgeben.
+- Deutsch antworten, kurz erklären, **keine Verständnisfragen am Ende**; erst Schnittstelle zeigen, dann Code; kleinste Lösung; ein Thema pro Commit, ein Branch pro Aufgabe.
+- Commit, Merge, Push, Deploy und Tests ohne Rückfrage, danach berichten. Fragen nur bei Berechtigungen, Sicherheit, Design und Features. `sudo`, Netz, Löschen vorher bestätigen lassen.
+- **ssh vom PC:** Skript schreiben, `scp` nach `/tmp`, `bash /tmp/skript.sh`; nie verschachtelte Anführungszeichen. Änderungen an Dateien als kleines Python-Skript mit geprüftem Ersetzen.
+- **Tests:** mit leerem `-v "$(mktemp -d):/data"`; HTTP-Test `web/tests/integration_files.py` in einem Wegwerf-Container ohne Port; Upload-Motor mit `web/tests/upload_engine/`.
+- **Vorschau** der Oberfläche: `web/tests/preview_files.py` im Container rendern, per `scp -r` auf den PC, `py -m http.server 8765 --bind 127.0.0.1`, im eingebauten Browser ansehen (keine Ports am Pi). Einzelheiten in PROJEKT.md 11b, „Werkzeuge“.
 - Nach Doku-Änderungen `CLAUDE.md`, `PROJEKT.md`, `DESIGN.md`, `KONZEPT-AGENTEN.md` und diese Datei in den iCloud-Projektordner kopieren.
 
 ## Wo wir stehen
 
-- **Live und getestet:** siehe „Auf einen Blick“ in PROJEKT.md; Web-Tests und Runner-Tests grün (Zahlen im Änderungsprotokoll).
-- **Nicht geprüft:** Manager-Chat mit Sonnet und vollem Projektkontext (Janis testet), Verbrauch pro Frage mit Kontext, Bedienung am Handy mit Finger, Mails in echten Mailprogrammen.
-- **Offen besprochen, nicht gebaut:** USB-Stick als externe Platte (Janis will das besprechen, nichts vorher anschließen), Dateiablage, Geräteliste mit Tresor, Schleife der Agentenläufe, Statusmeldung und Kachel-Infos, Verbrauchsanzeige, Mac-Programm.
-
-## Nächste Aufgaben (Vorschlag)
-
-Siehe „Nächste Schritte“ in PROJEKT.md, „Auf einen Blick“. Aufräumen auf dem Pi (altes Runner-Image und -Volume, alte Codekopie, gemergte Branches) nur nach Janis’ Ja.
+- **Live und getestet:** siehe „Auf einen Blick“; 351 Web-Tests grün; 8 Browser-Szenarien für den Upload-Motor; HTTP-Test der Dateiablage grün.
+- **Nicht geprüft:** das Hochladen großer Dateien durch den echten Tunnel (der eigentliche Test), das Erzeugen der Vorschaubilder und das Hinausziehen auf den Desktop an Janis’ Rechner, Berührung am Handy, ein echter Lauf mit dem Dateizugriff der KI (noch nicht gebaut).
+- **Offen, nicht gebaut:** Ordner und Unterordner, KI-Zugriff über den eingehängten Ordner, Verschieben Markierter, Geräteliste, Schleife der Agentenläufe, Statusmeldung und Kachel-Infos, Verbrauchsanzeige, Mac-Programm, Superadmin, modulare Modellauswahl.
