@@ -256,7 +256,23 @@ html .card.drag-clone::after { display: none; }
 .m-files { container-type: inline-size; --file-line: color-mix(in srgb, var(--text) 16%, transparent); --file-line-hover: color-mix(in srgb, var(--text) 40%, transparent); --file-soft: 0 4px 14px color-mix(in srgb, var(--text) 9%, transparent), 0 1px 2px color-mix(in srgb, var(--text) 10%, transparent); }
 .m-files header h2 { flex: 0 1 auto; }
 .m-files .file-area { flex: 1; min-width: 0; font-size: 1.2rem; font-weight: 600; letter-spacing: -0.01em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.m-files .m-add { margin-left: auto; }
+.m-files .file-tools { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
+/* The trash circle is a switch: pressed it glows red and deleting does not ask first. The enlarge circle makes the tile
+   take the whole Manager area (the other tiles step aside). */
+.m-files .file-trash-mode.armed { color: var(--on-danger); background: var(--danger); border-color: color-mix(in srgb, var(--danger) 70%, white); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 32%, transparent), 0 0 20px color-mix(in srgb, var(--danger) 65%, transparent); }
+.m-files .file-trash-mode.armed:hover { color: var(--on-danger); }
+.m-files .file-expand .ic-collapse { display: none; }
+.m-files .file-expand.on .ic-expand { display: none; }
+.m-files .file-expand.on .ic-collapse { display: inline; }
+.m-files .file-expand.on { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+.file-note { margin: 0; font-size: 0.85rem; font-weight: 600; color: var(--muted); }
+.file-note[hidden] { display: none; }
+.manager.files-expanded { grid-template-columns: minmax(0, 1fr); }
+.manager.files-expanded .mcol { display: none; }
+.manager.files-expanded .mcol.has-files { display: flex; }
+.manager.files-expanded .mcol.has-files > :not(.m-files) { display: none; }
+.manager.files-expanded .m-files { flex: 1 1 auto; min-height: 0; }
+.manager.files-expanded .file-scroll { max-height: none; }
 @container (min-width: 500px) { .m-files .file-area { display: none; } }
 /* Uploads and lists scroll inside the tile (Janis, 13.11.2026): the tile never grows with the number of files. In the
    three-column layout it fills the space that is left; stacked it stops at a height of its own. */

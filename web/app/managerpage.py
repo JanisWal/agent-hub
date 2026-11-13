@@ -304,7 +304,7 @@ def _upload_template(lang: str) -> str:
     )
 
 
-def _files_tile(lang: str, items: list) -> str:
+def _files_tile(lang: str, items: list, files_confirm: bool = True) -> str:
     """The files of the project in five areas as tabs (Janis, 12.11.2026). The plus uploads (or adds a link in
     the Links tab); files can also be dragged onto the tile. static/files.js does the rest."""
     tabs, panels = [], []
@@ -322,12 +322,20 @@ def _files_tile(lang: str, items: list) -> str:
     attrs = " ".join(f'data-{name}="{esc(i18n.t(lang, key, n="{n}", name="{name}"))}"' for name, key in (
         ("add-file", "files_add_file"), ("add-link", "files_add_link"), ("err-net", "files_err_net"),
         ("eta-s", "files_eta_s"), ("eta-m", "files_eta_m"), ("eta-h", "files_eta_h"), ("drop-to", "files_drop_to"),
-        ("starting", "files_starting")))
-    attrs += f' data-block="{filestore.BLOCK_SIZE}"'
+        ("starting", "files_starting"), ("expand", "files_expand"), ("collapse", "files_collapse"),
+        ("note-no-ask", "files_note_no_ask"), ("note-ask", "files_note_ask")))
+    attrs += f' data-block="{filestore.BLOCK_SIZE}" data-confirm-delete="{1 if files_confirm else 0}"'
     return (
         f'<section class="mtile glass m-files m-grow" id="files" {attrs}>'
         f'<header><h2>{esc(i18n.t(lang, "manager_files"))}</h2><span class="file-area" aria-hidden="true"></span>'
-        f'<button class="icon-button m-add" id="file-add" type="button">{icon("plus")}</button></header>'
+        f'<span class="file-tools">'
+        f'<button class="icon-button m-add file-trash-mode" id="file-trash-mode" type="button" aria-pressed="false" '
+        f'aria-label="{esc(i18n.t(lang, "files_ask_toggle"))}" title="{esc(i18n.t(lang, "files_ask_toggle"))}">{icon("trash")}</button>'
+        f'<button class="icon-button m-add file-expand" id="file-expand" type="button" aria-pressed="false" '
+        f'aria-label="{esc(i18n.t(lang, "files_expand"))}" title="{esc(i18n.t(lang, "files_expand"))}">'
+        f'{icon("expand", "ic-expand")}{icon("collapse", "ic-collapse")}</button>'
+        f'<button class="icon-button m-add" id="file-add" type="button">{icon("plus")}</button></span></header>'
+        f'<p class="file-note" id="file-note" role="status" hidden></p>'
         f'<div class="file-tabs" role="tablist"><span class="file-thumb" aria-hidden="true"></span>{"".join(tabs)}</div>'
         f'<p class="error" id="file-error" role="alert" hidden></p>'
         f'<div class="file-scroll"><ul class="file-uploads" id="file-uploads" hidden></ul>'
@@ -348,7 +356,7 @@ def _net_switch(lang: str, current: str) -> str:
 
 
 def render(lang: str, settings: dict, regular_checks: list | None = None, now: int | None = None,
-           stored_files: list | None = None) -> str:
+           stored_files: list | None = None, files_confirm: bool = True) -> str:
     """`settings` is agents.settings(user_id): the manager is the role "chef". `regular_checks` are the
     project's checks (checks.list_checks)."""
     model = _select(lang, "model", "chat_model", MODELS, settings["roles"]["chef"]["model"])
@@ -358,7 +366,7 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
         lang,
         DEVICES=_soon(lang, "manager_devices", "manager_devices_hint", "m-grow"),
         CHECKS=_checks_tile(lang, regular_checks or [], int(now if now is not None else time.time())),
-        FILES=_files_tile(lang, stored_files or []),
+        FILES=_files_tile(lang, stored_files or [], files_confirm),
         CHAT=fill(CHAT, lang, MODEL=model, NET=_net_switch(lang, settings["roles"]["chef"]["net"])),
         AUTONOMY=autonomy,
     )

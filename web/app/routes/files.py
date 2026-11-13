@@ -2,6 +2,9 @@
 
 All calls are fetch() calls (answers `{"ok": ...}`); the file itself is served by GET /files/{id}.
 """
+import logging
+import time
+
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
@@ -10,6 +13,7 @@ from .. import files, users
 from ..deps import api_user, error, fail, ok
 
 router = APIRouter()
+log = logging.getLogger("uvicorn.error")
 
 # error code -> (status, text key in i18n.py)
 ERRORS = {
@@ -29,6 +33,13 @@ def _info(item: files.StoredFile) -> dict:
     return {"id": item.id, "name": item.name, "category": item.category, "size": item.size}
 
 
+@router.post("/files/preferences")
+def preferences(confirm: str = Form("1"), user: users.User = Depends(api_user)):
+    """The red trash circle of the file tile: "0" = deleting a file does not ask first. Kept with the account."""
+    users.set_files_confirm(user.id, confirm != "0")
+    return ok()
+
+
 @router.post("/projects/{project_id}/files/start")
 def start_upload(project_id: int, name: str = Form(""), size: int = Form(0), user: users.User = Depends(api_user)):
     try:
@@ -42,10 +53,21 @@ async def upload_chunk(file_id: int, offset: int, request: Request, user: users.
     if int(request.headers.get("content-length") or 0) > files.MAX_REQUEST:
         return _fail(user, files.FileError("too_big"))
     try:
+        started = time.monotonic()
         body = await request.body()
+        # How long the body took to arrive here: with the browser's own timing (window.__uploadLog) this shows on which
+        # leg of the way a slow upload is slow.
+        log.info("upload chunk file=%s offset=%s bytes=%s body_seconds=%.2f", file_id, offset, len(body), time.monotonic() - started)
         return ok(received=await run_in_threadpool(files.append_chunk, user.id, file_id, offset, body))
     except files.FileError as problem:
         return _fail(user, problem)
+
+
+@router.get("/files/{file_id}/progress")
+def upload_progress(file_id: int, user: users.User = Depends(api_user)):
+    """What the server has of an unfinished upload (see files.upload_progress); the browser resumes from this."""
+    found = files.upload_progress(user.id, file_id)
+    return fail(404) if found is None else ok(size=found[0], block=files.BLOCK_SIZE, parts=found[1])
 
 
 @router.post("/files/{file_id}/finish")

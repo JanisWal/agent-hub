@@ -48,6 +48,7 @@ class User:
     role: str = "user"
     must_change: bool = False   # logged in with a start password: has to choose an own one first
     theme: str = "light"        # "light" or "dark": the style he used last (mails follow it)
+    files_confirm: bool = True  # does deleting a file ask first? (the trash circle of the file tile switches it off)
 
     @property
     def name(self) -> str:
@@ -83,7 +84,7 @@ def _to_user(row: sqlite3.Row) -> User:
     return User(
         row["id"], row["email"], role != "user", row["created_at"],
         row["display_name"], row["language"], bool(row["had_project"]),
-        role, bool(row["must_change_password"]), row["theme"],
+        role, bool(row["must_change_password"]), row["theme"], bool(row["files_confirm"]),
     )
 
 
@@ -164,6 +165,12 @@ def set_profile(user_id: int, display_name: str, language: str) -> None:
 
 
 THEMES = ("light", "dark")
+
+
+def set_files_confirm(user_id: int, confirm: bool) -> None:
+    """Whether deleting a file asks first (the red trash circle of the file tile switches the question off)."""
+    with db.connect() as conn:
+        conn.execute("UPDATE users SET files_confirm = ? WHERE id = ?", (int(confirm), user_id))
 
 
 def set_theme(user_id: int, theme: str) -> None:

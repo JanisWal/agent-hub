@@ -231,6 +231,18 @@ def append_chunk(user_id: int, file_id: int, offset: int, data: bytes) -> int:
     return parts.count("1")
 
 
+def upload_progress(user_id: int, file_id: int, now: int | None = None) -> tuple[int, str] | None:
+    """(size, parts) of an unfinished upload of the user, or None. `parts` has one character per block, "1" = it is in.
+    Asking also keeps the upload alive (an upload that is being resumed is not stale). This is how the browser goes
+    on after a break: it asks what the server really has and sends only the rest."""
+    with db.connect() as conn:
+        row = _owned(conn, user_id, file_id)
+        if row is None or row["status"] != "uploading":
+            return None
+        conn.execute("UPDATE files SET created_at = ? WHERE id = ?", (int(now if now is not None else time.time()), file_id))
+    return row["size"], row["parts"]
+
+
 def finish_upload(user_id: int, file_id: int) -> StoredFile:
     """Mark an upload as complete. Raises FileError: not_found (not an unfinished upload of the user),
     incomplete (a block is missing)."""

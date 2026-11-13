@@ -6,7 +6,7 @@ from .layout import esc, fill
 from .projects import MAX_DESCRIPTION, MAX_NAME, Project
 from .users import User
 
-SCRIPTS = ("motion.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "manager.js", "checks.js", "files.js")
+SCRIPTS = ("motion.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "manager.js", "checks.js", "upload.js", "files.js")
 STYLES = ("project.css",)
 
 COLUMN_LABEL = {"bug": "col_bug", "minor": "col_minor", "major": "col_major"}
@@ -212,7 +212,8 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
         lang,
         PID=str(project.id),
         STATIONS=_stations(lang),
-        MANAGER=managerpage.render(lang, agents.settings(user.id), regular_checks or [], stored_files=stored_files or []),
+        MANAGER=managerpage.render(lang, agents.settings(user.id), regular_checks or [], stored_files=stored_files or [],
+                                    files_confirm=user.files_confirm),
         MANAGER_DIALOGS=managerpage.dialogs(lang),
         TRASH=_trash(trashed, lang),
         ARCHIVE=_archive(archived, lang),

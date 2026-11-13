@@ -1,0 +1,142 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>upload engine test</title>
+<pre id="out">not run</pre>
+<script src="/upload.js"></script>
+<script>
+var BLOCK = 262144;
+var FAST = { delays: [0, 30, 60, 120, 240], stall: 1500, timeout: 8000, minSpan: 500, window: 2000, targetSeconds: 1.5,
+             startRequest: 524288, minRequest: 262144, maxRequest: 4194304 };
+function post(path, body) { return fetch(path, { method: "POST", body: body ? JSON.stringify(body) : null }).then(function (r) { return r.json(); }); }
+function state() { return fetch("/__state").then(function (r) { return r.json(); }); }
+function file(size, name, modified) { return new File([new Uint8Array(size)], name || "f.bin", { lastModified: modified || 1 }); }
+function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+function queue(extra) {
+  var events = { retries: [], progress: [], requests: [], done: [], fail: [], cancel: [], added: 0, idle: 0, started: 0 };
+  var q = HubUpload.create({
+    block: BLOCK, scope: "t", config: Object.assign({}, FAST, extra || {}),
+    urls: { start: "/projects/1/files/start", progress: function (id) { return "/files/" + id + "/progress"; },
+            chunk: function (id) { return "/files/" + id + "/chunk"; }, finish: function (id) { return "/files/" + id + "/finish"; },
+            remove: function (id) { return "/files/" + id + "/delete"; } },
+    text: { net: "net" },
+    onAdd: function () { events.added++; }, onStart: function () { events.started++; },
+    onRetry: function (job, info) { events.retries.push(info.why); },
+    onProgress: function (job, info) { events.progress.push(info); },
+    onRequest: function (job, info) { events.requests.push(info); },
+    onFinished: function (job) { events.done.push(job.file.name); },
+    onFail: function (job, message) { events.fail.push(message); },
+    onCancel: function (job) { events.cancel.push(job.file.name); },
+    onIdle: function () { events.idle++; }
+  });
+  return { q: q, e: events };
+}
+function until(test, ms) {
+  var end = Date.now() + (ms || 20000);
+  return new Promise(function (resolve) { (function check() { if (test() || Date.now() > end) resolve(); else setTimeout(check, 50); })(); });
+}
+function reset(mode) { return post("/__reset").then(function () { return post("/__mode", mode || {}); }); }
+function allOnes(parts) { return parts.indexOf("0") < 0 && parts.indexOf("2") < 0; }
+
+var scenarios = {
+  fast: function () {
+    return reset({ rate: 0 }).then(function () {
+      var t = queue(); t.q.add(file(6 * 1048576, "fast.bin"));
+      return until(function () { return t.e.idle > 0; }).then(state).then(function (s) {
+        var u = s.uploads["1"] || {};
+        return { ok: t.e.done.length === 1 && s.finishes === 1 && s.starts === 1 && s.deleted.length === 0, done: t.e.done, finishes: s.finishes, requests: t.e.requests.length };
+      });
+    });
+  },
+  slow: function () {          // 400 KB/s: speed estimate, time left, small requests
+    return reset({ rate: 400000 }).then(function () {
+      var t = queue(); t.q.add(file(2400000, "slow.bin"));
+      var started = Date.now();
+      return until(function () { return t.e.idle > 0; }, 30000).then(function () {
+        var withSpeed = t.e.progress.filter(function (p) { return p.speed > 0 && p.left !== null; });
+        var last = withSpeed[withSpeed.length - 1];
+        var mid = withSpeed[Math.floor(withSpeed.length / 2)];
+        var sizes = t.e.requests.map(function (r) { return r.length; });
+        return { ok: t.e.done.length === 1 && withSpeed.length > 3 && mid && mid.speed > 200000 && mid.speed < 700000,
+                 seconds: Math.round((Date.now() - started) / 100) / 10, midSpeed: mid && Math.round(mid.speed), midLeft: mid && mid.left,
+                 maxRequest: Math.max.apply(null, sizes), requests: sizes.length };
+      });
+    });
+  },
+  flaky: function () {         // the first 3 requests answer 502 after a third of the body
+    return reset({ rate: 0, fail_next: 3 }).then(function () {
+      var t = queue(); t.q.add(file(3 * 1048576, "flaky.bin"));
+      return until(function () { return t.e.idle > 0; }).then(state).then(function (s) {
+        return { ok: t.e.done.length === 1 && t.e.retries.length >= 3 && s.finishes === 1, retries: t.e.retries, finishes: s.finishes };
+      });
+    });
+  },
+  stall: function () {         // the server hangs 4 s once without reading: the engine gives up after 1.5 s and sends again
+    return reset({ rate: 0, hang_next: 1, hang_seconds: 4 }).then(function () {
+      var t = queue(); t.q.add(file(2 * 1048576, "stall.bin"));
+      return until(function () { return t.e.idle > 0; }, 25000).then(state).then(function (s) {
+        return { ok: t.e.done.length === 1 && t.e.retries.indexOf("stall") >= 0, retries: t.e.retries, requestBytesAfter: t.q.requestBytes() };
+      });
+    });
+  },
+  cancel: function () {
+    return reset({ rate: 200000 }).then(function () {
+      var t = queue(); var job = t.q.add(file(4000000, "cancel.bin"));
+      return sleep(1500).then(function () { t.q.cancel(job); return sleep(800); }).then(state).then(function (s) {
+        return { ok: t.e.cancel.length === 1 && t.e.done.length === 0 && s.deleted.length === 1 && s.finishes === 0, cancelled: t.e.cancel, deleted: s.deleted };
+      });
+    });
+  },
+  resume: function () {        // the line breaks (502 forever), the same file is added again and only the rest is sent
+    var size = 3 * 1048576;
+    return reset({ rate: 250000 }).then(function () {
+      var a = queue({ delays: [0, 20] });
+      a.q.add(file(size, "resume.bin", 77));
+      return sleep(2500).then(function () { return post("/__mode", { fail_all: true }); })
+        .then(function () { return until(function () { return a.e.fail.length > 0; }, 15000); })
+        .then(state).then(function (mid) {
+          var have = (mid.uploads["1"] || {}).blocks || "";
+          return post("/__mode", { fail_all: false, rate: 0 }).then(function () {
+            var b = queue(); b.q.add(file(size, "resume.bin", 77));
+            return until(function () { return b.e.idle > 0; }).then(state).then(function (end) {
+              var u = end.uploads["1"] || {};
+              var rest = b.e.requests.reduce(function (n, r) { return n + r.length; }, 0);
+              return { ok: a.e.fail.length === 1 && b.e.done.length === 1 && end.starts === 1 && end.finishes === 1 && (have.match(/1/g) || []).length > 0 && (have.match(/1/g) || []).length < have.length && rest < size,
+                       failedMessage: a.e.fail, starts: end.starts, blocksBeforeResume: (have.match(/1/g) || []).length, blocksTotal: have.length,
+                       bytesSentInSecondRun: b.e.requests.reduce(function (n, r) { return n + r.length; }, 0), size: size };
+            });
+          });
+        });
+    });
+  },
+  many: function () {          // four files at once: four rows at once, at most 2 requests at a time
+    return reset({ rate: 800000 }).then(function () {
+      var t = queue();
+      var sizes = [900000, 1400000, 700000, 1100000];
+      sizes.forEach(function (n, i) { t.q.add(file(n, "m" + i + ".bin", 10 + i)); });
+      var rowsAtOnce = t.e.added;
+      return until(function () { return t.e.idle > 0; }, 30000).then(state).then(function (s) {
+        return { ok: rowsAtOnce === 4 && t.e.done.length === 4 && s.finishes === 4 && s.max_concurrent <= 2, rowsAtOnce: rowsAtOnce, done: t.e.done.length, maxConcurrent: s.max_concurrent };
+      });
+    });
+  },
+  empty: function () {
+    return reset({}).then(function () {
+      var t = queue(); t.q.add(file(0, "empty.bin"));
+      return until(function () { return t.e.idle > 0; }).then(state).then(function (s) { return { ok: t.e.done.length === 1 && s.finishes === 1 }; });
+    });
+  }
+};
+
+function runAll(names) {
+  var results = {};
+  var list = names || Object.keys(scenarios);
+  try { localStorage.removeItem("hub-uploads"); } catch (e) {}
+  return list.reduce(function (chain, name) {
+    return chain.then(function () {
+      return scenarios[name]().then(function (r) { results[name] = r; }, function (e) { results[name] = { ok: false, error: String(e) }; })
+        .then(function () { try { localStorage.removeItem("hub-uploads"); } catch (e) {} });
+    });
+  }, Promise.resolve()).then(function () { window.RESULTS = results; document.getElementById("out").textContent = JSON.stringify(results, null, 1); return results; });
+}
+</script>

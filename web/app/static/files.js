@@ -202,149 +202,8 @@
     return body;
   }
 
-  // --- upload: a queue of files, a few requests at a time over all of them
-  var jobs = [];
-  var running = 0;
-  var samples = [];        // [time, bytes the browser has sent] over the last 10 s
-  var speed = 0;           // bytes per second over those 10 s, 0 while it is not known yet
-  var ticker = null;
-
-  function sentOf(job) {
-    var sum = job.confirmed;
-    Object.keys(job.loaded).forEach(function (key) { sum += job.loaded[key]; });
-    return sum;
-  }
-
-  // How much one request carries now: what the line sends in TARGET_SECONDS (per request, as PARALLEL share it).
-  function requestSize() {
-    var bytes = speed > 0 ? speed * TARGET_SECONDS / PARALLEL : START_REQUEST;
-    bytes = Math.max(MIN_REQUEST, Math.min(MAX_REQUEST, bytes));
-    return Math.max(BLOCK, Math.floor(bytes / BLOCK) * BLOCK);
-  }
-
-  function sendRun(job, offset, length, onProgress) {
-    var blob = job.file.slice(offset, offset + length);
-    return new Promise(function (resolve, reject) {
-      var attempt = 0;
-      function go() {
-        if (job.cancelled) return reject(CANCELLED);
-        var xhr = new XMLHttpRequest();
-        var last = Date.now();
-        var finished = false;
-        var dog = setInterval(function () { if (Date.now() - last > STALL) xhr.abort(); }, 5000);
-        function done() { finished = true; clearInterval(dog); job.xhrs.splice(job.xhrs.indexOf(xhr), 1); }
-        function again() {
-          if (finished) return;
-          done();
-          if (job.cancelled) return reject(CANCELLED);
-          onProgress(0);
-          if (attempt >= DELAYS.length) return reject(new Error(tile.dataset.errNet));
-          setTimeout(go, DELAYS[attempt++]);
-        }
-        job.xhrs.push(xhr);
-        xhr.open("POST", "/files/" + job.id + "/chunk?offset=" + offset);
-        xhr.timeout = TIMEOUT;
-        xhr.upload.onprogress = function (event) { last = Date.now(); if (event.lengthComputable) onProgress(event.loaded); };
-        xhr.onerror = xhr.ontimeout = xhr.onabort = again;
-        xhr.onload = function () {
-          if (finished) return;
-          var data = {};
-          try { data = JSON.parse(xhr.responseText); } catch (e) {}
-          if (xhr.status === 200 && data.ok) { done(); resolve(); }
-          else if ([408, 429, 502, 503, 504, 524].indexOf(xhr.status) >= 0) again();   // the tunnel hiccuped: try again
-          else { done(); reject(new Error(data.message || tile.dataset.errNet)); }
-        };
-        xhr.send(blob);
-      }
-      go();
-    });
-  }
-
-  function nextWork() {
-    for (var n = 0; n < jobs.length; n++) {
-      var job = jobs[n];
-      if (job.state === "new") { job.state = "starting"; return function () { return startJob(job); }; }
-      if (job.state !== "sending") continue;
-      if (job.cursor < job.file.size) {
-        var offset = job.cursor;
-        var length = Math.min(requestSize(), job.file.size - offset);
-        job.cursor += length;
-        job.pending++;
-        return function () { return sendPiece(job, offset, length); };
-      }
-      if (job.pending === 0 && job.confirmed === job.file.size) { job.state = "finishing"; return function () { return finishJob(job); }; }
-    }
-    return null;
-  }
-
-  function pump() {
-    var work;
-    while (running < PARALLEL && (work = nextWork())) {
-      running++;
-      work().then(null, function () {}).then(function () { running--; pump(); });
-    }
-    if (!running && !jobs.some(function (job) { return ["new", "starting", "sending", "finishing"].indexOf(job.state) >= 0; })) allDone();
-  }
-
-  function startJob(job) {
-    return call("/projects/" + projectId + "/files/start", fields({ name: job.file.name, size: job.file.size })).then(function (info) {
-      job.id = info.id;
-      if (job.cancelled) return call("/files/" + info.id + "/delete").catch(function () {});
-      job.state = "sending";
-    }, function (problem) { failJob(job, problem); });
-  }
-
-  function sendPiece(job, offset, length) {
-    return sendRun(job, offset, length, function (bytes) { job.loaded[offset] = bytes; }).then(function () {
-      delete job.loaded[offset];
-      job.confirmed += length;
-      job.pending--;
-    }, function (problem) { failJob(job, problem); });
-  }
-
-  function finishJob(job) {
-    return call("/files/" + job.id + "/finish").then(function (done) {
-      if (job.category && job.category !== done.category) {
-        return call("/files/" + done.id, fields({ name: done.name, category: job.category }));
-      }
-    }).then(function () { return thumbOfUpload(job); }).then(function () {
-      job.state = "done";
-      job.row.remove();
-      refreshSoon();
-    }, function (problem) { failJob(job, problem); });
-  }
-
-  function drop(job, state) {
-    job.state = state;
-    job.xhrs.slice().forEach(function (xhr) { xhr.abort(); });
-    job.loaded = {};
-    job.confirmed = 0;
-    job.row.remove();
-    if (job.id) call("/files/" + job.id + "/delete").catch(function () {});      // the unfinished file goes too
-  }
-  function failJob(job, problem) {
-    if (job.cancelled || problem === CANCELLED || job.state === "failed") return;
-    drop(job, "failed");
-    say(errorBox, problem.message);
-  }
-  function cancelJob(job) {
-    if (job.cancelled) return;
-    job.cancelled = true;
-    drop(job, "cancelled");
-    pump();
-  }
-
-  function allDone() {
-    if (!jobs.length) return;
-    jobs = [];
-    samples = [];
-    speed = 0;
-    clearInterval(ticker);
-    ticker = null;
-    uploads.hidden = true;
-    refresh();
-  }
-
+  // --- upload: the engine is upload.js (resume after a break, request sizes by the measured speed, retries); this
+  // part only shows it: a row for every file at once, speed and time left, a cross to cancel
   function formatSpeed(bytesPerSecond) {
     var mb = bytesPerSecond / 1048576;
     var value = mb >= 1 ? mb : bytesPerSecond / 1024;
@@ -355,42 +214,53 @@
     if (seconds < 5400) return tile.dataset.etaM.replace("{n}", Math.round(seconds / 60));
     return tile.dataset.etaH.replace("{n}", (seconds / 3600).toLocaleString(lang, { maximumFractionDigits: 1 }));
   }
-  function tick() {
-    var now = Date.now();
-    var sent = 0;
-    jobs.forEach(function (job) { sent += sentOf(job); });
-    if (samples.length && sent < samples[samples.length - 1][1]) samples = [];     // a request was started again
-    samples.push([now, sent]);
-    while (samples.length > 2 && now - samples[0][0] > 10000) samples.shift();
-    var span = (now - samples[0][0]) / 1000;
-    if (span >= 3) speed = Math.max(0, (sent - samples[0][1]) / span);
-    var ahead = 0;
-    jobs.forEach(function (job) {
-      var done = sentOf(job);
-      job.bar.style.transform = "scaleX(" + (job.file.size ? Math.min(done / job.file.size, 1) : 1) + ")";
-      ahead += job.file.size - done;
-      job.meta.textContent = speed > 0 ? formatSpeed(speed) + " · " + formatLeft(Math.round(ahead / speed)) : tile.dataset.starting;
-    });
-  }
+  function nothing() {}
+  window.__uploadLog = [];   // every request with its time: for finding out where a slow upload is slow (console: __uploadLog)
+  var uploader = HubUpload.create({
+    block: BLOCK,
+    scope: projectId,
+    urls: {
+      start: "/projects/" + projectId + "/files/start",
+      progress: function (id) { return "/files/" + id + "/progress"; },
+      chunk: function (id) { return "/files/" + id + "/chunk"; },
+      finish: function (id) { return "/files/" + id + "/finish"; },
+      remove: function (id) { return "/files/" + id + "/delete"; }
+    },
+    text: { net: tile.dataset.errNet },
+    onAdd: function (job) {
+      var row = template.content.firstElementChild.cloneNode(true);
+      row.querySelector(".file-up-name").textContent = job.file.name;
+      job.meta.row = row;
+      job.meta.status = row.querySelector(".file-up-meta");
+      job.meta.bar = row.querySelector("i");
+      job.meta.status.textContent = tile.dataset.starting;       // there is something to read from the first moment
+      row.querySelector(".file-up-x").addEventListener("click", function () { uploader.cancel(job); });
+      uploads.appendChild(row);
+      uploads.hidden = false;
+    },
+    onProgress: function (job, info) {
+      job.meta.bar.style.transform = "scaleX(" + (info.size ? Math.min(info.sent / info.size, 1) : 1) + ")";
+      job.meta.status.textContent = info.speed > 0 && info.left !== null ? formatSpeed(info.speed) + " \u00b7 " + formatLeft(info.left) : tile.dataset.starting;
+    },
+    onRequest: function (job, info) {
+      window.__uploadLog.push({ file: job.file.name, offset: info.offset, bytes: info.length, ms: info.ms, attempt: info.attempt });
+      if (window.console && console.debug) console.debug("upload", job.file.name, info);
+    },
+    onDone: function (job, info) {      // moves to the chosen area and makes the preview; neither may fail the upload
+      var move = job.meta.category && job.meta.category !== info.category
+        ? call("/files/" + info.id, fields({ name: info.name, category: job.meta.category })).catch(nothing) : Promise.resolve();
+      return move.then(function () { return thumbOfUpload({ file: job.file, id: job.id }); }).catch(nothing);
+    },
+    onFinished: function (job) { job.meta.row.remove(); refreshSoon(); },
+    onFail: function (job, message) { job.meta.row.remove(); say(errorBox, message); },
+    onCancel: function (job) { job.meta.row.remove(); },
+    onIdle: function () { uploads.hidden = true; refresh(); }
+  });
 
   function addJobs(list, category) {
-    list.forEach(function (file) {
-      var row = template.content.firstElementChild.cloneNode(true);
-      row.querySelector(".file-up-name").textContent = file.name;
-      var job = {
-        file: file, category: category, row: row, meta: row.querySelector(".file-up-meta"), bar: row.querySelector("i"),
-        id: null, state: "new", cursor: 0, confirmed: 0, pending: 0, loaded: {}, xhrs: [], cancelled: false
-      };
-      job.meta.textContent = tile.dataset.starting;       // there is something to read from the first moment
-      row.querySelector(".file-up-x").addEventListener("click", function () { cancelJob(job); });
-      uploads.appendChild(row);          // every file gets its row at once, one under the other
-      jobs.push(job);
-    });
     say(errorBox, "");
-    uploads.hidden = false;
     if (category) show(category);
-    if (!ticker) ticker = setInterval(tick, 500);
-    pump();
+    list.forEach(function (file) { uploader.add(file, { category: category }); });
   }
 
   addButton.addEventListener("click", function () {
@@ -514,6 +384,10 @@
       if (button.dataset.file === "edit") {
         openDialog(row);
       } else {
+        if (tile.dataset.confirmDelete === "0") {          // the trash circle is red: no question
+          call("/files/" + row.dataset.id + "/delete").then(refresh, refresh);
+          return;
+        }
         pendingId = row.dataset.id;
         confirmDialog.querySelector("h2").textContent = confirmDialog.dataset[row.dataset.kind === "link" ? "textLink" : "textFile"];
         confirmDialog.showModal();
@@ -711,6 +585,43 @@
     if (id) call("/files/" + id + "/delete").then(refresh, refresh);
   });
   confirmDialog.addEventListener("close", function () { pendingId = null; });
+
+  // --- the trash circle: pressed (glowing red) = deleting does not ask any more; the account remembers it
+  var trashMode = document.getElementById("file-trash-mode");
+  var noteBox = document.getElementById("file-note");
+  var noteTimer = null;
+  function showNote(text) { say(noteBox, text); clearTimeout(noteTimer); noteTimer = setTimeout(function () { say(noteBox, ""); }, 4500); }
+  function renderTrashMode() {
+    var asks = tile.dataset.confirmDelete !== "0";
+    trashMode.setAttribute("aria-pressed", asks ? "false" : "true");
+    trashMode.classList.toggle("armed", !asks);
+  }
+  renderTrashMode();
+  trashMode.addEventListener("click", function () {
+    var asks = tile.dataset.confirmDelete !== "0";
+    tile.dataset.confirmDelete = asks ? "0" : "1";
+    renderTrashMode();
+    showNote(tile.dataset[asks ? "noteNoAsk" : "noteAsk"]);
+    call("/files/preferences", fields({ confirm: asks ? "0" : "1" })).catch(nothing);
+  });
+
+  // --- the enlarge circle: the tile takes the whole Manager area, the other tiles step aside
+  var expandButton = document.getElementById("file-expand");
+  var managerView = document.getElementById("manager-view");
+  var column = tile.closest(".mcol");
+  function setExpanded(on) {
+    managerView.classList.toggle("files-expanded", on);
+    column.classList.add("has-files");
+    expandButton.classList.toggle("on", on);
+    expandButton.setAttribute("aria-pressed", on ? "true" : "false");
+    var label = tile.dataset[on ? "collapse" : "expand"];
+    expandButton.setAttribute("aria-label", label);
+    expandButton.title = label;
+    store("files-expanded", on ? "1" : "0");
+    placeThumb(true);
+  }
+  expandButton.addEventListener("click", function () { setExpanded(!managerView.classList.contains("files-expanded")); });
+  if (load("files-expanded") === "1") setExpanded(true);
 
   ensureThumbs();
 })();

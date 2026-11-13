@@ -136,6 +136,7 @@ class IsolationTest(unittest.TestCase):
         self.assertEqual(file_routes.serve(item.id, 1, self.b).status_code, 404)
         self.assertEqual(file_routes.read_text(item.id, self.b).status_code, 404)
         self.assertEqual(file_routes.delete(item.id, self.b).status_code, 404)
+        self.assertEqual(file_routes.upload_progress(half.id, self.b).status_code, 404)   # A's unfinished upload
         self.assertIsNone(files.open_thumb(self.b.id, item.id))
         self.assertFalse(files.save_thumb(self.b.id, item.id, b"\xff\xd8\xff planted"))   # A's file
         self.assertEqual(file_routes.thumb(item.id, self.b).status_code, 404)
