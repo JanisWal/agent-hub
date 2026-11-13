@@ -1,7 +1,8 @@
-"""The owner's system actions (restart, shut down, manual backup); the page itself is /admin, routes/admin.py."""
+"""The owner's system actions (restart, shut down, manual backup) and server settings (upload); the page itself is
+/admin, routes/admin.py."""
 from fastapi import APIRouter, Depends, Form, Request
 
-from .. import power, users
+from .. import power, serversettings, users
 from ..deps import api_user, error, fail, ok, reauth
 
 router = APIRouter()
@@ -25,6 +26,18 @@ def power_action(
     except PermissionError:
         return fail(403)
     return ok() if started else error(user.language, "err_power_busy", 409)
+
+
+@router.post("/system/upload")
+def upload_settings(parallel: int = Form(0), request_mb: int = Form(0), user: users.User = Depends(api_user)):
+    """How uploads are cut, for the whole server (serversettings.py); saved as soon as a choice changes."""
+    if user.role != "owner":
+        return fail(403)
+    try:
+        serversettings.set_upload(parallel, request_mb)
+    except ValueError:
+        return fail(400)
+    return ok()
 
 
 @router.get("/system/backup")

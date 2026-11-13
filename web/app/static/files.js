@@ -248,6 +248,10 @@
   var uploader = HubUpload.create({
     block: BLOCK,
     scope: projectId,
+    config: {                            // the owner's choice for the server (administration page, "Upload")
+      parallel: parseInt(tile.dataset.parallel, 10) || HubUpload.DEFAULTS.parallel,
+      maxRequest: parseInt(tile.dataset.maxRequest, 10) || HubUpload.DEFAULTS.maxRequest
+    },
     urls: {
       start: "/projects/" + projectId + "/files/start",
       progress: function (id) { return "/files/" + id + "/progress"; },

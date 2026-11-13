@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from . import db
+from . import db, serversettings
 
 FILES_DIR: Path | None = None    # tests set this; normally unset, see files_dir()
 
@@ -38,8 +38,7 @@ def files_dir() -> Path:
 CATEGORIES = ("memory", "code", "media", "documents", "links")
 MIN_FREE = 1024 ** 3             # an upload is refused when less than this would stay free
 BLOCK_SIZE = 256 * 1024          # an upload is counted in blocks of this size (the unit of Cloudflare Stream and tus uploaders)
-MAX_REQUEST = 64 * 1024 ** 2     # the most one request may carry (Cloudflare's free plan allows 100 MB; the browser sizes
-                                 # requests so that one takes about ten seconds, at most 32 MB)
+MAX_REQUEST = 512 * 1024 ** 2    # hard ceiling of one request; the real limit is the owner's choice (max_request)
 THUMB_MAX = 256 * 1024            # largest preview picture (the browser makes them: 96 x 96 JPEG, a few KB)
 TEXT_MAX = 1024 ** 2             # largest file the text editor opens (also the limit of one form field)
 STALE = 24 * 3600                # an unfinished upload older than this is thrown away
@@ -121,6 +120,12 @@ def content_type(name: str) -> tuple[str, bool]:
         if ext in table:
             return table[ext], True
     return "application/octet-stream", False
+
+
+def max_request() -> int:
+    """The most one upload request may carry: the owner's choice on the administration page (serversettings), never
+    above MAX_REQUEST. The browser gets the same value and never sends more."""
+    return min(MAX_REQUEST, serversettings.upload()[1] * 1024 ** 2)
 
 
 def free_bytes() -> int:
@@ -216,7 +221,8 @@ class Run:
     Raises FileError: not_found, bad_offset, too_big (over MAX_REQUEST, or more than announced), disk_full."""
 
     def __init__(self, user_id: int, file_id: int, offset: int, length: int | None):
-        if length is not None and length > MAX_REQUEST:
+        most = max_request()
+        if length is not None and length > most:
             raise FileError("too_big")
         with db.connect() as conn:
             row = _owned(conn, user_id, file_id)
@@ -228,7 +234,7 @@ class Run:
         if length is not None and (length <= 0 or offset + length > size
                                    or (offset + length < size and length % BLOCK_SIZE)):
             raise FileError("bad_offset")
-        self.limit = length if length is not None else min(MAX_REQUEST, size - offset)
+        self.limit = length if length is not None else min(most, size - offset)
         if free_bytes() - self.limit < MIN_FREE:
             raise FileError("disk_full")
         self.file_id, self.offset, self.size, self.written = file_id, offset, size, 0

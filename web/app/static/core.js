@@ -255,6 +255,7 @@
 
   function showTip(el) {
     tip.textContent = el.dataset.tip;
+    tip.classList.toggle("wide", el.classList.contains("info-dot"));   // an explanation, not a label
     tip.style.left = "0px";
     tip.style.top = "0px";
     var r = el.getBoundingClientRect();
@@ -286,4 +287,13 @@
     if (el && el.matches(":focus-visible")) { hideTip(); tipFor = el; showTip(el); }
   });
   document.addEventListener("focusout", hideTip);
+  // An "i" (.info-dot) also shows its tip on a click or tap, for touch screens and for reading at leisure.
+  document.addEventListener("click", function (event) {
+    var el = event.target.closest ? event.target.closest(".info-dot[data-tip]") : null;
+    if (!el) return;
+    event.preventDefault();
+    hideTip();
+    tipFor = el;
+    showTip(el);
+  });
 })();

@@ -1,7 +1,23 @@
 """HTML of the owner's system page."""
-from . import i18n
+from html import escape as esc
+
+from . import i18n, serversettings
+from .icons import icon
 from .layout import fill
 from .users import User
+
+
+def _upload_field(lang: str, name: str, label_key: str, info_key: str, choices: tuple, current: int, unit: str) -> str:
+    """One choice of the upload settings: a drop-down in our own style (core.js `.has-select`) and an "i" whose tip
+    explains it. The "i" sits next to the box, not in it, so clicking it never opens the list."""
+    label, info = esc(i18n.t(lang, label_key)), esc(i18n.t(lang, info_key))
+    options = "".join(f'<option value="{value}"{" selected" if value == current else ""}>{value}{unit}</option>'
+                      for value in choices)
+    return (
+        f'<div class="sys-field"><label class="setting has-select"><span class="setting-label">{label}</span>'
+        f'<select name="{name}">{options}</select>{icon("chevron_down")}</label>'
+        f'<button type="button" class="info-dot" data-tip="{info}" aria-label="{label}: {info}">{icon("info")}</button></div>'
+    )
 
 SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
   <header class="sys-head"><h2>%t.system_title%</h2></header>
@@ -9,6 +25,10 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
     <div class="sys-row">
       <div class="sys-main"><span class="sys-name">%t.sys_backup%</span><span class="sys-hint">%t.sys_backup_hint%</span></div>
       <button type="button" data-backup>%t.sys_backup%</button>
+    </div>
+    <div class="sys-row sys-upload" data-url="/system/upload">
+      <div class="sys-main"><span class="sys-name">%t.sys_upload%</span><span class="sys-hint">%t.sys_upload_hint%</span></div>
+      <div class="sys-fields">%UPLOAD_FIELDS%</div>
     </div>
     <div class="sys-row">
       <div class="sys-main"><span class="sys-name">%t.sys_reboot%</span><span class="sys-hint">%t.sys_reboot_hint%</span></div>
@@ -19,6 +39,7 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
       <button type="button" data-power="poweroff">%t.sys_poweroff%</button>
     </div>
   </div>
+  <p class="sys-note" id="sys-upload-note" role="status" hidden data-failed="%t.sys_upload_failed%"></p>
   <p class="sys-note" id="sys-backup-note" role="status" hidden
      data-running="%t.sys_backup_running%" data-ok="%t.sys_backup_ok%" data-failed="%t.sys_backup_failed%"></p>
   <p class="sys-note" id="sys-power-note" role="status" hidden
@@ -54,4 +75,10 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
 
 def render(user: User) -> str:
     """The system block with its dialogs (a part of /admin, only for the owner; adminpage.py checks that)."""
-    return fill(SYSTEM, user.language)
+    lang = user.language
+    parallel, request_mb = serversettings.upload()
+    fields = (_upload_field(lang, "parallel", "sys_upload_parallel", "sys_upload_parallel_info",
+                            serversettings.PARALLEL, parallel, "")
+              + _upload_field(lang, "request_mb", "sys_upload_size", "sys_upload_size_info",
+                              serversettings.REQUEST_MB, request_mb, " MB"))
+    return fill(SYSTEM, lang, UPLOAD_FIELDS=fields)

@@ -11,7 +11,7 @@ import time
 
 from urllib.parse import urlsplit
 
-from . import checks, files as filestore, i18n
+from . import checks, files as filestore, i18n, serversettings
 from .icons import icon
 from .layout import esc, fill
 
@@ -326,7 +326,9 @@ def _files_tile(lang: str, items: list, files_confirm: bool = True) -> str:
         ("starting", "files_starting"), ("expand", "files_expand"), ("collapse", "files_collapse"),
         ("note-no-ask", "files_note_no_ask"), ("note-ask", "files_note_ask"), ("delete-selected", "files_delete_selected"),
         ("drop", "files_drop"), ("marked", "files_marked")))
-    attrs += f' data-block="{filestore.BLOCK_SIZE}" data-confirm-delete="{1 if files_confirm else 0}"'
+    parallel = serversettings.upload()[0]           # how uploads are cut: the owner's choice for the whole server
+    attrs += (f' data-block="{filestore.BLOCK_SIZE}" data-parallel="{parallel}" data-max-request="{filestore.max_request()}"'
+              f' data-confirm-delete="{1 if files_confirm else 0}"')
     return (
         f'<section class="mtile glass m-files m-grow" id="files" {attrs}>'
         f'<header><h2>{esc(i18n.t(lang, "manager_files"))}</h2><span class="file-area" aria-hidden="true"></span>'
