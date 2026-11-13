@@ -49,6 +49,8 @@
   var active = "memory";
   var editing = null;        // the row in the pencil dialog, or null for a new link
   var pendingId = null;
+  var pendingMany = null;     // ids waiting for the answer to "delete these?"
+  var selected = {};          // ids marked with a shift click
   var lang = document.documentElement.lang || "de";
 
   function store(key, value) { try { sessionStorage.setItem(key, value); } catch (e) {} }
@@ -74,7 +76,7 @@
         var next = fresh.querySelector('.file-tab[data-cat="' + tab.dataset.cat + '"] .file-count');
         if (next) tab.querySelector(".file-count").textContent = next.textContent;
       });
-    }).then(function () { ensureThumbs(); }).catch(reload);
+    }).then(function () { if (typeof showMarks === "function") showMarks(); ensureThumbs(); }).catch(reload);
   }
   var refreshTimer = null;
   function refreshSoon() { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 300); }
@@ -394,6 +396,7 @@
       }
       return;
     }
+    if (row && event.shiftKey && event.button === 0) { event.preventDefault(); toggleMark(row); return; }   // marks only
     var name = event.target.closest(".file-text");
     var picture = event.target.closest(".file-tile, .file-preview");
     if (!row || (!name && !picture)) return;
@@ -581,23 +584,70 @@
 
   document.getElementById("file-confirm-yes").addEventListener("click", function () {
     var id = pendingId;
+    var many = pendingMany;
     confirmDialog.close();
-    if (id) call("/files/" + id + "/delete").then(refresh, refresh);
+    if (many) deleteMarked(many);
+    else if (id) call("/files/" + id + "/delete").then(refresh, refresh);
   });
-  confirmDialog.addEventListener("close", function () { pendingId = null; });
+  confirmDialog.addEventListener("close", function () { pendingId = null; pendingMany = null; });
 
   // --- the trash circle: pressed (glowing red) = deleting does not ask any more; the account remembers it
   var trashMode = document.getElementById("file-trash-mode");
   var noteBox = document.getElementById("file-note");
   var noteTimer = null;
   function showNote(text) { say(noteBox, text); clearTimeout(noteTimer); noteTimer = setTimeout(function () { say(noteBox, ""); }, 4500); }
+  function markedIds() { return Object.keys(selected); }
   function renderTrashMode() {
     var asks = tile.dataset.confirmDelete !== "0";
+    var marked = markedIds().length;
     trashMode.setAttribute("aria-pressed", asks ? "false" : "true");
     trashMode.classList.toggle("armed", !asks);
+    trashMode.classList.toggle("bulk", marked > 0);               // marked files: the circle deletes them (green)
+    var label = marked > 0 ? tile.dataset.deleteSelected.replace("{n}", marked) : trashMode.dataset.label;
+    trashMode.setAttribute("aria-label", label);
+    trashMode.title = label;
   }
+  trashMode.dataset.label = trashMode.getAttribute("aria-label");
+  function toggleMark(row) {
+    var id = row.dataset.id;
+    if (selected[id]) delete selected[id]; else selected[id] = true;
+    row.classList.toggle("selected", !!selected[id]);
+    renderTrashMode();
+  }
+  function showMarks() {                  // after the lists were swapped: the marks stay, vanished files lose theirs
+    var present = {};
+    Array.prototype.forEach.call(tile.querySelectorAll(".file-row"), function (row) {
+      present[row.dataset.id] = true;
+      row.classList.toggle("selected", !!selected[row.dataset.id]);
+    });
+    Object.keys(selected).forEach(function (id) { if (!present[id]) delete selected[id]; });
+    renderTrashMode();
+  }
+  function deleteMarked(ids) {
+    selected = {};
+    renderTrashMode();
+    ids.reduce(function (chain, id) { return chain.then(function () { return call("/files/" + id + "/delete").catch(nothing); }); }, Promise.resolve())
+      .then(refresh, refresh);
+  }
+  document.addEventListener("keydown", function (event) {      // Escape lets go of all marks
+    if (event.key === "Escape" && markedIds().length && !document.querySelector("dialog[open]")) {
+      selected = {};
+      showMarks();
+    }
+  });
+  tile.addEventListener("mousedown", function (event) {        // a shift click must not select text
+    if (event.shiftKey && event.target.closest(".file-row")) event.preventDefault();
+  });
   renderTrashMode();
   trashMode.addEventListener("click", function () {
+    var marked = markedIds();
+    if (marked.length) {                                       // marked files: delete them (asking once, unless switched off)
+      if (tile.dataset.confirmDelete === "0") { deleteMarked(marked); return; }
+      pendingMany = marked;
+      confirmDialog.querySelector("h2").textContent = confirmDialog.dataset.textMany.replace("{n}", marked.length);
+      confirmDialog.showModal();
+      return;
+    }
     var asks = tile.dataset.confirmDelete !== "0";
     tile.dataset.confirmDelete = asks ? "0" : "1";
     renderTrashMode();
