@@ -4,13 +4,14 @@ All calls are fetch() calls (answers `{"ok": ...}`); the file itself is served b
 """
 import logging
 import time
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.requests import ClientDisconnect
 
-from .. import files, users
+from .. import files, i18n, users
 from ..deps import api_user, error, fail, ok
 
 router = APIRouter()
@@ -159,6 +160,19 @@ def thumb(file_id: int, user: users.User = Depends(api_user)):
         return fail(404)
     return FileResponse(path, media_type="image/jpeg", content_disposition_type="inline", headers={
         "Content-Security-Policy": "sandbox; default-src 'none'", "Cache-Control": "private, max-age=86400"})
+
+
+@router.get("/projects/{project_id}/files/zip")
+def download_zip(project_id: int, ids: str = "", user: users.User = Depends(api_user)):
+    """Several files as one ZIP (dragging marked files out of the tile); made while it is sent (files.zip_stream)."""
+    wanted = [int(part) for part in ids.split(",")[:1000] if part.strip().isdigit()]
+    entries = files.zip_entries(user.id, project_id, wanted)
+    if not entries:
+        return fail(404)
+    name = i18n.t(user.language, "files_zip_name", n=len(entries)) + ".zip"
+    return StreamingResponse(files.zip_stream(entries), media_type="application/zip", headers={
+        "Content-Disposition": f"attachment; filename=\"files.zip\"; filename*=UTF-8''{quote(name)}",
+        "Cache-Control": "private, no-store"})
 
 
 @router.get("/files/{file_id}")

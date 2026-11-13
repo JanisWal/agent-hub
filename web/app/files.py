@@ -19,6 +19,8 @@ import os
 import shutil
 import sqlite3
 import time
+import zipfile
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -466,6 +468,64 @@ def open_file(user_id: int, file_id: int) -> tuple[Path, StoredFile] | None:
         return None
     path = path_of(row["project_id"], file_id)
     return (path, _to_file(row)) if path.is_file() else None
+
+
+def zip_entries(user_id: int, project_id: int, ids: list[int]) -> list[tuple[Path, str]] | None:
+    """For a ZIP of several files (dragging marked files out): (path, name in the ZIP) of the user's finished files of
+    this project among `ids`, in that order. Links have no file and are left out; a name that comes twice (from two
+    areas) gets " (2)". None if the project is not his."""
+    with db.connect() as conn:
+        if not _own_project(conn, user_id, project_id):
+            return None
+        rows = {r["id"]: r for r in conn.execute(
+            f"SELECT * FROM files WHERE project_id = ? AND status = 'ready' AND url IS NULL"
+            f" AND id IN ({','.join('?' * len(ids))})", (project_id, *ids))} if ids else {}
+    entries, taken = [], set()
+    for file_id in dict.fromkeys(ids):
+        row = rows.get(file_id)
+        path = path_of(project_id, file_id) if row else None
+        if path is None or not path.is_file():
+            continue
+        name = row["name"] if row["name"].lower() not in taken else _free_name(row["name"], taken)
+        taken.add(name.lower())
+        entries.append((path, name))
+    return entries
+
+
+class _Sink:
+    """Where zipfile writes: it only collects what came, zip_stream hands it on (zipfile handles a stream that cannot seek)."""
+
+    def __init__(self):
+        self.parts, self.size = [], 0
+
+    def write(self, data) -> int:
+        self.parts.append(bytes(data))
+        self.size += len(data)
+        return len(data)
+
+    def tell(self) -> int:
+        return self.size
+
+    def flush(self) -> None:
+        pass
+
+    def take(self) -> bytes:
+        data, self.parts = b"".join(self.parts), []
+        return data
+
+
+def zip_stream(entries: list[tuple[Path, str]], piece: int = 1024 ** 2) -> Iterator[bytes]:
+    """The ZIP of these files, made while it is sent: never whole in memory or on disk. Stored, not compressed (pictures,
+    videos and archives are compressed already, and the server saves the work); ZIP64, so files over 4 GB are fine."""
+    sink = _Sink()
+    with zipfile.ZipFile(sink, "w", zipfile.ZIP_STORED, allowZip64=True) as archive:
+        for path, name in entries:
+            with archive.open(name, "w", force_zip64=True) as target, open(path, "rb") as source:
+                while data := source.read(piece):
+                    target.write(data)
+                    yield sink.take()
+            yield sink.take()
+    yield sink.take()
 
 
 def read_text(user_id: int, file_id: int) -> str | None:

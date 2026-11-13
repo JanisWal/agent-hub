@@ -375,3 +375,18 @@ html .card.drag-clone::after { display: none; }
 /* A small note under an answer of the manager chat ("Memory updated"): no bubble, quiet. */
 .chat-msg.note { align-self: flex-start; padding: 0 6px; background: none; border: 0; font-size: 0.78rem; font-weight: 600; color: var(--muted); }
 .chat-msg.note .chat-who { display: none; }
+
+/* Several files dragged out (files.js): the picture under the pointer is a small stack of up to three cards with the
+   count, like the Finder. Solid surfaces, because the browser's drag picture does not show the glass blur. */
+.file-drag-stack { position: fixed; top: -1000px; left: 0; width: 240px; height: 80px; padding-top: 12px; pointer-events: none; }
+.file-drag-card {
+  position: absolute; left: 0; top: 12px; width: 200px; padding: 12px 14px; box-sizing: border-box;
+  font-weight: 600; font-size: 0.9rem; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: color-mix(in srgb, var(--bg) 88%, var(--accent)); border: 1px solid var(--glass-border); border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(60, 30, 10, 0.28);
+}
+.file-drag-count {
+  position: absolute; left: 190px; top: 2px; min-width: 26px; height: 26px; padding: 0 7px; box-sizing: border-box;
+  display: grid; place-items: center; border-radius: 13px; font-weight: 700; font-size: 0.85rem;
+  color: var(--on-accent); background: var(--accent); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
+}

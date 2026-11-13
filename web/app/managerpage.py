@@ -335,7 +335,7 @@ def _files_tile(lang: str, items: list, files_confirm: bool = True) -> str:
         ("eta-s", "files_eta_s"), ("eta-m", "files_eta_m"), ("eta-h", "files_eta_h"), ("drop-to", "files_drop_to"),
         ("starting", "files_starting"), ("expand", "files_expand"), ("collapse", "files_collapse"),
         ("note-no-ask", "files_note_no_ask"), ("note-ask", "files_note_ask"), ("delete-selected", "files_delete_selected"),
-        ("drop", "files_drop"), ("marked", "files_marked")))
+        ("drop", "files_drop"), ("marked", "files_marked"), ("zip-name", "files_zip_name")))
     parallel = serversettings.upload()[0]           # how uploads are cut: the owner's choice for the whole server
     attrs += (f' data-block="{filestore.BLOCK_SIZE}" data-parallel="{parallel}" data-max-request="{filestore.max_request()}"'
               f' data-confirm-delete="{1 if files_confirm else 0}"')
