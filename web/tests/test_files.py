@@ -152,6 +152,53 @@ class FilesTest(unittest.TestCase):
             files.append_chunk(self.user.id, item.id, 0, b"x" * (files.MAX_REQUEST + 1))
         self.assertEqual(caught.exception.code, "too_big")
 
+    def test_a_broken_request_keeps_the_whole_blocks_that_arrived(self):
+        uid = self.user.id
+        item = files.start_upload(uid, self.project.id, "a.bin", 10)             # blocks of 4, 4 and 2
+        run = files.Run(uid, item.id, 0, 10)
+        run.write(b"abcdef")                                                     # one and a half blocks, then the line breaks
+        self.assertEqual(run.close(), 1)
+        self.assertEqual(files.upload_progress(uid, item.id)[1], "100")          # the browser sends only from block 2 on
+        run = files.Run(uid, item.id, 4, None)                                   # no announced length: up to the end of the file
+        run.write(b"efgh")
+        run.write(b"ij")
+        self.assertEqual(run.close(), 3)
+        self.assertEqual(files.open_file(uid, files.finish_upload(uid, item.id).id)[0].read_bytes(), b"abcdefghij")
+
+    def test_a_request_may_not_carry_more_than_it_announced(self):
+        item = files.start_upload(self.user.id, self.project.id, "a.bin", 12)
+        run = files.Run(self.user.id, item.id, 0, 4)
+        with self.assertRaises(files.FileError) as caught:
+            run.write(b"abcde")
+        self.assertEqual(caught.exception.code, "too_big")
+        self.assertEqual(run.close(), 0)
+
+    def _post_chunk(self, file_id, offset, pieces, announced):
+        """The upload route with a body that arrives in pieces; a None piece is the line breaking."""
+        import asyncio
+        from starlette.requests import Request
+        messages = [{"type": "http.disconnect"} if piece is None else {"type": "http.request", "body": piece, "more_body": True}
+                    for piece in pieces]
+        if pieces and pieces[-1] is not None:
+            messages[-1]["more_body"] = False
+
+        async def receive():
+            return messages.pop(0)
+        scope = {"type": "http", "method": "POST", "path": f"/files/{file_id}/chunk", "query_string": b"",
+                 "headers": [(b"content-length", str(announced).encode())]}
+        answer = asyncio.run(file_routes.upload_chunk(file_id, offset, Request(scope, receive), self.user))
+        return types.SimpleNamespace(status_code=200) if isinstance(answer, dict) else answer      # ok() is a plain dict
+
+    def test_the_route_writes_while_the_body_arrives_and_keeps_it_after_a_break(self):
+        uid = self.user.id
+        item = files.start_upload(uid, self.project.id, "a.bin", 10)             # blocks of 4, 4 and 2
+        broken = self._post_chunk(item.id, 0, [b"abcd", b"ef", None], 10)
+        self.assertNotEqual(broken.status_code, 200)
+        self.assertEqual(files.upload_progress(uid, item.id)[1], "100")
+        self.assertEqual(self._post_chunk(item.id, 4, [b"efg", b"hij"], 6).status_code, 200)
+        self.assertEqual(files.upload_progress(uid, item.id)[1], "111")
+        self.assertEqual(self._post_chunk(item.id, 1, [b"x"], 1).status_code, 409)          # a wrong offset reads nothing
+
     # --- the only protection: free space
     def test_nothing_is_stored_when_the_disk_would_be_nearly_full(self):
         self.free = files.MIN_FREE + 5

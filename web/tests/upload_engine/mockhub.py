@@ -1,6 +1,7 @@
 """A stand-in for the hub's upload routes, only to test web/app/static/upload.js in a real browser (127.0.0.1 only).
 
-It follows the real server's rules (blocks, runs, progress, finish) and can slow the line down, hang, or answer 502, so
+It follows the real server's rules (blocks, runs, progress, finish; a broken request keeps the whole blocks that
+arrived) and can slow the line down, hang, or answer 502, so
 the engine's retries, resume, cancel and request sizing can be watched. Not part of the product."""
 import json
 import sys
@@ -158,6 +159,10 @@ class Handler(BaseHTTPRequestHandler):
                     time.sleep(len(piece) / rate)
             if failing:
                 self.rfile.read(length - got)
+                with LOCK:                                            # like the hub: the front part that arrived is kept
+                    first = offset // BLOCK
+                    for i in range(first, first + got // BLOCK):
+                        u["blocks"][i] = 1
                 self.send_json({"ok": False}, 502)
                 with LOCK:
                     STATE["log"].append({"id": fid, "offset": offset, "length": length, "status": 502, "seconds": round(time.time() - started, 2)})
