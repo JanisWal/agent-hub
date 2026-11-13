@@ -22,6 +22,7 @@ ERRORS = {
     "disk_full": (507, "files_err_disk_full"), "not_found": (404, "files_err_missing"),
     "too_big": (413, "files_err_too_big"), "bad_offset": (409, "files_err_offset"),
     "incomplete": (409, "files_err_offset"), "bad_type": (400, "files_err_type"),
+    "name_taken": (409, "files_err_name_taken"),
 }
 
 
@@ -39,6 +40,14 @@ def preferences(confirm: str = Form("1"), user: users.User = Depends(api_user)):
     """The red trash circle of the file tile: "0" = deleting a file does not ask first. Kept with the account."""
     users.set_files_confirm(user.id, confirm != "0")
     return ok()
+
+
+@router.post("/projects/{project_id}/files/check")
+def check_names(project_id: int, names: list[str] = Form([]), category: str = Form(""),
+                user: users.User = Depends(api_user)):
+    """Before an upload: which names exist already in the area the files go to, each with a free name (files.check_names)."""
+    taken = files.check_names(user.id, project_id, names[:1000], category or None)
+    return fail(404) if taken is None else ok(taken=taken)
 
 
 @router.post("/projects/{project_id}/files/start")

@@ -644,6 +644,15 @@ a.primary { display: flex; align-items: center; justify-content: center; text-de
 .muted { margin: 0 0 calc(var(--space) * 2); color: var(--muted); overflow-wrap: anywhere; }
 .actions { display: flex; gap: calc(var(--space) * 1.5); margin-top: calc(var(--space) * 2); }
 .actions > * { flex: 1; min-height: 48px; margin-top: 0; }
+/* Three answers (e.g. "same name": skip, replace, keep both): the main one gets a full row when space is short. */
+.actions.three { flex-wrap: wrap; }
+.actions.three > * { flex: 1 1 120px; padding-left: 10px; padding-right: 10px; }
+.actions.three > .primary { flex-basis: 100%; order: -1; }
+/* The names a dialog is about (e.g. files that exist already): a short list, scrolls when long. */
+.file-same-list { margin: var(--space) 0 0; padding: 10px 14px 10px 30px; max-height: 30vh; overflow-y: auto;
+  background: var(--field); border: 1px solid var(--glass-border); border-radius: var(--radius-button); font-weight: 600;
+  overflow-wrap: anywhere; }
+.file-same-list li + li { margin-top: 4px; }
 .dialog input[readonly] { opacity: 0.75; }
 
 /* Deleting: loud red that still belongs to the warm palette. */

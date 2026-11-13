@@ -57,7 +57,8 @@ EDITABLE = {"md", "txt"}          # the pencil opens an editor for these
 
 
 class FileError(ValueError):
-    """The reason is the `code`: bad_name, bad_url, bad_category, disk_full, not_found, too_big, bad_offset, incomplete, bad_type."""
+    """The reason is the `code`: bad_name, bad_url, bad_category, disk_full, not_found, too_big, bad_offset, incomplete,
+    bad_type, name_taken."""
 
     def __init__(self, code: str):
         super().__init__(code)
@@ -299,6 +300,53 @@ def finish_upload(user_id: int, file_id: int) -> StoredFile:
     return _to_file(row)
 
 
+def _same_name(conn: sqlite3.Connection, project_id: int, category: str, name: str, but: int | None = None) -> list[int]:
+    """Ids of the finished files of the area with this name, ignoring upper and lower case (as Windows and macOS do)."""
+    return [r[0] for r in conn.execute(
+        "SELECT id FROM files WHERE project_id = ? AND category = ? AND status = 'ready' AND lower(name) = lower(?)"
+        " AND id IS NOT ?", (project_id, category, name, but))]
+
+
+def _free_name(name: str, taken: set[str]) -> str:
+    """The name with " (2)", " (3)", ... before the ending, the first that is not taken (lower case in `taken`)."""
+    stem, dot, ext = name.rpartition(".") if "." in name.strip(".") else (name, "", "")
+    for n in range(2, 10000):
+        candidate = f"{stem} ({n}){dot}{ext}"[:MAX_NAME] if dot else f"{name} ({n})"[:MAX_NAME]
+        if candidate.lower() not in taken:
+            return candidate
+    raise FileError("bad_name")
+
+
+def check_names(user_id: int, project_id: int, names: list[str], category: str | None = None) -> list[dict] | None:
+    """Before an upload: which of these names already exist in the area the file goes to (the chosen `category`, else
+    the one its ending gives). For each such name: the ids of the files with it and a free name for "keep both".
+    A name that comes twice in the same upload counts as taken too (with no ids). None if the project is not his."""
+    if category is not None and category not in CATEGORIES:
+        category = None
+    found = []
+    with db.connect() as conn:
+        if not _own_project(conn, user_id, project_id):
+            return None
+        names_by_area: dict[str, set[str]] = {}
+        for raw in names:
+            try:
+                name = _clean_name(raw)
+            except FileError:
+                continue
+            area = category or category_for(name)
+            if area not in names_by_area:
+                names_by_area[area] = {r[0].lower() for r in conn.execute(
+                    "SELECT name FROM files WHERE project_id = ? AND category = ? AND status = 'ready'", (project_id, area))}
+            taken = names_by_area[area]
+            if name.lower() in taken:
+                free = _free_name(name, taken)
+                found.append({"name": raw, "ids": _same_name(conn, project_id, area, name), "free": free})
+                taken.add(free.lower())
+            else:
+                taken.add(name.lower())
+    return found
+
+
 def add_link(user_id: int, project_id: int, url: str, name: str = "", now: int | None = None) -> StoredFile:
     """Add a link as a source of information. The name defaults to the host. Raises FileError: bad_url, not_found."""
     url = _clean_url(url)
@@ -354,6 +402,8 @@ def update(user_id: int, file_id: int, name: str, url: str | None = None, catego
             category = "links"            # a link stays a link, a file never becomes one
         elif category == "links":
             raise FileError("bad_category")
+        if not is_link and _same_name(conn, row["project_id"], category or row["category"], name, but=file_id):
+            raise FileError("name_taken")  # two files of an area never share a name (the upload asks first)
         conn.execute("UPDATE files SET name = ?, url = ?, category = ? WHERE id = ?",
                      (name, new_url, category or row["category"], file_id))
         row = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()

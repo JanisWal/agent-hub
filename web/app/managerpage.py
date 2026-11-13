@@ -210,6 +210,16 @@ FILE_DIALOGS = """<dialog class="dialog" id="file-dialog" data-title-link="%t.fi
     <button class="danger-btn" type="button" id="file-confirm-yes">%t.yes%</button>
   </div>
 </dialog>
+<dialog class="dialog" id="file-same" data-one="%t.files_same_one%" data-many="%t.files_same_many%">
+  <h2>%t.files_same_title%</h2>
+  <p class="muted" id="file-same-text"></p>
+  <ul class="file-same-list" id="file-same-list"></ul>
+  <div class="actions three">
+    <button type="button" data-same="skip">%t.files_same_skip%</button>
+    <button type="button" data-same="replace">%t.files_same_replace%</button>
+    <button class="primary" type="button" data-same="keep" autofocus>%t.files_same_keep%</button>
+  </div>
+</dialog>
 <dialog class="dialog viewer reader" id="file-reader">
   <div class="viewer-head">
     <h2 id="file-reader-title"></h2>

@@ -129,6 +129,7 @@ class IsolationTest(unittest.TestCase):
             with self.assertRaises(files.FileError):
                 call()
         self.assertIsNone(files.open_file(self.b.id, item.id))
+        self.assertIsNone(files.check_names(self.b.id, self.project.id, ["secret.md"]))   # B learns no names of A
         self.assertIsNone(files.read_text(self.b.id, item.id))
         self.assertFalse(files.write_text(self.b.id, item.id, "hacked"))
         self.assertFalse(files.delete(self.b.id, item.id))

@@ -4,26 +4,14 @@
 // desktop or a folder (Chrome and Edge), the pencil renames and moves, a click opens a big reader for Markdown and text
 // or a viewer for pictures, video and sound, delete after a confirmation. Needs core.js and motion.js.
 //
-// Upload (Janis, 13.11.2026): the file is counted in blocks of 256 KiB on the server; a request carries any run of
-// blocks. The size of a request follows the measured speed so that one takes about 15 seconds: a slow line gets small
-// ones (little is lost when one fails, none gets near the tunnel's limit of about 100 s), a fast line gets big ones
-// (up to 32 MiB). A failed request is sent again after growing pauses (tus, Uppy). The speed shown is what the
-// browser has sent over the last 10 s. A request that makes no progress for 45 s is given up and sent again.
+// The upload itself is upload.js (pieces, resume, retries); its settings come from the administration page. Before an
+// upload the server says which names already exist in the area; then a dialog asks: keep both, replace or skip.
 (function () {
   var tile = document.getElementById("files");
   var project = document.querySelector(".project");
   if (!tile || !project) return;
   var projectId = project.dataset.id;
   var BLOCK = parseInt(tile.dataset.block, 10);   // the unit the server counts in (files.BLOCK_SIZE)
-  var START_REQUEST = 1048576;                    // size of the first requests, before the speed is known
-  var MIN_REQUEST = 524288;
-  var MAX_REQUEST = 33554432;
-  var TARGET_SECONDS = 15;                        // what one request should take
-  var PARALLEL = 2;                               // requests on their way at the same time, over all files
-  var DELAYS = [0, 1000, 3000, 5000, 10000];      // pauses before each new try of a request
-  var STALL = 45000;                              // no progress for this long: give up on the request and try again
-  var TIMEOUT = 90000;                            // longest a request may take (the tunnel cuts at about 100 s)
-  var CANCELLED = new Error("cancelled");
   var tabsBox = tile.querySelector(".file-tabs");
   var tabs = Array.prototype.slice.call(tile.querySelectorAll(".file-tab"));
   var panels = Array.prototype.slice.call(tile.querySelectorAll(".file-list"));
@@ -262,7 +250,7 @@
     text: { net: tile.dataset.errNet },
     onAdd: function (job) {
       var row = template.content.firstElementChild.cloneNode(true);
-      row.querySelector(".file-up-name").textContent = job.file.name;
+      row.querySelector(".file-up-name").textContent = job.meta.name || job.file.name;
       job.meta.row = row;
       job.meta.status = row.querySelector(".file-up-meta");
       job.meta.bar = row.querySelector("i");
@@ -279,10 +267,12 @@
       window.__uploadLog.push({ file: job.file.name, offset: info.offset, bytes: info.length, ms: info.ms, attempt: info.attempt });
       if (window.console && console.debug) console.debug("upload", job.file.name, info);
     },
-    onDone: function (job, info) {      // moves to the chosen area and makes the preview; neither may fail the upload
+    onDone: function (job, info) {      // moves to the chosen area, replaces the old file, makes the preview; none may fail the upload
       var move = job.meta.category && job.meta.category !== info.category
         ? call("/files/" + info.id, fields({ name: info.name, category: job.meta.category })).catch(nothing) : Promise.resolve();
-      return move.then(function () { return thumbOfUpload({ file: job.file, id: job.id }); }).catch(nothing);
+      return move.then(function () {                         // the old file goes only now that the new one is complete
+        return Promise.all((job.meta.replace || []).map(function (id) { return call("/files/" + id + "/delete").catch(nothing); }));
+      }).then(function () { return thumbOfUpload({ file: job.file, id: job.id }); }).catch(nothing);
     },
     onFinished: function (job) { job.meta.row.remove(); refreshSoon(); },
     onFail: function (job, message) { job.meta.row.remove(); say(errorBox, message); },
@@ -290,10 +280,59 @@
     onIdle: function () { uploads.hidden = true; refresh(); }
   });
 
+  // --- same names (Janis, 13.11.2026): the server says which names the area already has (and a free name for each);
+  // the dialog asks once for all of them. Closing it (Escape) skips them, like "Skip".
+  var sameDialog = document.getElementById("file-same");
+  var sameResolve = null;
+  function askSame(taken) {
+    document.getElementById("file-same-text").textContent = taken.length > 1 ? sameDialog.dataset.many : sameDialog.dataset.one;
+    var names = document.getElementById("file-same-list");
+    names.textContent = "";
+    taken.forEach(function (hit) { var li = document.createElement("li"); li.textContent = hit.name; names.appendChild(li); });
+    return new Promise(function (resolve) { sameResolve = resolve; sameDialog.showModal(); });
+  }
+  function answerSame(choice) {
+    var resolve = sameResolve;
+    sameResolve = null;
+    if (sameDialog.open) sameDialog.close();
+    if (resolve) resolve(choice);
+  }
+  sameDialog.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-same]");
+    if (button) answerSame(button.dataset.same);
+  });
+  sameDialog.addEventListener("close", function () { answerSame("skip"); });
+
+  function startJobs(list, category, taken, choice) {
+    var hits = taken.slice();
+    var replaced = {};
+    list.forEach(function (file) {
+      var at = -1;
+      for (var i = 0; i < hits.length && at < 0; i++) if (hits[i].name === file.name) at = i;
+      if (at < 0) return uploader.add(file, { category: category });
+      var hit = hits.splice(at, 1)[0];
+      if (choice === "skip") return;
+      var ids = hit.ids.filter(function (id) { return !replaced[id]; });
+      if (choice === "replace" && ids.length) {
+        ids.forEach(function (id) { replaced[id] = true; });
+        return uploader.add(file, { category: category, replace: ids });
+      }
+      uploader.add(file, { category: category, name: hit.free });    // keep both (or a second copy within this upload)
+    });
+  }
+
   function addJobs(list, category) {
     say(errorBox, "");
     if (category) show(category);
-    list.forEach(function (file) { uploader.add(file, { category: category }); });
+    var body = new FormData();
+    list.forEach(function (file) { body.append("names", file.name); });
+    if (category) body.append("category", category);
+    call("/projects/" + projectId + "/files/check", body)
+      .then(function (data) { return data.taken || []; }, function () { return []; })   // the check failing must not stop an upload
+      .then(function (taken) {
+        if (!taken.length) return startJobs(list, category, [], null);
+        return askSame(taken).then(function (choice) { startJobs(list, category, taken, choice); });
+      });
   }
 
   addButton.addEventListener("click", function () {

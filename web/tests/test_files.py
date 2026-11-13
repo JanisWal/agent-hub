@@ -199,6 +199,41 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(files.upload_progress(uid, item.id)[1], "111")
         self.assertEqual(self._post_chunk(item.id, 1, [b"x"], 1).status_code, 409)          # a wrong offset reads nothing
 
+    # --- same names: the upload asks first, renaming refuses
+    def test_the_check_says_which_names_the_area_has_and_offers_free_ones(self):
+        old = self.upload("Bild.png", b"x")
+        self.upload("Bild (2).png", b"x")
+        self.upload("Makefile", b"x")
+        taken = files.check_names(self.user.id, self.project.id, ["bild.PNG", "neu.png", "Makefile", "Bild.png"])
+        self.assertEqual(taken, [
+            {"name": "bild.PNG", "ids": [old.id], "free": "bild (3).PNG"},       # case does not matter, (2) is taken
+            {"name": "Makefile", "ids": [taken[1]["ids"][0]], "free": "Makefile (2)"},
+            {"name": "Bild.png", "ids": [old.id], "free": "Bild (4).png"},       # a free name is never handed out twice
+        ])
+        self.assertEqual(files.check_names(self.user.id, self.project.id, ["Bild.png"], "documents"), [])   # other area
+
+    def test_a_name_twice_in_the_same_upload_counts_as_taken(self):
+        taken = files.check_names(self.user.id, self.project.id, ["a.txt", "a.txt", "../bad", ""])
+        self.assertEqual(taken, [{"name": "a.txt", "ids": [], "free": "a (2).txt"}])
+
+    def test_renaming_or_moving_onto_a_name_of_the_area_is_refused(self):
+        first = self.upload("a.txt", b"x")
+        second = self.upload("b.txt", b"x")
+        for name, category in (("A.TXT", None), ("a.txt", "documents")):
+            with self.assertRaises(files.FileError) as caught:
+                files.update(self.user.id, second.id, name, category=category)
+            self.assertEqual(caught.exception.code, "name_taken")
+        self.assertEqual(files.update(self.user.id, first.id, "a.txt").name, "a.txt")        # its own name is fine
+        files.update(self.user.id, first.id, "a.txt", category="code")                     # another area is free
+        self.assertEqual(files.update(self.user.id, second.id, "a.txt").name, "a.txt")
+
+    def test_the_check_route_answers_only_for_own_projects(self):
+        self.upload("a.txt", b"x")
+        answer = file_routes.check_names(self.project.id, ["a.txt"], "", self.user)
+        self.assertEqual(answer["taken"][0]["free"], "a (2).txt")
+        other = users.create_user("b@example.com", "Bbbb!pass12")
+        self.assertEqual(file_routes.check_names(self.project.id, ["a.txt"], "", other).status_code, 404)
+
     # --- the only protection: free space
     def test_nothing_is_stored_when_the_disk_would_be_nearly_full(self):
         self.free = files.MIN_FREE + 5
