@@ -1,31 +1,31 @@
-// The upload engine of the file storage (web/app/files.py), rebuilt from what proven systems do (Janis, 13.11.2026):
-//  - tus: the SERVER is the truth. A file is made first, and what it already holds is asked for (`progress`), so an
-//    upload that broke off (closed tab, lost line, reload) goes on from there and sends only what is missing.
-//  - Nextcloud's desktop client: the size of a request follows the measured speed so that one takes about a fixed
-//    time (min and max bounds); a slow line gets small requests, a fast line big ones. After a request that timed out,
-//    the next ones are smaller for a while.
-//  - Uppy and tus-js-client: a failed request is sent again after growing pauses; while the browser is offline it waits
-//    instead of using up its tries. Timeouts are layered: a request with no progress for a while, or one that takes
-//    too long, is given up on here, before the tunnel's own limit (about 100 s) cuts it.
-//  - The speed shown is what the browser has sent over the last seconds (not only what was confirmed, which on a slow
-//    line comes late), without the part that was already on the server at a resume.
-// The server counts in blocks (files.BLOCK_SIZE); a request is any run of missing blocks, in any order.
+// The upload engine of the file storage (web/app/files.py). The pattern of tus and of S3 multipart uploads:
+//  - The SERVER is the truth. A file is made first, then its blocks are sent as runs (one request each) in any order.
+//    What the server holds can be asked for (`progress`), so a break (lost line, closed tab, reload) goes on from
+//    there and sends only what is missing. The server keeps the part of a broken request that arrived.
+//  - Several requests are on their way at the same time (`parallel`): through the tunnel one request is slow, many
+//    together fill the line (the same reason S3, Nextcloud and rclone upload parts in parallel).
+//  - The size of a request follows the speed the server CONFIRMED for the last requests, so that one takes about
+//    `targetSeconds`: big on a fast line, small on a slow one, and always far below Cloudflare's 100 MB.
+//  - A request that failed (network, no progress for `stall`, longer than `timeout`, a hiccup of the tunnel) is not
+//    sent again blindly: after a growing pause the engine asks the server what arrived and sends the rest. While the
+//    browser is offline it waits instead of using up its tries.
 // This file knows nothing about the page: files.js gives it the addresses and listens to its events.
 (function () {
   "use strict";
 
   var DEFAULTS = {
-    parallel: 2,                         // requests on their way at the same time, over all files
-    startRequest: 1048576,               // size of a request before the speed is known
+    parallel: 6,                         // requests on their way at the same time, over all files
+    startRequest: 2097152,               // size of a request before the speed is known
     minRequest: 524288,
     maxRequest: 33554432,
-    targetSeconds: 15,                   // what one request should take
-    delays: [0, 1000, 3000, 5000, 10000],// pauses before each new try of a request
-    stall: 45000,                        // no progress for this long: give up on the request
+    targetSeconds: 10,                   // what one request should take
+    delays: [0, 1000, 3000, 5000, 10000, 20000, 30000],   // pauses before each new try of a request (about a minute in all)
+    stall: 30000,                        // no progress for this long: give up on the request
     timeout: 90000,                      // longest a request may take
-    window: 10000,                       // the speed is measured over this long
+    window: 10000,                       // the speed shown is measured over this long
     minSpan: 3000                        // and shown after this long
   };
+  var FREE = 0, DONE = 1, SENDING = 2;                      // the state of a block in the browser
 
   function create(options) {
     var cfg = {};
@@ -37,8 +37,8 @@
     var jobs = [];
     var running = 0;
     var samples = [];
-    var speed = 0;
-    var penalty = 1;                             // 1 = normal; smaller after a request timed out
+    var speed = 0;                               // shown: what the browser sent over the last seconds, all requests
+    var rate = 0;                                // for sizing: bytes per second of ONE request, as the server confirmed
     var ticker = null;
     var activeKeys = {};
     var CANCELLED = { cancelled: true };
@@ -62,102 +62,91 @@
     function keyOf(file) {
       return [options.scope || "", file.name, file.size, file.lastModified || 0].join("|");
     }
-    function remember(job) {
+    function store(change) {
       try {
         var all = JSON.parse(localStorage.getItem("hub-uploads") || "{}");
-        all[job.key] = { id: job.id, at: Date.now() };
+        change(all);
         Object.keys(all).forEach(function (key) { if (Date.now() - all[key].at > 86400000) delete all[key]; });   // the server drops them after a day
         localStorage.setItem("hub-uploads", JSON.stringify(all));
       } catch (e) {}
     }
+    function remember(job) { store(function (all) { all[job.key] = { id: job.id, at: Date.now() }; }); }
+    function forget(job) { store(function (all) { delete all[job.key]; }); }
     function recall(job) {
       try { var found = JSON.parse(localStorage.getItem("hub-uploads") || "{}")[job.key]; return found ? found.id : null; } catch (e) { return null; }
     }
-    function forget(job) {
-      try {
-        var all = JSON.parse(localStorage.getItem("hub-uploads") || "{}");
-        delete all[job.key];
-        localStorage.setItem("hub-uploads", JSON.stringify(all));
-      } catch (e) {}
+    function waitOnline() {
+      if (typeof navigator === "undefined" || navigator.onLine !== false) return Promise.resolve();
+      return new Promise(function (resolve) { window.addEventListener("online", function once() { window.removeEventListener("online", once); resolve(); }); });
     }
+    function sleep(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
 
     // --- sizes
     function requestBytes() {
-      var bytes = speed > 0 ? speed * cfg.targetSeconds / cfg.parallel : cfg.startRequest;
-      bytes = Math.max(cfg.minRequest, Math.min(cfg.maxRequest, bytes * penalty));
+      var bytes = rate > 0 ? rate * cfg.targetSeconds : cfg.startRequest;
+      bytes = Math.max(cfg.minRequest, Math.min(cfg.maxRequest, bytes));
       return Math.max(block, Math.floor(bytes / block) * block);
     }
+    function sizeOf(job, i) { return Math.min(block, job.file.size - i * block); }
     function sentOf(job) {
       var sum = job.confirmed;
       Object.keys(job.loaded).forEach(function (key) { sum += job.loaded[key]; });
       return sum;
     }
-
-    // --- one request of a run of blocks, with its tries
-    function waitOnline() {
-      if (typeof navigator === "undefined" || navigator.onLine !== false) return Promise.resolve();
-      return new Promise(function (resolve) { window.addEventListener("online", function once() { window.removeEventListener("online", once); resolve(); }); });
+    function markDone(job, i) {                  // counts a block once, however often it is confirmed
+      if (job.blocks[i] === DONE) return;
+      job.blocks[i] = DONE;
+      job.confirmedBlocks++;
+      job.confirmed += sizeOf(job, i);
     }
 
+    // --- one request: resolves when the server confirmed the run; rejects with .retry for anything worth another try
     function sendRun(job, run) {
-      var blob = job.file.slice(run.offset, run.offset + run.length);
       return new Promise(function (resolve, reject) {
-        var attempt = 0;
-        function over() { return job.cancelled || job.state === "failed" || job.state === "cancelled"; }   // no ghosts after a failure
-        function go() {
-          if (over()) return reject(CANCELLED);
-          var xhr = new XMLHttpRequest();
-          var t0 = Date.now();
-          var last = t0;
-          var finished = false;
-          var dog = setInterval(function () { if (Date.now() - last > cfg.stall) { xhr.__why = "stall"; xhr.abort(); } }, Math.max(50, Math.min(5000, cfg.stall / 4)));
-          function done() { finished = true; clearInterval(dog); var at = job.xhrs.indexOf(xhr); if (at >= 0) job.xhrs.splice(at, 1); }
-          function again(why) {
-            if (finished) return;
-            done();
-            if (over()) return reject(CANCELLED);
-            job.loaded[run.offset] = 0;
-            if (why === "stall" || why === "timeout") penalty = Math.max(0.1, penalty * 0.5);   // smaller requests for a while
-            if (attempt >= cfg.delays.length) { var fail = new Error(text.net); fail.network = true; return reject(fail); }
-            var pause = cfg.delays[attempt++];
-            emit("onRetry", job, { why: why, attempt: attempt });
-            waitOnline().then(function () { setTimeout(go, pause); });
-          }
-          job.xhrs.push(xhr);
-          xhr.open("POST", urls.chunk(job.id) + "?offset=" + run.offset);
-          xhr.timeout = cfg.timeout;
-          xhr.upload.onprogress = function (event) { last = Date.now(); if (event.lengthComputable) job.loaded[run.offset] = event.loaded; };
-          xhr.onerror = function () { again("network"); };
-          xhr.ontimeout = function () { again("timeout"); };
-          xhr.onabort = function () { again(xhr.__why || "abort"); };
-          xhr.onload = function () {
-            if (finished) return;
-            var data = {};
-            try { data = JSON.parse(xhr.responseText); } catch (e) {}
-            if (xhr.status === 200 && data.ok) {
-              done();
-              emit("onRequest", job, { offset: run.offset, length: run.length, ms: Date.now() - t0, attempt: attempt + 1 });   // for measuring
-              resolve();
-            }
-            else if ([408, 429, 502, 503, 504, 524].indexOf(xhr.status) >= 0) again("status");   // the tunnel hiccuped
-            else { done(); var fail = new Error(data.message || text.net); fail.permanent = true; reject(fail); }
-          };
-          xhr.send(blob);
+        var xhr = new XMLHttpRequest();
+        var t0 = Date.now();
+        var last = t0;
+        var settled = false;
+        var dog = setInterval(function () { if (Date.now() - last > cfg.stall) { xhr.__why = "stall"; xhr.abort(); } }, Math.max(50, Math.min(5000, cfg.stall / 4)));
+        function end(problem) {
+          if (settled) return;
+          settled = true;
+          clearInterval(dog);
+          delete job.loaded[run.offset];
+          var at = job.xhrs.indexOf(xhr);
+          if (at >= 0) job.xhrs.splice(at, 1);
+          if (!problem) return resolve(Date.now() - t0);
+          reject(problem);
         }
-        go();
+        function retry(why) { var problem = new Error(text.net); problem.retry = why; end(problem); }
+        job.xhrs.push(xhr);
+        xhr.open("POST", urls.chunk(job.id) + "?offset=" + run.offset);
+        xhr.timeout = cfg.timeout;
+        xhr.upload.onprogress = function (event) { last = Date.now(); if (event.lengthComputable) job.loaded[run.offset] = event.loaded; };
+        xhr.onerror = function () { retry("network"); };
+        xhr.ontimeout = function () { retry("timeout"); };
+        xhr.onabort = function () { if (job.cancelled || job.state === "failed") end(CANCELLED); else retry(xhr.__why || "abort"); };
+        xhr.onload = function () {
+          var data = {};
+          try { data = JSON.parse(xhr.responseText); } catch (e) {}
+          if (xhr.status === 200 && data.ok) end(null);
+          else if ([0, 408, 429, 500, 502, 503, 504, 520, 522, 524].indexOf(xhr.status) >= 0) retry("status");   // the tunnel hiccuped
+          else { var fail = new Error(data.message || text.net); fail.permanent = true; end(fail); }
+        };
+        xhr.send(job.file.slice(run.offset, run.offset + run.length));
       });
     }
 
     // --- the work of a job
     function nextRun(job) {
       var i = job.scan;
-      while (i < job.count && job.blocks[i] !== 0) i++;
+      while (i < job.count && job.blocks[i] !== FREE) i++;
       job.scan = i;
       if (i >= job.count) return null;
       var most = Math.max(1, Math.floor(requestBytes() / block));
       var n = 0;
-      while (i + n < job.count && job.blocks[i + n] === 0 && n < most) n++;
-      for (var k = 0; k < n; k++) job.blocks[i + k] = 2;                       // on its way
+      while (i + n < job.count && job.blocks[i + n] === FREE && n < most) n++;
+      for (var k = 0; k < n; k++) job.blocks[i + k] = SENDING;
       var offset = i * block;
       job.inflight++;
       return { first: i, count: n, offset: offset, length: Math.min(n * block, job.file.size - offset) };
@@ -184,27 +173,21 @@
       if (!running && jobs.length && !jobs.some(function (job) { return ["new", "starting", "sending", "finishing"].indexOf(job.state) >= 0; })) idle();
     }
 
-    function adopt(job, parts) {                 // what the server already has: those blocks are done
-      for (var i = 0; i < job.count; i++) {
-        if (parts.charAt(i) === "1" && job.blocks[i] === 0) {
-          job.blocks[i] = 1;
-          job.confirmedBlocks++;
-          job.confirmed += Math.min(block, job.file.size - i * block);
-        }
-      }
-      job.base = job.confirmed;
+    function adopt(job, parts) {                 // at a resume: what the server already has is done
+      for (var i = 0; i < job.count; i++) if (parts.charAt(i) === "1") markDone(job, i);
     }
 
     function startJob(job) {
       var known = activeKeys[job.key] ? null : recall(job);   // a second copy of the same file starts afresh
       activeKeys[job.key] = true;
       function fresh() {
-        return call(urls.start, form({ name: job.file.name, size: job.file.size })).then(function (info) { job.id = info.id; job.info = info; remember(job); });
+        return call(urls.start, form({ name: job.file.name, size: job.file.size })).then(function (info) { job.id = info.id; remember(job); });
       }
       var begin = known ? call(urls.progress(known), null, "GET").then(function (data) {
         if (data.size !== job.file.size) throw new Error("other file");
         job.id = known;
         adopt(job, data.parts);
+        job.base = job.confirmed;
         remember(job);
       }).catch(function () { return fresh(); }) : fresh();
       return begin.then(function () {
@@ -214,15 +197,33 @@
       }, function (problem) { failJob(job, problem); });
     }
 
-    function runJob(job, run) {
-      return sendRun(job, run).then(function () {
-        delete job.loaded[run.offset];
-        for (var k = 0; k < run.count; k++) job.blocks[run.first + k] = 1;
-        job.confirmedBlocks += run.count;
-        job.confirmed += run.length;
+    function runJob(job, run, attempt) {
+      attempt = attempt || 0;
+      return sendRun(job, run).then(function (ms) {
+        for (var k = 0; k < run.count; k++) markDone(job, run.first + k);
         job.inflight--;
-        penalty = Math.min(1, penalty * 1.25);                   // requests may grow again
-      }, function (problem) { job.inflight--; failJob(job, problem); });
+        var sample = run.length / Math.max(ms / 1000, 0.05);
+        rate = rate > 0 ? rate * 0.7 + sample * 0.3 : sample;
+        emit("onRequest", job, { offset: run.offset, length: run.length, ms: ms, attempt: attempt + 1 });   // for measuring
+      }, function (problem) {
+        if (problem === CANCELLED || !problem.retry) { job.inflight--; return failJob(job, problem); }
+        rate = (rate > 0 ? rate : cfg.startRequest / cfg.targetSeconds) * 0.5;        // smaller requests for a while
+        if (attempt >= cfg.delays.length) { job.inflight--; var fail = new Error(text.net); fail.network = true; return failJob(job, fail); }
+        emit("onRetry", job, { why: problem.retry, attempt: attempt + 1 });
+        // Wait, ask what of this run arrived (the server keeps the front part of a broken request), send only the rest.
+        return sleep(cfg.delays[attempt]).then(waitOnline).then(function () {
+          return call(urls.progress(job.id), null, "GET").then(function (data) { return data.parts; }, function () { return ""; });
+        }).then(function (parts) {
+          if (job.state !== "sending") { job.inflight--; return; }
+          var k = 0;
+          for (var i = 0; i < run.count; i++) if (parts.charAt(run.first + i) === "1") markDone(job, run.first + i);
+          while (k < run.count && job.blocks[run.first + k] === DONE) k++;
+          if (k === run.count) { job.inflight--; return; }
+          var offset = (run.first + k) * block;
+          return runJob(job, { first: run.first + k, count: run.count - k, offset: offset,
+                               length: Math.min((run.count - k) * block, job.file.size - offset) }, attempt + 1);
+        });
+      });
     }
 
     function finishJob(job) {

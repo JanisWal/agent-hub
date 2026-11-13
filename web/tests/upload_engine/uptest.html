@@ -48,9 +48,9 @@ var scenarios = {
       });
     });
   },
-  slow: function () {          // 400 KB/s: speed estimate, time left, small requests
+  slow: function () {          // 400 KB/s on one request at a time (the mock slows each request): speed estimate, time left
     return reset({ rate: 400000 }).then(function () {
-      var t = queue(); t.q.add(file(2400000, "slow.bin"));
+      var t = queue({ parallel: 1 }); t.q.add(file(2400000, "slow.bin"));
       var started = Date.now();
       return until(function () { return t.e.idle > 0; }, 30000).then(function () {
         var withSpeed = t.e.progress.filter(function (p) { return p.speed > 0 && p.left !== null; });
@@ -63,11 +63,14 @@ var scenarios = {
       });
     });
   },
-  flaky: function () {         // the first 3 requests answer 502 after a third of the body
+  flaky: function () {         // the first 3 requests answer 502 after a third of the body: what arrived is not sent again
+    var size = 3 * 1048576;
     return reset({ rate: 0, fail_next: 3 }).then(function () {
-      var t = queue(); t.q.add(file(3 * 1048576, "flaky.bin"));
+      var t = queue({ startRequest: 2097152 }); t.q.add(file(size, "flaky.bin"));   // runs of 8 blocks: a third of one is 2 whole blocks
       return until(function () { return t.e.idle > 0; }).then(state).then(function (s) {
-        return { ok: t.e.done.length === 1 && t.e.retries.length >= 3 && s.finishes === 1, retries: t.e.retries, finishes: s.finishes };
+        var confirmed = s.log.filter(function (r) { return r.status === 200; }).reduce(function (n, r) { return n + r.length; }, 0);
+        return { ok: t.e.done.length === 1 && t.e.retries.length >= 3 && s.finishes === 1 && confirmed < size,
+                 retries: t.e.retries, finishes: s.finishes, bytesInGoodRequests: confirmed, size: size };
       });
     });
   },
@@ -89,7 +92,7 @@ var scenarios = {
   },
   resume: function () {        // the line breaks (502 forever), the same file is added again and only the rest is sent
     var size = 3 * 1048576;
-    return reset({ rate: 250000 }).then(function () {
+    return reset({ rate: 100000 }).then(function () {          // per request; six at a time are about 600 KB/s
       var a = queue({ delays: [0, 20] });
       a.q.add(file(size, "resume.bin", 77));
       return sleep(2500).then(function () { return post("/__mode", { fail_all: true }); })
@@ -101,7 +104,9 @@ var scenarios = {
             return until(function () { return b.e.idle > 0; }).then(state).then(function (end) {
               var u = end.uploads["1"] || {};
               var rest = b.e.requests.reduce(function (n, r) { return n + r.length; }, 0);
-              return { ok: a.e.fail.length === 1 && b.e.done.length === 1 && end.starts === 1 && end.finishes === 1 && (have.match(/1/g) || []).length > 0 && (have.match(/1/g) || []).length < have.length && rest < size,
+              // Every broken request keeps its front part, so much (or all) of the file may already be in: the second
+              // run continues the same upload and sends less than the whole file.
+              return { ok: a.e.fail.length === 1 && b.e.done.length === 1 && end.starts === 1 && end.finishes === 1 && (have.match(/1/g) || []).length > 0 && rest < size,
                        failedMessage: a.e.fail, starts: end.starts, blocksBeforeResume: (have.match(/1/g) || []).length, blocksTotal: have.length,
                        bytesSentInSecondRun: b.e.requests.reduce(function (n, r) { return n + r.length; }, 0), size: size };
             });
@@ -109,14 +114,15 @@ var scenarios = {
         });
     });
   },
-  many: function () {          // four files at once: four rows at once, at most 2 requests at a time
+  many: function () {          // four files at once: four rows at once, several requests at a time, never more than `parallel`
     return reset({ rate: 800000 }).then(function () {
       var t = queue();
       var sizes = [900000, 1400000, 700000, 1100000];
       sizes.forEach(function (n, i) { t.q.add(file(n, "m" + i + ".bin", 10 + i)); });
       var rowsAtOnce = t.e.added;
       return until(function () { return t.e.idle > 0; }, 30000).then(state).then(function (s) {
-        return { ok: rowsAtOnce === 4 && t.e.done.length === 4 && s.finishes === 4 && s.max_concurrent <= 2, rowsAtOnce: rowsAtOnce, done: t.e.done.length, maxConcurrent: s.max_concurrent };
+        return { ok: rowsAtOnce === 4 && t.e.done.length === 4 && s.finishes === 4 && s.max_concurrent >= 3 && s.max_concurrent <= HubUpload.DEFAULTS.parallel,
+                 rowsAtOnce: rowsAtOnce, done: t.e.done.length, maxConcurrent: s.max_concurrent };
       });
     });
   },

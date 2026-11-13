@@ -8,6 +8,7 @@ import time
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
+from starlette.requests import ClientDisconnect
 
 from .. import files, users
 from ..deps import api_user, error, fail, ok
@@ -50,17 +51,31 @@ def start_upload(project_id: int, name: str = Form(""), size: int = Form(0), use
 
 @router.post("/files/{file_id}/chunk")
 async def upload_chunk(file_id: int, offset: int, request: Request, user: users.User = Depends(api_user)):
-    if int(request.headers.get("content-length") or 0) > files.MAX_REQUEST:
-        return _fail(user, files.FileError("too_big"))
+    """One run of blocks, written to disk while it arrives (files.Run). A run that breaks off keeps what came in."""
+    announced = request.headers.get("content-length")
     try:
-        started = time.monotonic()
-        body = await request.body()
-        # How long the body took to arrive here: with the browser's own timing (window.__uploadLog) this shows on which
-        # leg of the way a slow upload is slow.
-        log.info("upload chunk file=%s offset=%s bytes=%s body_seconds=%.2f", file_id, offset, len(body), time.monotonic() - started)
-        return ok(received=await run_in_threadpool(files.append_chunk, user.id, file_id, offset, body))
+        run = await run_in_threadpool(files.Run, user.id, file_id, offset, int(announced) if announced else None)
+    except ValueError:
+        return _fail(user, files.FileError("bad_offset"))
     except files.FileError as problem:
         return _fail(user, problem)
+    started, problem = time.monotonic(), None
+    try:
+        async for piece in request.stream():
+            run.write(piece)
+    except files.FileError as too_much:
+        problem = too_much
+    except ClientDisconnect:
+        problem = files.FileError("bad_offset")      # nobody is listening any more; what arrived is kept below
+    finally:
+        received = await run_in_threadpool(run.close)
+    seconds = time.monotonic() - started
+    # How fast this request came in: with the browser's own timing (window.__uploadLog) it shows where an upload is slow.
+    log.info("upload run file=%s offset=%s bytes=%s seconds=%.2f mb_per_s=%.2f", file_id, offset, run.written, seconds,
+             run.written / 1048576 / seconds if seconds > 0 else 0)
+    if problem is None and announced and run.written < int(announced):
+        problem = files.FileError("bad_offset")      # the body ended before its announced end
+    return _fail(user, problem) if problem else ok(received=received)
 
 
 @router.get("/files/{file_id}/progress")
