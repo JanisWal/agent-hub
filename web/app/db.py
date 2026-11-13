@@ -124,6 +124,18 @@ CREATE TABLE IF NOT EXISTS checks (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS checks_by_project ON checks (project_id, id);
+-- Files and links of a project (files.py): the file itself lives in FILES_DIR/<project id>/<id>, a link has a url.
+CREATE TABLE IF NOT EXISTS files (
+    id         INTEGER PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    category   TEXT NOT NULL,
+    size       INTEGER NOT NULL DEFAULT 0,
+    url        TEXT,
+    status     TEXT NOT NULL DEFAULT 'ready',
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS files_by_project ON files (project_id, category, id);
 -- Claude folders still to be deleted after an account was deleted (no foreign key: the user row is gone).
 CREATE TABLE IF NOT EXISTS claude_wipes (
     user_id    INTEGER PRIMARY KEY,
