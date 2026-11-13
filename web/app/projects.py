@@ -8,7 +8,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-from . import db
+from . import db, files
 
 MAX_NAME = 60
 MAX_DESCRIPTION = 2000
@@ -124,6 +124,7 @@ def delete_project(user_id: int, project_id: int) -> bool:
         cur = conn.execute(
             "DELETE FROM projects WHERE id = ? AND user_id = ?", (project_id, user_id)
         )
+    files.remove_orphans()   # the rows went with the project, the stored files go now
     return cur.rowcount > 0
 
 

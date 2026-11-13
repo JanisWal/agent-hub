@@ -10,8 +10,8 @@ import unittest
 
 from fastapi import HTTPException
 
-from app import board, checks, dashboard, db, power, projectpage, projects, resets, throttle, ui, users
-from app.routes import board as board_routes, checks as check_routes, projects as project_routes, resets as reset_routes
+from app import board, checks, dashboard, db, files, power, projectpage, projects, resets, throttle, ui, users
+from app.routes import board as board_routes, checks as check_routes, files as file_routes, projects as project_routes, resets as reset_routes
 
 
 def snapshot() -> dict:
@@ -21,6 +21,7 @@ def snapshot() -> dict:
             "projects": [tuple(r) for r in conn.execute("SELECT * FROM projects ORDER BY id")],
             "items": [tuple(r) for r in conn.execute("SELECT * FROM board_items ORDER BY id")],
             "checks": [tuple(r) for r in conn.execute("SELECT * FROM checks ORDER BY id")],
+            "files": [tuple(r) for r in conn.execute("SELECT * FROM files ORDER BY id")],
         }
 
 
@@ -105,6 +106,40 @@ class IsolationTest(unittest.TestCase):
         page = projectpage.render(self.b, self.mine, [], checks.list_checks(self.b.id, self.mine.id))
         self.assertIn("Check of B", page)
         self.assertNotIn("Secret check", page)
+
+    def test_b_cannot_touch_the_files_of_a(self):
+        from pathlib import Path
+        files.FILES_DIR = Path(self.tmp.name) / "files"
+        files.free_bytes = lambda: 10 * 1024 ** 3
+        item = files.start_upload(self.a.id, self.project.id, "secret.md", 6)
+        files.append_chunk(self.a.id, item.id, 0, b"secret")
+        files.finish_upload(self.a.id, item.id)
+        link = files.add_link(self.a.id, self.project.id, "https://example.org", "Secret link")
+        half = files.start_upload(self.a.id, self.project.id, "half.bin", 3)
+        before = snapshot()
+        self.assertEqual(files.list_files(self.b.id, self.project.id), [])
+        for call in (
+            lambda: files.start_upload(self.b.id, self.project.id, "planted.md", 1),      # A's project
+            lambda: files.add_link(self.b.id, self.project.id, "https://evil.example"),
+            lambda: files.append_chunk(self.b.id, half.id, 0, b"abc"),                      # A's upload
+            lambda: files.finish_upload(self.b.id, half.id),
+            lambda: files.update(self.b.id, item.id, "hacked.md"),
+            lambda: files.update(self.b.id, link.id, "hacked", url="https://evil.example"),
+        ):
+            with self.assertRaises(files.FileError):
+                call()
+        self.assertIsNone(files.open_file(self.b.id, item.id))
+        self.assertIsNone(files.read_text(self.b.id, item.id))
+        self.assertFalse(files.write_text(self.b.id, item.id, "hacked"))
+        self.assertFalse(files.delete(self.b.id, item.id))
+        self.assertEqual(file_routes.serve(item.id, self.b).status_code, 404)
+        self.assertEqual(file_routes.read_text(item.id, self.b).status_code, 404)
+        self.assertEqual(file_routes.delete(item.id, self.b).status_code, 404)
+        self.assertEqual(snapshot(), before)
+        self.assertEqual(files.read_text(self.a.id, item.id), "secret")
+        page = projectpage.render(self.b, self.mine, [], [], files.list_files(self.b.id, self.mine.id))
+        self.assertNotIn("secret.md", page)
+        self.assertNotIn("Secret link", page)
 
     def test_the_manager_of_b_never_sees_the_checks_of_a(self):
         from app import chat, claude_link

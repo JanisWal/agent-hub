@@ -9,7 +9,7 @@ The manager chat works (chat.py); status and "waiting for you" are empty, device
 """
 import time
 
-from . import checks, i18n
+from . import checks, files as filestore, i18n
 from .icons import icon
 from .layout import esc, fill
 
@@ -123,8 +123,11 @@ def dialogs(lang: str) -> str:
         f'<span aria-hidden="true">{esc(i18n.t(lang, f"day_short_{n}"))}</span></label>'
         for n in range(7)
     )
+    areas = "".join(
+        f'<option value="{value}">{esc(i18n.t(lang, key))}</option>' for value, key in FILE_TABS if value != "links"
+    )
     return fill(CHECK_DIALOGS, lang, MAX_TEXT=str(checks.MAX_TEXT), CYCLES=options, DAYS=days,
-                CHEVRON=icon("chevron_down"))
+                CHEVRON=icon("chevron_down")) + "\n" + fill(FILE_DIALOGS, lang, AREAS=areas, CHEVRON=icon("chevron_down"))
 
 
 def _ago(lang: str, last_done: int, now: int) -> str:
@@ -171,6 +174,105 @@ def _checks_tile(lang: str, regular: list, now: int) -> str:
     )
 
 
+FILE_TABS = (("memory", "files_tab_memory"), ("code", "files_tab_code"), ("media", "files_tab_media"),
+             ("documents", "files_tab_documents"), ("links", "files_tab_links"))
+KIND_ICON = {"link": "link", "image": "photo", "video": "film", "audio": "music", "code": "code", "text": "note",
+             "other": "file"}
+
+FILE_DIALOGS = """<dialog class="dialog" id="file-dialog" data-title-link="%t.files_new_link%" data-title-edit="%t.files_edit%"
+        data-title-edit-link="%t.files_edit_link%" data-btn-new="%t.create%" data-btn-edit="%t.save%">
+  <form method="post" action="" novalidate>
+    <h2>%t.files_edit%</h2>
+    <label>%t.files_name%<input name="name" maxlength="120" autocomplete="off"></label>
+    <label id="file-url-box" hidden>%t.files_url%<input name="url" maxlength="2000" autocomplete="off" inputmode="url" placeholder="https://"></label>
+    <label class="setting has-select" id="file-area-box">
+      <span class="setting-label">%t.files_area%</span>
+      <select name="category">%AREAS%</select>
+      %CHEVRON%
+    </label>
+    <label id="file-text-box" hidden>%t.files_text%<textarea name="text" rows="12" spellcheck="false"></textarea></label>
+    <p class="error" role="alert" id="file-dialog-error" hidden></p>
+    <div class="actions">
+      <button type="button" data-close>%t.cancel%</button>
+      <button class="primary" type="submit" id="file-dialog-button">%t.save%</button>
+    </div>
+  </form>
+</dialog>
+<dialog class="dialog danger" id="file-confirm" data-text-file="%t.files_confirm_delete%" data-text-link="%t.files_confirm_delete_link%">
+  <h2>%t.files_confirm_delete%</h2>
+  <div class="actions">
+    <button type="button" data-close autofocus>%t.cancel%</button>
+    <button class="danger-btn" type="button" id="file-confirm-yes">%t.yes%</button>
+  </div>
+</dialog>"""
+
+
+def _size(lang: str, size: int) -> str:
+    """File size for people: 1,4 MB (a decimal comma in German)."""
+    value, unit = float(size), "B"
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if value < 1024 or unit == "TB":
+            break
+        value /= 1024
+    text = f"{value:.0f}" if unit == "B" or value >= 100 else f"{value:.1f}"
+    return (text.replace(".", ",") if lang == "de" else text) + " " + unit
+
+
+def _file_row(lang: str, item: filestore.StoredFile) -> str:
+    """One file or link: a small rounded tile with the type symbol, a preview next to it only where there is
+    something to see (images and video), the name with its ending, pencil and bin."""
+    kind = item.kind
+    edit_label, delete_label = esc(i18n.t(lang, "files_edit")), esc(i18n.t(lang, "files_delete"))
+    src = f"/files/{item.id}"
+    preview = ""
+    if kind == "image":
+        preview = f'<img class="file-preview" src="{src}" alt="" loading="lazy" decoding="async">'
+    elif kind == "video":
+        preview = f'<video class="file-preview" src="{src}#t=0.1" preload="metadata" muted playsinline tabindex="-1"></video>'
+    if kind == "link":
+        href, sub, target = esc(item.url or ""), esc(item.url or ""), ' target="_blank" rel="noopener noreferrer"'
+    else:
+        href, sub = src, esc(_size(lang, item.size))
+        target = ' target="_blank" rel="noopener noreferrer"' if filestore.content_type(item.name)[1] else ""
+    return (
+        f'<li class="file-row" data-id="{item.id}" data-cat="{item.category}" data-kind="{kind}" '
+        f'data-name="{esc(item.name)}" data-url="{esc(item.url or "")}" data-editable="{1 if item.editable else 0}">'
+        f'<span class="file-tile">{icon(KIND_ICON[kind])}</span>{preview}'
+        f'<a class="file-text" href="{href}"{target}><span class="check-title">{esc(item.name)}</span><small>{sub}</small></a>'
+        f'<button class="icon-button card-btn" type="button" data-file="edit" aria-label="{edit_label}" '
+        f'title="{edit_label}">{icon("pencil")}</button>'
+        f'<button class="icon-button card-btn no" type="button" data-file="delete" aria-label="{delete_label}" '
+        f'title="{delete_label}">{icon("trash")}</button></li>'
+    )
+
+
+def _files_tile(lang: str, items: list) -> str:
+    """The files of the project in five areas as tabs (Janis, 12.11.2026). The plus uploads (or adds a link in
+    the Links tab); files can also be dragged onto the tile. static/files.js does the rest."""
+    tabs, panels = [], []
+    for category, key in FILE_TABS:
+        mine = [f for f in items if f.category == category]
+        tabs.append(
+            f'<button class="file-tab" type="button" role="tab" data-cat="{category}" aria-selected="false">'
+            f'{esc(i18n.t(lang, key))}<span class="file-count">{len(mine)}</span></button>'
+        )
+        body = "".join(_file_row(lang, f) for f in mine) or \
+            f'<li class="file-empty muted">{esc(i18n.t(lang, "files_hint_" + category))}</li>'
+        panels.append(f'<ul class="file-list" data-cat="{category}" hidden>{body}</ul>')
+    attrs = " ".join(f'data-{name}="{esc(i18n.t(lang, key))}"' for name, key in (
+        ("add-file", "files_add_file"), ("add-link", "files_add_link"), ("err-net", "files_err_net")))
+    return (
+        f'<section class="mtile glass m-files m-grow" id="files" {attrs}>'
+        f'<header><h2>{esc(i18n.t(lang, "manager_files"))}</h2>'
+        f'<button class="icon-button m-add" id="file-add" type="button">{icon("plus")}</button></header>'
+        f'<div class="file-tabs" role="tablist">{"".join(tabs)}</div>'
+        f'<p class="error" id="file-error" role="alert" hidden></p>'
+        f'<ul class="file-uploads" id="file-uploads" hidden></ul>'
+        f'{"".join(panels)}<input type="file" id="file-picker" multiple hidden>'
+        f'<p class="file-drop muted" aria-hidden="true">{esc(i18n.t(lang, "files_drop"))}</p></section>'
+    )
+
+
 def _net_switch(lang: str, current: str) -> str:
     """The switch "web and code together" (on: code has the open internet; off: web search, code offline)."""
     label = esc(i18n.t(lang, "net_together"))
@@ -182,7 +284,8 @@ def _net_switch(lang: str, current: str) -> str:
     )
 
 
-def render(lang: str, settings: dict, regular_checks: list | None = None, now: int | None = None) -> str:
+def render(lang: str, settings: dict, regular_checks: list | None = None, now: int | None = None,
+           stored_files: list | None = None) -> str:
     """`settings` is agents.settings(user_id): the manager is the role "chef". `regular_checks` are the
     project's checks (checks.list_checks)."""
     model = _select(lang, "model", "chat_model", MODELS, settings["roles"]["chef"]["model"])
@@ -192,7 +295,7 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
         lang,
         DEVICES=_soon(lang, "manager_devices", "manager_devices_hint", "m-grow"),
         CHECKS=_checks_tile(lang, regular_checks or [], int(now if now is not None else time.time())),
-        FILES=_soon(lang, "manager_files", "manager_files_hint", "m-grow"),
+        FILES=_files_tile(lang, stored_files or []),
         CHAT=fill(CHAT, lang, MODEL=model, NET=_net_switch(lang, settings["roles"]["chef"]["net"])),
         AUTONOMY=autonomy,
     )

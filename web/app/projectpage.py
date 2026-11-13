@@ -6,7 +6,7 @@ from .layout import esc, fill
 from .projects import MAX_DESCRIPTION, MAX_NAME, Project
 from .users import User
 
-SCRIPTS = ("motion.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "manager.js", "checks.js")
+SCRIPTS = ("motion.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "manager.js", "checks.js", "files.js")
 STYLES = ("project.css",)
 
 COLUMN_LABEL = {"bug": "col_bug", "minor": "col_minor", "major": "col_major"}
@@ -200,7 +200,8 @@ def drawer_buttons(lang: str) -> str:
     return button("archive", "archive", "done") + button("trash", "trash", "trash")
 
 
-def render(user: User, project: Project, items: list[Item], regular_checks: list | None = None) -> str:
+def render(user: User, project: Project, items: list[Item], regular_checks: list | None = None,
+           stored_files: list | None = None) -> str:
     """Project page body with the kanban board and the Manager view (with the regular checks)."""
     lang = user.language
     trashed = [i for i in items if i.status == "trash"]
@@ -211,7 +212,7 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
         lang,
         PID=str(project.id),
         STATIONS=_stations(lang),
-        MANAGER=managerpage.render(lang, agents.settings(user.id), regular_checks or []),
+        MANAGER=managerpage.render(lang, agents.settings(user.id), regular_checks or [], stored_files=stored_files or []),
         MANAGER_DIALOGS=managerpage.dialogs(lang),
         TRASH=_trash(trashed, lang),
         ARCHIVE=_archive(archived, lang),

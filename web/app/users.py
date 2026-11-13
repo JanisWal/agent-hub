@@ -14,7 +14,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-from . import db
+from . import db, files
 
 SESSION_SECONDS = 14 * 24 * 3600
 MIN_PASSWORD_LENGTH = 6      # floor for every password, also a start password given by an admin
@@ -249,6 +249,7 @@ def delete_user(actor: User, user_id: int) -> None:
         conn.execute("INSERT OR IGNORE INTO claude_wipes (user_id, created_at) VALUES (?, strftime('%s','now'))",
                      (target.id,))
         conn.execute("DELETE FROM users WHERE id = ?", (target.id,))
+    files.remove_orphans()   # the stored files of his projects
 
 
 def set_admin(actor: User, user_id: int, make_admin: bool) -> None:
