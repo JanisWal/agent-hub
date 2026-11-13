@@ -149,6 +149,11 @@ CREATE TABLE IF NOT EXISTS power_requests (
     created_at   INTEGER NOT NULL,
     taken_at     INTEGER
 );
+-- Settings of the whole server, chosen by the owner (serversettings.py), e.g. how uploads are cut.
+CREATE TABLE IF NOT EXISTS server_settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 """
 
 # Columns added after the first release; added to existing databases on first use.

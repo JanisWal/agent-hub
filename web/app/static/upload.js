@@ -3,7 +3,7 @@
 //    What the server holds can be asked for (`progress`), so a break (lost line, closed tab, reload) goes on from
 //    there and sends only what is missing. The server keeps the part of a broken request that arrived.
 //  - Several requests are on their way at the same time (`parallel`): one alone does not fill the line, many together
-//    do (the same reason S3, Nextcloud and rclone upload parts in parallel; measured 13.11.2026: 12 beat 6).
+//    do (the same reason S3, Nextcloud and rclone upload parts in parallel).
 //  - The size of a request follows the speed the server CONFIRMED for the last requests, so that one takes about
 //    `targetSeconds`: big on a fast line, small on a slow one, and always far below Cloudflare's 100 MB.
 //  - A request that failed (network, no progress for `stall`, longer than `timeout`, a hiccup of the tunnel) is not
@@ -14,11 +14,12 @@
   "use strict";
 
   var DEFAULTS = {
-    parallel: 12,                        // requests on their way at the same time, over all files (Cloudflare speaks HTTP/2
-                                         // with the browser, so these are streams of one connection, not 12 connections)
+    parallel: 6,                         // requests on their way at the same time, over all files (measured 13.11.2026:
+                                         // 12 brought no more than 6 and twice the load on the server)
     startRequest: 8388608,               // size of a request before the speed is known
     minRequest: 524288,
     maxRequest: 33554432,                // far below Cloudflare's 100 MB per request
+                                         // (files.js passes the owner's choice for parallel and maxRequest)
     targetSeconds: 20,                   // what one request should take (Cloudflare waits about 100 s for an answer)
     delays: [0, 1000, 3000, 5000, 10000, 20000, 30000],   // pauses before each new try of a request (about a minute in all)
     stall: 30000,                        // no progress for this long: give up on the request
@@ -84,7 +85,7 @@
 
     // --- sizes
     function requestBytes() {
-      var bytes = rate > 0 ? rate * cfg.targetSeconds : cfg.startRequest;
+      var bytes = rate > 0 ? rate * cfg.targetSeconds : Math.min(cfg.startRequest, cfg.maxRequest);
       bytes = Math.max(cfg.minRequest, Math.min(cfg.maxRequest, bytes));
       return Math.max(block, Math.floor(bytes / block) * block);
     }

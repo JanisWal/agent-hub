@@ -35,6 +35,17 @@ STRINGS = {
         "sys_poweroff_title": "Server ausschalten?",
         "sys_poweroff_do": "Jetzt ausschalten",
         "sys_poweroff_done": "Der Server fährt herunter.",
+        "sys_upload": "Hochladen",
+        "sys_upload_hint": "Wie große Dateien in Stücken hochgeladen werden.",
+        "sys_upload_parallel": "Gleichzeitig",
+        "sys_upload_parallel_info": "So viele Stücke sind gleichzeitig unterwegs. Mehrere füllen die Leitung besser als eines. "
+                                    "Mehr als 6 bringt meist nichts und belastet den Server stärker. "
+                                    "Bei einer wackeligen Verbindung weniger wählen.",
+        "sys_upload_size": "Größtes Stück",
+        "sys_upload_size_info": "So groß darf ein Stück höchstens werden; die Größe passt sich dem Tempo an. "
+                                "Der Anbieter vor dem Server setzt die Grenze: Cloudflare Free und Pro 100 MB "
+                                "(bis 90 MB wählen), Business 200 MB, Enterprise 500 MB. Ohne Grenze reichen 32 bis 64 MB.",
+        "sys_upload_failed": "Die Einstellung wurde nicht gespeichert. Bitte noch einmal versuchen.",
         "err_power_busy": "Es wartet schon eine Anfrage. Bitte einen Moment warten.",
         "change_password": "Passwort ändern",
         "add_user": "Benutzer hinzufügen",
@@ -315,6 +326,17 @@ STRINGS = {
         "sys_poweroff_title": "Shut down the server?",
         "sys_poweroff_do": "Shut down now",
         "sys_poweroff_done": "The server is shutting down.",
+        "sys_upload": "Upload",
+        "sys_upload_hint": "How big files are uploaded in pieces.",
+        "sys_upload_parallel": "At once",
+        "sys_upload_parallel_info": "This many pieces are on their way at the same time. Several fill the line better than one. "
+                                    "More than 6 rarely helps and puts more load on the server. "
+                                    "Choose fewer on a shaky connection.",
+        "sys_upload_size": "Largest piece",
+        "sys_upload_size_info": "A piece grows up to this size; its size follows the speed. "
+                                "The provider in front of the server sets the limit: Cloudflare Free and Pro 100 MB "
+                                "(choose up to 90 MB), Business 200 MB, Enterprise 500 MB. Without a limit 32 to 64 MB are enough.",
+        "sys_upload_failed": "The setting was not saved. Please try again.",
         "err_power_busy": "A request is already waiting. Please wait a moment.",
         "change_password": "Change password",
         "add_user": "Add user",

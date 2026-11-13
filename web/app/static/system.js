@@ -1,5 +1,6 @@
-// System page (owner): restart or shut down the Pi. Each action has its own dialog with the owner's
-// password; on success the dialog closes and a note says what happens now (texts come from the server).
+// System page (owner): restart or shut down the Pi, a manual backup, and how uploads are cut. Each power action has its
+// own dialog with the owner's password; on success the dialog closes and a note says what happens now (texts come from
+// the server).
 (function () {
   var root = document.querySelector(".sys-wrap");
   if (!root) return;
@@ -77,6 +78,18 @@
         backupPoll(0);
       })
       .catch(function () { backupFinished("failed"); });
+  });
+
+  // Upload settings: saved as soon as a choice changes (both values together); a failure says so below the list.
+  var upload = root.querySelector(".sys-upload");
+  var uploadNote = document.getElementById("sys-upload-note");
+  upload.addEventListener("change", function () {
+    var body = new FormData();
+    upload.querySelectorAll("select").forEach(function (select) { body.append(select.name, select.value); });
+    uploadNote.hidden = true;
+    fetch(upload.dataset.url, { method: "POST", body: body })
+      .then(function (response) { if (!response.ok) throw new Error(); })
+      .catch(function () { uploadNote.textContent = uploadNote.dataset.failed; uploadNote.hidden = false; });
   });
 
   var dialogs = { reboot: wire("reboot"), poweroff: wire("poweroff") };
