@@ -10,7 +10,7 @@ import unittest
 
 from fastapi import HTTPException
 
-from app import board, checks, dashboard, db, files, power, projectpage, projects, resets, throttle, ui, users
+from app import board, checks, dashboard, db, files, memory, power, projectpage, projects, resets, throttle, ui, users
 from app.routes import board as board_routes, checks as check_routes, files as file_routes, projects as project_routes, resets as reset_routes
 
 
@@ -144,6 +144,35 @@ class IsolationTest(unittest.TestCase):
         page = projectpage.render(self.b, self.mine, [], [], files.list_files(self.b.id, self.mine.id))
         self.assertNotIn("secret.md", page)
         self.assertNotIn("Secret link", page)
+
+    def test_the_manager_of_b_never_sees_the_memory_or_files_of_a(self):
+        from pathlib import Path
+        from app import chat, claude_link
+        claude_link.BASE_DIR = Path(self.tmp.name) / "claude"
+        files.FILES_DIR = Path(self.tmp.name) / "files"
+        files.free_bytes = lambda: 10 * 1024 ** 3
+        secret = files.start_upload(self.a.id, self.project.id, "secret-plan.md", 6)
+        files.append_chunk(self.a.id, secret.id, 0, b"SECRET")
+        files.finish_upload(self.a.id, secret.id)
+        self.assertTrue(memory.save_memory(self.a.id, self.project.id, "# Status\nSECRET MEMORY OF A"))
+        before = snapshot()
+        self.assertFalse(memory.save_memory(self.b.id, self.project.id, "planted"))        # A's project
+        for user in (self.a, self.b):
+            claude_link.begin(user.id)
+            claude_link.complete(user.id, True)
+        chat.send(self.b.id, self.mine.id, "What do you know?")
+        job = chat.claim_next()
+        self.assertNotIn("SECRET", job.prompt)
+        self.assertNotIn("secret-plan.md", job.prompt)
+        self.assertTrue(chat.finish(job.chat_id, True, "<read>secret-plan.md</read><memory>planted</memory>"))
+        text = chat.claim_next().prompt                                                  # asked again with files
+        self.assertIn("(there is no such file in this project)", text)
+        self.assertNotIn("SECRET", text)
+        with db.connect() as conn:
+            self.assertEqual(memory.read_memory(conn, self.b.id, self.project.id), None)  # A's memory, B asks
+            self.assertIn("no such file", memory.contents(conn, self.b.id, self.project.id, ["secret-plan.md"]))
+            self.assertEqual(memory.listing(conn, self.b.id, self.project.id), "")
+        self.assertEqual(snapshot()["files"], before["files"])                           # nothing of A's changed
 
     def test_the_manager_of_b_never_sees_the_checks_of_a(self):
         from app import chat, claude_link

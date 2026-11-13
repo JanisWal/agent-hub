@@ -41,7 +41,7 @@ MANAGER = """<section class="manager" id="manager-view" aria-label="%t.station_m
 # edge. Web search and code are always there (no switches, Janis 07.11.2026); the model drop-down is a setting of
 # the manager, so it holds for everything the manager does (static/manager.js saves it).
 CHAT = """<section class="mtile glass m-chat" id="chat" data-you="%t.chat_you%" data-claude="%t.station_manager%"
-             data-waiting="%t.chat_waiting%" data-failed="%t.chat_failed%">
+             data-waiting="%t.chat_waiting%" data-failed="%t.chat_failed%" data-memory="%t.chat_memory_saved%">
       <header><h2>%t.manager_chat%</h2>%MODEL%</header>
       <div class="m-chat-sub"><p class="muted">%t.manager_chat_hint%</p>%NET%</div>
       <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
