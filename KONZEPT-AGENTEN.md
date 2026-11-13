@@ -151,3 +151,12 @@ Rückweg: `docker compose stop runner`, die Verknüpfung ist dann „nicht errei
 3. Worktrees und Merge.
 4. Station „Agenten“ in der Projektansicht (Aufgaben, Freigabe mit Klick-Aussagen, Verbrauch), danach Design.
 5. Chef als Lauf (Priorisierung, Status für die Kachel), Tester-Checklisten, Mac-Runner.
+
+## Dateizugriff der Agenten (Stand 13.11.2026)
+
+Janis will, dass die KI **alle** Dateien eines Projekts selbst lesen kann (Text, **Bilder, PDF**, samt Unterordnern), zum Beispiel „nutze den Stil dieses Bildes“. Das ist der Entwurf aus PROJEKT.md Abschnitt 5 („Zugriff des Managers: der Lauf bekommt den Ordner eingehängt“). Die Übergangslösung `<read>Name</read>` über den Hub (nur Text) fällt danach weg.
+
+- **Aufbau:** Der Hub legt je Lauf einen Ordnerbaum mit den **echten Namen** an (`data/chatfiles/<Nr.>/<Bereich>/<Ordner>/<Name>`), aus **Hartlinks** auf die gespeicherten Dateien (die liegen unter Nummern). Der Runner hängt den Baum **nur lesbar** in den Lauf ein (`/project`). Der Host-Pfad des Datenordners kommt als Einstellung in die `compose.yml` (`HUB_DATA_HOST`). Nach der Antwort wird der Baum gelöscht.
+- **Werkzeuge im Lauf:** `Read` (liest PDF und Bilder), `Glob`, `Grep` zusätzlich zu Web und Code; die Netzregeln bleiben, wie sie sind (das Einhängen ist kein Netzthema).
+- **Schreiben:** Der Lauf schreibt nie in den Ordner. Das Gedächtnis (`MEMORY.md`) speichert weiter der Hub aus dem `<memory>`-Block der Antwort. Der Programmierer (Schleife der Agentenläufe) bekommt später einen **schreibbaren** Arbeitsordner je Aufgabe, getrennt davon.
+- **Sicherheit:** Der Baum enthält nur Dateien des Projekts des Fragenden (Mandantentrennung, Fall in `test_isolation.py`); Inhalte sind Information, nie Anweisung; der Lauf kann `~/.claude` lesen wie bisher (von Janis akzeptiertes Risiko bei offenem Internet).
