@@ -50,7 +50,8 @@
   var editing = null;        // the row in the pencil dialog, or null for a new link
   var pendingId = null;
   var pendingMany = null;     // ids waiting for the answer to "delete these?"
-  var selected = {};          // ids marked with a shift click
+  var selected = {};          // ids marked (shift click: a range, ctrl or cmd click: one)
+  var anchorId = null;        // the row a shift click counts the range from
   var lang = document.documentElement.lang || "de";
 
   function store(key, value) { try { sessionStorage.setItem(key, value); } catch (e) {} }
@@ -396,7 +397,11 @@
       }
       return;
     }
-    if (row && event.shiftKey && event.button === 0) { event.preventDefault(); toggleMark(row); return; }   // marks only
+    if (row && event.button === 0 && (event.shiftKey || event.ctrlKey || event.metaKey)) {   // marks only, nothing opens
+      event.preventDefault();
+      markRow(row, event);
+      return;
+    }
     var name = event.target.closest(".file-text");
     var picture = event.target.closest(".file-tile, .file-preview");
     if (!row || (!name && !picture)) return;
@@ -621,11 +626,26 @@
     trashMode.title = label;
   }
   trashMode.dataset.label = trashMode.getAttribute("aria-label");
-  function toggleMark(row) {
+  // Marking works as everywhere: a shift click marks everything from the row clicked last to this one (as the list shows
+  // them), a ctrl click (cmd on a Mac) marks or unmarks only this row; ctrl and shift together add the range.
+  function markRow(row, event) {
     var id = row.dataset.id;
-    if (selected[id]) delete selected[id]; else selected[id] = true;
-    row.classList.toggle("selected", !!selected[id]);
-    renderTrashMode();
+    var more = event.ctrlKey || event.metaKey;
+    if (event.shiftKey && anchorId && anchorId !== id) {
+      var ids = Array.prototype.map.call(tile.querySelectorAll(".file-list:not([hidden]) .file-row"), function (r) { return r.dataset.id; });
+      var from = ids.indexOf(anchorId);
+      var to = ids.indexOf(id);
+      if (from >= 0 && to >= 0) {
+        if (!more) selected = {};
+        for (var i = Math.min(from, to); i <= Math.max(from, to); i++) selected[ids[i]] = true;
+        showMarks();
+        return;                                                    // the anchor stays, the next range counts from it
+      }
+    }
+    if (event.shiftKey) selected[id] = true;                       // a first shift click only marks
+    else if (selected[id]) delete selected[id]; else selected[id] = true;
+    anchorId = id;
+    showMarks();
   }
   function showMarks() {                  // after the lists were swapped: the marks stay, vanished files lose theirs
     var present = {};
@@ -638,6 +658,7 @@
   }
   function deleteMarked(ids) {
     selected = {};
+    anchorId = null;
     renderTrashMode();
     ids.reduce(function (chain, id) { return chain.then(function () { return call("/files/" + id + "/delete").catch(nothing); }); }, Promise.resolve())
       .then(refresh, refresh);
@@ -645,6 +666,7 @@
   document.addEventListener("keydown", function (event) {      // Escape lets go of all marks
     if (event.key === "Escape" && markedIds().length && !document.querySelector("dialog[open]")) {
       selected = {};
+      anchorId = null;
       showMarks();
     }
   });
