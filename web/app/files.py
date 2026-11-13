@@ -24,7 +24,16 @@ from urllib.parse import urlsplit
 
 from . import db
 
-FILES_DIR = Path(os.environ.get("HUB_FILES_DIR", "/data/files"))
+FILES_DIR: Path | None = None    # tests set this; normally unset, see files_dir()
+
+
+def files_dir() -> Path:
+    """Where the files live: HUB_FILES_DIR, else the folder `files` NEXT TO THE DATABASE. Tied to the database on purpose:
+    a test that works on its own (temporary) database therefore also works on its own folder and can never touch the
+    real files (an earlier fixed path /data/files was emptied by test runs that mount the real data folder)."""
+    if FILES_DIR is not None:
+        return Path(FILES_DIR)
+    return Path(os.environ.get("HUB_FILES_DIR") or Path(db.DB_PATH).parent / "files")
 CATEGORIES = ("memory", "code", "media", "documents", "links")
 MIN_FREE = 1024 ** 3             # an upload is refused when less than this would stay free
 BLOCK_SIZE = 256 * 1024          # an upload is counted in blocks of this size (the unit of Cloudflare Stream and tus uploaders)
@@ -115,8 +124,8 @@ def content_type(name: str) -> tuple[str, bool]:
 
 def free_bytes() -> int:
     """Free space of the disk the files live on (a function of its own, so tests can fake it)."""
-    FILES_DIR.mkdir(parents=True, exist_ok=True)
-    return shutil.disk_usage(FILES_DIR).free
+    files_dir().mkdir(parents=True, exist_ok=True)
+    return shutil.disk_usage(files_dir()).free
 
 
 def _clean_name(name: str) -> str:
@@ -152,7 +161,7 @@ def _own_project(conn: sqlite3.Connection, user_id: int, project_id: int) -> boo
 
 
 def path_of(project_id: int, file_id: int) -> Path:
-    return FILES_DIR / str(project_id) / str(file_id)
+    return files_dir() / str(project_id) / str(file_id)
 
 
 def list_files(user_id: int, project_id: int) -> list[StoredFile]:
@@ -298,7 +307,7 @@ def update(user_id: int, file_id: int, name: str, url: str | None = None, catego
 
 
 def thumb_path(project_id: int, file_id: int) -> Path:
-    return FILES_DIR / str(project_id) / f"{file_id}.thumb"
+    return files_dir() / str(project_id) / f"{file_id}.thumb"
 
 
 def has_thumb(item: "StoredFile") -> bool:
@@ -390,11 +399,13 @@ def _drop_stale(conn: sqlite3.Connection, now: int) -> None:
 
 
 def remove_orphans() -> None:
-    """Delete the folders of projects that no longer exist (the rows go with the project, the files do not)."""
-    if not FILES_DIR.is_dir():
+    """Delete the folders of projects that no longer exist (the rows go with the project, the files do not). Only
+    folders whose name is a project number are ever touched."""
+    root = files_dir()
+    if not root.is_dir():
         return
     with db.connect() as conn:
         alive = {str(r[0]) for r in conn.execute("SELECT id FROM projects")}
-    for folder in FILES_DIR.iterdir():
-        if folder.is_dir() and folder.name not in alive:
+    for folder in root.iterdir():
+        if folder.is_dir() and folder.name.isdigit() and folder.name not in alive:
             shutil.rmtree(folder, ignore_errors=True)

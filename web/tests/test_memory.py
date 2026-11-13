@@ -111,6 +111,14 @@ class MemoryTest(MemoryBase):
         self.assertTrue(saved.rstrip().rsplit("\n", 1)[-1].startswith("line "))
         self.assertTrue(saved.endswith("\n") and not saved.rstrip().endswith("line 49"[:0] + " "))
 
+    def test_a_memory_row_whose_file_is_gone_does_not_block_saving(self):
+        item = self.put(self.a, self.pa, "MEMORY.md", b"# Status\nOld")
+        files.path_of(self.pa.id, item.id).unlink()              # the file vanished, the row is still there
+        self.assertTrue(memory.save_memory(self.a.id, self.pa.id, "# Status\nNew"))
+        stored = files.list_files(self.a.id, self.pa.id)
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(files.read_text(self.a.id, stored[0].id), "# Status\nNew\n")
+
     def test_a_failed_answer_saves_nothing_and_keeps_its_reason(self):
         job = self.ask()
         chat.finish(job.chat_id, False, "<memory>planted</memory> boom")
