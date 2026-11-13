@@ -29,6 +29,7 @@ ICONS = {
     "music": '<path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
     "code": '<path d="M8 7l-5 5 5 5M16 7l5 5-5 5"/>',
     "link": '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+    "download": '<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>',
     "plus": '<path d="M12 5v14M5 12h14"/>',
     "pencil": '<path d="M4 20l1-4L16.5 4.5a2 2 0 0 1 3 3L8 19z"/><path d="M14 7l3 3"/>',
     "check": '<path d="M5 12.5l5 5 9-10"/>',

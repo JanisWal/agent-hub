@@ -199,7 +199,7 @@ class FilesTest(unittest.TestCase):
 
     # --- serving: fixed type, nothing runs
     def serve(self, item):
-        return file_routes.serve(item.id, self.user)
+        return file_routes.serve(item.id, 0, self.user)
 
     def test_only_images_video_and_audio_are_shown_everything_else_is_a_download(self):
         for name, shown in (("a.png", True), ("a.svg", True), ("a.mp4", True), ("a.mp3", True), ("a.html", False),
@@ -211,23 +211,68 @@ class FilesTest(unittest.TestCase):
             self.assertIn("sandbox", response.headers["content-security-policy"])
 
     # --- the tile
+    def tile(self, lang="en"):
+        stored = files.list_files(self.user.id, self.project.id)
+        return managerpage.render(lang, {"roles": {"chef": {"model": "sonnet", "net": "together"}}, "autonomy": "major"},
+                                  stored_files=stored)
+
     def test_the_tile_shows_previews_only_where_there_is_something_to_see(self):
-        self.upload("pic.png", b"x")
-        self.upload("clip.mp4", b"x")
+        pic, clip = self.upload("pic.png", b"x"), self.upload("clip.mp4", b"x")
         self.upload("memo.m4a", b"x")
         self.upload("doc.pdf", b"x")
-        files.add_link(self.user.id, self.project.id, "https://example.org", "Example")
-        stored = files.list_files(self.user.id, self.project.id)
+        files.add_link(self.user.id, self.project.id, "https://example.org:8443/guide", "Example")
         for lang in ("de", "en"):
-            html = managerpage.render(lang, {"roles": {"chef": {"model": "sonnet", "net": "together"}}, "autonomy": "major"},
-                                      stored_files=stored)
-            self.assertEqual(html.count("<img "), 1)
-            self.assertEqual(html.count("<video "), 1)
-            self.assertEqual(html.count('class="file-row"'), 5)
+            html = self.tile(lang)
+            self.assertEqual(html.count('<li class="file-row"'), 5)
+            self.assertEqual(html.count("data-need-thumb"), 2)                       # image and video wait for a small picture
+            self.assertEqual(html.count("<video "), 0)                               # no player, no original in the list
+            self.assertEqual(html.count('class="file-preview file-favicon"'), 1)     # only the link has a picture yet
+            self.assertIn('src="https://example.org:8443/favicon.ico"', html)
             self.assertNotIn("%t.", html)
-            self.assertIn("pic.png", html)
-            self.assertIn('rel="noopener noreferrer"', html)
+        self.assertTrue(files.save_thumb(self.user.id, pic.id, b"\xff\xd8\xff small"))
+        self.assertTrue(files.save_thumb(self.user.id, clip.id, b"\xff\xd8\xff small"))
+        html = self.tile()
+        self.assertEqual(html.count("data-need-thumb"), 0)
+        self.assertIn(f'src="/files/{pic.id}/thumb"', html)
+        self.assertNotIn(f'src="/files/{pic.id}"', html)                             # the original is never in the list
 
+    def test_a_click_on_the_name_downloads_a_link_opens_in_a_new_tab(self):
+        item = self.upload("a.pdf", b"x")
+        link = files.add_link(self.user.id, self.project.id, "https://example.org/doc")
+        html = self.tile()
+        self.assertIn(f'href="/files/{item.id}?download=1"', html)
+        self.assertIn('href="https://example.org/doc" target="_blank" rel="noopener noreferrer"', html)
+
+    # --- small preview pictures
+    def test_a_preview_picture_is_kept_for_images_and_video_only(self):
+        pic, doc = self.upload("pic.png", b"x"), self.upload("doc.pdf", b"x")
+        self.assertTrue(files.save_thumb(self.user.id, pic.id, b"\xff\xd8\xff data"))
+        self.assertFalse(files.save_thumb(self.user.id, doc.id, b"\xff\xd8\xff data"))
+        self.assertEqual(files.open_thumb(self.user.id, pic.id).read_bytes(), b"\xff\xd8\xff data")
+        self.assertIsNone(files.open_thumb(self.user.id, doc.id))
+        for bad, code in ((b"<script>alert(1)</script>", "bad_type"), (b"\xff\xd8\xff" + b"x" * files.THUMB_MAX, "too_big")):
+            with self.assertRaises(files.FileError) as caught:
+                files.save_thumb(self.user.id, pic.id, bad)
+            self.assertEqual(caught.exception.code, code)
+        unfinished = files.start_upload(self.user.id, self.project.id, "half.png", 3)
+        self.assertFalse(files.save_thumb(self.user.id, unfinished.id, b"\xff\xd8\xff data"))
+        link = files.add_link(self.user.id, self.project.id, "https://example.org")
+        self.assertFalse(files.save_thumb(self.user.id, link.id, b"\xff\xd8\xff data"))
+
+    def test_the_preview_picture_goes_with_the_file_and_is_served_with_a_fixed_type(self):
+        pic = self.upload("pic.png", b"x")
+        files.save_thumb(self.user.id, pic.id, b"\xff\xd8\xff data")
+        response = file_routes.thumb(pic.id, self.user)
+        self.assertEqual(response.media_type, "image/jpeg")
+        self.assertIn("sandbox", response.headers["content-security-policy"])
+        path = files.thumb_path(self.project.id, pic.id)
+        files.delete(self.user.id, pic.id)
+        self.assertFalse(path.exists())
+
+    def test_a_download_link_always_downloads(self):
+        item = self.upload("pic.png", b"x")
+        self.assertTrue(file_routes.serve(item.id, 0, self.user).headers["content-disposition"].startswith("inline"))
+        self.assertTrue(file_routes.serve(item.id, 1, self.user).headers["content-disposition"].startswith("attachment"))
     def test_the_names_in_the_tile_are_escaped(self):
         item = self.upload("a<script>.md", b"x")
         html = managerpage.render("en", {"roles": {"chef": {"model": "sonnet", "net": "together"}}, "autonomy": "major"},

@@ -9,6 +9,8 @@ The manager chat works (chat.py); status and "waiting for you" are empty, device
 """
 import time
 
+from urllib.parse import urlsplit
+
 from . import checks, files as filestore, i18n
 from .icons import icon
 from .layout import esc, fill
@@ -127,7 +129,8 @@ def dialogs(lang: str) -> str:
         f'<option value="{value}">{esc(i18n.t(lang, key))}</option>' for value, key in FILE_TABS if value != "links"
     )
     return fill(CHECK_DIALOGS, lang, MAX_TEXT=str(checks.MAX_TEXT), CYCLES=options, DAYS=days,
-                CHEVRON=icon("chevron_down")) + "\n" + fill(FILE_DIALOGS, lang, AREAS=areas, CHEVRON=icon("chevron_down"))
+                CHEVRON=icon("chevron_down")) + "\n" + fill(FILE_DIALOGS, lang, AREAS=areas, CHEVRON=icon("chevron_down"),
+                                                         DOWNLOAD=icon("download"), CROSS=icon("cross"))
 
 
 def _ago(lang: str, last_done: int, now: int) -> str:
@@ -205,6 +208,14 @@ FILE_DIALOGS = """<dialog class="dialog" id="file-dialog" data-title-link="%t.fi
     <button type="button" data-close autofocus>%t.cancel%</button>
     <button class="danger-btn" type="button" id="file-confirm-yes">%t.yes%</button>
   </div>
+</dialog>
+<dialog class="dialog viewer" id="file-viewer">
+  <div class="viewer-head">
+    <h2 id="file-viewer-title"></h2>
+    <button class="icon-button card-btn" type="button" id="file-viewer-download" aria-label="%t.files_download%" title="%t.files_download%">%DOWNLOAD%</button>
+    <button class="icon-button card-btn" type="button" data-close aria-label="%t.files_close%" title="%t.files_close%">%CROSS%</button>
+  </div>
+  <div class="viewer-body" id="file-viewer-body"></div>
 </dialog>"""
 
 
@@ -219,22 +230,39 @@ def _size(lang: str, size: int) -> str:
     return (text.replace(".", ",") if lang == "de" else text) + " " + unit
 
 
+def _origin(url: str) -> str:
+    """Scheme, host and port of an address: the icon of a link is the site's own /favicon.ico, which the browser
+    loads itself (nothing is fetched by the server; a missing icon simply does not show)."""
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    host = f"[{host}]" if ":" in host else host
+    try:
+        port = f":{parts.port}" if parts.port else ""
+    except ValueError:
+        port = ""
+    return f"{parts.scheme}://{host}{port}"
+
+
 def _file_row(lang: str, item: filestore.StoredFile) -> str:
-    """One file or link: a small rounded tile with the type symbol, a preview next to it only where there is
-    something to see (images and video), the name with its ending, pencil and bin."""
+    """One file or link: a small bordered card with a rounded square with the type symbol, a preview next to it only
+    where there is something to see (a small picture of an image or video, the icon of a website), the name with
+    its ending (a click downloads the file, opens the link, or opens the editor of a text), pencil and bin."""
     kind = item.kind
     edit_label, delete_label = esc(i18n.t(lang, "files_edit")), esc(i18n.t(lang, "files_delete"))
-    src = f"/files/{item.id}"
     preview = ""
-    if kind == "image":
-        preview = f'<img class="file-preview" src="{src}" alt="" loading="lazy" decoding="async">'
-    elif kind == "video":
-        preview = f'<video class="file-preview" src="{src}#t=0.1" preload="metadata" muted playsinline tabindex="-1"></video>'
     if kind == "link":
+        icon_url = esc(_origin(item.url or "") + "/favicon.ico")
+        preview = (f'<img class="file-preview file-favicon" src="{icon_url}" alt="" loading="lazy" decoding="async" '
+                   f'referrerpolicy="no-referrer" draggable="false">')
         href, sub, target = esc(item.url or ""), esc(item.url or ""), ' target="_blank" rel="noopener noreferrer"'
     else:
-        href, sub = src, esc(_size(lang, item.size))
-        target = ' target="_blank" rel="noopener noreferrer"' if filestore.content_type(item.name)[1] else ""
+        if kind in ("image", "video"):
+            if filestore.has_thumb(item):
+                preview = (f'<img class="file-preview" src="/files/{item.id}/thumb" alt="" loading="lazy" '
+                           f'decoding="async" draggable="false">')
+            else:   # files.js makes the small picture once, in the browser
+                preview = f'<span class="file-preview file-pending" data-need-thumb="{kind}"></span>'
+        href, sub, target = f"/files/{item.id}?download=1", esc(_size(lang, item.size)), ""
     return (
         f'<li class="file-row" draggable="true" data-id="{item.id}" data-cat="{item.category}" data-kind="{kind}" '
         f'data-name="{esc(item.name)}" data-url="{esc(item.url or "")}" data-editable="{1 if item.editable else 0}">'
@@ -244,6 +272,18 @@ def _file_row(lang: str, item: filestore.StoredFile) -> str:
         f'title="{edit_label}">{icon("pencil")}</button>'
         f'<button class="icon-button card-btn no" type="button" data-file="delete" aria-label="{delete_label}" '
         f'title="{delete_label}">{icon("trash")}</button></li>'
+    )
+
+
+def _upload_template(lang: str) -> str:
+    """One row of the upload list (files.js copies it for every file): name, speed and time left, a cross to
+    cancel, and the thin bar."""
+    cancel = esc(i18n.t(lang, "cancel"))
+    return (
+        '<template id="file-up-template"><li class="file-up"><span class="file-up-name"></span>'
+        '<span class="file-up-meta"></span>'
+        f'<button class="icon-button card-btn file-up-x" type="button" aria-label="{cancel}" title="{cancel}">{icon("cross")}</button>'
+        '<span class="file-bar"><i></i></span></li></template>'
     )
 
 
@@ -268,12 +308,12 @@ def _files_tile(lang: str, items: list) -> str:
     attrs += f' data-chunk="{filestore.CHUNK_SIZE}"'
     return (
         f'<section class="mtile glass m-files m-grow" id="files" {attrs}>'
-        f'<header><h2>{esc(i18n.t(lang, "manager_files"))}</h2>'
+        f'<header><h2>{esc(i18n.t(lang, "manager_files"))}</h2><span class="file-area" aria-hidden="true"></span>'
         f'<button class="icon-button m-add" id="file-add" type="button">{icon("plus")}</button></header>'
-        f'<div class="file-tabs" role="tablist">{"".join(tabs)}</div>'
+        f'<div class="file-tabs" role="tablist"><span class="file-thumb" aria-hidden="true"></span>{"".join(tabs)}</div>'
         f'<p class="error" id="file-error" role="alert" hidden></p>'
-        f'<ul class="file-uploads" id="file-uploads" hidden></ul>'
-        f'{"".join(panels)}<input type="file" id="file-picker" multiple hidden>'
+        f'<div class="file-scroll"><ul class="file-uploads" id="file-uploads" hidden></ul>'
+        f'{"".join(panels)}</div><input type="file" id="file-picker" multiple hidden>{_upload_template(lang)}'
         f'<p class="file-drop muted" aria-hidden="true">{esc(i18n.t(lang, "files_drop"))}</p></section>'
     )
 

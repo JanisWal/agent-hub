@@ -15,7 +15,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 base, email, password, project = sys.argv[1].rstrip("/"), sys.argv[2], sys.argv[3], sys.argv[4]
-CHUNK = 16 * 1024 * 1024                                # files.CHUNK_SIZE
+CHUNK = 5 * 1024 * 1024                                 # files.CHUNK_SIZE
 jar = http.cookiejar.CookieJar()
 opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))
 failures = []

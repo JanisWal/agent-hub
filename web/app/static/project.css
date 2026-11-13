@@ -248,40 +248,69 @@ html .card.drag-clone::after { display: none; }
 /* One design language (Janis, 11.11.2026): trash and archive belong to the board, so they are not shown in the Manager view. */
 .manager-open .drawer-extra { display: none; }
 
-/* Files and links of the Manager view (Janis, 12.11.2026, sharper and bordered on 13.11.2026): five tabs in ONE row
-   (a symbol each; the names when the tile is wide, container query), the files as small bordered cards with sharp
-   corners. A card gets a thicker border and a glass lift on hover. Dragging files onto the tile makes the tabs pop
-   up (spring in files.js), the one under the pointer pops more. */
-.m-files { container-type: inline-size; --file-line: color-mix(in srgb, var(--text) 18%, transparent); --file-line-hover: color-mix(in srgb, var(--text) 42%, transparent); }
-.file-tabs { display: flex; flex-wrap: nowrap; gap: 6px; }
-.file-tab { flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 40px; padding: 6px 6px; border-radius: 8px; border: 1px solid var(--file-line); background: color-mix(in srgb, var(--field) 55%, transparent); box-shadow: none; color: var(--muted); font-size: 0.84rem; font-weight: 600; will-change: transform; transition: border-color 0.2s, box-shadow 0.2s, color 0.2s, background-color 0.2s; }
+/* Files and links of the Manager view (Janis, 12.11.2026; glass and Apple-like on 13.11.2026, apple-design skill):
+   five tabs in ONE row as a segmented control (a glass highlight slides under the chosen one with a spring), the
+   files as small bordered glass cards with sharp corners and the edge light of the glass. A card gets a thicker
+   border and a lift on hover and gives way when pressed. Dragging files onto the tile makes the tabs pop up like
+   glass drops (spring in files.js). Material weight: the tabs are the lightest layer, the cards sit above the tile. */
+.m-files { container-type: inline-size; --file-line: color-mix(in srgb, var(--text) 16%, transparent); --file-line-hover: color-mix(in srgb, var(--text) 40%, transparent); --file-soft: 0 4px 14px color-mix(in srgb, var(--text) 9%, transparent), 0 1px 2px color-mix(in srgb, var(--text) 10%, transparent); }
+.m-files header h2 { flex: 0 1 auto; }
+.m-files .file-area { flex: 1; min-width: 0; font-size: 1.2rem; font-weight: 600; letter-spacing: -0.01em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.m-files .m-add { margin-left: auto; }
+@container (min-width: 500px) { .m-files .file-area { display: none; } }
+/* Uploads and lists scroll inside the tile (Janis, 13.11.2026): the tile never grows with the number of files. In the
+   three-column layout it fills the space that is left; stacked it stops at a height of its own. */
+.m-files { min-height: 0; }
+.file-scroll { flex: 1 1 auto; min-height: 0; max-height: min(62vh, 560px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--file-line-hover) transparent; display: flex; flex-direction: column; gap: 6px; padding: 4px 6px 8px; margin: 0 -6px; }
+.file-scroll::-webkit-scrollbar { width: 8px; }
+.file-scroll::-webkit-scrollbar-thumb { border-radius: 4px; background: var(--file-line); }
+.file-tabs { position: relative; display: flex; gap: 0; padding: 3px; border-radius: 12px; border: 1px solid var(--file-line); background: color-mix(in srgb, var(--field) 70%, transparent); box-shadow: inset 0 1px 3px rgba(80, 40, 10, 0.14); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); }
+.file-thumb { position: absolute; top: 3px; bottom: 3px; left: 0; width: 0; border-radius: 9px; pointer-events: none; will-change: transform; background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 60%), color-mix(in srgb, var(--accent) 38%, var(--glass)); box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 28%, transparent), inset 0 1px 0 var(--highlight); }
+.file-tab { position: relative; z-index: 1; flex: 1 1 0; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 36px; padding: 6px; border-radius: 9px; border: 1px solid transparent; background: none; box-shadow: none; color: var(--muted); font-size: 0.84rem; font-weight: 600; will-change: transform; transition: color 0.2s, background-color 0.2s; }
 .file-tab svg { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .file-tab-label { display: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @container (min-width: 500px) { .file-tab-label { display: inline; } .file-tab svg { display: none; } }
-.file-tab:hover { transform: none; color: var(--text); border-color: var(--file-line-hover); box-shadow: 0 0 0 1px var(--file-line-hover); }
-.file-tab[aria-selected="true"] { color: var(--text); background: color-mix(in srgb, var(--accent) 30%, transparent); border-color: color-mix(in srgb, var(--accent) 60%, transparent); }
+.file-tab:hover { transform: none; color: var(--text); }
+.file-tab[aria-selected="true"] { color: var(--text); }
 .file-count { font-size: 0.72rem; font-weight: 700; color: var(--muted); }
-.m-files.dropping .file-tab { background: var(--glass); box-shadow: var(--shadow); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); color: var(--text); }
+.m-files.dropping .file-tab { background: var(--glass); border-color: var(--glass-border); box-shadow: var(--shadow); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); color: var(--text); }
 .m-files.dropping .file-tab.hot { border-color: var(--accent); box-shadow: var(--shadow), 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
 .file-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .file-list[hidden], .file-uploads[hidden] { display: none; }
 .file-empty { padding: 10px 4px; }
-.file-row { position: relative; display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 8px; min-height: 52px; box-sizing: border-box; border: 1px solid var(--file-line); border-radius: 8px; background: color-mix(in srgb, var(--field) 40%, transparent); transition: translate 0.25s cubic-bezier(0.3, 1.5, 0.5, 1), box-shadow 0.25s, border-color 0.2s, background-color 0.2s; }
-.file-row:hover { translate: 0 -2px; border-color: var(--file-line-hover); box-shadow: 0 0 0 1px var(--file-line-hover), var(--shadow); background: var(--glass); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); }
-.file-tile { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 6px; background: var(--field); border: 1px solid var(--file-line); color: var(--muted); }
+.file-row, .file-up { position: relative; border: 1px solid var(--file-line); border-radius: 8px; background: color-mix(in srgb, var(--glass) 55%, transparent); box-shadow: var(--file-soft); -webkit-backdrop-filter: blur(14px) saturate(1.5); backdrop-filter: blur(14px) saturate(1.5); }
+.file-row::before, .file-up::before { content: ""; position: absolute; inset: 0; padding: 1px; border-radius: inherit; background: linear-gradient(135deg, var(--highlight), transparent 38%, transparent 62%, var(--highlight)); -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude; pointer-events: none; opacity: 0.8; transition: opacity 0.2s; }
+.file-row { display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 8px; min-height: 52px; box-sizing: border-box; transition: translate 0.3s cubic-bezier(0.3, 1.5, 0.5, 1), scale 0.12s ease-out, box-shadow 0.25s, border-color 0.2s, background-color 0.2s; }
+.file-row:hover { translate: 0 -2px; border-color: var(--file-line-hover); box-shadow: 0 0 0 1px var(--file-line-hover), var(--shadow); background: var(--glass); }
+.file-row:hover::before { opacity: 1; }
+.file-row:active { scale: 0.985; }
+.file-tile { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 6px; background: var(--field); border: 1px solid var(--file-line); box-shadow: inset 0 1px 3px rgba(80, 40, 10, 0.12); color: var(--muted); cursor: pointer; }
 .file-tile svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-.file-preview { flex: none; width: 38px; height: 38px; border-radius: 6px; object-fit: cover; background: var(--field); border: 1px solid var(--file-line); pointer-events: none; }
+.file-preview { flex: none; width: 38px; height: 38px; border-radius: 6px; object-fit: cover; background: var(--field); border: 1px solid var(--file-line); cursor: pointer; }
+.file-pending { display: block; }
+.file-favicon { object-fit: contain; padding: 9px; }
 .file-text { flex: 1; min-width: 0; color: inherit; text-decoration: none; }
 .file-text .check-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-text small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.78rem; font-weight: 500; color: var(--muted); }
 .file-uploads { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.file-up { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 8px 10px; border: 1px solid var(--file-line); border-radius: 8px; font-size: 0.85rem; font-weight: 600; }
+.file-up { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 2px 8px; padding: 8px 6px 10px 10px; font-size: 0.85rem; font-weight: 600; }
 .file-up-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .file-up-meta { font-size: 0.78rem; font-weight: 500; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.file-bar { grid-column: 1 / -1; display: block; height: 5px; border-radius: 3px; background: var(--field); overflow: hidden; }
+.file-up-x { margin: -4px 0; }
+.file-bar { grid-column: 1 / -1; display: block; height: 5px; margin-right: 4px; border-radius: 3px; background: var(--field); box-shadow: inset 0 1px 2px rgba(80, 40, 10, 0.2); overflow: hidden; }
 .file-bar i { display: block; height: 100%; background: var(--accent); transform: scaleX(0); transform-origin: left; }
 .file-drop { display: none; }
 .m-files.dropping .file-drop { display: block; text-align: center; padding: 8px 0 2px; }
 #file-dialog textarea { width: 100%; box-sizing: border-box; min-height: 180px; font: inherit; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.88rem; }
 #file-dialog { overflow: visible; }
-@media (prefers-reduced-motion: reduce) { .file-row, .file-tab { transition: none; } }
+/* The viewer: the picture or the player on a big glass sheet, over the dimmed page. */
+.dialog.viewer { max-width: min(92vw, 980px); width: min(92vw, 980px); padding: 14px 16px 16px; }
+.viewer-head { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.viewer-head h2 { flex: 1; min-width: 0; margin: 0; font-size: 1.05rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viewer-body { display: grid; place-items: center; }
+.viewer-body img, .viewer-body video { display: block; max-width: 100%; max-height: 72vh; border-radius: 8px; box-shadow: var(--shadow); }
+.viewer-body audio { width: 100%; }
+@media (prefers-reduced-motion: reduce) { .file-row, .file-tab, .file-row::before { transition: none; } .file-row:active { scale: 1; } }
+@media (prefers-reduced-transparency: reduce) {
+  .file-row, .file-up, .file-tabs, .m-files.dropping .file-tab { background: var(--bg); -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
