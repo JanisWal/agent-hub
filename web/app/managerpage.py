@@ -186,7 +186,7 @@ FILE_TABS = (("memory", "files_tab_memory"), ("code", "files_tab_code"), ("media
              ("documents", "files_tab_documents"), ("links", "files_tab_links"))
 TAB_ICON = {"memory": "note", "code": "code", "media": "photo", "documents": "file", "links": "link"}
 KIND_ICON = {"link": "link", "image": "photo", "video": "film", "audio": "music", "code": "code", "text": "note",
-             "other": "file"}
+             "photo": "photo", "other": "file"}
 
 FILE_DIALOGS = """<dialog class="dialog" id="file-dialog" data-title-link="%t.files_new_link%" data-title-edit="%t.files_edit%"
         data-title-edit-link="%t.files_edit_link%" data-btn-new="%t.create%" data-btn-edit="%t.save%">
@@ -287,7 +287,7 @@ def _file_row(lang: str, item: filestore.StoredFile) -> str:
                    f'referrerpolicy="no-referrer" draggable="false">')
         href, sub, target = esc(item.url or ""), esc(item.url or ""), ' target="_blank" rel="noopener noreferrer"'
     else:
-        if kind in ("image", "video"):
+        if kind in ("image", "video", "photo"):   # every picture gets a small preview (Janis, 14.11.2026)
             if filestore.has_thumb(item):
                 preview = (f'<img class="file-preview" src="/files/{item.id}/thumb" alt="" loading="lazy" '
                            f'decoding="async" draggable="false">')
