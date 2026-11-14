@@ -244,6 +244,9 @@ html .card.drag-clone::after { display: none; }
 .m-pill:active { transform: scale(0.96); }
 .m-pill[aria-pressed="true"] { color: var(--on-danger); background: var(--danger); border-color: color-mix(in srgb, var(--danger) 70%, white); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 28%, transparent), 0 0 16px color-mix(in srgb, var(--danger) 50%, transparent); }
 .m-pill[aria-pressed="true"]:hover { color: var(--on-danger); }
+/* As a round button with a globe (Janis, 14.11.2026: title, switch and capsule in one row): 30 px like the capsule. */
+#manager-net { width: 30px; padding: 0; border-radius: 50%; display: inline-grid; place-items: center; }
+#manager-net svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ===== Regular checks (Manager view): a list with the plus in the header, due ones in bold ===== */
 .m-add { position: relative; flex: none; width: 36px; height: 36px; min-width: 36px; min-height: 36px; color: var(--accent); }
