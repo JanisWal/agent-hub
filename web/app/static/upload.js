@@ -281,12 +281,21 @@
       while (samples.length > 2 && now - samples[0][0] > cfg.window) samples.shift();
       var span = now - samples[0][0];
       if (span >= cfg.minSpan) speed = Math.max(0, (sent - samples[0][1]) / (span / 1000));
-      var ahead = 0;
+      // Every file has its own speed and time left (Janis, 14.11.2026: one number for all said nothing). A file the
+      // engine has not reached yet (the requests serve the files in order) is `waiting`.
       jobs.forEach(function (job) {
         if (job.state === "failed" || job.state === "cancelled" || job.state === "done") return;
         var done = sentOf(job);
-        ahead += job.file.size - done;
-        emit("onProgress", job, { sent: done, size: job.file.size, speed: speed, left: speed > 0 ? Math.round(ahead / speed) : null });
+        var own = job.samples;
+        if (own.length && done < own[own.length - 1][1]) own.length = 0;
+        own.push([now, done]);
+        while (own.length > 2 && now - own[0][0] > cfg.window) own.shift();
+        var ownSpan = now - own[0][0];
+        if (ownSpan >= cfg.minSpan) job.speed = Math.max(0, (done - own[0][1]) / (ownSpan / 1000));
+        emit("onProgress", job, {
+          sent: done, size: job.file.size, speed: job.speed, waiting: job.inflight === 0 && done - job.base === 0,
+          left: job.speed > 0 ? Math.round((job.file.size - done) / job.speed) : null
+        });
       });
     }
 
@@ -294,7 +303,8 @@
       var count = Math.ceil(file.size / block);
       var job = {
         file: file, meta: meta, key: keyOf(file), id: null, state: "new", count: count, blocks: new Uint8Array(count),
-        scan: 0, confirmedBlocks: 0, confirmed: 0, base: 0, inflight: 0, loaded: {}, xhrs: [], cancelled: false
+        scan: 0, confirmedBlocks: 0, confirmed: 0, base: 0, inflight: 0, loaded: {}, xhrs: [], cancelled: false,
+        samples: [], speed: 0
       };
       jobs.push(job);
       emit("onAdd", job);
