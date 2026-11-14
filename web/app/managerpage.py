@@ -52,7 +52,7 @@ CHAT = """<section class="mtile glass m-chat" id="chat" data-you="%t.chat_you%" 
       <form class="chat-form" id="chat-form" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
         <label><textarea name="prompt" id="chat-input" rows="1" required maxlength="2000" autocomplete="off"
           placeholder="%t.chat_placeholder%" aria-label="%t.chat_placeholder%"></textarea></label>
-        <button type="submit" id="chat-send">%t.chat_send%</button>
+        <button class="icon-button chat-send" type="submit" id="chat-send" aria-label="%t.chat_send%">%SEND%</button>
       </form>
     </section>"""
 
@@ -389,7 +389,7 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
         DEVICES=_soon(lang, "manager_devices", "manager_devices_hint", "m-grow"),
         CHECKS=_checks_tile(lang, regular_checks or [], int(now if now is not None else time.time())),
         FILES=_files_tile(lang, stored_files or [], files_confirm),
-        CHAT=fill(CHAT, lang, MODEL=model, NET=_net_switch(lang, settings["roles"]["chef"]["net"]),
+        CHAT=fill(CHAT, lang, MODEL=model, SEND=icon("arrow_up"), NET=_net_switch(lang, settings["roles"]["chef"]["net"]),
                   INFO=ui.info_dot(i18n.t(lang, "manager_chat"), i18n.t(lang, "manager_chat_hint"))),
         AUTONOMY=autonomy,
     )
