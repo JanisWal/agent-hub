@@ -257,12 +257,20 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn(".manager {", css_of("project.css"))
         self.assertIn("[hidden] { display: none !important; }", css_of("project.css"))
 
-    def test_trash_and_archive_buttons_belong_to_the_board_only(self):
-        """Janis, 11.11.2026: each area keeps its own controls; the Manager view has no trash and no archive."""
+    def test_each_view_has_its_own_pair_of_round_buttons(self):
+        """Janis, 11.11.2026: each area keeps its own controls. Since 14.11.2026 the Manager view has the same two
+        buttons with its own jobs (chat archive, trash of the files); the board's pair is hidden there and vice versa."""
         script = css_of("stations.js")
         self.assertIn('document.body.classList.toggle("manager-open", name === "manager")', script)
         self.assertNotIn('show("board", true)', script)                        # no longer a way back to the board
-        self.assertIn(".manager-open .drawer-extra { display: none; }", css_of("project.css"))
+        css = css_of("project.css")
+        self.assertIn('.manager-open .drawer-extra[aria-controls="vault"] { display: none; }', css)
+        self.assertIn("body:not(.manager-open) .drawer-extra.m-extra { display: none; }", css)
+        buttons = projectpage.drawer_buttons("de")
+        self.assertIn('id="marchive-toggle"', buttons)
+        self.assertIn('id="mtrash-toggle"', buttons)
+        self.assertNotIn("data-action", buttons)                                  # board.js never acts on them
+        self.assertIn('.drawer-extra[aria-controls="vault"]', css_of("board.js"))
 
     def test_manager_tile_classes_do_not_clash_with_the_settings_bar(self):
         css = css_of("project.css")

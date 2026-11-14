@@ -197,10 +197,14 @@
       select.parentNode.classList.add("open");   // turns the arrow
       select.setAttribute("aria-expanded", "true");
     }
+    // Opened with mouse or finger, the focus goes again when the list closes (Janis, 14.11.2026: the glow of the
+    // focus stayed on the capsule after closing). With the keyboard the focus stays, as it should.
+    var byPointer = false;
     function close() {
       menu.classList.remove("open");
       select.parentNode.classList.remove("open");
       select.setAttribute("aria-expanded", "false");
+      if (byPointer && document.activeElement === select) select.blur();
     }
     function choose(index) {
       if (index !== select.selectedIndex) {
@@ -208,7 +212,7 @@
         select.dispatchEvent(new Event("change", { bubbles: true }));
       }
       close();
-      if (document.activeElement === select || !touched) select.focus({ preventScroll: true });
+      if (!byPointer && (document.activeElement === select || !touched)) select.focus({ preventScroll: true });
     }
     var touched = false;   // the last pointer was a finger: never focus the select (see below)
     menu.addEventListener("pointerdown", function (event) { touched = event.pointerType === "touch"; });
@@ -223,12 +227,14 @@
     box.addEventListener("pointerdown", function (event) {
       if (menu.contains(event.target)) return;
       event.preventDefault();
+      byPointer = true;
       if (event.pointerType !== "touch") select.focus({ preventScroll: true });
       if (isOpen()) close(); else open();
     });
     box.addEventListener("click", function (event) { event.preventDefault(); });   // also for taps in the list
     select.addEventListener("keydown", function (event) {
       var key = event.key;
+      byPointer = false;
       if (!isOpen()) {
         if (key === " " || key === "Enter" || (event.altKey && key === "ArrowDown")) { event.preventDefault(); open(); }
         return;

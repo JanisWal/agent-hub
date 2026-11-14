@@ -29,6 +29,20 @@ def messages(project_id: int, user: users.User = Depends(api_user)):
     ])
 
 
+@router.get("/projects/{project_id}/chat/archive")
+def archive(project_id: int, user: users.User = Depends(api_user)):
+    """The chat archive of the project (only the user's own; the manager never reads it)."""
+    return ok(entries=[{"id": a.id, "prompt": a.prompt, "answer": a.answer, "failure": a.failure, "model": a.model,
+                        "at": a.created_at} for a in chat.archive(user.id, project_id)])
+
+
+@router.post("/projects/{project_id}/chat/archive/delete")
+def archive_delete(project_id: int, ids: str = Form(""), user: users.User = Depends(api_user)):
+    """Delete entries of the archive for good (one day; the page asks first). `ids`: numbers, comma separated."""
+    numbers = [int(x) for x in ids.split(",") if x.strip().isdigit()]
+    return ok(deleted=chat.archive_delete(user.id, project_id, numbers))
+
+
 @router.post("/projects/{project_id}/chat")
 def ask(project_id: int, prompt: str = Form(""), user: users.User = Depends(api_user)):
     """A question to the manager; model and the web/code switch are the user's settings (routes/manager.py)."""

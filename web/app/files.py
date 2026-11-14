@@ -42,8 +42,10 @@ MIN_FREE = 1024 ** 3             # an upload is refused when less than this woul
 BLOCK_SIZE = 256 * 1024          # an upload is counted in blocks of this size (the unit of Cloudflare Stream and tus uploaders)
 MAX_REQUEST = 512 * 1024 ** 2    # hard ceiling of one request; the real limit is the owner's choice (max_request)
 THUMB_MAX = 256 * 1024            # largest preview picture (the browser makes them: 96 x 96 JPEG, a few KB)
+PREVIEW_MAX = 6 * 1024 ** 2      # largest big preview of a TIFF, HEIC or raw picture (2048 px JPEG from the browser)
 TEXT_MAX = 1024 ** 2             # largest file the text editor opens (also the limit of one form field)
 STALE = 24 * 3600                # an unfinished upload older than this is thrown away
+TRASH_DAYS = 30                  # a deleted file stays this long in the trash, then it is gone (Janis, 14.11.2026)
 MAX_NAME = 120
 MAX_URL = 2000
 
@@ -419,19 +421,20 @@ def update(user_id: int, file_id: int, name: str, url: str | None = None, catego
     return _to_file(row)
 
 
-def thumb_path(project_id: int, file_id: int) -> Path:
-    return files_dir() / str(project_id) / f"{file_id}.thumb"
+def thumb_path(project_id: int, file_id: int, large: bool = False) -> Path:
+    return files_dir() / str(project_id) / f"{file_id}.{'preview' if large else 'thumb'}"
 
 
 def has_thumb(item: "StoredFile") -> bool:
     return item.url is None and thumb_path(item.project_id, item.id).is_file()
 
 
-def save_thumb(user_id: int, file_id: int, data: bytes) -> bool:
+def save_thumb(user_id: int, file_id: int, data: bytes, large: bool = False) -> bool:
     """Keep the small preview picture of an image or video (a JPEG made by the browser). False if the file is not
     the user's, not finished, or not an image or video. Raises FileError: too_big, bad_type (not a JPEG). It is
-    served with a fixed type, so even a wrong body can run nothing."""
-    if len(data) > THUMB_MAX:
+    served with a fixed type, so even a wrong body can run nothing. `large`: the big preview the viewer shows for a
+    TIFF, HEIC or raw picture (Janis, 14.11.2026), which browsers can not show themselves; only for those."""
+    if len(data) > (PREVIEW_MAX if large else THUMB_MAX):
         raise FileError("too_big")
     if not data.startswith(b"\xff\xd8\xff"):
         raise FileError("bad_type")
@@ -440,31 +443,102 @@ def save_thumb(user_id: int, file_id: int, data: bytes) -> bool:
     if row is None or row["status"] != "ready":
         return False
     item = _to_file(row)
-    if item.kind not in ("image", "video", "photo"):
+    if item.kind not in (("photo",) if large else ("image", "video", "photo")):
         return False
-    thumb_path(item.project_id, item.id).write_bytes(data)
+    thumb_path(item.project_id, item.id, large).write_bytes(data)
     return True
 
 
-def open_thumb(user_id: int, file_id: int) -> Path | None:
+def open_thumb(user_id: int, file_id: int, large: bool = False) -> Path | None:
     with db.connect() as conn:
         row = _owned(conn, user_id, file_id)
     if row is None or row["url"] is not None:
         return None
-    path = thumb_path(row["project_id"], file_id)
+    path = thumb_path(row["project_id"], file_id, large)
     return path if path.is_file() else None
 
 
-def delete(user_id: int, file_id: int) -> bool:
-    """Delete for good (no trash can). False if it is not the user's."""
+def delete(user_id: int, file_id: int, now: int | None = None) -> bool:
+    """Put a file or link into the trash (Janis, 14.11.2026): it leaves every list and the manager's view, and it is
+    gone for good after TRASH_DAYS unless it is restored. An unfinished upload goes at once. False if not the user's."""
+    now = int(now if now is not None else time.time())
     with db.connect() as conn:
         row = _owned(conn, user_id, file_id)
         if row is None:
             return False
+        if row["status"] == "ready":
+            conn.execute("UPDATE files SET status = 'trash', trashed_at = ? WHERE id = ?", (now, file_id))
+            return True
+    return purge(user_id, file_id)
+
+
+def purge(user_id: int, file_id: int) -> bool:
+    """Delete for good (from the trash, or an unfinished upload). False if not the user's or a finished file."""
+    with db.connect() as conn:
+        row = _owned(conn, user_id, file_id)
+        if row is None or row["status"] == "ready":
+            return False
         conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
     path_of(row["project_id"], file_id).unlink(missing_ok=True)
     thumb_path(row["project_id"], file_id).unlink(missing_ok=True)
+    thumb_path(row["project_id"], file_id, True).unlink(missing_ok=True)
     return True
+
+
+def restore(user_id: int, file_id: int) -> StoredFile | None:
+    """Take a file back out of the trash into its area; a name that is taken there by now gets " (2)". None if it is
+    not the user's or not in the trash."""
+    with db.connect() as conn:
+        row = _owned(conn, user_id, file_id)
+        if row is None or row["status"] != "trash":
+            return None
+        name = row["name"]
+        if _same_name(conn, row["project_id"], row["category"], name):
+            taken = {r[0].lower() for r in conn.execute(
+                "SELECT name FROM files WHERE project_id = ? AND category = ? AND status = 'ready'",
+                (row["project_id"], row["category"]))}
+            name = _free_name(name, taken)
+        conn.execute("UPDATE files SET status = 'ready', trashed_at = NULL, name = ? WHERE id = ?", (name, file_id))
+        row = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
+    return _to_file(row)
+
+
+def list_trash(user_id: int, project_id: int, now: int | None = None) -> list[tuple[StoredFile, int]]:
+    """The trash of a project, last deleted first, each with the days it still stays; empty if not the user's.
+    What is older than TRASH_DAYS is deleted for good on the way."""
+    purge_old_trash(now)
+    now = int(now if now is not None else time.time())
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT f.* FROM files f JOIN projects p ON p.id = f.project_id"
+            " WHERE f.project_id = ? AND p.user_id = ? AND f.status = 'trash' ORDER BY f.trashed_at DESC, f.id DESC",
+            (project_id, user_id),
+        ).fetchall()
+    return [(_to_file(r), max(1, TRASH_DAYS - (now - (r["trashed_at"] or now)) // 86400)) for r in rows]
+
+
+def empty_trash(user_id: int, project_id: int) -> int:
+    """Delete everything in the project's trash for good. Returns how many."""
+    with db.connect() as conn:
+        ids = [r[0] for r in conn.execute(
+            "SELECT f.id FROM files f JOIN projects p ON p.id = f.project_id"
+            " WHERE f.project_id = ? AND p.user_id = ? AND f.status = 'trash'", (project_id, user_id))]
+    return sum(purge(user_id, i) for i in ids)
+
+
+def purge_old_trash(now: int | None = None) -> int:
+    """Delete for good what lies in the trash longer than TRASH_DAYS (all users). Returns how many."""
+    now = int(now if now is not None else time.time())
+    with db.connect() as conn:
+        rows = conn.execute("SELECT id, project_id FROM files WHERE status = 'trash' AND trashed_at < ?",
+                            (now - TRASH_DAYS * 86400,)).fetchall()
+        for row in rows:
+            conn.execute("DELETE FROM files WHERE id = ?", (row["id"],))
+    for row in rows:
+        path_of(row["project_id"], row["id"]).unlink(missing_ok=True)
+        thumb_path(row["project_id"], row["id"]).unlink(missing_ok=True)
+        thumb_path(row["project_id"], row["id"], True).unlink(missing_ok=True)
+    return len(rows)
 
 
 def open_file(user_id: int, file_id: int) -> tuple[Path, StoredFile] | None:

@@ -297,4 +297,51 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
             " memory_saved = ? WHERE id = ? AND status = 'running'",
             ("done" if ok else "failed", text[:MAX_ANSWER], tokens_in, tokens_out, int(saved), chat_id),
         )
+        if cur.rowcount == 1:   # the archive keeps it for looking up later; the manager never reads it
+            conn.execute(
+                "INSERT INTO chat_archive (user_id, project_id, prompt, answer, status, model, effort, created_at,"
+                " answered_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (row["user_id"], row["project_id"], row["prompt"], text[:MAX_ANSWER], "done" if ok else "failed",
+                 row["model"], row["effort"], row["created_at"], int(time.time())),
+            )
     return cur.rowcount == 1
+
+
+# --- the chat archive (Janis, 14.11.2026): every question and answer of a project, only for the user. Clearing the
+# chat (delete_all) leaves it alone; the manager's context (build_input) never reads it.
+ARCHIVE_SHOWN = 2000      # entries a project's archive shows at most (newest)
+
+
+@dataclass
+class Archived:
+    id: int
+    prompt: str
+    answer: str            # empty for a failed question: only its kind is shown, as in the chat
+    failure: str           # chat.FAILURES or ""
+    model: str
+    created_at: int
+
+
+def archive(user_id: int, project_id: int) -> list[Archived]:
+    """The archive of a project, oldest first (the page groups it by day); empty if the project is not the user's."""
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT a.* FROM chat_archive a JOIN projects p ON p.id = a.project_id"
+            " WHERE a.project_id = ? AND p.user_id = ? AND a.user_id = ? ORDER BY a.created_at DESC, a.id DESC LIMIT ?",
+            (project_id, user_id, user_id, ARCHIVE_SHOWN),
+        ).fetchall()
+    return [Archived(r["id"], r["prompt"], "" if r["status"] == "failed" else r["answer"],
+                     failure_kind(r["answer"]) if r["status"] == "failed" else "", r["model"], r["created_at"])
+            for r in reversed(rows)]
+
+
+def archive_delete(user_id: int, project_id: int, ids: list[int]) -> int:
+    """Delete entries of the archive for good (a day, chosen on the page). Only the user's own; returns how many."""
+    ids = [i for i in ids if isinstance(i, int) and i > 0][:ARCHIVE_SHOWN]
+    if not ids:
+        return 0
+    with db.connect() as conn:
+        marks = ",".join("?" * len(ids))
+        return conn.execute(
+            f"DELETE FROM chat_archive WHERE user_id = ? AND project_id = ? AND id IN ({marks})",
+            (user_id, project_id, *ids)).rowcount

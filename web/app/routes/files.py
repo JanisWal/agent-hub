@@ -122,7 +122,25 @@ def update(file_id: int, name: str = Form(""), url: str | None = Form(None), cat
 
 @router.post("/files/{file_id}/delete")
 def delete(file_id: int, user: users.User = Depends(api_user)):
+    """Into the trash (files.TRASH_DAYS); the trash list in the Manager view restores or deletes for good."""
     return ok() if files.delete(user.id, file_id) else fail(404)
+
+
+@router.post("/files/{file_id}/restore")
+def restore(file_id: int, user: users.User = Depends(api_user)):
+    item = files.restore(user.id, file_id)
+    return ok(name=item.name, category=item.category) if item else fail(404)
+
+
+@router.post("/files/{file_id}/purge")
+def purge(file_id: int, user: users.User = Depends(api_user)):
+    """Delete a file in the trash for good (the page asks first)."""
+    return ok() if files.purge(user.id, file_id) else fail(404)
+
+
+@router.post("/projects/{project_id}/files/trash/empty")
+def empty_trash(project_id: int, user: users.User = Depends(api_user)):
+    return ok(deleted=files.empty_trash(user.id, project_id))
 
 
 @router.get("/files/{file_id}/text")
@@ -145,17 +163,36 @@ def write_text(file_id: int, text: str = Form(""), user: users.User = Depends(ap
 @router.post("/files/{file_id}/thumb")
 async def save_thumb(file_id: int, request: Request, user: users.User = Depends(api_user)):
     """The small preview picture, made by the browser (JPEG, a few KB)."""
-    if int(request.headers.get("content-length") or 0) > files.THUMB_MAX:
+    return await _save_picture(file_id, request, user, False)
+
+
+@router.post("/files/{file_id}/preview")
+async def save_preview(file_id: int, request: Request, user: users.User = Depends(api_user)):
+    """The big preview of a TIFF, HEIC or raw picture for the viewer, made by the browser (JPEG, 2048 px)."""
+    return await _save_picture(file_id, request, user, True)
+
+
+async def _save_picture(file_id: int, request: Request, user: users.User, large: bool):
+    if int(request.headers.get("content-length") or 0) > (files.PREVIEW_MAX if large else files.THUMB_MAX):
         return _fail(user, files.FileError("too_big"))
     try:
-        return ok() if files.save_thumb(user.id, file_id, await request.body()) else fail(404)
+        return ok() if files.save_thumb(user.id, file_id, await request.body(), large) else fail(404)
     except files.FileError as problem:
         return _fail(user, problem)
 
 
+@router.get("/files/{file_id}/preview")
+def preview(file_id: int, user: users.User = Depends(api_user)):
+    return _serve_picture(file_id, user, True)
+
+
 @router.get("/files/{file_id}/thumb")
 def thumb(file_id: int, user: users.User = Depends(api_user)):
-    path = files.open_thumb(user.id, file_id)
+    return _serve_picture(file_id, user, False)
+
+
+def _serve_picture(file_id: int, user: users.User, large: bool):
+    path = files.open_thumb(user.id, file_id, large)
     if path is None:
         return fail(404)
     return FileResponse(path, media_type="image/jpeg", content_disposition_type="inline", headers={

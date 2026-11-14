@@ -284,7 +284,25 @@ html .card.drag-clone::after { display: none; }
 #check-dialog { overflow: visible; }
 
 /* One design language (Janis, 11.11.2026): trash and archive belong to the board, so they are not shown in the Manager view. */
-.manager-open .drawer-extra { display: none; }
+.manager-open .drawer-extra[aria-controls="vault"] { display: none; }
+/* The Manager's own pair (chat archive, trash of the files): the same buttons, only shown in the Manager view. */
+body:not(.manager-open) .drawer-extra.m-extra { display: none; }
+/* Opened, its list takes the place of the three columns. */
+.manager.vault-open > .mcol { display: none; }
+.m-vault { grid-column: 1 / -1; }
+.m-vault[hidden] { display: none; }
+.m-vault h2 { display: flex; align-items: center; gap: 4px; }
+.archive-open { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 0; text-align: left;
+  font: inherit; font-weight: 600; color: var(--text); background: none; border: 0; box-shadow: none; cursor: pointer; }
+.archive-open:hover { transform: none; color: var(--accent); }
+.archive-open small { font-weight: 500; }
+/* One day of the archive, like the chat: a wide glass sheet, its log scrolls inside. */
+dialog.archive-day[open] { display: flex; flex-direction: column; width: min(760px, calc(100vw - 32px)); max-width: none; max-height: min(82vh, 900px); gap: 10px; }
+.archive-log { flex: 1; min-height: 0; overflow-y: auto; }
+.archive-log > :first-child { margin-top: 0; }
+/* The big preview of a TIFF or raw picture is being made: the three dots, larger, in the middle of the viewer. */
+.viewer-wait { margin: auto; color: var(--muted); }
+.viewer-wait i { width: 9px; height: 9px; }
 
 /* Files and links of the Manager view (Janis, 12.11.2026; glass and Apple-like on 13.11.2026, apple-design skill):
    five tabs in ONE row as a segmented control (a glass highlight slides under the chosen one with a spring), the

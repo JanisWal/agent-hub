@@ -96,7 +96,7 @@
   // restoring several items does not close it each time.
   var vault = $("#vault");
   var board = $("#board");
-  var toggles = document.querySelectorAll(".drawer-extra");
+  var toggles = document.querySelectorAll('.drawer-extra[aria-controls="vault"]');   // the Manager's pair: mvault.js
   var currentView = "";
   function setView(view, animate) {
     currentView = view;

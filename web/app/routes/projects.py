@@ -46,7 +46,7 @@ def project_view(project_id: int, user: users.User = Depends(page_user)):
         raise HTTPException(status_code=404)
     body = projectpage.render(
         user, project, board.list_items(user.id, project.id), checks.list_checks(user.id, project.id),
-        files.list_files(user.id, project.id),
+        files.list_files(user.id, project.id), files.list_trash(user.id, project.id),
     )
     return ui.logged_in_page(
         user, project.name, body, scripts=projectpage.SCRIPTS, styles=projectpage.STYLES,

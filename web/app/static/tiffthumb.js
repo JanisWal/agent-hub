@@ -2,8 +2,9 @@
 // browser, without a library (Janis, 14.11.2026: every file that is a picture gets a preview). Browsers other than
 // Safari can not draw these files; most of them carry a finished JPEG preview inside, and a plain TIFF keeps its
 // pixels uncompressed, LZW or Deflate. The server never opens these files: all reading happens here, in the page.
-//   HubTiff.preview(arrayBuffer) -> Promise of { blob: JPEG Blob } or { image: ImageData } or null, plus `turn`
-//   (the EXIF orientation: 1 normal, 3 upside down, 6 right, 8 left).
+//   HubTiff.preview(arrayBuffer, large) -> Promise of { blob: JPEG Blob } or { image: ImageData } or null, plus `turn`
+//   (the EXIF orientation: 1 normal, 3 upside down, 6 right, 8 left). `large`: the biggest picture inside (for the
+//   viewer), else the smallest that still fills a small preview.
 (function () {
   "use strict";
   var SIZE = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 6: 1, 7: 1, 8: 2, 9: 4, 10: 8, 11: 4, 12: 8, 13: 4 };
@@ -123,7 +124,7 @@
   }
 
   // A plain image: 8 bits, grey or RGB(A), in strips, uncompressed, LZW or Deflate (with or without predictor).
-  function plainImage(r, ifds) {
+  function plainImage(r, ifds, large) {
     var best = null;
     ifds.forEach(function (ifd) {
       var t = ifd.tags, w = t[256] && t[256][0], h = t[257] && t[257][0];
@@ -134,8 +135,9 @@
       if (!((photo === 2 && (spp === 3 || spp === 4)) || ((photo === 0 || photo === 1) && spp <= 2))) return;
       var candidate = { w: w, h: h, comp: comp, spp: spp, photo: photo, offsets: t[273], counts: t[279],
                         rows: t[278] ? t[278][0] : h, predictor: t[317] ? t[317][0] : 1 };
-      // the smallest one that still fills a preview, else the biggest
-      if (!best || (best.w * best.h < 96 * 96 ? w * h > best.w * best.h : (w * h >= 96 * 96 && w * h < best.w * best.h))) best = candidate;
+      // the smallest one that still fills a preview, else the biggest (for the viewer: the biggest)
+      if (!best || (large ? w * h > best.w * best.h
+          : (best.w * best.h < 96 * 96 ? w * h > best.w * best.h : (w * h >= 96 * 96 && w * h < best.w * best.h)))) best = candidate;
     });
     if (!best) return Promise.resolve(null);
     var line = best.w * best.spp;
@@ -165,7 +167,7 @@
     });
   }
 
-  function preview(buffer) {
+  function preview(buffer, large) {
     var r;
     try { r = reader(buffer); } catch (e) { r = null; }
     if (!r) return Promise.resolve(null);
@@ -174,10 +176,10 @@
     var turn = ifds[0].tags[274] ? ifds[0].tags[274][0] : 1;
     var jpegs = jpegCandidates(r, ifds);
     if (jpegs.length) {
-      var pick = jpegs.filter(function (j) { return j.length > 4000; })[0] || jpegs[jpegs.length - 1];
+      var pick = large ? jpegs[jpegs.length - 1] : (jpegs.filter(function (j) { return j.length > 4000; })[0] || jpegs[jpegs.length - 1]);
       return Promise.resolve({ blob: new Blob([pick], { type: "image/jpeg" }), turn: turn });
     }
-    return plainImage(r, ifds).then(function (image) { return image ? { image: image, turn: turn } : null; },
+    return plainImage(r, ifds, large).then(function (image) { return image ? { image: image, turn: turn } : null; },
                                     function () { return null; });
   }
 
