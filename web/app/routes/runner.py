@@ -100,6 +100,12 @@ def wipes():
     return ok(user_ids=claude_link.pending_wipes())
 
 
+@router.get("/expired")
+def expired():
+    """Users whose token ran out or was refused: the runner deletes the saved token (the state stays "expired")."""
+    return ok(user_ids=claude_link.expired_users())
+
+
 @router.post("/wipes/{user_id}/done")
 def wipe_done(user_id: int):
     return ok() if claude_link.wiped(user_id) else fail(409)

@@ -123,7 +123,7 @@ SETTINGS = """<div class="drawer" id="settings" data-theme-saved="%THEME%">
 CLAUDE_DIALOG = """<dialog class="dialog" id="claude-dialog">
   <h2>%t.claude_title%</h2>
   <div data-step="wait">
-    <p class="muted">%t.claude_wait%</p>
+    <p class="muted" role="status">%t.claude_wait%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p>
     <div class="actions"><button type="button" data-cancel>%t.cancel%</button></div>
   </div>
   <form data-step="link" hidden novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
@@ -135,7 +135,7 @@ CLAUDE_DIALOG = """<dialog class="dialog" id="claude-dialog">
       <button class="primary" type="submit">%t.claude_confirm%</button>
     </div>
   </form>
-  <div data-step="check" hidden><p class="muted">%t.claude_checking%</p></div>
+  <div data-step="check" hidden><p class="muted" role="status">%t.claude_checking%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p></div>
   <div data-step="done" hidden>
     <p class="muted">%t.claude_done%</p>
     <div class="actions"><button class="primary" type="button" data-finish>%t.close%</button></div>

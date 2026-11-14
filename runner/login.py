@@ -21,6 +21,11 @@ _OSC8 = re.compile(r"\x1b\]8;[^;\x07\x1b]*;([^\x07\x1b]*)(?:\x07|\x1b\\)")
 _ESCAPES = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]")
 _URL = re.compile(r"https://claude\.(?:com|ai)/[^\s\x1b\x07\"'<>]+")
 _TOKEN = re.compile(r"sk-ant-oat[0-9]{2}-[A-Za-z0-9_-]{20,400}")
+# setup-token draws its result with a terminal UI: "Your OAuth token (valid for ...):", the token, "Store this token ...".
+# The UI may wrap the long token over two lines and draws the screen more than once (14.11.2026: the first version
+# saw a wrapped token as two different ones and took none). So the block between the two lines counts first.
+_BLOCK = re.compile(r"Your OAuth token[^\n]*\n(.*?)(?=Store this token|Use this token)", re.S)
+_LONG = re.compile(r"[A-Za-z0-9_\-#%.=&?/:+~]{24,}")
 
 
 def extract_login_url(raw: str) -> str | None:
@@ -31,11 +36,30 @@ def extract_login_url(raw: str) -> str | None:
     return match.group(0) if match else None
 
 
+def _clean(raw: str) -> str:
+    return _ESCAPES.sub("", _OSC8.sub(lambda m: " " + m.group(1) + " ", raw)).replace("\r", "\n")
+
+
 def extract_token(raw: str) -> str | None:
-    """The token setup-token printed, or None (yet). Exactly one distinct token, else None (no guessing)."""
-    text = _ESCAPES.sub("", _OSC8.sub(lambda m: " " + m.group(1) + " ", raw))
-    found = set(_TOKEN.findall(text))
-    return found.pop() if len(found) == 1 else None
+    """The token setup-token printed, or None (yet). No guessing: from the newest result block (a token wrapped over
+    lines is put together again); else the one token in the output, where shorter ones may only be its beginning
+    (a screen drawn while the token was still being written or wrapped)."""
+    text = _clean(raw)
+    for block in reversed(_BLOCK.findall(text)):
+        joined = re.sub(r"\s+", "", block)
+        if _TOKEN.fullmatch(joined):
+            return joined
+    found = sorted(set(_TOKEN.findall(text)), key=len)
+    if found and all(found[-1].startswith(part) for part in found):
+        return found[-1]
+    return None
+
+
+def redacted_tail(raw: str, size: int = 700) -> str:
+    """The end of what the terminal showed, for the log when a sign-in fails: every long run of letters, digits and
+    URL characters (a token, the code, the link) is replaced by its length, so nothing secret reaches the log."""
+    text = _LONG.sub(lambda m: f"<{len(m.group(0))}>", _clean(raw))
+    return re.sub(r"\s+", " ", text).strip()[-size:]
 
 
 class LoginSession:
@@ -66,7 +90,7 @@ class LoginSession:
             if not chunk:
                 return
             self.output += chunk.decode(errors="replace")
-            self.output = self.output[-20000:]
+            self.output = self.output[-200000:]   # the screen is drawn again and again: keep enough
             end = time.time() + 0.05   # more may follow right away
 
     def url(self, timeout: float = 30) -> str | None:

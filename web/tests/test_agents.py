@@ -69,6 +69,17 @@ class ClaudeLinkTest(Base):
         claude_link.complete(self.a.id, True, now=expiring + 180)
         self.assertEqual(claude_link.status(self.a.id, now=expiring + 180 + year - 31 * day), "connected")
 
+    def test_expired_tokens_are_listed_for_deleting(self):
+        day, year = 86400, claude_link.TOKEN_DAYS * 86400
+        for user in (self.a, self.b):
+            claude_link.begin(user.id, now=1000)
+            claude_link.complete(user.id, True, now=1000)
+        self.assertEqual(claude_link.expired_users(now=2000), [])
+        self.assertEqual(claude_link.expired_users(now=1000 + year - 5 * day), [])        # expiring still works
+        self.assertEqual(sorted(claude_link.expired_users(now=1000 + year)), sorted([self.a.id, self.b.id]))
+        claude_link.begin(self.b.id, now=1000 + year)                                    # B links again
+        self.assertEqual(claude_link.expired_users(now=1000 + year + 1), [self.a.id])
+
     def test_an_old_login_becomes_expired_once(self):
         """Logins from before the setup token (Claude Code's own files) are not used any more: link again."""
         with db.connect() as conn:
