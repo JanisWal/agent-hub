@@ -34,6 +34,9 @@
       return sum + Math.max(0, count - 1) * gap + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
     }
     function fade() {
+      // A hidden view (the Manager while the board shows) has no heights: measuring it would fold every tile shut
+      // (14.11.2026: chat and files were empty after switching from the board until the page was loaded again).
+      if (!col.offsetParent || !col.getBoundingClientRect().height) return;
       [a, b].forEach(function (tile, i) {
         var low = folded(tile), height = tile.getBoundingClientRect().height;
         var full = Math.max(natural[i], needed(tile));
@@ -74,6 +77,8 @@
     var saved = load(name);
     if (saved > 0 && saved < 1) apply(saved);
     window.addEventListener("resize", fade);
+    // Shown again (another station) or resized: measure anew.
+    if (window.ResizeObserver) new ResizeObserver(function () { fade(); }).observe(col);
     window.addEventListener("load", fade);   // fonts and pictures may change the heights after the first look
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(fade);
 
