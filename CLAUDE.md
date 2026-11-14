@@ -24,6 +24,7 @@ Ziel, Entscheidungen, Reihenfolge, Codeaufbau, Betrieb, Tests und offene Punkte:
 - Netz der Agenten: internes Docker-Netz, einziger Ausgang der Filter-Proxy `egress` (3129 nur Anthropic, 3128 öffentliche Seiten); nie ins Heimnetz. Geräte nur über Geräteliste und Vermittler, fremde Netze über Tailscale; auf der Fritzbox wird kein Port geöffnet.
 - Jeder Nutzer verbindet sein eigenes Claude-Konto; die Konten sind strikt getrennt (Pflichtregeln in PROJEKT.md Abschnitt 3, „Trennung der Claude-Konten“).
 - Pro Aufgabe ein Git-Branch (Worktree). Ablauf: Programmierer, Tester, Prüfer, Freigabe durch Janis, danach führt der Manager die Doku nach (Rolle Dokumentator entfallen am 07.11.2026).
+- **KI-unabhängig (Konzept festgelegt 14.11.2026, KONZEPT-AGENTEN.md Abschnitt 9):** Der Hub ist das Gehirn, jede KI nur Rechenleistung hinter einem Anbieter-Adapter. Alles Neue, das eine KI anspricht, baut auf dem Paket (Regeln, Erinnerung, Lage, Auftrag) und dem festen Antwortformat auf (`<memory file>`, `<read>`, `<ask>`, `<task>`, `<status>`, `RESULT:`); nichts darf an Eigenheiten eines Anbieters hängen.
 - Agenten nutzen Zugangsdaten nur über den Vermittler, nie direkt. Das gilt auch für Claude selbst: Läufe bekommen nie den Claude-Token, nur ein Ticket; der Gateway im Egress-Proxy setzt den Token ein (`runner/tokens.py`, PROJEKT.md Abschnitt 3). Neue Läufe bauen auf `launcher._claude_env` auf, nie mit eingehängtem Claude-Ordner.
 
 ## Coding-Regeln

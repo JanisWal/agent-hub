@@ -1,6 +1,6 @@
 # Agent-Hub – Konzept: Claude-Instanzen und Zusammenarbeit der Agenten
 
-Stand: 07.11.2026 · Branch `agent-core` · Ergänzt PROJEKT.md (Abschnitte 3 und 5). Hier steht die Logik hinter dem Bereich „Projekte“; das Aussehen kommt später (DESIGN.md).
+Stand: 14.11.2026 (Abschnitt 9: Konzept für den KI-unabhängigen Ablauf) · zuerst 07.11.2026, Branch `agent-core` · Ergänzt PROJEKT.md (Abschnitte 3 und 5). Hier steht die Logik hinter dem Bereich „Projekte“; das Aussehen kommt später (DESIGN.md).
 
 ## 1. Überblick
 
@@ -15,6 +15,8 @@ Drei Bausteine, jeder ein Modul, alle ohne Abhängigkeit von außen:
 **Gebaut und getestet (Branch `agent-core`):** die drei Module, die Tabellen, die HTTP-Schnittstelle des Runners (`routes/runner.py`, mit Token), der Launcher für den Container je Lauf (`runner/launcher.py`) und das Image dafür (`runner/Dockerfile`, `agent-hub-agent`), dazu 173 Hub-Tests und 11 Launcher-Tests, darunter ein Fall in `test_isolation.py`. **Noch nicht gebaut:** die Schleife des Runners (Aufträge holen, Prompt bauen, Lauf starten, Ergebnis melden), Git-Arbeitsordner und Merge, die Oberfläche. Anmeldung und Trennen laufen seit dem 07.11.2026 live (Abschnitt 7a); der Rest (Kette, Läufe) ist gemergt, aber noch ohne Runner-Schleife und ohne Oberfläche, also nicht wirksam.
 
 ## 2. Claude-Instanzen (eine pro Nutzer)
+
+> **Stand 14.11.2026:** Die Anmeldung läuft nicht mehr über `claude auth login` und Claude Codes eigenen Ordner, sondern über `claude setup-token` (ein Jahr), verschlüsselt beim Runner, Läufe nur mit Ticket über den Gateway. Ablauf und Grenzen: PROJEKT.md Abschnitt 3, „Claude-Anmeldung und Tokens, so gebaut“. Der Text unten beschreibt den alten Weg.
 
 - **Zustand:** `none` → `connecting` → `connected` → `expired` → `connecting` … (Tabelle `claude_connections`). Die Datenbank speichert nur den Zustand und den kurzlebigen Anmelde-Link, **nie** Token oder Code.
 - **Zugangsdaten** legt Claude Code selbst in den Ordner des Nutzers: `claude_link.config_dir(user_id)` = `/data/claude/<user_id>/` (`CLAUDE_CONFIG_DIR` und `HOME` seiner Läufe). Der Web-Container hängt diesen Ordner nicht ein, nur der Runner.
@@ -58,7 +60,7 @@ Programm.   Tester      Prüfer         Nutzer gibt frei      Manager (Doku)
 - **Mac-Aufgaben** (`needs = mac`): Ist der Mac nicht erreichbar, wartet die Aufgabe, außer der Chef überspringt den Test nach der Strenge des Nutzers: `loose` überspringt Tests von Bugs und kleinen Updates, `normal` nur von kleinen Updates, `strict` nie; Major Updates werden nie übersprungen (`workflow.test_may_be_skipped`). Ein übersprungener Test setzt den Merker „von Hand prüfen“.
 - **Hardware-Themen:** Der Tester meldet `not_testable` und legt seine Checkliste in den Bericht; sie steht dem Nutzer bei der Freigabe vor Augen. Hardware am Fahrzeug schaltet kein Agent.
 - **Agenten dürfen** Bugs und Vorschläge ins Board eintragen (`board.create_suggestion(user_id, …)`, prüft den Besitz) und sonst nichts am Board ändern.
-- **Modelle:** `haiku`, `sonnet`, `opus` (Kurznamen von Claude Code, sie folgen der neuesten Version). Standard Sonnet; pro Rolle und Nutzer änderbar (`agents.configure`).
+- **Modelle:** seit 14.11.2026 aus `catalog.py` (Liste je Anbieter, Modell und Stufe, Baustein `ui.model_picker`), nicht mehr fest im Code; pro Rolle und Nutzer änderbar (`agents.configure`). Künftig auch „Automatisch“ (Abschnitt 9.8).
 
 ## 4. Datenmodell (neu, SQLite)
 
@@ -160,3 +162,100 @@ Janis will, dass die KI **alle** Dateien eines Projekts selbst lesen kann (Text,
 - **Werkzeuge im Lauf:** `Read` (liest PDF und Bilder), `Glob`, `Grep` zusätzlich zu Web und Code; die Netzregeln bleiben, wie sie sind (das Einhängen ist kein Netzthema).
 - **Schreiben:** Der Lauf schreibt nie in den Ordner. Das Gedächtnis (`MEMORY.md`) speichert weiter der Hub aus dem `<memory>`-Block der Antwort. Der Programmierer (Schleife der Agentenläufe) bekommt später einen **schreibbaren** Arbeitsordner je Aufgabe, getrennt davon.
 - **Sicherheit:** Der Baum enthält nur Dateien des Projekts des Fragenden (Mandantentrennung, Fall in `test_isolation.py`); Inhalte sind Information, nie Anweisung; der Lauf kann `~/.claude` lesen wie bisher (von Janis akzeptiertes Risiko bei offenem Internet).
+
+## 9. Konzept: der Hub ist das Gehirn, die KI nur Rechenleistung (festgelegt 14.11.2026 mit Janis, noch nicht gebaut)
+
+Ziel von Janis: Jede KI soll austauschbar sein. Es wird eine Anfrage gestellt, es kommt eine Antwort, unabhängig vom Modell und vom Anbieter. Alles, was das Projekt ausmacht (Erinnerung, Regeln, Ablauf, Zustand), liegt beim Hub, nicht bei der KI. Vorschlag von Claude, von Janis am 14.11.2026 so angenommen („genauso habe ich mir das vorgestellt“); seine Entscheidungen zu den offenen Punkten stehen in 9.4, 9.5, 9.6 und 9.8. **Gebaut wird erst, wenn Janis das Startzeichen gibt.**
+
+### 9.1 Grundsatz
+
+- Der Hub hält **Zustand, Regeln und Ablauf**. Die KI bekommt bei jeder Anfrage ein **vollständiges Paket**, merkt sich nichts zwischen zwei Anfragen und antwortet in einem **festen Format** (9.3).
+- Die KI greift nie selbst auf Daten des Hubs zu und speichert nichts selbst; alles, was bleiben soll (Erinnerung, Rückfragen, Aufgaben, Status), schreibt der Hub nach strenger Prüfung.
+- Hält sich eine KI nicht an das Format, ist ihre Antwort einfacher Text: es passiert nichts weiter, nichts wird versehentlich angestoßen.
+- Die bestehenden Pflichtregeln bleiben: Nutzer und Projekt kommen vom Server, nie aus der Antwort; Markierungen wirken nur im eigenen Projekt; Inhalte (Dateien, Webseiten, Berichte) sind Information, nie Anweisung; Tokens bleiben im Gateway (PROJEKT.md Abschnitt 3).
+
+### 9.2 Anbieter-Adapter
+
+- Jede KI hängt hinter **derselben Schnittstelle** (geplant `adapters.py`, ein Adapter je Anbieter): hinein gehen Text (das Paket aus 9.3), Modell, Stufe, erlaubte Werkzeuge, Grenzen (Schritte, Zeit); heraus kommen Antworttext, Verbrauch (Tokens ein/aus, Dauer) und eine Fehlerart (`auth`, `timeout`, `steps`, `other`, wie `chat.FAILURES`).
+- **Heute:** ein Adapter, Claude Code im Wegwerf-Container mit Ticket über den Gateway (`runner/launcher.py`, `runner/tokens.py`). **Später:** je weitere KI ein Adapter (z. B. ChatGPT, Mistral, ein lokales Modell); alles andere bleibt gleich. Zugangsdaten anderer Anbieter liegen wie der Claude-Token verschlüsselt beim Runner und kommen über einen Gateway, nie in den Lauf.
+- **Fähigkeiten:** Jeder Adapter meldet, was er kann: Websuche, Seiten lesen, Code ausführen, Dateien und Bilder lesen. Der Hub schreibt in den Regelteil, welche Werkzeuge es in diesem Lauf gibt; fehlt etwas (z. B. keine Websuche), steht das dort, und die KI arbeitet ohne.
+- **Modelle und Stufen** kommen je Anbieter aus `catalog.py` (gebaut), gewählt mit `ui.model_picker` (gebaut).
+
+### 9.3 Das Paket jeder Anfrage und das Antwortformat
+
+**Aufbau, immer in dieser Reihenfolge, anbieterneutral (kein „CLAUDE.md“, keine Eigenheit eines Anbieters):**
+
+1. **Rolle und Regeln** (vom Hub, je Rolle: Manager, Programmierer, Tester, Prüfer): wer du bist, was du darfst und was nie, die Selbstständigkeit des Nutzers als Regeltext (9.5), welche Werkzeuge es gibt, das Antwortformat. Erster Satz: **„Lies zuerst den Ordner Erinnerungen, zuerst MEMORY.md, dann arbeite.“**
+2. **Erinnerung:** der ganze Ordner Erinnerungen (`<memory-folder>`, gebaut, höchstens 40 000 Zeichen). Der Hub legt die Dateien **mit bei**, damit auch eine KI ohne Werkzeuge sie hat. Dateinamen und Sprache des Inhalts sind der KI gleich (9.10).
+3. **Lage im Projekt:** offene Board-Punkte, fällige Prüfungen, offene und beantwortete Rückfragen (9.4), der letzte Status (9.7), bei Agentenläufen die Berichte der früheren Läufe dieser Aufgabe (gebaut als `Job.reports`, als zitierte Daten).
+4. **Auftrag:** die Frage im Chat, die Aufgabe eines Laufs oder der Anlass einer Manager-Runde (9.6).
+
+**Antwortformat:** feste Markierungen, die jede KI schreiben kann. Der Hub liest sie streng (erlaubte Werte, Länge, Anzahl je Antwort, nur im eigenen Projekt) und schneidet sie aus dem Text, den der Nutzer liest.
+
+| Markierung | Zweck | Stand |
+|---|---|---|
+| `<memory file="NAME.md">…</memory>` | eine Erinnerungsdatei ganz neu schreiben (höchstens 3 je Antwort) | gebaut |
+| `<read>Name</read>` | eine weitere Datei anfordern (Übergang bis zum eingehängten Ordner, PROJEKT.md 11b) | gebaut |
+| `<ask kind="choice\|text" size="small\|large">Frage<option>…</option>…</ask>` | eine Rückfrage an den Nutzer (9.4) | geplant |
+| `<task kind="bug\|minor\|major" title="…">Beschreibung, Abnahmekriterien</task>` | eine Aufgabe fürs Board (9.5) | geplant |
+| `<status level="green\|yellow\|red">ein Satz</status>` | der Projektstand (9.7) | geplant |
+| `RESULT: <wert>` als letzte Zeile | Ergebnis eines Agentenlaufs (`workflow.py`) | gebaut |
+
+Grenzen (Vorschlag, beim Bau festzulegen): höchstens 3 `<ask>`, 5 `<task>`, 1 `<status>` je Antwort; Titel bis 200 Zeichen, Beschreibung bis 4 000, Frage bis 1 000, bis 6 Antwortmöglichkeiten zu je 200 Zeichen.
+
+### 9.4 Rückfragen, unabhängig von der KI („Wartet auf dich“)
+
+- Claudes eigenes Nachfragen wird **nicht** genutzt (in `-p` ohnehin nicht möglich); jede KI fragt über `<ask>`.
+- **Rückfragen sind technische Fragen während der Arbeit** (z. B. „Relais mit 12 V oder 24 V?“, „Datenbankfeld als Zahl oder Text?“). Was als Nächstes gebaut wird, gehört dagegen aufs **Board** (9.5). So unterscheiden sich die beiden, obwohl beide bestimmen, wie es weitergeht (Janis, 14.11.2026).
+- Der Hub speichert jede Frage (geplante Tabelle `questions`: id, project_id, task_id oder leer, role, text, kind, options, size, status `open`/`answered`/`dropped`, answer, created_at, answered_at), zeigt sie in der Kachel „Wartet auf dich“ und zählt sie in deren Zahl. Eine Aufgabe, zu der eine Frage offen ist, **wartet** (`waiting_reason = question`).
+- **Antworten (Janis, 14.11.2026):** Knöpfe mit den vorgeschlagenen Antworten **und** ein freies Feld für eine eigene. Eine Ja/Nein-Frage oder eine mit wenigen kurzen Möglichkeiten wird direkt unten in der Kachel beantwortet; eine Frage mit vielen Möglichkeiten oder viel Text (`size="large"`, oder vom Hub nach Länge erkannt) öffnet groß (die Kachel vergrößert sich wie die Dateien-Kachel), damit man den Überblick hat.
+- Die Antwort geht mit der nächsten Anfrage dieser Aufgabe oder dieses Projekts zurück (Block „Antworten auf deine Rückfragen“) und landet im Chat-Archiv.
+
+### 9.5 Selbstständigkeit und Aufgaben verteilen (Board)
+
+- **Aufgaben, die der Manager vorschlägt, kommen immer aufs Board** (`<task>` → Board-Punkt mit Hinweis „vom Manager“, Janis, 14.11.2026). Die Selbstständigkeit entscheidet nur über die **Genehmigung**:
+
+| | Entscheidet selbst | Fragt bei Großem | Fragt auch bei Kleinem |
+|---|---|---|---|
+| **Bug** | direkt freigegeben, wird behoben | direkt freigegeben | direkt freigegeben |
+| **Kleines Update** (kleine Zusatzfunktion) | Vorschlag, Janis genehmigt | Vorschlag | Vorschlag |
+| **Major Update** (z. B. „Projekte teilen“, ein eigener Abschnitt) | Vorschlag, Janis genehmigt | Vorschlag | Vorschlag |
+| **Technische Detailfrage** während der Arbeit | der Manager klärt sie selbst und schreibt die Entscheidung in die Erinnerung | Rückfrage nur bei Großem (Architektur, Kosten, Löschen, Hardware, Sicherheit) | Rückfrage vor jeder Entscheidung |
+
+  **Bugs werden immer direkt behoben**, egal was eingestellt ist; **Updates (klein und groß) fragen immer** erst über das Board, auch bei „Entscheidet selbst“. Die Stufe unterscheidet sich also nur darin, wie viele technische Rückfragen kommen.
+- Ein genehmigter Punkt läuft durch die bestehende Kette (Abschnitt 3): Programmierer → Tester → Prüfer → Freigabe durch den Nutzer → Manager führt Doku und Erinnerung nach. Jede Rolle bekommt ihren eigenen Regelteil (9.3), die Aufgabe, die Erinnerung und ihren Arbeitsordner (eigener Branch). Den Lauf startet der Runner (Schleife der Agentenläufe, PROJEKT.md 11a Punkt 6), das Ergebnis wertet der Hub aus (`workflow.py`).
+- Auch Programmierer, Tester und Prüfer dürfen `<ask>` stellen (z. B. der Tester: „Ist das Verhalten so gewollt?“); es gilt dieselbe Selbstständigkeit.
+
+### 9.6 Regelmäßige Durchläufe (Manager-Runde)
+
+- Den Zeitplan hält **der Hub**, nicht die KI. **Nicht nach Uhrzeit, sondern nach Fälligkeit** (Janis, 14.11.2026; die Fälligkeit hängt nur indirekt an der Uhr).
+- **Anlässe einer Manager-Runde:** (1) eine regelmäßige Prüfung wird fällig (Tabelle `checks`, gebaut, mit Länge und Wochentagen); (2) eine Aufgabe ist fertig (nach der Freigabe oder als `escalated`); (3) eine Rückfrage wurde beantwortet, auf die keine laufende Aufgabe wartet. Mehrere Anlässe zur selben Zeit werden zu einer Runde zusammengefasst.
+- In der Runde geht der Manager Board, offene Aufgaben, fällige Prüfungen und Antworten durch und antwortet im selben Format: `<status>`, `<task>`, `<ask>`, `<memory file=…>`. Eine erledigte Prüfung markiert der Hub als erledigt, wenn der Manager es in seinem Bericht sagt (Form beim Bau festlegen).
+- Ein Lauf zur Zeit (Pi mit 1 GB), Kontingent schonen; später richtet sich die Häufigkeit nach dem Verbrauch (9.8).
+
+### 9.7 Status des Projekts
+
+- Der Manager setzt ihn mit `<status level="green|yellow|red">` und einem Satz. Der Hub zeigt ihn als **Lampe und Satz** auf der Status-Kachel des Managers und auf der Projektkachel im Dashboard, mit Zeitpunkt.
+- **Was der Hub selbst sicher weiß, zählt zusätzlich:** ein gescheiterter Lauf, eine eskalierte Aufgabe oder eine unbeantwortete Rückfrage machen den Status **mindestens gelb**; eine abgelaufene Claude-Verbindung macht ihn rot. So hängt der Status nicht allein an der KI.
+- Geplante Tabelle `project_status` (project_id, level, text, source `manager`/`hub`, created_at); der Verlauf bleibt zum Nachschauen.
+
+### 9.8 Modell je Rolle, mit Automatik (PROJEKT.md 11a, Punkt 4e)
+
+- Für Manager, Programmierer, Tester und Prüfer wählt man Modell und Stufe selbst (Baustein `ui.model_picker`) **oder „Automatisch“**: dann entscheidet der Manager je Aufgabe, welches Modell und welche Stufe die Rolle bekommt (Markierung beim Bau festlegen, z. B. ein Attribut an `<task>`), in den Grenzen der Liste aus `catalog.py`.
+- **Später, fortgeschritten (Janis):** die Wahl berücksichtigt das restliche Kontingent und die Zeit bis zum Zurücksetzen (viel übrig kurz vor dem Zurücksetzen = großzügiger, wenig übrig = sparsam). Setzt die Verbrauchsanzeige voraus (PROJEKT.md 11a, Punkt 7).
+- Der Prüfer soll, sobald eine zweite KI verbunden ist, eine andere KI nutzen als der Programmierer (PROJEKT.md 11a, Punkt 4b).
+
+### 9.9 Reihenfolge der Umsetzung (Vorschlag, Janis entscheidet den Start)
+
+1. Antwortformat und strenges Lesen im Manager-Chat: `<ask>`, `<status>`, `<task>` (Parser wie `memory.parse_answer`, Tests mit Fremdprojekten in `test_isolation.py`).
+2. Kachel „Wartet auf dich“ mit Antworten (Knöpfe, freies Feld, groß bei großen Fragen) und der Regeltext der Selbstständigkeit.
+3. Status-Kachel und Projektkachel.
+4. Schleife der Agentenläufe samt Verteilen der Aufgaben (Board → Kette), Arbeitsordner je Aufgabe.
+5. Zeitplan der Manager-Runden nach Fälligkeit.
+6. Modell je Rolle mit Automatik.
+7. Ein zweiter Anbieter-Adapter als Beweis, dass alles ohne Claude geht.
+
+### 9.10 Dateien der Erinnerung: Namen und Sprache
+
+- **Dateinamen immer englisch:** `MEMORY.md`, `PROJECT.md`, `ROADMAP.md`, `RULES.md`. **Inhalt** (Überschriften, Text) in der Sprache, die beim Anlegen des Projekts eingestellt ist. Begründung: Die Namen sind technische Schlüssel, auf die Regelteil, Hub und Tests sich beziehen, und sehen in jedem Projekt gleich aus; den Inhalt lesen Menschen. Verworfen: übersetzte Namen (jede Stelle bräuchte beide), gemischte Namen (MEMORY neben REGELN). Vorschlag von Claude am 14.11.2026, von Janis im selben Zug angenommen.
+- **Noch umzusetzen:** `memory.SKELETON` legt heute für deutsche Projekte `PROJEKT.md` und `REGELN.md` an; das wird auf die englischen Namen umgestellt, und in bestehenden Projekten werden diese beiden Dateien einmalig umbenannt (Inhalt bleibt).
