@@ -73,7 +73,7 @@
       var dots = document.createElement("span");
       dots.className = "loading-dots";
       dots.setAttribute("aria-hidden", "true");
-      dots.innerHTML = "<i></i><i></i><i></i>";
+      for (var d = 0; d < 3; d++) dots.appendChild(document.createElement("i"));
       body.appendChild(dots);
     }
     item.appendChild(name);
