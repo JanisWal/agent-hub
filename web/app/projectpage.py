@@ -6,7 +6,7 @@ from .layout import esc, fill
 from .projects import MAX_DESCRIPTION, MAX_NAME, Project
 from .users import User
 
-SCRIPTS = ("motion.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "picker.js", "manager.js", "checks.js", "upload.js", "files.js")
+SCRIPTS = ("motion.js", "segment.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "picker.js", "manager.js", "splitter.js", "checks.js", "upload.js", "files.js")
 STYLES = ("project.css",)
 
 COLUMN_LABEL = {"bug": "col_bug", "minor": "col_minor", "major": "col_major"}
@@ -136,17 +136,20 @@ def _stations(lang: str) -> str:
         current = ' aria-current="page"' if name == "board" else ""
         active = " active" if name == "board" else ""
         return (
-            f'<a class="station{active}" href="#{name}" data-station="{name}"{current}>'
+            f'<a class="station{active}" href="#{name}" data-seg data-station="{name}"{current}>'
             f'<span class="station-label">{esc(i18n.t(lang, key))}</span></a>'
         )
 
     off = "".join(
-        f'<span class="station off" aria-disabled="true" title="{soon}">'
+        f'<span class="station off" data-seg aria-disabled="true" title="{soon}">'
         f'<span class="station-label">{esc(i18n.t(lang, key))}</span></span>'
         for key in STATION_KEYS
     )
+    # The thumb of the segment slider (segment.js, Janis 14.11.2026): it lies under the open station, juts out to
+    # the right, and can be dragged up and down to another station.
     return (
         f'<nav class="stations" aria-label="{esc(i18n.t(lang, "stations"))}">'
+        f'<span class="station-thumb" aria-hidden="true"></span>'
         f'{"".join(view(name, key) for name, key in VIEWS)}{off}</nav>'
     )
 

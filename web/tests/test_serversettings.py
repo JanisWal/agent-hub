@@ -57,7 +57,11 @@ class ServerSettingsTest(unittest.TestCase):
         html = systempage.render(self.owner)
         self.assertIn('<option value="8" selected>', html)
         self.assertIn('<option value="64" selected>', html)
-        self.assertEqual(html.count('class="info-dot"'), 2)
+        # one "i" per row (Janis, 14.11.2026): backup, upload, restart, shut down; no explaining lines of text
+        self.assertEqual(html.count('class="info-dot"'), 4)
+        self.assertNotIn("sys-hint", html)
+        self.assertIn("Gleichzeitig: So viele Stücke", html)               # the upload "i" explains both choices
+        self.assertEqual(html.count("Backup erstellen<"), 1)               # the button, no title repeating it
         self.assertNotIn(" title=", html)                                  # explanations only as our own tips
         tile = managerpage._files_tile("de", [])
         self.assertIn('data-parallel="8"', tile)

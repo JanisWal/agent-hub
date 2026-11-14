@@ -32,14 +32,17 @@
     });
   });
 
-  // A switch: checked = its data-on value, unchecked = its data-off value.
-  document.querySelectorAll("#manager-view input[type=checkbox][data-setting]").forEach(function (box) {
-    var was = box.checked;
-    box.addEventListener("change", function () {
-      save(box.dataset.setting, box.checked ? box.dataset.on : box.dataset.off, function (answer) {
-        var value = answer && answer[box.dataset.setting];
-        if (value) was = value === box.dataset.on;
-        box.checked = was;
+  // A pill that is pressed or not (aria-pressed): pressed = its data-on value, else its data-off value. It changes at
+  // once on the click and goes back if the server does not take it.
+  document.querySelectorAll("#manager-view button[aria-pressed][data-setting]").forEach(function (pill) {
+    var was = pill.getAttribute("aria-pressed") === "true";
+    pill.addEventListener("click", function () {
+      var on = pill.getAttribute("aria-pressed") !== "true";
+      pill.setAttribute("aria-pressed", String(on));
+      save(pill.dataset.setting, on ? pill.dataset.on : pill.dataset.off, function (answer) {
+        var value = answer && answer[pill.dataset.setting];
+        if (value) was = value === pill.dataset.on;
+        pill.setAttribute("aria-pressed", String(was));
       });
     });
   });

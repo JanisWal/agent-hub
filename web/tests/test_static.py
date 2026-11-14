@@ -14,9 +14,23 @@ class StaticUrlTest(unittest.TestCase):
     def test_page_links_only_versioned_static_files(self):
         html = layout.page("T", "", "de", scripts=("dashboard.js",), styles=("dashboard.css",))
         links = re.findall(r'(?:href|src)="(/static/[^"]+)"', html)
-        self.assertEqual(len(links), 4)  # app.css, dashboard.css, core.js, dashboard.js
+        # app.css, dashboard.css, core.js, dashboard.js and the three icons (svg, png, iPhone)
+        self.assertEqual(len(links), 7)
         for link in links:
             self.assertRegex(link, r"\?v=[0-9a-f]{10}$")
+
+    def test_every_page_has_the_logo(self):
+        html = layout.page("T", "", "de")
+        self.assertIn('<link rel="icon" href="/static/icon.svg?v=', html)
+        self.assertIn('<link rel="apple-touch-icon" href="/static/icon-180.png?v=', html)
+        self.assertIn('name="theme-color" content="#EFDCC6"', html)
+
+    def test_favicon_route(self):
+        from app.main import favicon
+        response = favicon()                       # no test client needed: the route returns the file response
+        self.assertEqual(response.media_type, "image/png")
+        with open(response.path, "rb") as icon:
+            self.assertTrue(icon.read(4) == b"\x89PNG")
 
 
 if __name__ == "__main__":

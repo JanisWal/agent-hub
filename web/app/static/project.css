@@ -15,7 +15,18 @@
 /* ===== Stations: sharp bars along the left edge of the window (no tiles, no arrows) ===== */
 /* The list starts at the window edge (main has 24 px padding, taken back here). Each station is a row of
    text with a thin glowing line under it. The active one is a sharp rectangle that juts out to the right. */
-.stations { display: flex; flex-direction: column; gap: 0; margin-left: calc(var(--space) * -3); padding-top: 6px; }
+.stations { position: relative; display: flex; flex-direction: column; gap: 0; margin-left: calc(var(--space) * -3); padding-top: 6px; }
+/* The open station: the thumb of the segment slider (segment.js), the same element as under the file tabs, upright.
+   A sharp rectangle with the accent bar at the window edge that juts out to the right (116 % of the column); press
+   it and drag it up or down to open another station (Janis, 14.11.2026). Only transform moves. */
+.station-thumb { position: absolute; left: 0; top: 0; width: 116%; z-index: 0; pointer-events: none; transform-origin: left center; will-change: transform; }
+.station-thumb::before {
+  content: ""; position: absolute; inset: 5px 0;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 34%, transparent), color-mix(in srgb, var(--accent) 16%, transparent));
+  box-shadow: inset 4px 0 0 var(--accent), inset 0 1px 0 var(--highlight), 0 8px 20px color-mix(in srgb, var(--accent) 18%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5); backdrop-filter: blur(14px) saturate(1.5);
+}
+.stations.seg-dragging .station-thumb::before { box-shadow: inset 4px 0 0 var(--accent), inset 0 1px 0 var(--highlight), 0 14px 30px color-mix(in srgb, var(--accent) 30%, transparent); }
 .station {
   position: relative;
   isolation: isolate;
@@ -56,10 +67,11 @@
 .station:nth-child(4n) { --h: 2.5px; --cut: 34%; }
 .station:last-child::after { display: none; }
 .station-label { position: relative; }
-a.station:hover { color: var(--text); translate: 5px 0; }
-a.station:hover::before { background: color-mix(in srgb, var(--field) 55%, transparent); box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 60%, transparent); transform: scaleX(1); }
-.station.active { color: var(--text); }
-.station.active::before { background: color-mix(in srgb, var(--accent) 26%, transparent); box-shadow: inset 4px 0 0 var(--accent); transform: scaleX(1.16); }
+a.station:not(.active):hover { color: var(--text); translate: 5px 0; }
+a.station:not(.active):hover::before { background: color-mix(in srgb, var(--field) 55%, transparent); box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 60%, transparent); transform: scaleX(1); }
+.station.active, .station.seg-over { color: var(--text); }
+.station.active { cursor: grab; }
+.stations.seg-dragging, .stations.seg-dragging .station { cursor: grabbing; }
 .station.off { opacity: 0.55; cursor: default; }
 
 /* ===== Board ===== */
@@ -126,6 +138,23 @@ a.station:hover::before { background: color-mix(in srgb, var(--field) 55%, trans
 /* Status and checks sit side by side and stay level while they are empty (Janis, 11.11.2026): the two hints wrap
    differently (up to 4 lines in a narrow column) and the plus button makes the checks header taller, so both get the same room to start with: also enough for the first two checks. */
 .mtile.m-status, .mtile.m-checks { min-height: 190px; }
+/* Splitter between two tiles of a column (splitter.js, Janis 14.11.2026): it takes no room (the gap stays 24 px), its
+   hit area is the gap. The bar (48 x 5 px, round ends) shows only while the pointer is over it or it has the focus,
+   grows to full length with a spring-like curve and turns accent while dragged. */
+.m-split { position: relative; flex: none; height: 0; margin: calc(var(--space) * -1.5) 0; z-index: 2; cursor: row-resize; touch-action: none; outline: none; }
+.m-split::before { content: ""; position: absolute; left: 12%; right: 12%; top: calc(var(--space) * -1.5); bottom: calc(var(--space) * -1.5); }
+.m-split::after {
+  content: ""; position: absolute; left: 50%; top: 50%; width: 48px; height: 5px; margin: -2.5px 0 0 -24px; border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 60%, transparent); box-shadow: inset 0 1px 0 var(--highlight);
+  opacity: 0; transform: scaleX(0.5); transition: opacity 0.2s, transform 0.35s cubic-bezier(0.3, 1.4, 0.5, 1), background 0.2s;
+}
+.m-split:hover::after, .m-split:focus-visible::after, .m-split.active::after { opacity: 1; transform: none; }
+.m-split.active::after, .m-split:focus-visible::after { background: var(--accent); }
+html.splitting, html.splitting * { cursor: row-resize !important; -webkit-user-select: none !important; user-select: none !important; }
+@media (min-width: 1101px) {
+  .mcol.split-set > :has(+ .m-split) { flex: var(--split) 1 0; }
+  .mcol.split-set > .m-split + * { flex: calc(1 - var(--split)) 1 0; }
+}
 /* The status lamp: grey until the manager reports (green, amber, red later). */
 .m-lamp { flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); opacity: 0.55; box-shadow: 0 0 0 4px color-mix(in srgb, var(--muted) 18%, transparent); }
 /* The drop-down at the pencil next to the title (name and description of the project). */
@@ -143,9 +172,12 @@ textarea:focus { outline: none; border-color: var(--accent); box-shadow: inset 0
 
 @media (max-width: 1100px) {
   .manager { grid-template-columns: 1fr; }
+  .m-split { display: none; }   /* one column: every tile has its own height, nothing to share */
   .mtile.m-grow, .mtile.m-chat, .mtile.m-waiting { flex: none; }
   .mtile.m-grow { min-height: 180px; }
-  .mtile.m-chat { min-height: 280px; }
+  /* One column (phone, narrow window): the chat has a fixed height and its log scrolls inside, instead of growing
+     with every answer until the page is endless (Janis' list, 11.11.2026: limit the chat on the iPhone). */
+  .mtile.m-chat { min-height: 280px; height: min(72dvh, 620px); }
   .title-menu { left: 0; translate: none; }
   .project { grid-template-columns: 1fr; }
   .board { grid-template-columns: 1fr; }
@@ -155,8 +187,8 @@ textarea:focus { outline: none; border-color: var(--accent); box-shadow: inset 0
   .stations::-webkit-scrollbar { display: none; }
   .station { flex: none; white-space: nowrap; min-height: 44px; padding: 0 22px; }
   .station::after { display: none; }
-  a.station:hover { translate: none; }
-  .station.active::before { transform: none; }
+  a.station:not(.active):hover { translate: none; }
+  .station-thumb { width: auto; top: 0; height: 44px; transform-origin: center; }   /* across: as wide as the station */
 }
 @media (max-width: 560px) {
   .column { padding: 16px; }
@@ -170,22 +202,30 @@ html .card.drag-clone::after { display: none; }
 
 /* Manager chat (see web/app/chat.py): the big tile at the right of the Manager view. It replaced the slim window
    that was fixed at the right edge. The log scrolls inside the tile; the tile keeps its share of the column. */
+/* Compact (Janis, 14.11.2026): the hint is an "i" next to the title, the switch a pill next to the model, so the log
+   starts right under the header, ends right above the input, and the newest answer sits just over the input. */
 .m-chat .muted { font-size: 0.88rem; }
-.chat-log { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--space); margin: 0 0 12px; padding: 0; overflow-y: auto; list-style: none; }
-.chat-msg { display: flex; flex-direction: column; gap: 2px; max-width: 92%; padding: 10px 14px; border-radius: 16px; background: var(--field); border: 1px solid var(--glass-border); }
+.m-chat-tools { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; margin-left: auto; }
+.m-chat-tools .model-picker { margin-left: 0; }
+.m-chat.mtile header:has(.m-chat-tools) h2 { flex: 0 0 auto; }
+.m-chat header .info-dot { width: 30px; height: 30px; margin-left: -6px; }
+.chat-log { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; margin: 0 0 2px; padding: 0; overflow-y: auto; list-style: none; font-size: 0.92rem; line-height: 1.42; }
+.chat-log > :first-child { margin-top: auto; }   /* few messages stand at the bottom, next to the input, like any chat */
+.chat-msg { display: flex; flex-direction: column; gap: 1px; max-width: 92%; padding: 7px 12px; border-radius: 14px; background: var(--field); border: 1px solid var(--glass-border); }
 .chat-msg.you { align-self: flex-end; background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .chat-msg.failed .chat-text { color: var(--error); }
 .chat-msg.wait .chat-text { color: var(--muted); }
-.chat-who { font-size: 0.74rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.chat-who { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
 .chat-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 .chat-text a { color: var(--accent); text-underline-offset: 3px; }
 .chat-text pre { margin: 6px 0; padding: 8px 10px; overflow-x: auto; white-space: pre; background: var(--field); border: 1px solid var(--glass-border); border-radius: 10px; font-size: 0.8rem; }
 .chat-text code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.85em; }
 .chat-text strong { font-weight: 700; }
+/* Input and "Send" are the same height, flat (Janis, 14.11.2026); the button keeps its glass and its width. */
 .chat-form { display: flex; gap: var(--space); align-items: stretch; }
 .chat-form label { flex: 1; min-width: 0; margin: 0; }
-.chat-form input { min-height: 46px; }
-.chat-form button { min-width: 78px; padding: 0 14px; }
+.chat-form input { min-height: 42px; height: 42px; margin: 0; }
+.chat-form button { min-width: 78px; min-height: 42px; height: 42px; padding: 0 16px; }
 .chat-form button:disabled { opacity: 0.55; cursor: default; transform: none; }
 .m-chat .error { margin: 0; }
 /* Settings of the manager in a tile header (model in the chat, autonomy at "waiting for you"): a pill with the
@@ -204,18 +244,19 @@ html .card.drag-clone::after { display: none; }
 .model-picker select { field-sizing: content; }
 .mtile header:has(.model-picker) h2 { flex: 1 0 auto; }
 .model-picker .m-select:last-child .select-menu { min-width: 150px; }
-/* The switch "web + code together" (on: code has the open internet; off: web search, code without internet).
-   A track with a knob like the system switches; the knob only moves with transform. The whole label is the hit area. */
-.m-chat-sub { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0 12px; margin-top: -6px; }
-.m-switch { position: relative; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; margin: 0; font-size: 0.8rem; font-weight: 700; color: var(--muted); cursor: pointer; -webkit-user-select: none; user-select: none; }
-.m-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
-.m-switch-track { position: relative; flex: none; width: 40px; height: 24px; border-radius: 999px; background: var(--field); border: 1px solid var(--glass-border); transition: background 0.25s, border-color 0.25s; }
-.m-switch-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--text); opacity: 0.75; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); transition: transform 0.35s cubic-bezier(0.3, 1.4, 0.5, 1), opacity 0.25s; }
-.m-switch input:checked + .m-switch-track { background: color-mix(in srgb, var(--accent) 70%, transparent); border-color: var(--accent); }
-.m-switch input:checked + .m-switch-track::after { transform: translateX(16px); opacity: 1; background: #fff; }
-.m-switch input:checked ~ .m-switch-label { color: var(--text); }
-.m-switch input:focus-visible + .m-switch-track { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent); }
-@media (prefers-reduced-motion: reduce) { .m-switch-track, .m-switch-track::after { transition: none; } }
+/* "Web + code together" as a pill (Janis, 14.11.2026): it looks like the drop-downs beside it, but it is pressed or
+   not. Pressed (code with the open internet, the bolder choice) it is red like the armed trash circle of the files. */
+.m-pill {
+  position: relative; flex: none; height: 34px; min-height: 34px; min-width: 0; padding: 0 14px;
+  font-size: 0.82rem; font-weight: 700; color: var(--muted);
+  background: color-mix(in srgb, var(--glass) 70%, transparent); border: 1px solid var(--glass-border); border-radius: 999px;
+  box-shadow: none; transition: transform 0.25s cubic-bezier(0.3, 1.5, 0.5, 1), color 0.2s, background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+.m-pill::after { content: ""; position: absolute; inset: -5px -2px; border-radius: 999px; }   /* 44 px hit area */
+.m-pill:hover { color: var(--text); border-color: var(--accent); transform: none; }
+.m-pill:active { transform: scale(0.96); }
+.m-pill[aria-pressed="true"] { color: var(--on-danger); background: var(--danger); border-color: color-mix(in srgb, var(--danger) 70%, white); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 28%, transparent), 0 0 16px color-mix(in srgb, var(--danger) 50%, transparent); }
+.m-pill[aria-pressed="true"]:hover { color: var(--on-danger); }
 
 /* ===== Regular checks (Manager view): a list with the plus in the header, due ones in bold ===== */
 .m-add { position: relative; flex: none; width: 36px; height: 36px; min-width: 36px; min-height: 36px; color: var(--accent); }
@@ -309,7 +350,9 @@ html .card.drag-clone::after { display: none; }
 .file-tab-label { display: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @container (min-width: 500px) { .file-tab-label { display: inline; } .file-tab svg { display: none; } }
 .file-tab:hover { transform: none; color: var(--text); }
-.file-tab[aria-selected="true"] { color: var(--text); }
+.file-tab[aria-selected="true"], .file-tab.seg-over { color: var(--text); }
+.file-tab[aria-selected="true"] { cursor: grab; }
+.file-tabs.seg-dragging, .file-tabs.seg-dragging .file-tab { cursor: grabbing; }
 .file-count { font-size: 0.72rem; font-weight: 700; color: var(--muted); }
 .m-files.dropping .file-tab { background: var(--glass); border-color: var(--glass-border); box-shadow: var(--shadow); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); color: var(--text); }
 .m-files.dropping .file-tab.hot { border-color: var(--accent); box-shadow: var(--shadow), 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }

@@ -2,6 +2,7 @@
 from pathlib import Path
 
 from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .deps import COOKIE_SECURE, ApiLoginRequired, LoginRequired, PasswordChangeRequired, fail, redirect
@@ -41,6 +42,13 @@ async def safety_headers(request: Request, call_next):
     if COOKIE_SECURE:  # we are served over HTTPS
         headers.setdefault("Strict-Transport-Security", "max-age=31536000")
     return response
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> FileResponse:
+    """Browsers and feed readers ask for /favicon.ico on their own; the pages name the icons in <head> (layout.py)."""
+    return FileResponse(Path(__file__).parent / "static" / "icon-48.png", media_type="image/png",
+                        headers={"Cache-Control": "public, max-age=86400"})
 
 
 @app.get("/health")

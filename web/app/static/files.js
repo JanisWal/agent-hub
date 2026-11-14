@@ -175,14 +175,15 @@
     if (event.target.classList && event.target.classList.contains("file-preview")) event.target.remove();
   }, true);
 
-  // --- tabs: the highlight slides under the chosen tab with a spring (it can be interrupted at any moment)
-  var thumbX = Motion.spring(0, Motion.MOVE, function (x) { thumb.style.transform = "translateX(" + x + "px)"; }, 0.05);
-  function placeThumb(instant) {
-    var tab = tabs.filter(function (t) { return t.getAttribute("aria-selected") === "true"; })[0];
-    if (!tab || !tab.offsetWidth) return;
-    thumb.style.width = tab.offsetWidth + "px";
-    if (instant) thumbX.set(tab.offsetLeft); else thumbX.to(tab.offsetLeft);
-  }
+  // --- tabs: the shared segment slider (segment.js): the highlight springs under the chosen tab, and the chosen tab
+  // can be dragged to another one (Janis, 14.11.2026)
+  var segment = Segment.attach(tabsBox, {
+    thumb: thumb,
+    items: function () { return tabs; },
+    current: function () { return tabs.filter(function (t) { return t.getAttribute("aria-selected") === "true"; })[0]; },
+    pick: function (tab) { show(tab.dataset.cat); }
+  });
+  function placeThumb(instant) { segment.place(instant); }
   function show(category, instant) {
     active = category;
     tabs.forEach(function (tab) { tab.setAttribute("aria-selected", tab.dataset.cat === category ? "true" : "false"); });
@@ -198,8 +199,7 @@
   }
   tabs.forEach(function (tab) { tab.addEventListener("click", function () { show(tab.dataset.cat); }); });
   var saved = load("files-tab");
-  show(tabs.some(function (tab) { return tab.dataset.cat === saved; }) ? saved : active, true);
-  if (window.ResizeObserver) new ResizeObserver(function () { placeThumb(true); }).observe(tabsBox);   // also when the view first shows
+  show(tabs.some(function (tab) { return tab.dataset.cat === saved; }) ? saved : active, true);   // segment.js follows resizes
 
   var notice = load("files-notice");
   if (notice) { say(errorBox, notice); store("files-notice", ""); }
