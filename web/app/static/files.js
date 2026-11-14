@@ -233,6 +233,7 @@
   }
   function nothing() {}
   window.__uploadLog = [];   // every request with its time: for finding out where a slow upload is slow (console: __uploadLog)
+  var holding = false;
   var uploader = HubUpload.create({
     block: BLOCK,
     scope: projectId,
@@ -249,6 +250,7 @@
     },
     text: { net: tile.dataset.errNet },
     onAdd: function (job) {
+      if (!holding) { holding = true; AgentHub.hold(true); }   // no reload of the page while files go up
       var row = template.content.firstElementChild.cloneNode(true);
       row.querySelector(".file-up-name").textContent = job.meta.name || job.file.name;
       job.meta.row = row;
@@ -278,7 +280,11 @@
     onFinished: function (job) { job.meta.row.remove(); refreshSoon(); },
     onFail: function (job, message) { job.meta.row.remove(); say(errorBox, message); },
     onCancel: function (job) { job.meta.row.remove(); },
-    onIdle: function () { uploads.hidden = true; refresh(); }
+    onIdle: function () {
+      uploads.hidden = true;
+      if (holding) { holding = false; AgentHub.hold(false); }
+      refresh();
+    }
   });
 
   // --- same names (Janis, 13.11.2026): the server says which names the area already has (and a free name for each);

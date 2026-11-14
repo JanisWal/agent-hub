@@ -18,7 +18,8 @@
   var pendingId = null;
   var editingId = null;
 
-  function reload() { AgentHub.reload(); }
+  // Only this tile changes (no reload, a running upload goes on); if that fails, the page reloads (it waits for uploads).
+  function refresh() { return AgentHub.swap(["checks"]).catch(function () { AgentHub.reload(); }); }
 
   // The weekday circles only exist for a daily check.
   function syncDays() { daysBox.hidden = cycleSelect.value !== "daily"; }
@@ -61,28 +62,31 @@
   daysBox.addEventListener("change", function () { if (anyDay()) daysError.hidden = true; });
 
   form.addEventListener("submit", function (event) {
+    event.preventDefault();
+    if (!AgentHub.validate(form)) return;
     if (cycleSelect.value === "daily" && !anyDay()) {   // a daily check needs at least one day
-      event.preventDefault();
       daysError.hidden = false;
+      return;
     }
+    var body = new FormData(form);
+    dialog.close();
+    fetch(form.action, { method: "POST", body: body, credentials: "same-origin" }).then(refresh, refresh);
   });
 
   doneLink.addEventListener("click", function () {
     var id = editingId;
     dialog.close();
-    if (id) fetch("/checks/" + id + "/done", { method: "POST" }).then(reload).catch(reload);
+    if (id) fetch("/checks/" + id + "/done", { method: "POST" }).then(refresh, refresh);
   });
 
-  document.getElementById("check-add").addEventListener("click", function () {
-    openDialog({ action: "/projects/" + projectId + "/checks" });
-  });
 
   tile.addEventListener("dblclick", function (event) {
     var title = event.target.closest(".check-title");
     if (title) openFor(title.closest(".check-row"));
   });
 
-  tile.addEventListener("click", function (event) {
+  tile.addEventListener("click", function (event) {   // on the tile: its content is swapped, the tile stays
+    if (event.target.closest("#check-add")) { openDialog({ action: "/projects/" + projectId + "/checks" }); return; }
     var button = event.target.closest("[data-check]");
     if (!button) return;
     var row = button.closest(".check-row");
@@ -97,7 +101,7 @@
   document.getElementById("check-confirm-yes").addEventListener("click", function () {
     var id = pendingId;
     confirmDialog.close();
-    if (id) fetch("/checks/" + id + "/delete", { method: "POST" }).then(reload).catch(reload);
+    if (id) fetch("/checks/" + id + "/delete", { method: "POST" }).then(refresh, refresh);
   });
   confirmDialog.addEventListener("close", function () { pendingId = null; });
 })();
