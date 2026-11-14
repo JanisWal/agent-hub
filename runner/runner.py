@@ -130,7 +130,8 @@ class Runner:
         user_id, chat_id = job["user_id"], job["chat_id"]
         self.prepare(self.folder(user_id), user_id)
         command = launcher.build_chat_command(chat_id=chat_id, user_id=user_id, model=job["model"],
-                                              claude_dir=self.folder(user_id), mode=job.get("mode", "all"))
+                                              claude_dir=self.folder(user_id), mode=job.get("mode", "all"),
+                                              effort=job.get("effort") or "")
         try:
             done = self.run_chat(command, job["prompt"])
             ok, text, tokens_in, tokens_out, login_problem = launcher.parse_chat_output(done.stdout)

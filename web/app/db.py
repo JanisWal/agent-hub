@@ -171,7 +171,9 @@ NEW_COLUMNS = {
     "chat_messages": {"mode": "TEXT NOT NULL DEFAULT 'web'", "model": "TEXT NOT NULL DEFAULT 'haiku'",
                       "extra": "TEXT NOT NULL DEFAULT ''",          # contents of files the manager asked for (memory.py)
                       "rounds": "INTEGER NOT NULL DEFAULT 0",       # how often it was answered again with such files
-                      "memory_saved": "INTEGER NOT NULL DEFAULT 0"},  # the answer updated the memory file
+                      "memory_saved": "INTEGER NOT NULL DEFAULT 0",   # the answer updated the memory file
+                      "effort": "TEXT NOT NULL DEFAULT ''"},          # effort level (catalog.py); '' = older question
+    "agent_runs": {"effort": "TEXT NOT NULL DEFAULT ''"},    # effort level of the run's model (catalog.py)
     "files": {"parts": "TEXT NOT NULL DEFAULT ''"},          # one flag per chunk of an unfinished upload (files.py)
     "checks": {"days": "TEXT NOT NULL DEFAULT '1111111'"},   # weekdays of a daily check, Monday first (checks.py)
     "power_requests": {"result": "TEXT"},                    # how a manual backup ended: 'ok' or 'failed' (power.py)

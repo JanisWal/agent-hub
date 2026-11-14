@@ -46,6 +46,15 @@ class IsolationTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_model_and_effort_of_b_never_change_those_of_a(self):
+        from app import agents
+        agents.configure(self.a.id, "chef", model="opus", effort="max")
+        agents.configure(self.b.id, "chef", model="haiku", effort="low")
+        agents.configure(self.b.id, "reviewer", effort="xhigh")
+        mine = agents.settings(self.a.id)["roles"]
+        self.assertEqual((mine["chef"]["model"], mine["chef"]["effort"]), ("opus", "max"))
+        self.assertEqual(mine["reviewer"]["effort"], "high")                  # still the default of A
+
     # --- agents and the Claude connection
     def test_b_cannot_touch_the_agents_of_a(self):
         from pathlib import Path

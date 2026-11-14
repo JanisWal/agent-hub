@@ -543,6 +543,7 @@ main { padding-bottom: 96px; } /* room for the toggle */
   border-radius: 12px;
   transition: background 0.15s;
 }
+.select-option[hidden] { display: none; }   /* e.g. an effort level the chosen model does not have (picker.js) */
 .select-option:hover, .select-option.active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .select-option[aria-selected="true"]::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 .service-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; column-gap: var(--space); min-height: 28px; }

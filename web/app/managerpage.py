@@ -11,7 +11,7 @@ import time
 
 from urllib.parse import urlsplit
 
-from . import checks, files as filestore, i18n, serversettings
+from . import checks, files as filestore, i18n, serversettings, ui
 from .icons import icon
 from .layout import esc, fill
 
@@ -38,8 +38,8 @@ MANAGER = """<section class="manager" id="manager-view" aria-label="%t.station_m
 
 
 # The manager chat (web/app/chat.py, static/chat.js): it replaced the slim single-question window at the right
-# edge. Web search and code are always there (no switches, Janis 07.11.2026); the model drop-down is a setting of
-# the manager, so it holds for everything the manager does (static/manager.js saves it).
+# edge. Web search and code are always there (no switches, Janis 07.11.2026); model and effort level (two drop-downs,
+# ui.model_picker) are settings of the manager, so they hold for everything the manager does (manager.js saves them).
 CHAT = """<section class="mtile glass m-chat" id="chat" data-you="%t.chat_you%" data-claude="%t.station_manager%"
              data-waiting="%t.chat_waiting%" data-failed="%t.chat_failed%" data-memory="%t.chat_memory_saved%">
       <header><h2>%t.manager_chat%</h2>%MODEL%</header>
@@ -52,7 +52,6 @@ CHAT = """<section class="mtile glass m-chat" id="chat" data-you="%t.chat_you%" 
       </form>
     </section>"""
 
-MODELS = (("haiku", "model_haiku"), ("sonnet", "model_sonnet"), ("opus", "model_opus"))
 AUTONOMY = (("auto", "autonomy_auto"), ("major", "autonomy_major"), ("all", "autonomy_all"))
 
 
@@ -375,7 +374,9 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
            stored_files: list | None = None, files_confirm: bool = True) -> str:
     """`settings` is agents.settings(user_id): the manager is the role "chef". `regular_checks` are the
     project's checks (checks.list_checks)."""
-    model = _select(lang, "model", "chat_model", MODELS, settings["roles"]["chef"]["model"])
+    chef = settings["roles"]["chef"]
+    model = ui.model_picker(lang, "manager", chef["model"], chef.get("effort", ""),
+                            label_model="chat_model", label_effort="chat_effort")
     autonomy = _select(lang, "autonomy", "autonomy", AUTONOMY, settings["autonomy"])
     return fill(
         MANAGER,

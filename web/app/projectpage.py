@@ -6,7 +6,7 @@ from .layout import esc, fill
 from .projects import MAX_DESCRIPTION, MAX_NAME, Project
 from .users import User
 
-SCRIPTS = ("motion.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "manager.js", "checks.js", "upload.js", "files.js")
+SCRIPTS = ("motion.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "picker.js", "manager.js", "checks.js", "upload.js", "files.js")
 STYLES = ("project.css",)
 
 COLUMN_LABEL = {"bug": "col_bug", "minor": "col_minor", "major": "col_major"}

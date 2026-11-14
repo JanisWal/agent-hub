@@ -157,7 +157,7 @@ class ChatQueueTest(Base):
         from app import agents
         from app.routes import manager as manager_routes
         self.connect(self.a)
-        self.assertEqual(manager_routes.manager_settings("", "", "apart", user=self.a)["net"], "apart")
+        self.assertEqual(manager_routes.manager_settings("", "", "apart", "", user=self.a)["net"], "apart")
         self.assertTrue(routes.ask(self.pa.id, "run it", user=self.a)["ok"])
         self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"][0]["mode"], "apart")
         job = chat.claim_next()
@@ -167,8 +167,8 @@ class ChatQueueTest(Base):
         chat.finish(job.chat_id, True, "done")
         self.assertEqual(agents.settings(self.b.id)["roles"]["chef"]["net"], "together")   # per user
         self.assertEqual(agents.settings(self.a.id)["roles"]["programmer"]["net"], "together")  # and per agent
-        self.assertEqual(manager_routes.manager_settings("", "", "always", user=self.a).status_code, 400)
-        self.assertEqual(manager_routes.manager_settings("", "", "together", user=self.a)["net"], "together")
+        self.assertEqual(manager_routes.manager_settings("", "", "always", "", user=self.a).status_code, 400)
+        self.assertEqual(manager_routes.manager_settings("", "", "together", "", user=self.a)["net"], "together")
         chat.send(self.a.id, self.pa.id, "again")
         self.assertEqual(chat.claim_next().mode, "all")
 
@@ -197,7 +197,8 @@ class ChatQueueTest(Base):
         self.connect(self.a)
         self.assertEqual(chat.send(self.a.id, self.pa.id, "q").model, "sonnet")   # the manager's default
         chat.finish(chat.claim_next().chat_id, True, "a")
-        self.assertEqual(manager_routes.manager_settings("opus", "", "", user=self.a), {"ok": True, "model": "opus", "autonomy": "major", "net": "together"})
+        self.assertEqual(manager_routes.manager_settings("opus", "", "", "", user=self.a),
+                         {"ok": True, "model": "opus", "effort": "medium", "autonomy": "major", "net": "together"})
         self.assertTrue(routes.ask(self.pa.id, "via route", user=self.a)["ok"])
         self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"][-1]["model"], "opus")
         job = chat.claim_next()
@@ -208,7 +209,7 @@ class ChatQueueTest(Base):
             with self.assertRaises(ValueError) as problem:
                 chat.send(self.a.id, self.pa.id, "x", model=bad)
             self.assertEqual(str(problem.exception), "mode")
-            self.assertEqual(manager_routes.manager_settings(bad, "", "", user=self.a).status_code, 400)
+            self.assertEqual(manager_routes.manager_settings(bad, "", "", "", user=self.a).status_code, 400)
         self.assertEqual(agents.settings(self.a.id)["roles"]["chef"]["model"], "opus")      # nothing bad was stored
 
     def test_the_autonomy_is_a_setting_and_the_manager_reads_it(self):
@@ -216,8 +217,8 @@ class ChatQueueTest(Base):
         from app.routes import manager as manager_routes
         self.connect(self.a)
         self.assertEqual(agents.AUTONOMY, ("auto", "major", "all"))
-        self.assertEqual(manager_routes.manager_settings("", "auto", "", user=self.a)["autonomy"], "auto")
-        self.assertEqual(manager_routes.manager_settings("", "everything", "", user=self.a).status_code, 400)
+        self.assertEqual(manager_routes.manager_settings("", "auto", "", "", user=self.a)["autonomy"], "auto")
+        self.assertEqual(manager_routes.manager_settings("", "everything", "", "", user=self.a).status_code, 400)
         chat.send(self.a.id, self.pa.id, "q")
         text = chat.claim_next().prompt
         self.assertIn(chat.AUTONOMY_TEXT["auto"], text)
@@ -304,7 +305,7 @@ class ChatRoutesTest(Base):
         self.connect(self.a)
         chat.send(self.a.id, self.pa.id, "Hi")
         job = runner_routes.chat_claim()["job"]
-        self.assertEqual(sorted(job), ["chat_id", "mode", "model", "prompt", "user_id"])
+        self.assertEqual(sorted(job), ["chat_id", "effort", "mode", "model", "prompt", "user_id"])
         self.assertEqual(runner_routes.chat_finish(job["chat_id"], "1", "Hello back", 3, 4), {"ok": True})
         self.assertEqual(runner_routes.chat_finish(job["chat_id"], "1", "again", 0, 0).status_code, 409)
         self.assertEqual(chat.list_messages(self.a.id, self.pa.id)[0].answer, "Hello back")

@@ -14,10 +14,9 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-from . import agents, checks, claude_link, db, memory
-from .agents import MODELS
+from . import agents, catalog, checks, claude_link, db, memory
 
-DEFAULT_MODEL = agents.DEFAULT_MODEL["chef"]   # the manager is the role "chef"; its model is a setting of the user
+# The manager is the role "chef": model and effort level are settings of the user (agents.py, list in catalog.py).
 MAX_PROMPT = 2000
 MAX_CONTEXT = 12000       # characters of project context in front of a question
 HISTORY = 6               # earlier questions and answers of the project the manager remembers
@@ -86,8 +85,9 @@ class Message:
     answer: str
     created_at: int
     mode: str = "all"
-    model: str = DEFAULT_MODEL
+    model: str = ""
     memory_saved: bool = False     # this answer updated the memory file
+    effort: str = ""
 
 
 @dataclass
@@ -97,11 +97,12 @@ class ChatJob:
     model: str
     prompt: str            # what Claude reads on stdin: role, project context and the question
     mode: str = "all"
+    effort: str = ""       # effort level; empty for questions from before levels existed (Claude Code decides)
 
 
 def _message(row: sqlite3.Row) -> Message:
     return Message(row["id"], row["project_id"], row["prompt"], row["status"], row["answer"], row["created_at"],
-                   row["mode"], row["model"], bool(row["memory_saved"]))
+                   row["mode"], row["model"], bool(row["memory_saved"]), row["effort"])
 
 
 def _clip(text: str, limit: int) -> str:
@@ -172,22 +173,28 @@ def _drop_stale(conn: sqlite3.Connection, now: int) -> None:
 
 
 def send(user_id: int, project_id: int, prompt: str, mode: str | None = None, now: int | None = None,
-         model: str | None = None) -> Message:
+         model: str | None = None, effort: str | None = None) -> Message:
     """Ask the manager something. Raises ValueError("claude") if the user's Claude is not connected,
     ValueError("busy") while an earlier question of his is still open, ValueError("prompt") for an
-    empty or too long text, ValueError("mode") for an unknown mode or model and ValueError("project")
-    if the project is not his. `mode` and `model` default to the user's settings of the manager
-    (switch "web and code together" -> "all" or "apart"; model of the role "chef")."""
+    empty or too long text, ValueError("mode") for an unknown mode, model or level and ValueError("project")
+    if the project is not his. `mode`, `model` and `effort` default to the user's settings of the manager
+    (switch "web and code together" -> "all" or "apart"; model and level of the role "chef")."""
     prompt = prompt.strip()
     now = int(now if now is not None else time.time())
     if not prompt or len(prompt) > MAX_PROMPT:
         raise ValueError("prompt")
-    if (mode is not None and mode not in MODES) or (model is not None and model not in MODELS):
+    if mode is not None and mode not in MODES:
         raise ValueError("mode")
     with db.connect() as conn:
         if conn.execute("SELECT 1 FROM projects WHERE id = ? AND user_id = ?", (project_id, user_id)).fetchone() is None:
             raise ValueError("project")
         model = model or agents.model_in(conn, user_id, "chef")
+        if effort is None:
+            effort = catalog.resolve(model, agents.effort_in(conn, user_id, "chef"))[1]
+        try:
+            catalog.check(model, effort)
+        except ValueError:
+            raise ValueError("mode") from None
         mode = mode or NET_TO_MODE.get(agents.net_in(conn, user_id, "chef"), "apart")
         if not claude_link.connected_in(conn, user_id):
             raise ValueError("claude")
@@ -196,8 +203,8 @@ def send(user_id: int, project_id: int, prompt: str, mode: str | None = None, no
                         (user_id,)).fetchone():
             raise ValueError("busy")
         cur = conn.execute(
-            "INSERT INTO chat_messages (user_id, project_id, prompt, mode, model, status, created_at)"
-            " VALUES (?, ?, ?, ?, ?, 'queued', ?)", (user_id, project_id, prompt, mode, model, now),
+            "INSERT INTO chat_messages (user_id, project_id, prompt, mode, model, effort, status, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)", (user_id, project_id, prompt, mode, model, effort, now),
         )
         conn.execute(
             "DELETE FROM chat_messages WHERE user_id = ? AND id NOT IN"
@@ -235,7 +242,8 @@ def claim_next(now: int | None = None) -> ChatJob | None:
         for row in conn.execute("SELECT * FROM chat_messages WHERE status = 'queued' ORDER BY id").fetchall():
             if claude_link.connected_in(conn, row["user_id"]):
                 conn.execute("UPDATE chat_messages SET status = 'running', started_at = ? WHERE id = ?", (now, row["id"]))
-                return ChatJob(row["id"], row["user_id"], row["model"], build_input(conn, row), row["mode"])
+                return ChatJob(row["id"], row["user_id"], row["model"], build_input(conn, row), row["mode"],
+                               row["effort"])
     return None
 
 

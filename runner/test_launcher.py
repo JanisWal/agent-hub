@@ -75,12 +75,20 @@ class CommandTest(unittest.TestCase):
 
     def test_bad_values_are_refused(self):
         for change in ({"run_id": 0}, {"run_id": "7"}, {"run_id": True}, {"user_id": -1}, {"user_id": "2; rm"},
-                       {"model": "gpt"}, {"model": "sonnet --x"}, {"work_dir": "relative/dir"},
+                       {"model": "-gpt"}, {"model": "Sonnet"}, {"model": "sonnet --x"}, {"model": ""},
+                       {"effort": "-x"}, {"effort": "high --x"}, {"effort": "HIGH"}, {"work_dir": "relative/dir"},
                        {"work_dir": "/work,dst=/etc"}, {"work_dir": "/work dir"}, {"claude_dir": "/a/../etc"},
                        {"claude_dir": "/a:/b"}, {"memory": "64"}, {"memory": "1g --privileged"},
                        {"image": "x --privileged"}, {"network": "host --pid=host"}):
             with self.assertRaises(ValueError, msg=str(change)):
                 L.build_command(**{**GOOD, **change})
+
+    def test_the_effort_level_goes_with_the_model(self):
+        cmd = L.build_command(**GOOD, effort="xhigh")
+        self.assertEqual(cmd[cmd.index("--model"):cmd.index("--model") + 4], ["--model", "sonnet", "--effort", "xhigh"])
+        self.assertNotIn("--effort", L.build_command(**GOOD))                 # empty: Claude Code's own default
+        chat = L.build_chat_command(chat_id=5, user_id=2, model="fable", claude_dir="/data/claude/2", effort="max")
+        self.assertEqual(chat[chat.index("--model"):chat.index("--model") + 4], ["--model", "fable", "--effort", "max"])
 
     def test_task_text_never_reaches_the_command(self):
         # there is simply no parameter for it: the prompt travels through stdin
@@ -162,7 +170,7 @@ class ChatCommandTest(unittest.TestCase):
             with self.assertRaises(ValueError, msg=str(mode)):
                 L.build_chat_command(chat_id=5, user_id=2, model="haiku", claude_dir="/data/claude/2", mode=mode)
     def test_bad_values(self):
-        for change in ({"chat_id": 0}, {"chat_id": "5"}, {"user_id": 0}, {"model": "gpt"},
+        for change in ({"chat_id": 0}, {"chat_id": "5"}, {"user_id": 0}, {"model": "-gpt"}, {"effort": "--max"},
                        {"claude_dir": "/a,b"}, {"memory": "x"}):
             with self.assertRaises(ValueError, msg=str(change)):
                 L.build_chat_command(**{"chat_id": 5, "user_id": 2, "model": "haiku",
@@ -228,10 +236,12 @@ class ConsistencyTest(unittest.TestCase):
 
     def test_same_lists_as_the_hub(self):
         try:
-            from app import agents, workflow
+            from app import catalog, workflow
         except ImportError:
             self.skipTest("hub code not available")
-        self.assertEqual(L.MODELS, agents.MODELS)
+        # models and levels are a list of the hub; the launcher only checks the same safe patterns
+        self.assertEqual(L._MODEL.pattern, catalog._ID.pattern)
+        self.assertEqual(L._EFFORT.pattern, catalog._EFFORT.pattern)
         self.assertEqual(L.ROLES, workflow.ROLES)
         # "skipped" is the chief's own result (a test left out without the Mac), no run reports it
         self.assertEqual({k: set(v) for k, v in L.RESULTS.items()},
