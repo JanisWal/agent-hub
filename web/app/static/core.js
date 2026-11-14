@@ -93,7 +93,7 @@
     });
   }
 
-  window.AgentHub = { validate: validate, clear: clear, reload: reload };
+  window.AgentHub = Object.assign(window.AgentHub || {}, { validate: validate, clear: clear, reload: reload });
 
   document.addEventListener("submit", function (event) {
     var form = event.target;

@@ -272,7 +272,7 @@ class ChatQueueTest(Base):
 class ChatRoutesTest(Base):
     def test_ask_and_poll(self):
         self.connect(self.a)
-        self.assertEqual(routes.messages(self.pa.id, user=self.a), {"ok": True, "messages": []})
+        self.assertEqual(routes.messages(self.pa.id, user=self.a), {"ok": True, "claude": "connected", "messages": []})
         sent = routes.ask(self.pa.id, "Hello", user=self.a)
         self.assertTrue(sent["ok"])
         got = routes.messages(self.pa.id, user=self.a)["messages"]
@@ -288,6 +288,26 @@ class ChatRoutesTest(Base):
         self.assertEqual(routes.ask(self.pb.id, "x", user=self.a).status_code, 404)      # B's project
         english = dataclasses.replace(self.b, language="en")
         self.assertIn("not connected", routes.ask(self.pb.id, "x", user=english).body.decode())  # B has no Claude
+
+    def test_a_failure_shows_only_its_kind(self):
+        """Janis, 14.11.2026: a short text, not what Claude Code said; the menu learns of a lost sign-in."""
+        self.connect(self.a)
+        job_id = chat.send(self.a.id, self.pa.id, "q").id
+        chat.claim_next()
+        chat.finish(job_id, False, "Failed to authenticate. API Error: 401 OAuth access token has expired. (exit code 1)")
+        claude_link.mark_expired(self.a.id)
+        got = routes.messages(self.pa.id, user=self.a)
+        self.assertEqual((got["claude"], got["messages"][0]["failure"], got["messages"][0]["answer"]), ("expired", "auth", ""))
+        self.assertIn("OAuth", chat.list_messages(self.a.id, self.pa.id)[0].answer)   # the reason stays for diagnosis
+        self.assertEqual(routes.messages(self.pa.id, user=self.b)["claude"], "none")    # B's own state, not A's
+
+    def test_failure_kinds(self):
+        for reason, kind in [("Failed to authenticate. API Error: 401", "auth"), ("Not logged in · Please run /login", "auth"),
+                             ("Invalid API key", "auth"), ("timeout", "timeout"), ("Timeout: no answer in time.", "timeout"),
+                             ("Too many steps: the search limit was reached.", "steps"),
+                             ("No readable answer from Claude Code.", "other"), ("", "other")]:
+            self.assertEqual(chat.failure_kind(reason), kind, reason)
+            self.assertIn(chat.failure_kind(reason), chat.FAILURES)
 
     def test_delete_history_route(self):
         self.connect(self.a)

@@ -10,6 +10,7 @@ The runner takes the questions from `claim_next` and reports the answers with `f
 the user comes from the database (the message), never from the runner's request. Every user keeps at
 most MAX_STORED messages (the oldest go first) and can delete the history from the menu (`delete_all`).
 """
+import re
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -74,6 +75,10 @@ MAX_STORED = 100         # messages kept per user, the oldest go first
 # Which one is the user's setting agents.net_in ("together"/"apart"). Old messages may still say "web".
 MODES = ("all", "apart")
 NET_TO_MODE = {"together": "all", "apart": "apart"}
+# Why a question failed, read from the reason the runner sent (Janis, 14.11.2026: show a short text, not what Claude
+# Code says). The reason stays in the answer column for looking into problems; the page only gets the kind.
+FAILURES = ("auth", "timeout", "steps", "other")
+_AUTH = re.compile(r"authenticat|not logged in|/login|oauth|invalid api key|\b401\b", re.I)
 
 
 @dataclass
@@ -103,6 +108,17 @@ class ChatJob:
 def _message(row: sqlite3.Row) -> Message:
     return Message(row["id"], row["project_id"], row["prompt"], row["status"], row["answer"], row["created_at"],
                    row["mode"], row["model"], bool(row["memory_saved"]), row["effort"])
+
+
+def failure_kind(reason: str) -> str:
+    """auth (lost sign-in), timeout, steps (the step limit was reached) or other, for a failed answer."""
+    if _AUTH.search(reason):
+        return "auth"
+    if reason.lower().startswith("timeout"):
+        return "timeout"
+    if reason.startswith("Too many steps"):
+        return "steps"
+    return "other"
 
 
 def _clip(text: str, limit: int) -> str:
