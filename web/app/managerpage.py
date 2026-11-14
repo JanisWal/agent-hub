@@ -364,14 +364,15 @@ def _files_tile(lang: str, items: list, files_confirm: bool = True) -> str:
 
 
 def _net_switch(lang: str, current: str) -> str:
-    """"Web and code together" as a pill that looks like the drop-downs next to it (Janis, 14.11.2026). Pressed, it is
-    red like the armed trash circle of the files: code then has the open internet (the bolder choice); not pressed,
-    web search and code without internet. The tip says both."""
+    """"Web and code together" as a small round glass button with a globe, as high as the capsule next to it, so title,
+    switch and capsule fit in one row (Janis, 14.11.2026). Pressed, it is red like the armed trash circle of the files:
+    code then has the open internet (the bolder choice); not pressed, web search and code without internet. Its name
+    is the label for screen readers, the tip says both states."""
     label, tip = esc(i18n.t(lang, "net_together")), esc(i18n.t(lang, "net_together_tip"))
     pressed = "true" if current == "together" else "false"
     return (
         f'<button type="button" class="m-pill" id="manager-net" data-setting="net" data-on="together" data-off="apart" '
-        f'aria-pressed="{pressed}" aria-label="{label}" data-tip="{tip}">{esc(i18n.t(lang, "net_pill"))}</button>'
+        f'aria-pressed="{pressed}" aria-label="{label}" data-tip="{label}. {tip}">{icon("globe")}</button>'
     )
 
 
