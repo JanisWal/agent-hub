@@ -50,10 +50,48 @@ class MemoryBase(Base):
             return dict(conn.execute("SELECT * FROM chat_messages ORDER BY id DESC LIMIT 1").fetchone())
 
 
+class MemoryFolderTest(MemoryBase):
+    """Janis, 14.11.2026: fixed memory files per project, all given to whatever AI answers, any of them kept up."""
+
+    def test_the_fixed_files_are_made_once(self):
+        self.assertEqual(memory.ensure_skeleton(self.a.id, self.pa.id, "de"), 4)
+        names = sorted(f.name for f in files.list_files(self.a.id, self.pa.id))
+        self.assertEqual(names, ["MEMORY.md", "PROJEKT.md", "REGELN.md", "ROADMAP.md"])
+        self.assertTrue(all(f.category == "memory" for f in files.list_files(self.a.id, self.pa.id)))
+        roadmap = next(f for f in files.list_files(self.a.id, self.pa.id) if f.name == "ROADMAP.md")
+        files.delete(self.a.id, roadmap.id)
+        self.assertEqual(memory.ensure_skeleton(self.a.id, self.pa.id, "de"), 0)       # a deleted one stays gone
+        self.assertEqual(memory.ensure_skeleton(self.b.id, self.pa.id, "de"), 0)       # never in someone else's project
+
+    def test_english_names_and_an_existing_memory_stays(self):
+        self.put(self.a, self.pa, "MEMORY.md", b"# Status\nmine")
+        self.assertEqual(memory.ensure_skeleton(self.a.id, self.pa.id, "en"), 3)
+        names = sorted(f.name for f in files.list_files(self.a.id, self.pa.id))
+        self.assertEqual(names, ["MEMORY.md", "PROJECT.md", "ROADMAP.md", "RULES.md"])
+        memo = next(f for f in files.list_files(self.a.id, self.pa.id) if f.name == "MEMORY.md")
+        self.assertEqual(files.read_text(self.a.id, memo.id), "# Status\nmine")
+
+    def test_the_manager_keeps_any_memory_file(self):
+        memory.ensure_skeleton(self.a.id, self.pa.id, "de")
+        job = self.ask()
+        self.assertIn('<file name="ROADMAP.md">', job.prompt)
+        answer = ("Done.\n<memory># Stand\nok</memory>\n<memory file=\"ROADMAP.md\"># Als Nächstes\nRelais</memory>\n"
+                  "<memory file=\"HARDWARE.md\"># Teile\n12 V</memory><memory file=\"../evil.md\">x</memory>"
+                  "<memory file=\"script.sh\">x</memory>")
+        self.assertTrue(chat.finish(job.chat_id, True, answer))
+        texts = {f.name: files.read_text(self.a.id, f.id) for f in files.list_files(self.a.id, self.pa.id)}
+        self.assertEqual(texts["ROADMAP.md"], "# Als Nächstes\nRelais\n")
+        self.assertEqual(texts["HARDWARE.md"], "# Teile\n12 V\n")                        # a new one it found useful
+        self.assertEqual(texts["MEMORY.md"], "# Stand\nok\n")
+        self.assertNotIn("script.sh", texts)
+        self.assertFalse(any("evil" in name for name in texts))
+        self.assertEqual(chat.list_messages(self.a.id, self.pa.id)[-1].answer, "Done.")
+
+
 class MemoryTest(MemoryBase):
     def test_every_question_carries_the_memory_and_a_list_of_the_other_files(self):
         text = self.ask().prompt
-        self.assertIn('<memory file="MEMORY.md">\n(none yet', text)
+        self.assertIn('<memory-folder>\n(empty', text)
         self.assertIn("<files>\n(no other files yet)\n</files>", text)
         chat.finish(self.stored()["id"], True, "ok")
         self.put(self.a, self.pa, "MEMORY.md", b"# Status\nHeater works")
@@ -62,9 +100,10 @@ class MemoryTest(MemoryBase):
         self.put(self.a, self.pa, "wiring.ino", b"abc")
         files.add_link(self.a.id, self.pa.id, "https://docs.example.com/relay", "Relay guide")
         text = self.ask("Next?").prompt
-        self.assertIn('<memory file="MEMORY.md">\n# Status\nHeater works\n</memory>', text)
+        self.assertIn('<file name="MEMORY.md">\n# Status\nHeater works\n</file>', text)
+        self.assertIn('<file name="notes.md">\nabc\n</file>', text)            # every .md of the area Memory comes along
         listing = text[text.index("<files>\n"):text.index("</files>\n")]       # the rules also name the tags
-        self.assertIn("- notes.md (memory, 3 bytes)", listing)
+        self.assertNotIn("notes.md", listing)                                    # it is in the memory folder
         self.assertIn("- wiring.ino (code, 3 bytes)", listing)
         self.assertIn("- scan.pdf (documents, 3 bytes, not text: you can not open it)", listing)
         self.assertIn("- Relay guide: https://docs.example.com/relay (link, a source)", listing)
@@ -72,14 +111,14 @@ class MemoryTest(MemoryBase):
         project = text[text.index("<project>"):text.index("</project>")]
         self.assertNotIn("Heater works", project)                                # not part of the cut context
         self.assertTrue(text.endswith("Question of the user:\nNext?"))
-        self.assertIn("<memory>", chat.MEMORY_RULES)
+        self.assertIn('<memory file="NAME.md">', chat.MEMORY_RULES)
         self.assertIn("<read>", chat.MEMORY_RULES)
 
     def test_a_long_memory_file_is_cut(self):
         self.put(self.a, self.pa, "MEMORY.md", b"line\n" * 8000)
         text = self.ask().prompt
-        start = text.index('<memory file="MEMORY.md">')
-        block = text[start:text.index("</memory>", start)]
+        start = text.index('<file name="MEMORY.md">')
+        block = text[start:text.index("</file>", start)]
         self.assertLessEqual(len(block), memory.MAX_MEMORY + 100)
         self.assertIn(" …", block)
 

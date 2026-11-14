@@ -44,12 +44,15 @@ TOOLS_TEXT = {
 
 # Memory and files (memory.py): the hub gives the memory file and a list of the other files with every question.
 MEMORY_RULES = (
-    "Memory: the block <memory> after the project block is this project's memory file (MEMORY.md), kept by you "
-    "and the user; read it first, it holds the current state. When your answer finishes a piece of work, or you "
-    "learned something that should last (state, decision, open question, hardware fact), end it with the "
-    "complete new memory file inside <memory>...</memory>: Markdown, short, with the sections Status, "
-    "Decisions, Open questions and Notes, at most 12000 characters; keep what is still true and drop what is "
-    "done. Leave the tag out when nothing changed. Files: the block <files> lists the project's other files "
+    "Memory: the block <memory-folder> after the project block holds the project's memory files (the area Memory), "
+    "kept by you and the user. MEMORY.md is the current state: read it first. The others hold the goal, scope and "
+    "structure (PROJEKT.md or PROJECT.md), the order of work and ideas (ROADMAP.md) and the rules of work (REGELN.md "
+    "or RULES.md), plus any the user or you added. When your answer finishes a piece of work, or you learned "
+    "something that should last (state, decision, open question, hardware fact, a new step), end it with the "
+    "complete new text of each file that changed, one block each: <memory file=\"NAME.md\">...</memory> (at most "
+    "3 files per answer, Markdown, short, keep the headings, keep what is still true and drop what is done, MEMORY.md "
+    "at most 12000 characters). You may add a new Markdown file there the same way when a topic needs its own. "
+    "Leave the blocks out when nothing changed. Files: the block <files> lists the project's other files "
     "and links. Open a file only if the question needs it or the user names it: reply with only "
     "<read>exact file name</read> (up to 3) and the hub sends the contents so you can answer; files that are "
     "not text (PDF, images, media) can not be opened this way. Links are sources: use your web tools on them "
@@ -173,8 +176,8 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
     while len(context()) > MAX_CONTEXT and talks:
         talks.pop(0)
     text = _clip(context(), MAX_CONTEXT)
-    saved = memory.read_memory(conn, user_id, project_id)        # outside the limit above: it is the manager's own notes
-    notes = f'<memory file="{memory.MEMORY_NAME}">\n{saved or "(none yet: make it as soon as there is something worth keeping)"}\n</memory>'
+    saved = memory.folder(conn, user_id, project_id)             # outside the limit above: it is the manager's own notes
+    notes = f'<memory-folder>\n{saved or "(empty: make MEMORY.md as soon as there is something worth keeping)"}\n</memory-folder>'
     others = f"<files>\n{memory.listing(conn, user_id, project_id) or '(no other files yet)'}\n</files>"
     asked = f"\n\n<requested-files>\n{row['extra']}\n</requested-files>" if row["extra"] else ""
     return (f"{role_for(row['mode'])}\n\n<project>\n{text}\n</project>\n\n{notes}\n\n{others}{asked}"
@@ -291,6 +294,8 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
         text = parsed.text
         if parsed.memory:
             saved = memory.save_memory(row["user_id"], row["project_id"], parsed.memory)
+        for name, body in (parsed.files or {}).items():   # the other memory files it wrote (memory folder)
+            saved = memory.save_memory(row["user_id"], row["project_id"], body, name) or saved
     with db.connect() as conn:
         cur = conn.execute(
             "UPDATE chat_messages SET status = ?, answer = ?, tokens_in = tokens_in + ?, tokens_out = tokens_out + ?,"

@@ -182,7 +182,8 @@ NEW_COLUMNS = {
         "theme": "TEXT NOT NULL DEFAULT 'light'",
         "files_confirm": "INTEGER NOT NULL DEFAULT 1",    # does deleting a file ask first? (the trash circle of the file tile)
     },
-    "projects": {"page": "INTEGER NOT NULL DEFAULT 0", "description": "TEXT NOT NULL DEFAULT ''"},
+    "projects": {"page": "INTEGER NOT NULL DEFAULT 0", "description": "TEXT NOT NULL DEFAULT ''",
+                 "memory_seeded": "INTEGER NOT NULL DEFAULT 0"},   # the fixed memory files were made (memory.py)
     "chat_messages": {"mode": "TEXT NOT NULL DEFAULT 'web'", "model": "TEXT NOT NULL DEFAULT 'haiku'",
                       "extra": "TEXT NOT NULL DEFAULT ''",          # contents of files the manager asked for (memory.py)
                       "rounds": "INTEGER NOT NULL DEFAULT 0",       # how often it was answered again with such files
