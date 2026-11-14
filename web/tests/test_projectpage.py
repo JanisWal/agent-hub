@@ -221,6 +221,10 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn('.m-pill[aria-pressed="true"] { color: var(--on-danger); background: var(--danger);', css_of("project.css"))
         self.assertNotIn(".m-switch", css_of("project.css"))
 
+    def test_the_waiting_line_names_the_ai_in_use(self):
+        """Janis, 14.11.2026: "Claude answers" must follow the provider, another AI brings its own name."""
+        self.assertIn('data-waiting="Claude antwortet"', self.html())
+
     def test_segment_slider_for_stations_and_file_tabs(self):
         page = self.html()
         nav = page[page.index('class="stations"'):page.index("</nav>")]
