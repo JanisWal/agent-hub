@@ -51,6 +51,36 @@ class ClaudeLinkTest(Base):
         claude_link.complete(self.a.id, False)
         self.assertEqual(claude_link.status(self.a.id), "none")
 
+    def test_the_token_lasts_a_year_and_can_be_renewed_in_time(self):
+        """Since 14.11.2026: the one-year token of setup-token; the last RENEW_DAYS the menu offers "renew"."""
+        day, year = 86400, claude_link.TOKEN_DAYS * 86400
+        claude_link.begin(self.a.id, now=1000)
+        claude_link.complete(self.a.id, True, now=1000)
+        self.assertEqual(claude_link.status(self.a.id, now=1000 + year - 31 * day), "connected")
+        expiring = 1000 + year - 10 * day
+        self.assertEqual(claude_link.status(self.a.id, now=expiring), "expiring")
+        self.assertEqual(claude_link.status(self.a.id, now=1000 + year), "expired")
+        self.assertTrue(claude_link.begin(self.a.id, now=expiring))          # renew while it still works
+        claude_link.complete(self.a.id, False, now=expiring + 60)              # the renewal did not go through ...
+        self.assertEqual(claude_link.status(self.a.id, now=expiring + 60), "expiring")   # ... the old token stays
+        claude_link.begin(self.a.id, now=expiring + 120)
+        self.assertEqual(claude_link.status(self.a.id, now=expiring + 120 + claude_link.CONNECT_TIMEOUT + 1),
+                         "expiring")                                           # a renewal left alone: the same
+        claude_link.complete(self.a.id, True, now=expiring + 180)
+        self.assertEqual(claude_link.status(self.a.id, now=expiring + 180 + year - 31 * day), "connected")
+
+    def test_an_old_login_becomes_expired_once(self):
+        """Logins from before the setup token (Claude Code's own files) are not used any more: link again."""
+        with db.connect() as conn:
+            conn.execute("INSERT INTO claude_connections (user_id, status, updated_at) VALUES (?, 'connected', 1)",
+                         (self.a.id,))
+            conn.execute("ALTER TABLE claude_connections DROP COLUMN expires_at")
+        db._ready.discard(db.DB_PATH)
+        self.assertEqual(claude_link.status(self.a.id), "expired")
+        self.connect(self.a)
+        db._ready.discard(db.DB_PATH)                                          # the next start changes nothing
+        self.assertEqual(claude_link.status(self.a.id), "connected")
+
     def test_login_link_must_be_https_to_claude(self):
         claude_link.begin(self.a.id)
         for bad in ("http://claude.ai/x", "https://evil.example/claude.ai", "https://claude.ai.evil.com/x",

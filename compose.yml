@@ -19,10 +19,11 @@ services:
       web:
         aliases: [agent-hub]     # the tunnel's route points to http://agent-hub:8000
 
-  # The runner signs users in to Claude and (later) starts one container per agent run through the
-  # Docker socket. It is the only service with that socket, and the only one that sees the Claude
-  # folders of the users: they live outside ./data on purpose, so the web service cannot see them.
-  # Needs RUNNER_TOKEN in .env (and its SHA-256 as HUB_RUNNER_TOKEN_HASH for web); see KONZEPT-AGENTEN.md.
+  # The runner signs users in to Claude and starts one container per question or agent run through the
+  # Docker socket. It is the only service with that socket, the only one with the key of the saved Claude tokens
+  # (HUB_TOKEN_KEY) and the only one that sees the folders with those encrypted tokens: they live outside ./data on
+  # purpose, so the web service cannot see them. Needs RUNNER_TOKEN and HUB_TOKEN_KEY in .env (and the SHA-256 of
+  # RUNNER_TOKEN as HUB_RUNNER_TOKEN_HASH for web); see KONZEPT-AGENTEN.md and runner/tokens.py.
   runner:
     image: agent-hub-hub-runner      # not "agent-hub-runner": that was the old runner (removed 13.11.2026)
     build:
@@ -32,9 +33,12 @@ services:
       HUB_URL: "http://web:8000"
       RUNNER_TOKEN: "${RUNNER_TOKEN:-}"
       HUB_CLAUDE_DIR: "${HUB_CLAUDE_HOST_DIR:-/opt/agent-hub/claude}"   # same path inside and outside: the Docker daemon mounts host paths
+      HUB_TOKEN_KEY: "${HUB_TOKEN_KEY:-}"
+      HUB_TICKETS_DIR: /tickets
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - "${HUB_CLAUDE_HOST_DIR:-/opt/agent-hub/claude}:${HUB_CLAUDE_HOST_DIR:-/opt/agent-hub/claude}"
+      - tickets:/tickets
     networks:
       - default
     depends_on:
@@ -43,7 +47,8 @@ services:
 
   # The only way out of the agent network (see runner/egress.py): the agent containers have no route to the
   # outside, they reach the internet only through this filtering proxy (web: public hosts only, never the home
-  # network; api: only Anthropic). Same image as the runner, no secrets, no Docker socket, no volumes.
+  # network; api: only Anthropic; gateway: the Claude API with the user's token put in, runner/tokens.py). Same image
+  # as the runner, no Docker socket, no key; it only reads the tickets of running runs (a folder in memory).
   egress:
     image: agent-hub-hub-runner
     pull_policy: never
@@ -53,6 +58,10 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: 96m
+    environment:
+      HUB_TICKETS_DIR: /tickets
+    volumes:
+      - tickets:/tickets:ro
     networks:
       default: {}
       agents:
@@ -60,6 +69,16 @@ services:
     depends_on:
       - runner
     restart: unless-stopped
+
+# The tickets of running runs (runner/tokens.py): in memory only (tmpfs), never on the SD card or in a backup.
+# Only the runner (writes) and the egress proxy (reads) mount it; the runs and the web service do not.
+volumes:
+  tickets:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: "size=1m,mode=0711"
 
 networks:
   web:

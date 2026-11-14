@@ -169,6 +169,7 @@ CLAUDE_DIALOG = """<dialog class="dialog" id="claude-dialog">
 CLAUDE_STATES = {
     "connected": ("ok", "connected", "claude_disconnect"),
     "connecting": ("pending", "claude_pending", "claude_continue"),
+    "expiring": ("pending", "claude_expiring", "claude_renew"),
     "expired": ("expired", "claude_expired", "claude_renew"),
 }
 

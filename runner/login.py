@@ -1,8 +1,10 @@
 """One sign-in of Claude Code, driven through a pseudo terminal. Standard library only.
 
-`claude auth login` prints "If the browser didn't open, visit: <link>" and then waits at
-"Paste code here if prompted >". We read the link from that output and later type the code the user
-got. The code is only written into the terminal of that one container, never printed or stored.
+`claude setup-token` (like `claude auth login`) prints "If the browser didn't open, visit: <link>" and then waits
+at "Paste code here if prompted >". We read the link from that output and later type the code the user got. The
+code is only written into the terminal of that one container, never printed or stored. At the end setup-token
+prints the long-lived token (sk-ant-oat01-...) and then waits for a key instead of ending (that is why the first
+try on 08.11.2026 failed): `extract_token` takes it out as soon as it is there, the runner then stops the container.
 """
 import fcntl
 import os
@@ -18,6 +20,7 @@ import time
 _OSC8 = re.compile(r"\x1b\]8;[^;\x07\x1b]*;([^\x07\x1b]*)(?:\x07|\x1b\\)")
 _ESCAPES = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]")
 _URL = re.compile(r"https://claude\.(?:com|ai)/[^\s\x1b\x07\"'<>]+")
+_TOKEN = re.compile(r"sk-ant-oat[0-9]{2}-[A-Za-z0-9_-]{20,400}")
 
 
 def extract_login_url(raw: str) -> str | None:
@@ -26,6 +29,13 @@ def extract_login_url(raw: str) -> str | None:
     text = _ESCAPES.sub("", text)
     match = _URL.search(text)
     return match.group(0) if match else None
+
+
+def extract_token(raw: str) -> str | None:
+    """The token setup-token printed, or None (yet). Exactly one distinct token, else None (no guessing)."""
+    text = _ESCAPES.sub("", _OSC8.sub(lambda m: " " + m.group(1) + " ", raw))
+    found = set(_TOKEN.findall(text))
+    return found.pop() if len(found) == 1 else None
 
 
 class LoginSession:
@@ -79,7 +89,8 @@ class LoginSession:
         return self.process.poll()
 
     def close(self) -> None:
-        """Stop the container (if it still runs) and release the terminal."""
+        """Stop the container (if it still runs) and release the terminal. Forgets the output (it may hold the token)."""
+        self.output = ""
         subprocess.run([self.docker, "rm", "-f", self.container], capture_output=True)
         try:
             self.process.wait(timeout=5)

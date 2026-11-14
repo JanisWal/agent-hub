@@ -177,6 +177,7 @@ NEW_COLUMNS = {
     "files": {"parts": "TEXT NOT NULL DEFAULT ''"},          # one flag per chunk of an unfinished upload (files.py)
     "checks": {"days": "TEXT NOT NULL DEFAULT '1111111'"},   # weekdays of a daily check, Monday first (checks.py)
     "power_requests": {"result": "TEXT"},                    # how a manual backup ended: 'ok' or 'failed' (power.py)
+    "claude_connections": {"expires_at": "INTEGER"},         # when the user's Claude token runs out (claude_link.py)
 }
 
 # The three statements below run once, when a database from before the feature is opened for the
@@ -225,6 +226,10 @@ def _prepare(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE users DROP COLUMN is_admin")   # `role` says it all now
     if "page" not in before["projects"]:
         conn.execute(ASSIGN_PAGES)
+    if "expires_at" not in before["claude_connections"]:
+        # Since 14.11.2026 runs use the one-year token of `claude setup-token`, kept encrypted by the runner. A login
+        # of the old kind (Claude Code's own files, which ran out after a day) is not used any more: link again.
+        conn.execute("UPDATE claude_connections SET status = 'expired' WHERE status = 'connected'")
     if "token" in before["sessions"]:
         # Sessions used to be stored as the cookie value itself, now only as its hash (a copy of the
         # database or a backup must not contain usable logins). Old sessions cannot be converted:

@@ -121,5 +121,97 @@ class ProxyTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn(status, ("HTTP/1.1 502 Bad Gateway", "HTTP/1.1 403 Forbidden"))
 
 
+
+class GatewayTest(unittest.IsolatedAsyncioTestCase):
+    """The gateway: a run's request goes to Anthropic with the user's token instead of the ticket (14.11.2026)."""
+    TOKEN = "sk-ant-oat01-" + "r" * 90
+
+    async def asyncSetUp(self):
+        import tempfile
+        from runner import tokens
+        self.tmp = tempfile.TemporaryDirectory()
+        self.ticket = tokens.Tickets(self.tmp.name).issue(self.TOKEN)
+        self.received = []
+
+        async def upstream(reader, writer):
+            data = b""
+            try:
+                while True:
+                    chunk = await asyncio.wait_for(reader.read(65536), 0.5)
+                    if not chunk:
+                        break
+                    data += chunk
+            except asyncio.TimeoutError:
+                pass
+            self.received.append(data)
+            writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\n\r\nevent: ping\n\ndata: hi\n\n")
+            await writer.drain()
+            writer.close()
+
+        self.upstream = await asyncio.start_server(upstream, "127.0.0.1", 0)
+        port = self.upstream.sockets[0].getsockname()[1]
+        open_upstream = lambda: asyncio.open_connection("127.0.0.1", port)
+        self.logs = []
+        self.server = await asyncio.start_server(
+            lambda r, w: E.gateway(r, w, self.tmp.name, open_upstream=open_upstream, log=self.logs.append), "127.0.0.1", 0)
+        self.port = self.server.sockets[0].getsockname()[1]
+
+    async def asyncTearDown(self):
+        self.server.close()
+        self.upstream.close()
+        self.tmp.cleanup()
+
+    async def send(self, raw: bytes) -> bytes:
+        reader, writer = await asyncio.open_connection("127.0.0.1", self.port)
+        writer.write(raw)
+        await writer.drain()
+        answer = await asyncio.wait_for(reader.read(), 5)
+        writer.close()
+        return answer
+
+    def request(self, body=b'{"model":"claude-haiku-5-5"}', ticket=None, path="/v1/messages?beta=true", extra=""):
+        return (f"POST {path} HTTP/1.1\r\nHost: egress:3130\r\nAuthorization: Bearer {ticket or self.ticket}\r\n"
+                f"anthropic-beta: oauth-2025-04-20\r\nContent-Type: application/json\r\n{extra}"
+                f"Content-Length: {len(body)}\r\n\r\n").encode() + body
+
+    async def test_the_ticket_is_swapped_for_the_token(self):
+        answer = await self.send(self.request())
+        self.assertTrue(answer.startswith(b"HTTP/1.1 200 OK"))
+        self.assertIn(b"data: hi", answer)                                    # the stream comes back as it is
+        sent = self.received[0]
+        head, _, body = sent.partition(b"\r\n\r\n")
+        self.assertIn(f"Authorization: Bearer {self.TOKEN}".encode(), head)
+        self.assertNotIn(self.ticket.encode(), sent)                          # the ticket never leaves the Pi
+        self.assertIn(b"Host: api.anthropic.com", head)
+        self.assertIn(b"Connection: close", head)
+        self.assertIn(b"anthropic-beta: oauth-2025-04-20", head)               # Claude Code's own headers stay
+        self.assertEqual(body, b'{"model":"claude-haiku-5-5"}')
+        self.assertTrue(any("-> 200" in line for line in self.logs))
+        self.assertFalse(any(self.TOKEN in line or self.ticket in line for line in self.logs))
+
+    async def test_a_second_request_on_the_connection_is_not_passed_on(self):
+        await self.send(self.request() + self.request(body=b"second", ticket="hubrun-" + "Q" * 43))
+        self.assertNotIn(b"second", self.received[0])
+        self.assertEqual(self.received[0].count(b"POST "), 1)
+
+    async def test_without_a_valid_ticket_nothing_reaches_anthropic(self):
+        for ticket in ("hubrun-" + "Z" * 43, self.TOKEN, "x"):
+            answer = await self.send(self.request(ticket=ticket))
+            self.assertTrue(answer.startswith(b"HTTP/1.1 403"), ticket)
+        answer = await self.send(b"POST /v1/messages HTTP/1.1\r\nContent-Length: 2\r\n\r\n{}")
+        self.assertTrue(answer.startswith(b"HTTP/1.1 403"))
+        self.assertEqual(self.received, [])
+
+    async def test_only_the_api_paths_and_plain_lengths(self):
+        for path in ("/admin", "http://evil.example/v1/messages", "/v1/../etc", "/v2/messages"):
+            answer = await self.send(self.request(path=path))
+            self.assertTrue(answer.startswith(b"HTTP/1.1 400"), path)
+        answer = await self.send(self.request(extra="Transfer-Encoding: chunked\r\n"))
+        self.assertTrue(answer.startswith(b"HTTP/1.1 411"))
+        answer = await self.send(b"CONNECT api.anthropic.com:443 HTTP/1.1\r\n\r\n")
+        self.assertTrue(answer.startswith(b"HTTP/1.1 400"))
+        self.assertEqual(self.received, [])
+
+
 if __name__ == "__main__":
     unittest.main()
