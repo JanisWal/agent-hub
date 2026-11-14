@@ -104,7 +104,7 @@ class Runner:
         exit_code = session.exit_code()
         token = login.extract_token(session.output) if session.code_sent_at else None
         waited_too_long = session.code_sent_at and self.clock() - session.code_sent_at > LOGIN_TIMEOUT_AFTER_CODE
-        if token is None and exit_code is None and not waited_too_long:
+        if token is None and exit_code is None and not waited_too_long and not session.refused():
             return
         success = False
         if token is not None:
