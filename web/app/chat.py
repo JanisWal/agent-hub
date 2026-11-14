@@ -15,7 +15,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-from . import agents, catalog, checks, claude_link, db, memory
+from . import agents, ai_link, catalog, checks, claude_link, db, memory
 
 # The manager is the role "chef": model and effort level are settings of the user (agents.py, list in catalog.py).
 MAX_PROMPT = 2000
@@ -39,7 +39,12 @@ TOOLS_TEXT = {
     "all": "You have a web search, can read web pages and have a shell with internet access in an empty scratch "
            "folder (public internet only, no home network).",
     "apart": "You have a web search and a shell in an empty scratch folder; the shell has no internet.",
+    # an AI the hub asks over its plain API (Mistral): no tools at all, whatever the switch says (KONZEPT-AGENTEN 9.2)
+    "none": "You have no tools here: no web search, no web pages, no shell. Answer from what you know and from the "
+            "blocks below; say so when something should be checked on the web.",
 }
+# Which tools a provider's answers can use: Claude Code has them (switch "web and code"), the plain APIs have none.
+PROVIDER_TOOLS = {"claude": True, "mistral": False}
 
 
 # Memory and files (memory.py): the hub gives the memory file and a list of the other files with every question.
@@ -60,8 +65,9 @@ MEMORY_RULES = (
 )
 
 
-def role_for(mode: str) -> str:
-    return ROLE.replace("%TOOLS%", TOOLS_TEXT.get(mode, TOOLS_TEXT["apart"])) + " " + MEMORY_RULES
+def role_for(mode: str, provider: str = "claude") -> str:
+    tools = TOOLS_TEXT.get(mode, TOOLS_TEXT["apart"]) if PROVIDER_TOOLS.get(provider) else TOOLS_TEXT["none"]
+    return ROLE.replace("%TOOLS%", tools) + " " + MEMORY_RULES
 # The user's setting of how freely the manager decides (agents.AUTONOMY), as the manager reads it.
 AUTONOMY_TEXT = {
     "auto": "Decide everything yourself with the best option; do not ask the user.",
@@ -106,6 +112,7 @@ class ChatJob:
     prompt: str            # what Claude reads on stdin: role, project context and the question
     mode: str = "all"
     effort: str = ""       # effort level; empty for questions from before levels existed (Claude Code decides)
+    provider: str = "claude"   # which AI answers (catalog.PROVIDERS); the runner picks the adapter by it
 
 
 def _message(row: sqlite3.Row) -> Message:
@@ -138,7 +145,7 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
     project = conn.execute("SELECT name, description FROM projects WHERE id = ? AND user_id = ?",
                            (project_id, user_id)).fetchone()
     if project is None:
-        return f"{role_for(row['mode'])}\n\n{row['prompt']}"
+        return f"{role_for(row['mode'], row['provider'])}\n\n{row['prompt']}"
     items = conn.execute(
         "SELECT kind, title FROM board_items WHERE project_id = ? AND status IN ('open', 'proposed')"
         " ORDER BY kind, position, id LIMIT ?", (project_id, ITEMS),
@@ -180,7 +187,7 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
     notes = f'<memory-folder>\n{saved or "(empty: make MEMORY.md as soon as there is something worth keeping)"}\n</memory-folder>'
     others = f"<files>\n{memory.listing(conn, user_id, project_id) or '(no other files yet)'}\n</files>"
     asked = f"\n\n<requested-files>\n{row['extra']}\n</requested-files>" if row["extra"] else ""
-    return (f"{role_for(row['mode'])}\n\n<project>\n{text}\n</project>\n\n{notes}\n\n{others}{asked}"
+    return (f"{role_for(row['mode'], row['provider'])}\n\n<project>\n{text}\n</project>\n\n{notes}\n\n{others}{asked}"
             f"\n\nQuestion of the user:\n{row['prompt']}")
 
 
@@ -193,7 +200,8 @@ def _drop_stale(conn: sqlite3.Connection, now: int) -> None:
 
 def send(user_id: int, project_id: int, prompt: str, mode: str | None = None, now: int | None = None,
          model: str | None = None, effort: str | None = None) -> Message:
-    """Ask the manager something. Raises ValueError("claude") if the user's Claude is not connected,
+    """Ask the manager something. Raises ValueError("claude") if the user's Claude is not connected (or
+    ValueError("mistral") for Mistral: the provider of the model, catalog.find, answers),
     ValueError("busy") while an earlier question of his is still open, ValueError("prompt") for an
     empty or too long text, ValueError("mode") for an unknown mode, model or level and ValueError("project")
     if the project is not his. `mode`, `model` and `effort` default to the user's settings of the manager
@@ -215,15 +223,16 @@ def send(user_id: int, project_id: int, prompt: str, mode: str | None = None, no
         except ValueError:
             raise ValueError("mode") from None
         mode = mode or NET_TO_MODE.get(agents.net_in(conn, user_id, "chef"), "apart")
-        if not claude_link.connected_in(conn, user_id):
-            raise ValueError("claude")
+        provider = catalog.provider_of(model)
+        if not _connected(conn, user_id, provider):
+            raise ValueError(provider)
         _drop_stale(conn, now)
         if conn.execute("SELECT 1 FROM chat_messages WHERE user_id = ? AND status IN ('queued', 'running')",
                         (user_id,)).fetchone():
             raise ValueError("busy")
         cur = conn.execute(
-            "INSERT INTO chat_messages (user_id, project_id, prompt, mode, model, effort, status, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, 'queued', ?)", (user_id, project_id, prompt, mode, model, effort, now),
+            "INSERT INTO chat_messages (user_id, project_id, prompt, mode, model, effort, provider, status, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?)", (user_id, project_id, prompt, mode, model, effort, provider, now),
         )
         conn.execute(
             "DELETE FROM chat_messages WHERE user_id = ? AND id NOT IN"
@@ -251,18 +260,25 @@ def delete_all(user_id: int) -> int:
         return conn.execute("DELETE FROM chat_messages WHERE user_id = ?", (user_id,)).rowcount
 
 
+def _connected(conn: sqlite3.Connection, user_id: int, provider: str) -> bool:
+    """Can this user's own account of this provider answer now? (Never anybody else's.)"""
+    if provider == "claude":
+        return claude_link.connected_in(conn, user_id)
+    return provider in ai_link.PROVIDERS and ai_link.connected_in(conn, user_id, provider)
+
+
 def claim_next(now: int | None = None) -> ChatJob | None:
-    """Runner: the oldest open question whose user has his Claude connected (nobody else's is used)."""
+    """Runner: the oldest open question whose user has the AI of that question connected (nobody else's is used)."""
     now = int(now if now is not None else time.time())
     with db.connect() as conn:
         _drop_stale(conn, now)
         if conn.execute("SELECT 1 FROM chat_messages WHERE status = 'running'").fetchone():
             return None   # the Pi answers one at a time
         for row in conn.execute("SELECT * FROM chat_messages WHERE status = 'queued' ORDER BY id").fetchall():
-            if claude_link.connected_in(conn, row["user_id"]):
+            if _connected(conn, row["user_id"], row["provider"]):
                 conn.execute("UPDATE chat_messages SET status = 'running', started_at = ? WHERE id = ?", (now, row["id"]))
                 return ChatJob(row["id"], row["user_id"], row["model"], build_input(conn, row), row["mode"],
-                               row["effort"])
+                               row["effort"], row["provider"])
     return None
 
 

@@ -148,3 +148,55 @@ def lookup(folder: str | Path, ticket: str, now: float | None = None, max_age: i
     except (OSError, UnicodeDecodeError):
         return None
     return token if TOKEN.fullmatch(token) else None
+
+
+# --- API keys of other AIs (Mistral since 14.11.2026; web/app/ai_link.py). Same encryption and key as the Claude
+# tokens, but their own folder `<HUB_CLAUDE_DIR>/keys/<provider>/<user id>.enc`: deleting or renewing a user's Claude
+# folder (wipes, Vault.clear_old) never touches them, and the folder name "keys" can never be a user id.
+# These keys never go to a run: the runner itself asks the provider (runner/mistral.py), no code of an AI runs there.
+KEY_PATTERNS = {"mistral": re.compile(r"[A-Za-z0-9_-]{16,200}")}
+
+
+class ProviderKeys:
+    """The encrypted API keys, one file per user and provider. Needs root (the runner) and HUB_TOKEN_KEY."""
+
+    def __init__(self, base: str | Path, key: str | None):
+        self.vault = Vault(base, key)          # only for its Fernet
+        self.base = Path(base) / "keys"
+
+    def path(self, user_id: int, provider: str) -> Path:
+        if type(user_id) is not int or user_id < 1:
+            raise ValueError("user_id must be a positive integer")
+        if provider not in KEY_PATTERNS:
+            raise ValueError("unknown provider")
+        return self.base / provider / f"{user_id}.enc"
+
+    def save(self, user_id: int, provider: str, api_key: str) -> None:
+        path = self.path(user_id, provider)
+        if not isinstance(api_key, str) or not KEY_PATTERNS[provider].fullmatch(api_key):
+            raise ValueError("not an API key")
+        for folder in (self.base, path.parent):
+            folder.mkdir(parents=True, exist_ok=True)
+            os.chmod(folder, 0o700)
+        data = self.vault._fernet().encrypt(api_key.encode())
+        part = path.with_suffix(".part")
+        fd = os.open(part, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as out:
+            out.write(data)
+        os.replace(part, path)
+
+    def load(self, user_id: int, provider: str) -> str | None:
+        from cryptography.fernet import InvalidToken
+        try:
+            path = self.path(user_id, provider)
+            api_key = self.vault._fernet().decrypt(path.read_bytes()).decode()
+        except (OSError, ValueError, InvalidToken, RuntimeError, UnicodeDecodeError):
+            return None
+        return api_key if KEY_PATTERNS[provider].fullmatch(api_key) else None
+
+    def forget(self, user_id: int, provider: str) -> bool:
+        """Delete the saved key. True if there was one."""
+        path = self.path(user_id, provider)
+        existed = path.exists()
+        path.unlink(missing_ok=True)
+        return existed

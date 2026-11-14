@@ -81,6 +81,12 @@
     return item;
   }
 
+  // "Claude is answering" with the AI of the chosen model (ui.model_picker puts its name on the option as data-ai).
+  function waitingText() {
+    var chosen = document.querySelector('#manager-model option:checked');
+    return box.dataset.waiting.replace("{name}", (chosen && chosen.dataset.ai) || box.dataset.ai || "");
+  }
+
   function render(messages) {
     log.textContent = "";
     var open = false;
@@ -88,7 +94,7 @@
       log.appendChild(line("you", box.dataset.you, m.prompt));
       if (m.status === "queued" || m.status === "running") {
         open = true;
-        log.appendChild(line("claude wait", box.dataset.claude, box.dataset.waiting));
+        log.appendChild(line("claude wait", box.dataset.claude, waitingText()));
       } else if (m.status === "failed") {
         // Only a short text per kind of failure (chat.FAILURES), never what Claude Code said.
         var kind = { auth: "failAuth", timeout: "failTimeout", steps: "failSteps" }[m.failure] || "failOther";

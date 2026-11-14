@@ -342,6 +342,22 @@ class IsolationTest(unittest.TestCase):
         self.assertIsNone(users.check_login("b@example.com", "Bbbb!pass12"))
         self.assertIsNotNone(users.check_login("b@example.com", "Neu!Pass1234"))
 
+    def test_the_mistral_connection_of_a_is_only_his(self):
+        from app import agents, ai_link, chat
+        from app.routes import ai as ai_routes
+        key = "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6"
+        ai_link._keys.clear()
+        ai_routes.connect("mistral", key, user=self.a)
+        self.assertEqual(ai_routes.status("mistral", user=self.b)["status"], "none")
+        ai_routes.disconnect("mistral", user=self.b)                                  # B can not cancel A's check
+        self.assertEqual(ai_link.take_keys(), [(self.a.id, "mistral", key)])         # the user comes from the hub
+        ai_link.complete(self.a.id, "mistral", True)
+        agents.configure(self.b.id, "chef", model="mistral-small-2603")
+        with self.assertRaisesRegex(ValueError, "mistral"):
+            chat.send(self.b.id, self.mine.id, "Use the Mistral of A")               # no fallback to A's key
+        self.assertEqual(ai_link.connected_providers(self.b.id), ())
+        self.assertEqual(ai_link.status(self.a.id, "mistral"), "connected")
+
     def test_deleting_an_account_leaves_the_others_alone(self):
         owner = users.create_user("owner@example.com", "Own3r!pass", role="owner")
         users.delete_user(owner, self.b.id)
