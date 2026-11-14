@@ -142,7 +142,7 @@ class PickerTest(Base):
         self.assertEqual(html.count('class="m-select has-select"'), 2)
         self.assertIn('id="manager-model" data-setting="model"', html)
         self.assertIn('id="manager-effort" data-setting="effort"', html)
-        self.assertIn('<option value="haiku" label="Haiku" selected>Haiku · schnell</option>', html)
+        self.assertIn('<option value="haiku" label="Haiku" data-ai="Claude" selected>Haiku · schnell</option>', html)
         self.assertIn('<option value="max" selected>Maximal</option>', html)
         self.assertIn('aria-label="Stufe des Managers"', html)
         self.assertNotIn("title=", html)                                      # its tip would cover the list
@@ -154,7 +154,7 @@ class PickerTest(Base):
                                "default_effort": "turbo"})
         catalog.store("claude", data)
         html = self.picker(model="nova", effort="turbo")
-        self.assertIn('<option value="nova" label="Nova" selected>Nova</option>', html)    # no hint: only the name
+        self.assertIn('<option value="nova" label="Nova" data-ai="Claude" selected>Nova</option>', html)    # no hint: only the name
         self.assertIn('<option value="turbo" selected>turbo</option>', html)  # unknown level: its name as it is
         self.assertIn('<option value="max" hidden>Maximal</option>', html)    # nova has no "max"
         self.assertIn("data-levels=", html)
@@ -162,7 +162,7 @@ class PickerTest(Base):
 
     def test_a_saved_choice_that_left_the_list_shows_the_default(self):
         html = self.picker(model="gone", effort="nothing")
-        self.assertIn('<option value="sonnet" label="Sonnet" selected>', html)
+        self.assertIn('<option value="sonnet" label="Sonnet" data-ai="Claude" selected>', html)
         self.assertIn('<option value="high" selected>', html)
 
     def test_texts_in_both_languages(self):

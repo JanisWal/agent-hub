@@ -51,7 +51,7 @@ class CatalogTest(Base):
         with self.assertRaises(ValueError):
             catalog.check("mistral-small-2603", None, "claude")       # not a model of this provider
         self.assertEqual(catalog.resolve("mistral-large-4", "max"), ("mistral-large-4", "high"))
-        self.assertEqual(catalog.resolve("mistral-large-4", "low", "claude"), ("sonnet", "high"))
+        self.assertEqual(catalog.resolve("mistral-large-4", "none", "claude"), ("sonnet", "high"))
 
     def test_a_list_may_not_take_an_id_of_another_provider(self):
         data = copy.deepcopy(catalog.SEED["mistral"])
