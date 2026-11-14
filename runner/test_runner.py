@@ -30,6 +30,9 @@ class FakeVault:
     def clear_old(self, user_id):
         self.cleared.append(user_id)
 
+    def forget(self, user_id):
+        return self.saved.pop(user_id, None) is not None
+
 
 class FakeTickets:
     def __init__(self):
@@ -47,7 +50,7 @@ class FakeTickets:
 class FakeApi:
     def __init__(self):
         self.logins, self.wipes, self.codes, self.calls, self.chat_job = [], [], {}, [], None
-        self.power = None
+        self.power, self.expired = None, []
 
     def call(self, method, path, **form):
         self.calls.append((method, path, form))
@@ -59,6 +62,8 @@ class FakeApi:
             return {"ok": True, "logins": self.logins}
         if path == "/runner/wipes":
             return {"ok": True, "user_ids": self.wipes}
+        if path == "/runner/expired":
+            return {"ok": True, "user_ids": self.expired}
         if path.endswith("/code"):
             return {"ok": True, "code": self.codes.pop(int(path.split("/")[3]), None)}
         return {"ok": True}
@@ -167,6 +172,13 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(self.vault.cleared, [2])                              # the files of the old login go
         self.assertTrue(self.made[2].closed)
         self.assertEqual(self.runner.sessions, {})
+
+    def test_expired_tokens_are_deleted_on_their_own(self):
+        self.vault.saved = {2: TOKEN, 3: TOKEN}
+        self.api.expired = [2]
+        self.runner.step()
+        self.assertEqual(self.vault.saved, {3: TOKEN})                         # only the expired one goes
+        self.runner.step()                                                     # nothing left to do, nothing breaks
 
     def test_a_token_printed_before_the_code_is_not_taken(self):
         self.api.logins = [{"user_id": 2, "login_url": None}]
@@ -375,6 +387,26 @@ class LoginTextTest(unittest.TestCase):
         self.assertIsNone(login.extract_login_url("Opening browser to sign in…"))
         self.assertIsNone(login.extract_login_url(""))
 
+
+    def test_a_wrapped_and_redrawn_token_is_put_together(self):
+        """14.11.2026: the terminal UI wrapped the token and drew the screen twice; the first version took none."""
+        first, rest = TOKEN[:60], TOKEN[60:]
+        frame_wrapped = (f"\x1b[32m\u2713 Long-lived authentication token created successfully!\x1b[39m\r\n\r\n"
+                         f"Your OAuth token (valid for 1 year):\r\n\r\n\x1b[33m{first}\r\n{rest}\x1b[39m\r\n\r\n"
+                         f"\x1b[2mStore this token securely. You won't be able to see it again.\x1b[22m\r\n")
+        self.assertEqual(login.extract_token(frame_wrapped), TOKEN)
+        partial = f"Your OAuth token (valid for 1 year):\r\n{TOKEN[:40]}"            # a screen still being written
+        frame_full = frame_wrapped.replace(f"{first}\r\n{rest}", TOKEN)
+        self.assertEqual(login.extract_token(partial + "\x1b[2K\x1b[1A" * 6 + frame_full), TOKEN)
+        self.assertEqual(login.extract_token(f"{TOKEN[:40]} ... {TOKEN}"), TOKEN)     # a beginning and the whole one
+
+    def test_the_failure_log_holds_nothing_secret(self):
+        screen = (f"Paste code here if prompted > abcDEF0123456789abcdef0123456789#state0123456789abcdef\r\n"
+                  f"visit: {LINK}\r\nYour OAuth token (valid for 1 year):\r\n{TOKEN}\r\nOAuth error: invalid code")
+        shown = login.redacted_tail(screen)
+        for secret in (TOKEN, "abcDEF0123456789", "state0123456789", "client_id=abc"):
+            self.assertNotIn(secret, shown)
+        self.assertIn("OAuth error: invalid code", shown)
 
     def test_the_token_is_found_once(self):
         printed = f"\x1b[1mYour token:\x1b[0m\r\n\x1b[36m{TOKEN}\x1b[0m\r\nStore it safely."

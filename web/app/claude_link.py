@@ -197,6 +197,15 @@ def disconnect(user_id: int, now: int | None = None) -> bool:
     return True
 
 
+def expired_users(now: int | None = None) -> list[int]:
+    """Runner: users whose token has run out or was refused (Janis, 14.11.2026: expired tokens are deleted on their
+    own). The runner deletes their saved token; the state stays "expired", so the menu still offers "renew"."""
+    now = int(now if now is not None else time.time())
+    with db.connect() as conn:
+        rows = conn.execute("SELECT * FROM claude_connections WHERE status IN ('connected', 'expired')").fetchall()
+    return [r["user_id"] for r in rows if _effective(r, now) == "expired"]
+
+
 def pending_wipes() -> list[int]:
     """Runner: users whose folder has to be deleted."""
     with db.connect() as conn:

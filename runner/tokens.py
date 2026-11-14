@@ -78,6 +78,14 @@ class Vault:
             return None
         return token if TOKEN.fullmatch(token) else None
 
+    def forget(self, user_id: int) -> bool:
+        """Delete the user's folder with the token in it (an expired or refused token). True if there was one."""
+        folder = self.folder(user_id)
+        if not folder.is_dir():
+            return False
+        shutil.rmtree(folder, ignore_errors=True)
+        return True
+
     def clear_old(self, user_id: int) -> None:
         """Delete everything in the user's folder but the token: the files of the old login (until 14.11.2026 the
         runs used Claude Code's own login there, with a refresh token in plain text)."""

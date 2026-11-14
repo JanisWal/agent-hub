@@ -57,6 +57,13 @@ class VaultTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.vault.save(bad, TOKEN)
 
+    def test_forget_deletes_the_folder_with_the_token(self):
+        self.vault.save(2, TOKEN)
+        self.assertTrue(self.vault.forget(2))
+        self.assertFalse((self.base / "2").exists())
+        self.assertFalse(self.vault.forget(2))
+        self.assertIsNone(self.vault.load(2))
+
     def test_old_login_files_are_cleared_but_not_the_token(self):
         folder = self.base / "2"
         (folder / ".claude").mkdir(parents=True)

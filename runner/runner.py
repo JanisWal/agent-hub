@@ -116,6 +116,9 @@ class Runner:
                 print(f"runner: could not save the token of user {user_id}: {type(error).__name__}", file=sys.stderr,
                       flush=True)
         token = None
+        if not success:   # what the screen said, without anything secret (login.redacted_tail)
+            print(f"runner: sign-in of user {user_id} failed (exit {exit_code}); screen: "
+                  f"{login.redacted_tail(session.output)}", file=sys.stderr, flush=True)
         self._end(user_id)
         self.api.call("POST", f"/runner/logins/{user_id}/done", success="1" if success else "0")
 
@@ -130,6 +133,12 @@ class Runner:
                     print(f"runner: could not delete {target}", file=sys.stderr, flush=True)
                     continue
             self.api.call("POST", f"/runner/wipes/{int(user_id)}/done")
+
+    # --- expired or refused tokens are deleted on their own (Janis, 14.11.2026); the menu keeps "expired · renew"
+    def handle_expired(self) -> None:
+        for user_id in self.api.call("GET", "/runner/expired")["user_ids"]:
+            if user_id not in self.sessions and self.vault.forget(int(user_id)):
+                print(f"runner: deleted the expired token of user {int(user_id)}", file=sys.stderr, flush=True)
 
     # --- the chat window (web/app/chat.py): one question, one answer, no tools, no project files
     def _run_chat(self, command: list[str], prompt: str):
@@ -194,6 +203,7 @@ class Runner:
     def step(self) -> None:
         self.handle_power()
         self.handle_wipes()
+        self.handle_expired()
         self.handle_logins()
         self.handle_chat()
 

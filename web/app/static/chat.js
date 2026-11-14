@@ -69,6 +69,13 @@
     var body = document.createElement("span");
     body.className = "chat-text";
     if (rich) fillBlocks(body, text); else body.textContent = text;
+    if (kind.indexOf("wait") >= 0) {   // something is under way: the shared three dots (app.css)
+      var dots = document.createElement("span");
+      dots.className = "loading-dots";
+      dots.setAttribute("aria-hidden", "true");
+      for (var d = 0; d < 3; d++) dots.appendChild(document.createElement("i"));
+      body.appendChild(dots);
+    }
     item.appendChild(name);
     item.appendChild(body);
     return item;
