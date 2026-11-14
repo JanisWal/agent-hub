@@ -1,7 +1,7 @@
 """The chat window of a project page (see chat.py): ask Claude, poll for the answer, delete the history."""
 from fastapi import APIRouter, Depends, Form
 
-from .. import chat, users
+from .. import chat, claude_link, users
 from ..deps import api_user, error, fail, ok
 
 router = APIRouter()
@@ -19,8 +19,11 @@ def delete_history(user: users.User = Depends(api_user)):
 
 @router.get("/projects/{project_id}/chat")
 def messages(project_id: int, user: users.User = Depends(api_user)):
-    return ok(messages=[
-        {"id": m.id, "prompt": m.prompt, "status": m.status, "answer": m.answer, "mode": m.mode, "model": m.model,
+    """The latest questions and answers. A failed one carries only the kind of failure (chat.FAILURES), never the
+    reason Claude Code gave. `claude` is the state of the user's connection, so the menu shows "expired" at once."""
+    return ok(claude=claude_link.status(user.id), messages=[
+        {"id": m.id, "prompt": m.prompt, "status": m.status, "answer": "" if m.status == "failed" else m.answer,
+         "failure": chat.failure_kind(m.answer) if m.status == "failed" else "", "mode": m.mode, "model": m.model,
          "memory": m.memory_saved}
         for m in chat.list_messages(user.id, project_id)
     ])

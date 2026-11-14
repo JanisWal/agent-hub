@@ -82,7 +82,9 @@
         open = true;
         log.appendChild(line("claude wait", box.dataset.claude, box.dataset.waiting));
       } else if (m.status === "failed") {
-        log.appendChild(line("claude failed", box.dataset.claude, box.dataset.failed + (m.answer ? ": " + m.answer : "")));
+        // Only a short text per kind of failure (chat.FAILURES), never what Claude Code said.
+        var kind = { auth: "failAuth", timeout: "failTimeout", steps: "failSteps" }[m.failure] || "failOther";
+        log.appendChild(line("claude failed", box.dataset.claude, box.dataset.failed + ": " + box.dataset[kind]));
       } else {
         log.appendChild(line("claude", box.dataset.claude, m.answer, true));
         if (m.memory) log.appendChild(line("note", "", box.dataset.memory));   // the answer updated MEMORY.md
@@ -96,7 +98,10 @@
 
   function load() {
     fetch(url).then(function (r) { return r.json(); }).then(function (data) {
-      if (data.ok) render(data.messages);
+      if (!data.ok) return;
+      render(data.messages);
+      // A lost sign-in shows in the menu at once, not only after the next page load (claude.js).
+      if (data.claude === "expired" && window.AgentHub && window.AgentHub.claudeExpired) window.AgentHub.claudeExpired();
     }).catch(function () { timer = setTimeout(load, 4000); });
   }
 

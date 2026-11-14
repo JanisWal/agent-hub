@@ -179,7 +179,8 @@ def _claude_row(lang: str, state: str) -> str:
     style, text_key, action_key = CLAUDE_STATES.get(state, ("", "not_connected", "connect"))
     more = esc(i18n.t(lang, "ai_more"))
     return (
-        f'<div class="setting service {style}">'
+        f'<div class="setting service {style}" id="claude-row" data-expired="{esc(i18n.t(lang, "claude_expired"))}" '
+        f'data-renew="{esc(i18n.t(lang, "claude_renew"))}">'
         f'<span class="setting-label">Claude</span>'
         f'<button class="ai-toggle" type="button" id="ai-toggle" aria-expanded="false" aria-controls="ai-more" '
         f'aria-label="{more}">{icon("chevron_down")}</button>'

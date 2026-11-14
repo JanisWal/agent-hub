@@ -43,7 +43,9 @@ MANAGER = """<section class="manager" id="manager-view" aria-label="%t.station_m
 # edge. Web search and code are always there (no switches, Janis 07.11.2026); model and effort level (two drop-downs,
 # ui.model_picker) are settings of the manager, so they hold for everything the manager does (manager.js saves them).
 CHAT = """<section class="mtile glass m-chat" id="chat" data-you="%t.chat_you%" data-claude="%t.station_manager%"
-             data-waiting="%t.chat_waiting%" data-failed="%t.chat_failed%" data-memory="%t.chat_memory_saved%">
+             data-waiting="%t.chat_waiting%" data-failed="%t.chat_failed%" data-memory="%t.chat_memory_saved%"
+             data-fail-auth="%t.chat_fail_auth%" data-fail-timeout="%t.chat_fail_timeout%"
+             data-fail-steps="%t.chat_fail_steps%" data-fail-other="%t.chat_fail_other%">
       <header><h2>%t.manager_chat%</h2>%INFO%<span class="m-chat-tools">%NET%%MODEL%</span></header>
       <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
       <p class="error" id="chat-error" role="alert" hidden></p>

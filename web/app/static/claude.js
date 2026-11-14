@@ -19,6 +19,16 @@
 
   var openButton = document.getElementById("claude-open");
   var dialog = document.getElementById("claude-dialog");
+  // The manager chat found the sign-in lost (chat.js): the row says "expired" and its link "renew", as after a page load.
+  var row = document.getElementById("claude-row");
+  window.AgentHub = window.AgentHub || {};
+  window.AgentHub.claudeExpired = function () {
+    if (!row || !openButton || openButton.dataset.status === "expired") return;
+    row.className = "setting service expired";
+    row.querySelector(".status").textContent = row.dataset.expired;
+    openButton.textContent = row.dataset.renew;
+    openButton.dataset.status = "expired";
+  };
   if (!openButton || !dialog || typeof dialog.showModal !== "function") return;
 
   var STUCK_AFTER = 45000; // ms without a link from the runner
