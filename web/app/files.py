@@ -54,7 +54,11 @@ IMAGE = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "
 VIDEO = {"mp4": "video/mp4", "m4v": "video/mp4", "mov": "video/quicktime", "webm": "video/webm"}
 AUDIO = {"mp3": "audio/mpeg", "m4a": "audio/mp4", "wav": "audio/wav", "ogg": "audio/ogg", "flac": "audio/flac",
          "aac": "audio/aac"}
-MEDIA_OTHER = set("heic heif tif tiff mkv avi wmv flv 3gp opus".split())
+# Camera raw files (Janis, 14.11.2026: a DNG is a picture, so it goes to Media) and other pictures the browser can not
+# show everywhere: they still get a small preview, made in the browser (static/tiffthumb.js), never on the server.
+RAW = set("dng cr2 cr3 nef nrw arw srf sr2 orf rw2 raf pef srw x3f 3fr erf kdc mos mrw".split())
+PHOTO = set("heic heif tif tiff".split()) | RAW
+MEDIA_OTHER = set("mkv avi wmv flv 3gp opus".split()) | PHOTO
 EDITABLE = {"md", "txt"}          # the pencil opens an editor for these
 
 
@@ -84,7 +88,8 @@ class StoredFile:
 
     @property
     def kind(self) -> str:
-        """For the icon and the preview: link, image, video, audio, code, text or other."""
+        """For the icon and the preview: link, image, video, audio, photo (TIFF, HEIC, raw: a preview, but no viewer,
+        not every browser can show them), code, text or other."""
         if self.url is not None:
             return "link"
         ext = self.ext
@@ -94,6 +99,8 @@ class StoredFile:
             return "video"
         if ext in AUDIO:
             return "audio"
+        if ext in PHOTO:
+            return "photo"
         if ext in CODE:
             return "code"
         return "text" if ext in EDITABLE else "other"
@@ -433,7 +440,7 @@ def save_thumb(user_id: int, file_id: int, data: bytes) -> bool:
     if row is None or row["status"] != "ready":
         return False
     item = _to_file(row)
-    if item.kind not in ("image", "video"):
+    if item.kind not in ("image", "video", "photo"):
         return False
     thumb_path(item.project_id, item.id).write_bytes(data)
     return True

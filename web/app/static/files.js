@@ -101,21 +101,25 @@
   // by the server next to the file. New files get theirs right after the upload; older files (and anything that
   // failed) get theirs once when the list is first shown.
   var THUMB = 96;
+  var PHOTO = /\.(tiff?|heic|heif|dng|cr2|cr3|nef|nrw|arw|srf|sr2|orf|rw2|raf|pef|srw|x3f|3fr|erf|kdc|mos|mrw)$/i;   // files.PHOTO
   var thumbBusy = false;
   var thumbFailed = {};
-  function drawThumb(element, width, height) {
+  function drawThumb(element, width, height, turn) {
     if (!width || !height) return Promise.resolve(null);
     var canvas = document.createElement("canvas");
     canvas.width = canvas.height = THUMB;
     var scale = Math.max(THUMB / width, THUMB / height);            // fill the square, crop the rest
     var w = THUMB / scale, h = THUMB / scale;
-    canvas.getContext("2d").drawImage(element, (width - w) / 2, (height - h) / 2, w, h, 0, 0, THUMB, THUMB);
+    var context = canvas.getContext("2d");
+    var angle = { 3: Math.PI, 6: Math.PI / 2, 8: -Math.PI / 2 }[turn];   // the camera's orientation (TIFF, DNG)
+    if (angle) { context.translate(THUMB / 2, THUMB / 2); context.rotate(angle); context.translate(-THUMB / 2, -THUMB / 2); }
+    context.drawImage(element, (width - w) / 2, (height - h) / 2, w, h, 0, 0, THUMB, THUMB);
     return new Promise(function (resolve) { canvas.toBlob(resolve, "image/jpeg", 0.8); });
   }
-  function thumbFromImage(src) {
+  function thumbFromImage(src, turn) {
     return new Promise(function (resolve) {
       var image = new Image();
-      image.onload = function () { resolve(drawThumb(image, image.naturalWidth, image.naturalHeight)); };
+      image.onload = function () { resolve(drawThumb(image, image.naturalWidth, image.naturalHeight, turn)); };
       image.onerror = function () { resolve(null); };
       image.src = src;
     });
@@ -134,11 +138,50 @@
       video.src = src;
     });
   }
+  // TIFF, HEIC and camera raw files (DNG, CR2, NEF, ...): Safari draws TIFF and HEIC itself; for the rest the small
+  // TIFF reader (tiffthumb.js) takes the preview the camera put inside, or the pixels of a plain TIFF. First only the
+  // start of the file is fetched (where the previews usually are), the whole file only if that was not enough.
+  var PHOTO_TYPE = { tif: "image/tiff", tiff: "image/tiff", heic: "image/heic", heif: "image/heif" };
+  var PHOTO_MAX = 300 * 1024 * 1024;
+  function withUrl(blob, use) {
+    var url = URL.createObjectURL(blob);
+    return use(url).then(function (made) { URL.revokeObjectURL(url); return made; },
+                         function () { URL.revokeObjectURL(url); return null; });
+  }
+  function photoFrom(buffer, type) {
+    return window.HubTiff.preview(buffer).then(function (found) {
+      if (found && found.blob) return withUrl(found.blob, function (url) { return thumbFromImage(url, found.turn); });
+      if (found && found.image) {
+        var canvas = document.createElement("canvas");
+        canvas.width = found.image.width;
+        canvas.height = found.image.height;
+        canvas.getContext("2d").putImageData(found.image, 0, 0);
+        return drawThumb(canvas, canvas.width, canvas.height, found.turn);
+      }
+      return withUrl(new Blob([buffer], { type: type }), function (url) { return thumbFromImage(url); });
+    });
+  }
+  function thumbFromPhoto(src, name, file) {
+    var type = PHOTO_TYPE[(name.split(".").pop() || "").toLowerCase()] || "application/octet-stream";
+    if (file) return file.size <= PHOTO_MAX ? file.arrayBuffer().then(function (b) { return photoFrom(b, type); }) : Promise.resolve(null);
+    return fetch(src, { headers: { Range: "bytes=0-16777215" }, credentials: "same-origin" }).then(function (head) {
+      if (!head.ok) return null;
+      var total = head.status === 206 ? parseInt((head.headers.get("Content-Range") || "").split("/")[1], 10) : 0;
+      return head.arrayBuffer().then(function (start) { return photoFrom(start, type); }).then(function (made) {
+        if (made || head.status !== 206 || !(total <= PHOTO_MAX)) return made;
+        return fetch(src, { credentials: "same-origin" }).then(function (r) { return r.ok ? r.arrayBuffer() : null; })
+          .then(function (whole) { return whole ? photoFrom(whole, type) : null; });
+      });
+    });
+  }
   function sendThumb(id, blob) {
     return blob ? fetch("/files/" + id + "/thumb", { method: "POST", body: blob }).then(function (r) { return r.ok; }, function () { return false; }) : Promise.resolve(false);
   }
   function thumbOfUpload(job) {       // right after an upload we still hold the file itself
     var type = job.file.type || "";
+    if (PHOTO.test(job.file.name)) {
+      return thumbFromPhoto(null, job.file.name, job.file).then(function (blob) { return sendThumb(job.id, blob); });
+    }
     if (!/^(image|video)\//.test(type)) return Promise.resolve();
     var url = URL.createObjectURL(job.file);
     var made = type.indexOf("video/") === 0 ? thumbFromVideo(url) : thumbFromImage(url);
@@ -155,7 +198,10 @@
     thumbBusy = true;
     var id = pending.closest(".file-row").dataset.id;
     var source = "/files/" + id;
-    (pending.dataset.needThumb === "video" ? thumbFromVideo(source) : thumbFromImage(source))
+    var row = pending.closest(".file-row");
+    var kind = pending.dataset.needThumb;
+    (kind === "video" ? thumbFromVideo(source) : kind === "photo" ? thumbFromPhoto(source, row.dataset.name)
+      : thumbFromImage(source))
       .then(function (blob) { return sendThumb(id, blob); })
       .then(function (okay) {
         if (okay && pending.isConnected) {

@@ -55,7 +55,8 @@ class FilesTest(unittest.TestCase):
     # --- sorting by ending
     def test_new_files_are_sorted_by_their_ending(self):
         wanted = {"a.md": "memory", "a.py": "code", "a.swift": "code", "a.PNG": "media", "a.mp4": "media",
-                  "a.m4a": "media", "a.pdf": "documents", "a.zip": "documents", "noending": "documents"}
+                  "a.m4a": "media", "a.pdf": "documents", "a.zip": "documents", "noending": "documents",
+                  "IMG_0001.DNG": "media", "a.tif": "media", "a.heic": "media", "a.cr2": "media", "a.nef": "media"}
         for name, category in wanted.items():
             self.assertEqual(files.category_for(name), category, name)
 
@@ -450,6 +451,9 @@ class FilesTest(unittest.TestCase):
         pic, doc = self.upload("pic.png", b"x"), self.upload("doc.pdf", b"x")
         self.assertTrue(files.save_thumb(self.user.id, pic.id, b"\xff\xd8\xff data"))
         self.assertFalse(files.save_thumb(self.user.id, doc.id, b"\xff\xd8\xff data"))
+        raw = self.upload("IMG_0001.dng", b"II*\x00 raw")                         # a camera file gets one too (14.11.2026)
+        self.assertEqual(raw.kind, "photo")
+        self.assertTrue(files.save_thumb(self.user.id, raw.id, b"\xff\xd8\xff data"))
         self.assertEqual(files.open_thumb(self.user.id, pic.id).read_bytes(), b"\xff\xd8\xff data")
         self.assertIsNone(files.open_thumb(self.user.id, doc.id))
         for bad, code in ((b"<script>alert(1)</script>", "bad_type"), (b"\xff\xd8\xff" + b"x" * files.THUMB_MAX, "too_big")):
