@@ -95,7 +95,7 @@ Schutz, weil die Seite öffentlich ist: (1) Anfragen durch den Tunnel (Header `C
 | 2 Kein Rückfall | `claim_next` nimmt nur Läufe von Nutzern mit Zustand `connected` |
 | 3 Lauf sieht nur seinen Nutzer | **Entschieden (Janis, 07.11.2026): ein eigener Container je Lauf**, Sicherheit geht vor Schlankheit. Aufbau in Abschnitt 6a. Verworfen: Prozess unter eigener Unix-Kennung im gemeinsamen Runner-Container (schlanker, aber alle Läufe teilen sich Container und Dateisystem). |
 | 4 Nutzer vom Server | `Job.user_id` kommt aus `agent_tasks` → `projects`, `finish_run` und `claim_next` nehmen keinen Nutzer entgegen |
-| 5 Token nur verschlüsselt, nur für den Besitzer | Token liegen nur in Claude Codes eigenem Ordner des Nutzers, nicht in der Datenbank; kein Admin-Weg zum Anzeigen. Offen: Verschlüsselung des Ordners selbst (siehe Abschnitt 7) |
+| 5 Token nur verschlüsselt, nur für den Besitzer | Seit 14.11.2026: Token aus `claude setup-token`, verschlüsselt in `token.enc` im Ordner des Nutzers (Schlüssel nur im Runner, `runner/tokens.py`); Läufe bekommen nur ein Ticket, der Gateway im Egress-Proxy setzt den Token ein (PROJEKT.md Abschnitt 3); kein Admin-Weg zum Anzeigen |
 | 6 Test | `test_isolation.py::test_b_cannot_touch_the_agents_of_a`; der Test mit dem echten Runner kommt mit dem Runner |
 
 ## 6a. Ein Container je Lauf (entschieden)
@@ -124,7 +124,7 @@ Volltext in PROJEKT.md (Abschnitte „Zugriff der Agenten auf Geräte“, „Ger
 ## 7. Offene Entscheidungen (Janis)
 
 1. ~~**Isolation im Runner**~~ entschieden: Container je Lauf (Abschnitt 6a).
-2. **Schutz der Claude-Ordner im Ruhezustand:** Dateirechte `0700` reichen gegen andere Nutzer, nicht gegen jemanden mit Zugriff auf die SD-Karte oder das Backup. Optionen: Ordner beim Backup ausschließen (Vorschlag, dann muss man sich nach einer Wiederherstellung neu anmelden) oder verschlüsseln.
+2. ~~**Schutz der Claude-Ordner im Ruhezustand**~~ entschieden (Claude, von Janis überlassen, 14.11.2026): verschlüsseln (`token.enc`, Fernet, Schlüssel `HUB_TOKEN_KEY` nur im Runner); das Backup behält Ordner und `.env`, damit eine Wiederherstellung ohne neues Verknüpfen läuft (das Backup ist selbst verschlüsselt).
 3. **Nutzungsbedingungen** für Claude Code in eigenen Tools und ob die Anmeldung dauerhaft hält (steht seit Anfang in PROJEKT.md Abschnitt 11, bleibt Voraussetzung für den ersten Livegang).
 4. **Speicher:** Pi 4B mit 1 GB: Tests mit Sonnet, langen Läufen und Git-Worktrees stehen aus. `MAX_RUNNING = 1` ist die Vorsorge.
 5. **Merge bei Freigabe:** Der Hub (nicht der Agent) übernimmt den Branch in `main` des Projekt-Repos, bevor der Manager die Doku nachführt. Eigenes Modul „Worktrees und Merge“.
