@@ -8,6 +8,7 @@
   var form = document.getElementById("chat-form");
   var send = document.getElementById("chat-send");
   var errorBox = document.getElementById("chat-error");
+  var input = document.getElementById("chat-input");
   var projectId = document.querySelector(".project").dataset.id;
   var url = "/projects/" + projectId + "/chat";
   var timer = null;
@@ -110,17 +111,31 @@
     errorBox.textContent = text || "";
   }
 
+  // The field grows with what is written, up to three lines (Janis, 14.11.2026), then it scrolls inside.
+  // max-height in project.css sets the limit; scrollHeight is read after the height went back to one line.
+  function fit() {
+    input.style.height = "auto";
+    input.style.height = input.scrollHeight + 2 + "px";
+  }
+  input.addEventListener("input", fit);
+  input.addEventListener("keydown", function (event) {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      if (!send.disabled) form.requestSubmit();
+    }
+  });
+
   // The manager uses web and code only when a question needs them. The model and the web/code switch are the
   // manager's settings (tile header, saved by manager.js); the server picks them up for every question.
   form.addEventListener("submit", function (event) {
     event.preventDefault();
-    if (!window.AgentHub.validate(form)) return;
+    if (!input.value.trim()) { input.focus(); return; }
     problem("");
     var data = new FormData(form);
     fetch(url, { method: "POST", body: data })
       .then(function (r) { return r.json().catch(function () { return {}; }); })
       .then(function (data) {
-        if (data.ok) { form.reset(); load(); } else problem(data.message || "");
+        if (data.ok) { form.reset(); fit(); load(); } else problem(data.message || "");
       })
       .catch(function () {});
   });

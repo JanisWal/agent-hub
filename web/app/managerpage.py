@@ -50,7 +50,8 @@ CHAT = """<section class="mtile glass m-chat" id="chat" data-you="%t.chat_you%" 
       <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
       <p class="error" id="chat-error" role="alert" hidden></p>
       <form class="chat-form" id="chat-form" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
-        <label><input name="prompt" required maxlength="2000" autocomplete="off" placeholder="%t.chat_placeholder%"></label>
+        <label><textarea name="prompt" id="chat-input" rows="1" required maxlength="2000" autocomplete="off"
+          placeholder="%t.chat_placeholder%" aria-label="%t.chat_placeholder%"></textarea></label>
         <button type="submit" id="chat-send">%t.chat_send%</button>
       </form>
     </section>"""
