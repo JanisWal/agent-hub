@@ -117,6 +117,14 @@ html.splitting, html.splitting * { cursor: row-resize !important; -webkit-user-s
 @media (min-width: 1101px) {
   .mcol.split-set > :has(+ .m-split) { flex: var(--split) 1 0; }
   .mcol.split-set > .m-split + * { flex: calc(1 - var(--split)) 1 0; }
+  /* A shared column: a tile may shrink to its header, its content fades out below the usual minimum (splitter.js),
+     and the lists use all the height they get. */
+  .mcol.split-set > .mtile { min-height: 0; }
+  .mcol.split-set .file-scroll, .mcol.split-set .check-list { max-height: none; }
+  .mcol.split-set .check-list { flex: 1 1 auto; min-height: 0; }
+  .mtile.m-folded { overflow: clip; }
+  .mtile.m-folded > :not(header) { opacity: var(--fold, 1); }
+  .mtile.m-shut > :not(header) { visibility: hidden; }
 }
 /* The status lamp: grey until the manager reports (green, amber, red later). */
 .m-lamp { flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); opacity: 0.55; box-shadow: 0 0 0 4px color-mix(in srgb, var(--muted) 18%, transparent); }
