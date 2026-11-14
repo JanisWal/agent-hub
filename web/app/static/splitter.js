@@ -14,27 +14,47 @@
     var col = split.parentNode, name = split.dataset.split;
     var a = split.previousElementSibling, b = split.nextElementSibling;
     if (!a || !b) return;
+    // A tile may give way down to its header (Janis, 14.11.2026): below its usual minimum its content fades out
+    // (--fold from 1 to 0), so the other tile can show all it has. The usual minimum is read before the CSS of a
+    // shared column sets it to 0.
+    var natural = [a, b].map(function (tile) { return parseFloat(getComputedStyle(tile).minHeight) || 80; });
+    function folded(tile) {   // the height at which only the header is left
+      var style = getComputedStyle(tile), head = tile.querySelector(":scope > header");
+      return (head ? head.offsetHeight : 0) + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + 2;
+    }
+    function fade() {
+      [a, b].forEach(function (tile, i) {
+        var low = folded(tile), height = tile.getBoundingClientRect().height;
+        var share = col.classList.contains("split-set") && natural[i] > low
+          ? Math.min(Math.max((height - low) / (natural[i] - low), 0), 1) : 1;
+        tile.style.setProperty("--fold", share.toFixed(3));
+        tile.classList.toggle("m-folded", share < 1);
+        tile.classList.toggle("m-shut", share === 0);
+      });
+    }
 
     function apply(ratio) {   // the share of the upper tile; the CSS takes it only on wide windows
       if (ratio === null) {
         col.classList.remove("split-set");
         col.style.removeProperty("--split");
         split.removeAttribute("aria-valuenow");
+        fade();
         return;
       }
       col.classList.add("split-set");
       col.style.setProperty("--split", ratio.toFixed(4));
       split.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
+      fade();
     }
-    function limits() {   // each tile keeps at least its own minimum height
+    function limits() {   // each tile keeps at least its header
       var ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
       var total = ra.height + rb.height;
-      var minA = parseFloat(getComputedStyle(a).minHeight) || 80, minB = parseFloat(getComputedStyle(b).minHeight) || 80;
-      return { top: ra.top, total: total, low: Math.min(minA / total, 0.5), high: Math.max(1 - minB / total, 0.5) };
+      return { top: ra.top, total: total, low: Math.min(folded(a) / total, 0.5), high: Math.max(1 - folded(b) / total, 0.5) };
     }
     function clamp(value, box) { return Math.min(Math.max(value, box.low), box.high); }
     var saved = load(name);
     if (saved > 0 && saved < 1) apply(saved);
+    window.addEventListener("resize", fade);
 
     var drag = null;
     split.addEventListener("pointerdown", function (event) {
