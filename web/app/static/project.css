@@ -174,7 +174,8 @@ html .card.drag-clone::after { display: none; }
 /* Compact (Janis, 14.11.2026): the hint is an "i" next to the title, the switch a pill next to the model, so the log
    starts right under the header, ends right above the input, and the newest answer sits just over the input. */
 .m-chat .muted { font-size: 0.88rem; }
-.m-chat-tools { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; margin-left: auto; }
+.m-chat-tools { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 5px; margin-left: auto; }
+.m-chat.mtile header { gap: 8px; }   /* title, "i", globe and capsule in one row down to about 1280 px windows */
 .m-chat-tools .model-picker { margin-left: 0; }
 .m-chat.mtile header:has(.m-chat-tools) h2 { flex: 0 0 auto; }
 .m-chat header .info-dot { width: 30px; height: 30px; margin-left: -6px; }
@@ -222,12 +223,12 @@ html .card.drag-clone::after { display: none; }
 }
 .model-picker:hover, .model-picker:has(select[aria-expanded="true"]) { border-color: var(--accent); }
 .model-picker select { field-sizing: content; }
-.model-picker .m-select select { height: 28px; min-height: 28px; padding: 0 26px 0 12px; background: transparent; border: 0; border-radius: 0; }
+.model-picker .m-select select { height: 28px; min-height: 28px; padding: 0 22px 0 10px; background: transparent; border: 0; border-radius: 0; }
 .model-picker .m-select:first-child select { border-radius: 999px 0 0 999px; }
 .model-picker .m-select:last-child select { border-radius: 0 999px 999px 0; }
 .model-picker .m-select:hover select, .model-picker .m-select select[aria-expanded="true"] { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .model-picker .m-select + .m-select::before { content: ""; position: absolute; left: 0; top: 5px; bottom: 5px; width: 1px; background: var(--glass-border); z-index: 1; pointer-events: none; }
-.model-picker .m-select.has-select > svg { right: 9px; width: 13px; height: 13px; }
+.model-picker .m-select.has-select > svg { right: 7px; width: 13px; height: 13px; }
 .model-picker .m-select::after { content: ""; position: absolute; inset: -8px 0; }   /* 44 px hit area */
 .mtile header:has(.model-picker) h2 { flex: 1 0 auto; }
 .model-picker .m-select:last-child .select-menu { min-width: 150px; }
