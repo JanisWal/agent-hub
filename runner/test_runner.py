@@ -13,6 +13,35 @@ from pathlib import Path
 from runner import launcher, login, runner
 
 LINK = "https://claude.com/cai/oauth/authorize?code=true&client_id=abc&state=xyz"
+TOKEN = "sk-ant-oat01-" + "t" * 80
+
+
+class FakeVault:
+    """The encrypted store without encryption: what was saved for whom, and which old files were cleared."""
+    def __init__(self, saved=None):
+        self.saved, self.cleared = dict(saved or {}), []
+
+    def save(self, user_id, token):
+        self.saved[user_id] = token
+
+    def load(self, user_id):
+        return self.saved.get(user_id)
+
+    def clear_old(self, user_id):
+        self.cleared.append(user_id)
+
+
+class FakeTickets:
+    def __init__(self):
+        self.issued, self.revoked = [], []
+
+    def issue(self, token):
+        ticket = "hubrun-" + str(len(self.issued)).rjust(43, "x")
+        self.issued.append((ticket, token))
+        return ticket
+
+    def revoke(self, ticket):
+        self.revoked.append(ticket)
 
 
 class FakeApi:
@@ -41,6 +70,7 @@ class FakeApi:
 class FakeSession:
     def __init__(self, link=LINK):
         self.link, self.sent, self.closed, self.exit, self.code_sent_at = link, [], False, None, None
+        self.output = "Paste code here if prompted > "
 
     def url(self, timeout):
         return self.link
@@ -62,13 +92,13 @@ class RunnerTest(unittest.TestCase):
         self.base = Path(self.tmp.name) / "claude"
         self.base.mkdir()
         self.api, self.made, self.now = FakeApi(), {}, [100.0]
-        self.prepared = []
+        self.vault = FakeVault()
 
         def start(user_id):
             self.made[user_id] = FakeSession()
             return self.made[user_id]
 
-        self.runner = runner.Runner(self.api, str(self.base), prepare=lambda p, u: self.prepared.append((p, u)),
+        self.runner = runner.Runner(self.api, str(self.base), vault=self.vault, tickets=FakeTickets(),
                                     start_session=start, clock=lambda: self.now[0])
 
     def tearDown(self):
@@ -122,18 +152,40 @@ class RunnerTest(unittest.TestCase):
         self.api.logins = [{"user_id": 2, "login_url": None}]
         self.runner.handle_logins()
         self.assertEqual(self.api.posted("/2/url"), [{"url": LINK}])           # the link goes to the hub
-        self.assertEqual(self.prepared, [(str(self.base / "2"), 2)])           # folder of this user only
         self.api.logins = [{"user_id": 2, "login_url": LINK}]
         self.runner.handle_logins()
         self.assertEqual(self.made[2].sent, [])                                # no code yet
         self.api.codes[2] = "the-code"
         self.runner.handle_logins()
         self.assertEqual(self.made[2].sent, ["the-code"])
-        self.made[2].exit = 0
+        self.assertEqual(self.api.posted("/2/done"), [])                       # no token printed yet
+        # setup-token prints the token and then waits for a key: the runner does not wait for it to end
+        self.made[2].output += f"\r\n\x1b[32mYour OAuth token (valid for 1 year):\x1b[0m\r\n{TOKEN}\r\nPress Enter"
         self.runner.handle_logins()
         self.assertEqual(self.api.posted("/2/done"), [{"success": "1"}])
+        self.assertEqual(self.vault.saved, {2: TOKEN})                         # kept (encrypted) for this user only
+        self.assertEqual(self.vault.cleared, [2])                              # the files of the old login go
         self.assertTrue(self.made[2].closed)
         self.assertEqual(self.runner.sessions, {})
+
+    def test_a_token_printed_before_the_code_is_not_taken(self):
+        self.api.logins = [{"user_id": 2, "login_url": None}]
+        self.runner.handle_logins()
+        self.made[2].output += TOKEN
+        self.api.logins = [{"user_id": 2, "login_url": LINK}]
+        self.runner.handle_logins()
+        self.assertEqual(self.vault.saved, {})
+
+    def test_an_exit_without_a_token_is_a_failure(self):
+        self.api.logins = [{"user_id": 2, "login_url": None}]
+        self.runner.handle_logins()
+        self.api.logins = [{"user_id": 2, "login_url": LINK}]
+        self.api.codes[2] = "the-code"
+        self.runner.handle_logins()
+        self.made[2].exit = 0
+        self.runner.handle_logins()
+        self.assertEqual(self.api.posted("/2/done"), [{"success": "0"}])
+        self.assertEqual(self.vault.saved, {})
 
     def test_wrong_code_is_a_failure(self):
         self.api.logins = [{"user_id": 2, "login_url": None}]
@@ -226,7 +278,7 @@ class ChatRunTest(unittest.TestCase):
     def setUp(self):
         self.api, self.commands = FakeApi(), []
         self.api.chat_job = {"chat_id": 5, "user_id": 2, "model": "haiku", "prompt": "Hello?"}
-        self.prepared = []
+        self.vault, self.tickets = FakeVault({2: TOKEN}), FakeTickets()
         self.answer = Done(json.dumps({"result": "Hi!", "usage": {"input_tokens": 7, "output_tokens": 2}}))
 
         def run_chat(command, prompt):
@@ -235,7 +287,7 @@ class ChatRunTest(unittest.TestCase):
                 raise self.answer
             return self.answer
 
-        self.runner = runner.Runner(self.api, "/data/claude", prepare=lambda p, u: self.prepared.append((p, u)),
+        self.runner = runner.Runner(self.api, "/data/claude", vault=self.vault, tickets=self.tickets,
                                     run_chat=run_chat)
 
     def test_answer_goes_back_with_tokens(self):
@@ -243,8 +295,12 @@ class ChatRunTest(unittest.TestCase):
         command, prompt = self.commands[0]
         self.assertEqual(prompt, "Hello?")                                 # through stdin ...
         self.assertNotIn("Hello?", command)                                # ... never on the command line
-        self.assertIn("src=/data/claude/2,dst=/claude", " ".join(command))
-        self.assertEqual(self.prepared, [("/data/claude/2", 2)])
+        ticket, token = self.tickets.issued[0]
+        self.assertEqual(token, TOKEN)                                     # the ticket stands for this user's token
+        self.assertIn(f"CLAUDE_CODE_OAUTH_TOKEN={ticket}", command)
+        self.assertNotIn(TOKEN, " ".join(command))                          # the token itself never reaches the run
+        self.assertNotIn("/data/claude", " ".join(command))
+        self.assertEqual(self.tickets.revoked, [ticket])                    # and the ticket ends with the run
         self.assertEqual(self.api.posted("/chat/5/finish"),
                          [{"success": "1", "answer": "Hi!", "tokens_in": 7, "tokens_out": 2}])
 
@@ -255,7 +311,6 @@ class ChatRunTest(unittest.TestCase):
             self.runner.handle_chat()
             command = " ".join(self.commands[0][0])
             self.assertIn("egress:3128", command)
-            self.assertIn(",readonly", command)
     def test_nothing_to_do(self):
         self.api.chat_job = None
         self.runner.handle_chat()
@@ -275,6 +330,20 @@ class ChatRunTest(unittest.TestCase):
         self.assertEqual((sent["success"], "125" in sent["answer"]), ("0", True))
         self.assertEqual(self.api.posted("/2/expired"), [])                # an ordinary failure is no lost login
 
+    def test_without_a_saved_token_nothing_runs(self):
+        self.vault.saved.clear()
+        self.runner.handle_chat()
+        self.assertEqual(self.commands, [])
+        self.assertEqual(self.api.posted("/2/expired"), [{}])                # the menu asks to link Claude again
+        self.assertEqual(self.api.posted("/chat/5/finish")[0]["success"], "0")
+        self.assertEqual(self.tickets.issued, [])
+
+    def test_another_users_token_is_never_used(self):
+        self.vault.saved = {3: TOKEN}
+        self.runner.handle_chat()
+        self.assertEqual(self.commands, [])
+        self.assertEqual(self.tickets.issued, [])
+
     def test_timeout_removes_the_container(self):
         calls = []
         original = runner.subprocess.run
@@ -286,6 +355,7 @@ class ChatRunTest(unittest.TestCase):
             runner.subprocess.run = original
         self.assertEqual(calls, [["docker", "rm", "-f", "agent-chat-5"]])
         self.assertEqual(self.api.posted("/chat/5/finish")[0]["success"], "0")
+        self.assertEqual(len(self.tickets.revoked), 1)                       # the ticket ends even then
 
 
 class LoginTextTest(unittest.TestCase):
@@ -306,12 +376,19 @@ class LoginTextTest(unittest.TestCase):
         self.assertIsNone(login.extract_login_url(""))
 
 
+    def test_the_token_is_found_once(self):
+        printed = f"\x1b[1mYour token:\x1b[0m\r\n\x1b[36m{TOKEN}\x1b[0m\r\nStore it safely."
+        self.assertEqual(login.extract_token(printed), TOKEN)
+        self.assertEqual(login.extract_token(printed + printed), TOKEN)          # the same token twice is fine
+        self.assertIsNone(login.extract_token(printed + " sk-ant-oat01-" + "u" * 80))   # two different: no guessing
+        self.assertIsNone(login.extract_token("Paste code here if prompted > "))
+
+
 class LoginCommandTest(unittest.TestCase):
-    def test_only_the_users_claude_folder_is_mounted(self):
-        cmd = launcher.build_login_command(user_id=2, claude_dir="/data/claude/2")
-        self.assertEqual(sum(1 for c in cmd if c == "--mount"), 1)
-        self.assertIn("src=/data/claude/2,dst=/claude", " ".join(cmd))
-        self.assertEqual(cmd[-4:], ["claude", "auth", "login", "--claudeai"])
+    def test_no_folder_is_mounted(self):
+        cmd = launcher.build_login_command(user_id=2)
+        self.assertNotIn("--mount", cmd)
+        self.assertEqual(cmd[-2:], ["claude", "setup-token"])
         for flag in ("-t", "-i", "--read-only", "--init"):
             self.assertIn(flag, cmd)
         for bad in ("--privileged", "--volume", "-v", "--network host", "--device"):
@@ -319,10 +396,9 @@ class LoginCommandTest(unittest.TestCase):
         self.assertIn("10002:10002", cmd)
 
     def test_bad_values(self):
-        for change in ({"user_id": 0}, {"user_id": "2"}, {"claude_dir": "rel"}, {"claude_dir": "/a,b"},
-                       {"memory": "x"}, {"image": "i --privileged"}):
+        for change in ({"user_id": 0}, {"user_id": "2"}, {"memory": "x"}, {"image": "i --privileged"}):
             with self.assertRaises(ValueError, msg=str(change)):
-                launcher.build_login_command(**{"user_id": 2, "claude_dir": "/data/claude/2", **change})
+                launcher.build_login_command(**{"user_id": 2, **change})
 
 
 if __name__ == "__main__":

@@ -2,10 +2,13 @@
 
 The launcher is trusted code with access to the Docker socket, so it takes no free arguments:
 `build_command` fills a fixed template with a few checked values (numbers, a model from a short
-list, two folders). The text of a task (title, reports, notes) never reaches the command line: the
-prompt goes in through stdin. The run container sees exactly two folders, the work folder of this
-task and the Claude folder of this user, and nothing else (no hub.db, .env, backups, vault, other
-users). See KONZEPT-AGENTEN.md, section 6a.
+list, a folder, a ticket). The text of a task (title, reports, notes) never reaches the command line: the
+prompt goes in through stdin. The run container sees exactly one folder, the work folder of this task, and
+nothing else (no hub.db, .env, backups, vault, other users, no Claude login). See KONZEPT-AGENTEN.md, section 6a.
+
+Since 14.11.2026 a run has no Claude login of its own: its home is an empty folder in memory, and instead of a
+token it gets a ticket (runner/tokens.py) that only the egress gateway can turn into the user's token. Claude Code
+sends every request there (ANTHROPIC_BASE_URL) and nothing else to Anthropic (no telemetry, no update checks).
 """
 import json
 import os
@@ -32,13 +35,15 @@ MAX_REPORT = 20000
 # The agent network has no route to the outside: everything goes through the egress proxy (runner/egress.py).
 WEB_PROXY = "http://egress:3128"   # any public host on 443, never the home network or the Pi itself
 API_PROXY = "http://egress:3129"   # only Anthropic (sign-ins)
+GATEWAY = "http://egress:3130"     # the Claude API with the user's token put in by the proxy (runner/egress.py)
+_TICKET = re.compile(r"hubrun-[A-Za-z0-9_-]{43}")   # runner/tokens.py
 # What the manager chat may do: tools, proxy and steps (model turns) per question.
 CHAT_MODES = {
     # The manager chat (Janis, 07.11.2026/08.11.2026): web search, reading pages and code with internet, always;
     # Claude uses them only when needed. The way out is the public-only proxy: the open internet, never the home
-    # network. Accepted risk (Janis chose "open internet" on 08.11.2026): code can read the user's Claude login
-    # (mounted read-only) and could send it out if a web page talked Claude into it; the damage is his own quota
-    # until he disconnects and connects again. The Pi, the hub and the home network stay out of reach.
+    # network. The user's Claude token is not in the run (only a ticket that works nowhere else and ends with the
+    # run), so code can not send it out (14.11.2026; before, code could read the login). The Pi, the hub and the home
+    # network stay out of reach.
     "all": {"tools": ("WebSearch", "WebFetch", "Bash"), "proxy": WEB_PROXY, "turns": 12},
     # Web and code apart (switch off): the web search runs on Anthropic's side, the container only reaches
     # Anthropic, so code has no internet and nothing it reads can leave. No WebFetch: it would need the open web.
@@ -92,6 +97,20 @@ def _proxy_env(url: str) -> list[str]:
     return ["-e", f"HTTPS_PROXY={url}", "-e", f"https_proxy={url}"]
 
 
+def _claude_env(ticket: str) -> list[str]:
+    """How a run reaches Claude: an empty home in memory, the ticket as its token, every request to the gateway
+    (never past the proxy: NO_PROXY), nothing else sent to Anthropic. The ticket stands on the command line of
+    `docker run`, which is fine: it only counts inside the agent network and only while the run lasts."""
+    if not isinstance(ticket, str) or not _TICKET.fullmatch(ticket):
+        raise ValueError("bad ticket")
+    return [
+        "--tmpfs", "/home/claude:rw,size=32m,mode=1777",
+        "-e", "HOME=/home/claude", "-e", "CLAUDE_CONFIG_DIR=/home/claude/.claude",
+        "-e", f"CLAUDE_CODE_OAUTH_TOKEN={ticket}", "-e", f"ANTHROPIC_BASE_URL={GATEWAY}",
+        "-e", "NO_PROXY=egress", "-e", "no_proxy=egress", "-e", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
+    ]
+
+
 RUN_PROXY = {"together": WEB_PROXY, "apart": API_PROXY}   # the role's switch "web + code together"
 
 
@@ -104,7 +123,7 @@ def _model_args(model: str, effort: str) -> list[str]:
     return ["--model", model, *(["--effort", effort] if effort else [])]
 
 
-def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, claude_dir: str, net: str = "together",
+def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, ticket: str, net: str = "together",
                   effort: str = "", image: str = IMAGE, network: str = NETWORK, memory: str = "480m") -> list[str]:
     """The `docker run` command for one run. Raises ValueError for anything unexpected. `net` is the role's
     switch: "together" = open internet (public hosts only), "apart" = only Anthropic (code without internet).
@@ -116,7 +135,7 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, claud
     model_args = _model_args(model, effort)
     if not re.fullmatch(r"[0-9]+[mg]", memory) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", image + network):
         raise ValueError("bad image, network or memory")
-    work, claude = _folder(work_dir, "work_dir"), _folder(claude_dir, "claude_dir")
+    work = _folder(work_dir, "work_dir")
     return [
         "docker", "run", "--rm", "--init", "-i", "--name", f"agent-run-{run_id}",
         "--user", f"{uid}:{uid}",
@@ -125,16 +144,15 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, claud
         "--memory", memory, "--memory-swap", memory, "--pids-limit", "256", "--cpus", "2",
         "--network", network,
         "--mount", f"type=bind,src={work},dst=/work", "--workdir", "/work",
-        "--mount", f"type=bind,src={claude},dst=/claude",
         # Agents may use the internet (Janis, 08.11.2026): public hosts only, never the home network; per role switch.
-        "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude", *_proxy_env(RUN_PROXY[net]),
+        *_claude_env(ticket), *_proxy_env(RUN_PROXY[net]),
         image,
         # Inside the isolated container the agent may use its tools freely; the prompt comes via stdin.
         "claude", "-p", *model_args, "--output-format", "json", "--dangerously-skip-permissions",
     ]
 
 
-def build_chat_command(*, chat_id: int, user_id: int, model: str, claude_dir: str, mode: str = "all",
+def build_chat_command(*, chat_id: int, user_id: int, model: str, ticket: str, mode: str = "all",
                        effort: str = "", image: str = IMAGE, network: str = NETWORK, memory: str = "480m") -> list[str]:
     """The manager chat (see web/app/chat.py): one question to Claude, in a container like a run but with no
     work folder at all (nothing of any project is mounted; the project context comes on stdin). `mode` (see
@@ -149,11 +167,9 @@ def build_chat_command(*, chat_id: int, user_id: int, model: str, claude_dir: st
         raise ValueError("bad image, network or memory")
     spec = CHAT_MODES[mode]
     tools = spec["tools"]
-    claude = _folder(claude_dir, "claude_dir")
-    # Code can write anywhere in the container's /tmp, but never into the saved login of the user: a changed
-    # configuration there (a hook, say) would run in his later runs, which may reach the web.
+    # Nothing of the run is kept: no saved login, no settings, so a changed configuration (a hook, say) can not
+    # reach a later run either.
     runs_code = "Bash" in tools
-    mount = f"type=bind,src={claude},dst=/claude" + (",readonly" if runs_code else "")
     return [
         "docker", "run", "--rm", "--init", "-i", "--name", f"agent-chat-{chat_id}",
         "--user", f"{uid}:{uid}",
@@ -161,8 +177,7 @@ def build_chat_command(*, chat_id: int, user_id: int, model: str, claude_dir: st
         "--read-only", "--tmpfs", f"/tmp:rw,size={'128m' if runs_code else '64m'},mode=1777", "--workdir", "/tmp",
         "--memory", memory, "--memory-swap", memory, "--pids-limit", "256", "--cpus", "2",
         "--network", network,
-        "--mount", mount,
-        "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude", "-e", "PYTHONDONTWRITEBYTECODE=1",
+        *_claude_env(ticket), "-e", "PYTHONDONTWRITEBYTECODE=1",
         *_proxy_env(spec["proxy"]),
         image,
         "claude", "-p", *model_args, "--output-format", "json", "--no-session-persistence",
@@ -201,14 +216,15 @@ def parse_chat_output(stdout: str) -> tuple[bool, str, int, int, bool]:
     return True, text[:MAX_REPORT], tokens_in, tokens_out, False
 
 
-def build_login_command(*, user_id: int, claude_dir: str, image: str = IMAGE, network: str = NETWORK,
+def build_login_command(*, user_id: int, image: str = IMAGE, network: str = NETWORK,
                         memory: str = "480m") -> list[str]:
-    """The `docker run` command of one sign-in (`claude auth login`), same restrictions as a run but
-    with a terminal (the login asks for the code there) and only the Claude folder of this user."""
+    """The `docker run` command of one sign-in, same restrictions as a run but with a terminal (it asks for the
+    code there). `claude setup-token` (14.11.2026): the normal login ran out after about a day without a screen;
+    the setup token lasts a year. It prints the token at the end and saves nothing (its home is in memory and
+    gone with the container); the runner takes the token from the terminal and keeps it encrypted (tokens.py)."""
     uid = run_uid(user_id)
     if not re.fullmatch(r"[0-9]+[mg]", memory) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", image + network):
         raise ValueError("bad image, network or memory")
-    claude = _folder(claude_dir, "claude_dir")
     return [
         "docker", "run", "--rm", "--init", "-t", "-i", "--name", f"agent-login-{int(user_id)}",
         "--user", f"{uid}:{uid}",
@@ -216,9 +232,10 @@ def build_login_command(*, user_id: int, claude_dir: str, image: str = IMAGE, ne
         "--read-only", "--tmpfs", "/tmp:rw,size=64m,mode=1777",
         "--memory", memory, "--memory-swap", memory, "--pids-limit", "256",
         "--network", network,
-        "--mount", f"type=bind,src={claude},dst=/claude",
-        "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude", "-e", "BROWSER=none", *_proxy_env(API_PROXY),
-        image, "claude", "auth", "login", "--claudeai",
+        "--tmpfs", "/home/claude:rw,size=16m,mode=1777",
+        "-e", "HOME=/home/claude", "-e", "CLAUDE_CONFIG_DIR=/home/claude/.claude", "-e", "BROWSER=none",
+        *_proxy_env(API_PROXY),
+        image, "claude", "setup-token",
     ]
 
 

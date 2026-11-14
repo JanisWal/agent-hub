@@ -10,7 +10,8 @@ import unittest
 
 from runner import launcher as L
 
-GOOD = dict(run_id=7, user_id=2, model="sonnet", work_dir="/workspaces/task-7", claude_dir="/data/claude/2")
+TICKET = "hubrun-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+GOOD = dict(run_id=7, user_id=2, model="sonnet", work_dir="/workspaces/task-7", ticket=TICKET)
 
 
 def answer(text, **extra):
@@ -52,9 +53,9 @@ class CommandTest(unittest.TestCase):
         for flag in ("--cap-drop ALL", "--security-opt no-new-privileges", "--read-only",
                      "--user 10002:10002", "--network agent-hub-agents", "--memory 480m", "--memory-swap 480m"):
             self.assertIn(flag, text)
-        self.assertEqual(sum(1 for c in cmd if c == "--mount"), 2)        # exactly two folders
+        self.assertEqual(sum(1 for c in cmd if c == "--mount"), 1)        # only the work folder, no Claude login
         self.assertIn("src=/workspaces/task-7,dst=/work", text)
-        self.assertIn("src=/data/claude/2,dst=/claude", text)
+        self.assertNotIn("/claude,", text)
 
     def test_nothing_dangerous_in_the_command(self):
         cmd = L.build_command(**GOOD)
@@ -68,17 +69,17 @@ class CommandTest(unittest.TestCase):
 
     def test_different_users_get_different_users_and_folders(self):
         a = L.build_command(**GOOD)
-        b = L.build_command(**{**GOOD, "user_id": 3, "claude_dir": "/data/claude/3"})
+        b = L.build_command(**{**GOOD, "user_id": 3, "ticket": "hubrun-" + "B" * 43})
         self.assertIn("10002:10002", a)
         self.assertIn("10003:10003", b)
-        self.assertNotIn("/data/claude/2", " ".join(b))
+        self.assertNotIn(TICKET, " ".join(b))
 
     def test_bad_values_are_refused(self):
         for change in ({"run_id": 0}, {"run_id": "7"}, {"run_id": True}, {"user_id": -1}, {"user_id": "2; rm"},
                        {"model": "-gpt"}, {"model": "Sonnet"}, {"model": "sonnet --x"}, {"model": ""},
                        {"effort": "-x"}, {"effort": "high --x"}, {"effort": "HIGH"}, {"work_dir": "relative/dir"},
-                       {"work_dir": "/work,dst=/etc"}, {"work_dir": "/work dir"}, {"claude_dir": "/a/../etc"},
-                       {"claude_dir": "/a:/b"}, {"memory": "64"}, {"memory": "1g --privileged"},
+                       {"work_dir": "/work,dst=/etc"}, {"work_dir": "/work dir"}, {"ticket": "sk-ant-oat01-" + "x" * 30},
+                       {"ticket": "hubrun-short"}, {"ticket": TICKET + " -e X=1"}, {"memory": "64"}, {"memory": "1g --privileged"},
                        {"image": "x --privileged"}, {"network": "host --pid=host"}):
             with self.assertRaises(ValueError, msg=str(change)):
                 L.build_command(**{**GOOD, **change})
@@ -87,7 +88,7 @@ class CommandTest(unittest.TestCase):
         cmd = L.build_command(**GOOD, effort="xhigh")
         self.assertEqual(cmd[cmd.index("--model"):cmd.index("--model") + 4], ["--model", "sonnet", "--effort", "xhigh"])
         self.assertNotIn("--effort", L.build_command(**GOOD))                 # empty: Claude Code's own default
-        chat = L.build_chat_command(chat_id=5, user_id=2, model="fable", claude_dir="/data/claude/2", effort="max")
+        chat = L.build_chat_command(chat_id=5, user_id=2, model="fable", ticket=TICKET, effort="max")
         self.assertEqual(chat[chat.index("--model"):chat.index("--model") + 4], ["--model", "fable", "--effort", "max"])
 
     def test_task_text_never_reaches_the_command(self):
@@ -109,9 +110,9 @@ class ChatCommandTest(unittest.TestCase):
     """The manager chat: no project files, web search and a shell without internet."""
 
     def test_no_work_folder_and_no_tool_that_touches_files(self):
-        cmd = L.build_chat_command(chat_id=5, user_id=2, model="haiku", claude_dir="/data/claude/2")
+        cmd = L.build_chat_command(chat_id=5, user_id=2, model="haiku", ticket=TICKET)
         text = " ".join(cmd)
-        self.assertEqual(sum(1 for c in cmd if c == "--mount"), 1)            # only the user's Claude folder
+        self.assertNotIn("--mount", cmd)                                      # no folder at all, no Claude login
         self.assertNotIn("dst=/work", text)
         for tool in ("Edit", "Write", "Read", "Glob", "Grep", "NotebookEdit", "Task"):
             self.assertNotIn(tool, text)
@@ -123,41 +124,39 @@ class ChatCommandTest(unittest.TestCase):
         self.assertIn("10002:10002", cmd)
 
     def test_web_and_code_apart_has_no_internet_for_code(self):
-        cmd = L.build_chat_command(chat_id=7, user_id=2, model="haiku", claude_dir="/data/claude/2", mode="apart")
+        cmd = L.build_chat_command(chat_id=7, user_id=2, model="haiku", ticket=TICKET, mode="apart")
         self.assertEqual(cmd[cmd.index("--tools") + 1], "WebSearch,Bash")          # search runs at Anthropic
         self.assertIn("HTTPS_PROXY=http://egress:3129", cmd)                       # Anthropic only: code is offline
         self.assertNotIn("HTTPS_PROXY=http://egress:3128", cmd)
         self.assertNotIn("WebFetch", " ".join(cmd))
-        self.assertTrue(any(part.endswith(",readonly") for part in cmd))
 
     def test_only_the_manager_modes_exist(self):
         self.assertEqual(tuple(L.CHAT_MODES), ("all", "apart"))              # the old single modes are gone
         for old in ("plain", "web", "code", "everything"):
             with self.assertRaises(ValueError):
-                L.build_chat_command(chat_id=5, user_id=2, model="haiku", claude_dir="/data/claude/2", mode=old)
+                L.build_chat_command(chat_id=5, user_id=2, model="haiku", ticket=TICKET, mode=old)
 
     def test_the_manager_chat_has_the_open_internet_but_never_the_home_network(self):
-        cmd = L.build_chat_command(chat_id=6, user_id=2, model="sonnet", claude_dir="/data/claude/2", mode="all")
+        cmd = L.build_chat_command(chat_id=6, user_id=2, model="sonnet", ticket=TICKET, mode="all")
         self.assertEqual(cmd[cmd.index("--tools") + 1], "WebSearch,WebFetch,Bash")   # Janis chose the open internet
         self.assertEqual(cmd[cmd.index("--allowedTools") + 1], "WebSearch WebFetch Bash")
         self.assertIn("HTTPS_PROXY=http://egress:3128", cmd)                       # public hosts only (egress.py)
         self.assertEqual(cmd[cmd.index("--network") + 1], "agent-hub-agents")      # internal network: the proxy is the only way
-        self.assertTrue(any(part.endswith(",readonly") for part in cmd))           # code never changes the login
         self.assertIn("size=128m", " ".join(cmd))
         self.assertEqual(cmd[cmd.index("--max-turns") + 1], "12")
         self.assertEqual(cmd[cmd.index("--model") + 1], "sonnet")
 
     def test_each_agent_has_its_own_switch(self):
-        apart = L.build_command(run_id=1, user_id=2, model="sonnet", work_dir="/w/1", claude_dir="/c/2", net="apart")
+        apart = L.build_command(run_id=1, user_id=2, model="sonnet", work_dir="/w/1", ticket=TICKET, net="apart")
         self.assertIn("HTTPS_PROXY=http://egress:3129", apart)                     # code without internet
         self.assertNotIn("HTTPS_PROXY=http://egress:3128", apart)
         for bad in ("", "open", "together; x", None):
             with self.assertRaises(ValueError):
-                L.build_command(run_id=1, user_id=2, model="sonnet", work_dir="/w/1", claude_dir="/c/2", net=bad)
+                L.build_command(run_id=1, user_id=2, model="sonnet", work_dir="/w/1", ticket=TICKET, net=bad)
 
     def test_every_run_goes_through_the_proxy(self):
-        run = L.build_command(run_id=1, user_id=2, model="sonnet", work_dir="/w/1", claude_dir="/c/2")
-        login = L.build_login_command(user_id=2, claude_dir="/c/2")
+        run = L.build_command(run_id=1, user_id=2, model="sonnet", work_dir="/w/1", ticket=TICKET)
+        login = L.build_login_command(user_id=2)
         self.assertIn("HTTPS_PROXY=http://egress:3128", run)                       # agents: public internet, no home network
         self.assertIn("HTTPS_PROXY=http://egress:3129", login)                     # sign-ins: Anthropic only
         for cmd in (run, login):
@@ -168,13 +167,35 @@ class ChatCommandTest(unittest.TestCase):
     def test_unknown_mode_is_refused(self):
         for mode in ("", "root", "web,code", None, "CODE"):
             with self.assertRaises(ValueError, msg=str(mode)):
-                L.build_chat_command(chat_id=5, user_id=2, model="haiku", claude_dir="/data/claude/2", mode=mode)
+                L.build_chat_command(chat_id=5, user_id=2, model="haiku", ticket=TICKET, mode=mode)
     def test_bad_values(self):
         for change in ({"chat_id": 0}, {"chat_id": "5"}, {"user_id": 0}, {"model": "-gpt"}, {"effort": "--max"},
-                       {"claude_dir": "/a,b"}, {"memory": "x"}):
+                       {"ticket": ""}, {"ticket": None}, {"memory": "x"}):
             with self.assertRaises(ValueError, msg=str(change)):
                 L.build_chat_command(**{"chat_id": 5, "user_id": 2, "model": "haiku",
-                                        "claude_dir": "/data/claude/2", **change})
+                                        "ticket": TICKET, **change})
+
+
+class TokenTest(unittest.TestCase):
+    """Since 14.11.2026 no run holds the user's Claude token: only a ticket, and every request goes to the gateway."""
+
+    def test_runs_reach_claude_only_through_the_gateway(self):
+        for cmd in (L.build_command(**GOOD), L.build_chat_command(chat_id=5, user_id=2, model="haiku", ticket=TICKET)):
+            self.assertIn(f"CLAUDE_CODE_OAUTH_TOKEN={TICKET}", cmd)
+            self.assertIn("ANTHROPIC_BASE_URL=http://egress:3130", cmd)
+            self.assertIn("NO_PROXY=egress", cmd)                                # straight to the gateway, not the proxy
+            self.assertIn("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1", cmd)      # nothing else goes to Anthropic
+            self.assertIn("HOME=/home/claude", cmd)
+            self.assertIn("/home/claude:rw,size=32m,mode=1777", cmd)            # an empty home in memory
+            self.assertFalse(any("sk-ant-" in part for part in cmd))
+            self.assertFalse(any("dst=/claude" in part for part in cmd))
+
+    def test_the_sign_in_makes_a_setup_token_and_keeps_nothing(self):
+        cmd = L.build_login_command(user_id=2)
+        self.assertEqual(cmd[-2:], ["claude", "setup-token"])
+        self.assertNotIn("--mount", cmd)
+        self.assertIn("HOME=/home/claude", cmd)
+        self.assertIn("-t", cmd)
 
 
 class ChatOutputTest(unittest.TestCase):
