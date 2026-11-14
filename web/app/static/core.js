@@ -32,7 +32,30 @@
   });
 
   // Reload after our own change: no entrance animation again, and stay where you were (lists scroll).
+  // Reload as little as possible (Janis, 14.11.2026, a design rule: a reload broke a running upload). `swap(ids)`
+  // fetches the page again and puts the new content of these elements in place; the elements themselves stay, so
+  // listeners on them keep working. Work that a reload would break holds it (`hold(true)` ... `hold(false)`): a
+  // reload asked for meanwhile waits until nothing is held.
+  function swap(ids) {
+    return fetch(location.pathname + location.search, { credentials: "same-origin" }).then(function (response) {
+      if (!response.ok) throw new Error("swap");
+      return response.text();
+    }).then(function (html) {
+      var fresh = new DOMParser().parseFromString(html, "text/html");
+      ids.forEach(function (id) {
+        var now = document.getElementById(id), next = fresh.getElementById(id);
+        if (!now || !next) throw new Error("swap");
+        now.innerHTML = next.innerHTML;
+      });
+    });
+  }
+  var holds = 0, waiting = null;
+  function hold(on) {
+    holds = Math.max(0, holds + (on ? 1 : -1));
+    if (!holds && waiting) { var url = waiting.url; waiting = null; reload(url); }
+  }
   function reload(url) {
+    if (holds) { waiting = { url: url }; return; }
     try {
       sessionStorage.setItem("noanim", "1");
       sessionStorage.setItem("scrollY", String(window.scrollY));
@@ -93,7 +116,7 @@
     });
   }
 
-  window.AgentHub = Object.assign(window.AgentHub || {}, { validate: validate, clear: clear, reload: reload });
+  window.AgentHub = Object.assign(window.AgentHub || {}, { validate: validate, clear: clear, reload: reload, swap: swap, hold: hold });
 
   document.addEventListener("submit", function (event) {
     var form = event.target;

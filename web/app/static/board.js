@@ -6,7 +6,11 @@
   var projectId = project.dataset.id;
 
   function $(selector, root) { return (root || document).querySelector(selector); }
-  function reload() { AgentHub.reload(); }
+  // Only the board and the trash/archive change (no reload, a running upload goes on); if that fails, the page reloads.
+  function reload() {
+    return AgentHub.swap(["board", "vault"]).then(function () { setView(currentView, false); refreshCounts(); })
+      .catch(function () { AgentHub.reload(); });
+  }
   function post(url) { return fetch(url, { method: "POST" }); }
 
   // Add and rename items with the same dialog.
@@ -24,6 +28,14 @@
     titleInput.focus();
     titleInput.select();
   }
+
+  itemForm.addEventListener("submit", function (event) {
+    event.preventDefault();
+    if (!AgentHub.validate(itemForm)) return;
+    var body = new FormData(itemForm);
+    itemDialog.close();
+    fetch(itemForm.action, { method: "POST", body: body, credentials: "same-origin" }).then(reload, reload);
+  });
 
   itemDialog.addEventListener("close", function () {
     itemForm.reset();
@@ -72,14 +84,12 @@
     else run();
   });
 
-  var emptyButton = $("#trash-empty");
-  if (emptyButton) {
-    emptyButton.addEventListener("click", function () {
-      confirmThen("msgEmpty", function () {
-        post("/projects/" + projectId + "/trash/empty").then(reload).catch(reload);
-      });
+  document.addEventListener("click", function (event) {   // the trash is swapped: listen on the page, not the button
+    if (!event.target.closest("#trash-empty")) return;
+    confirmThen("msgEmpty", function () {
+      post("/projects/" + projectId + "/trash/empty").then(reload).catch(reload);
     });
-  }
+  });
 
   // Trash and archive: two buttons next to the gear (the same behaviour for both) swap the board for
   // that list; the same button again brings the board back. The view survives our own reloads, so
