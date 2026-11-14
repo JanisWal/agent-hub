@@ -278,7 +278,8 @@ html .card.drag-clone::after { display: none; }
    glass drops (spring in files.js). Material weight: the tabs are the lightest layer, the cards sit above the tile. */
 .m-files { container-type: inline-size; --file-line: color-mix(in srgb, var(--text) 16%, transparent); --file-line-hover: color-mix(in srgb, var(--text) 40%, transparent); --file-soft: 0 4px 14px color-mix(in srgb, var(--text) 9%, transparent), 0 1px 2px color-mix(in srgb, var(--text) 10%, transparent); }
 .m-files header h2 { flex: 0 1 auto; }
-.m-files .file-area { flex: 1; min-width: 0; font-size: 1.2rem; font-weight: 600; letter-spacing: -0.01em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The name of the open area uses all the room up to the circles and is cut there, without dots (Janis, 14.11.2026). */
+.m-files .file-area { flex: 1; min-width: 0; font-size: 1.2rem; font-weight: 600; letter-spacing: -0.01em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: clip; }
 .m-files .file-tools { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
 /* The trash circle is a switch: pressed it glows red and deleting does not ask first. The enlarge circle makes the tile
    take the whole Manager area (the other tiles step aside). */
