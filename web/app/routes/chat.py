@@ -7,7 +7,7 @@ from ..deps import api_user, error, fail, ok
 router = APIRouter()
 
 # ValueError text from chat.send -> (message key in i18n.py, status)
-_PROBLEMS = {"claude": ("chat_err_claude", 409), "busy": ("chat_err_busy", 409),
+_PROBLEMS = {"claude": ("chat_err_claude", 409), "mistral": ("chat_err_mistral", 409), "busy": ("chat_err_busy", 409),
              "prompt": ("chat_err_prompt", 400), "mode": ("chat_err_prompt", 400)}
 
 

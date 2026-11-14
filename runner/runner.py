@@ -1,8 +1,10 @@
 """The runner: asks the hub what to do and does it. Standard library only (urllib).
 
 Now: sign-ins of Claude (link and code between the hub and `claude setup-token`; the token is kept encrypted,
-tokens.py), the manager chat (one container per question, with a ticket instead of the token), restart, shutdown
-and backup of the Pi, and deleting the saved token of users who disconnected. The runner always asks, the hub never
+tokens.py), API keys of other AIs (Mistral: checked with the provider and kept encrypted, tokens.ProviderKeys), the
+manager chat (Claude: one container per question, with a ticket instead of the token; Mistral: the runner asks the
+API itself, mistral.py), restart, shutdown and backup of the Pi, and deleting the saved token of users who
+disconnected. The runner always asks, the hub never
 calls it.
 
 Environment: HUB_URL (e.g. http://web:8000), RUNNER_TOKEN (the token whose SHA-256 the hub knows),
@@ -20,7 +22,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from . import launcher, login, tokens
+from . import launcher, login, mistral, tokens
 
 LOGIN_TIMEOUT_AFTER_CODE = 90   # seconds Claude Code gets to accept the code
 LINK_TIMEOUT = 30               # seconds until the sign-in prints its link
@@ -50,7 +52,7 @@ class Api:
 
 class Runner:
     def __init__(self, api, claude_base: str, vault=None, tickets=None, start_session=None,
-                 clock=time.time, run_chat=None, run_power=None):
+                 clock=time.time, run_chat=None, run_power=None, keys=None, adapters=None):
         self.api = api
         self.claude_base = Path(claude_base)
         self.vault = vault or tokens.Vault(claude_base, os.environ.get("HUB_TOKEN_KEY"))
@@ -59,6 +61,8 @@ class Runner:
         self.clock = clock
         self.run_chat = run_chat or self._run_chat
         self.run_power = run_power or self._run_power
+        self.keys = keys or tokens.ProviderKeys(claude_base, os.environ.get("HUB_TOKEN_KEY"))
+        self.adapters = adapters or {"mistral": mistral}   # AIs the runner asks over their API: verify(), ask()
         self.sessions: dict[int, login.LoginSession] = {}
 
     def folder(self, user_id: int) -> str:
@@ -144,10 +148,63 @@ class Runner:
     def _run_chat(self, command: list[str], prompt: str):
         return subprocess.run(command, input=prompt, capture_output=True, text=True, timeout=CHAT_TIMEOUT)
 
+    # --- API keys (web/app/ai_link.py): check a pasted key with the provider, keep it encrypted, delete old ones
+    def handle_keys(self) -> None:
+        for item in self.api.call("POST", "/runner/keys/claim").get("keys", []):
+            user_id, provider, api_key = int(item["user_id"]), item["provider"], item["key"]
+            adapter = self.adapters.get(provider)
+            success = False
+            if adapter is not None and tokens.KEY_PATTERNS.get(provider) and tokens.KEY_PATTERNS[provider].fullmatch(api_key):
+                result = adapter.verify(api_key)
+                if result == "ok":
+                    try:
+                        self.keys.save(user_id, provider, api_key)
+                        success = True
+                    except (OSError, ValueError, RuntimeError) as error:
+                        print(f"runner: could not save the {provider} key of user {user_id}: {type(error).__name__}",
+                              file=sys.stderr, flush=True)
+                else:
+                    print(f"runner: {provider} key of user {user_id} not taken ({result})", file=sys.stderr, flush=True)
+            api_key = None
+            self.api.call("POST", f"/runner/keys/{user_id}/{provider}/done", success="1" if success else "0")
+
+    def handle_key_wipes(self) -> None:
+        for item in self.api.call("GET", "/runner/keys/wipes").get("wipes", []):
+            user_id, provider = int(item["user_id"]), item["provider"]
+            try:
+                self.keys.forget(user_id, provider)
+            except (OSError, ValueError) as error:
+                print(f"runner: could not delete the {provider} key of user {user_id}: {type(error).__name__}",
+                      file=sys.stderr, flush=True)
+                continue
+            self.api.call("POST", f"/runner/keys/{user_id}/{provider}/wiped")
+
+    def _api_chat(self, job: dict, provider: str) -> None:
+        """A question for an AI the runner asks over its API (Mistral): no container, the key stays in this process."""
+        user_id, chat_id = int(job["user_id"]), int(job["chat_id"])
+        adapter = self.adapters.get(provider)
+        api_key = self.keys.load(user_id, provider) if adapter is not None else None
+        if api_key is None:
+            self.api.call("POST", f"/runner/keys/{user_id}/{provider}/expired")
+            self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="0",
+                          answer=f"Not logged in: no saved {provider} key", tokens_in=0, tokens_out=0)
+            return
+        ok, text, tokens_in, tokens_out, login_problem = adapter.ask(api_key, job["model"], job.get("effort") or "",
+                                                                     job["prompt"])
+        api_key = None
+        if login_problem:   # the key was refused: it goes (Janis, 14.11.2026) and the menu says "key refused"
+            self.keys.forget(user_id, provider)
+            self.api.call("POST", f"/runner/keys/{user_id}/{provider}/expired")
+        self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="1" if ok else "0", answer=text,
+                      tokens_in=tokens_in, tokens_out=tokens_out)
+
     def handle_chat(self) -> None:
         job = self.api.call("POST", "/runner/chat/claim").get("job")
         if not job:
             return
+        provider = job.get("provider") or "claude"
+        if provider != "claude":
+            return self._api_chat(job, provider)
         user_id, chat_id = job["user_id"], job["chat_id"]
         token = self.vault.load(user_id)
         if token is None:   # no token of the new kind (or the key changed): the user links Claude again
@@ -204,6 +261,8 @@ class Runner:
         self.handle_power()
         self.handle_wipes()
         self.handle_expired()
+        self.handle_key_wipes()
+        self.handle_keys()
         self.handle_logins()
         self.handle_chat()
 

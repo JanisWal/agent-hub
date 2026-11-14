@@ -164,6 +164,16 @@ CREATE TABLE IF NOT EXISTS chat_archive (
     answered_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS chat_archive_project ON chat_archive (project_id, created_at);
+-- Connections to AIs that sign in with an API key (ai_link.py, Mistral). The key is never here, only the state. No
+-- foreign key on purpose: a deleted account leaves its rows as 'wipe' until the runner deleted the key files.
+CREATE TABLE IF NOT EXISTS ai_connections (
+    user_id    INTEGER NOT NULL,
+    provider   TEXT NOT NULL,
+    status     TEXT NOT NULL,
+    previous   TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, provider)
+);
 -- Settings of the whole server, chosen by the owner (serversettings.py), e.g. how uploads are cut.
 CREATE TABLE IF NOT EXISTS server_settings (
     key   TEXT PRIMARY KEY,
@@ -188,7 +198,8 @@ NEW_COLUMNS = {
                       "extra": "TEXT NOT NULL DEFAULT ''",          # contents of files the manager asked for (memory.py)
                       "rounds": "INTEGER NOT NULL DEFAULT 0",       # how often it was answered again with such files
                       "memory_saved": "INTEGER NOT NULL DEFAULT 0",   # the answer updated the memory file
-                      "effort": "TEXT NOT NULL DEFAULT ''"},          # effort level (catalog.py); '' = older question
+                      "effort": "TEXT NOT NULL DEFAULT ''",           # effort level (catalog.py); '' = older question
+                      "provider": "TEXT NOT NULL DEFAULT 'claude'"},  # which AI answers (catalog.PROVIDERS)
     "agent_runs": {"effort": "TEXT NOT NULL DEFAULT ''"},    # effort level of the run's model (catalog.py)
     "files": {"parts": "TEXT NOT NULL DEFAULT ''",           # one flag per chunk of an unfinished upload (files.py)
               "trashed_at": "INTEGER"},                      # when it went into the trash (files.py, TRASH_DAYS)

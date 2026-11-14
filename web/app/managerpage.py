@@ -44,7 +44,7 @@ MANAGER = """<section class="manager" id="manager-view" aria-label="%t.station_m
 # edge. Web search and code are always there (no switches, Janis 07.11.2026); model and effort level (two drop-downs,
 # ui.model_picker) are settings of the manager, so they hold for everything the manager does (manager.js saves them).
 CHAT = """<section class="mtile glass m-chat" id="chat" data-you="%t.chat_you%" data-claude="%t.station_manager%"
-             data-waiting="%WAITING%" data-failed="%t.chat_failed%" data-memory="%t.chat_memory_saved%"
+             data-waiting="%WAITING%" data-ai="%AI%" data-failed="%t.chat_failed%" data-memory="%t.chat_memory_saved%"
              data-fail-auth="%t.chat_fail_auth%" data-fail-timeout="%t.chat_fail_timeout%"
              data-fail-steps="%t.chat_fail_steps%" data-fail-other="%t.chat_fail_other%">
       <header><h2>%t.manager_chat%</h2>%INFO%<span class="m-chat-tools">%NET%%MODEL%</span></header>
@@ -431,12 +431,13 @@ def _trash_list(lang: str, trashed: list) -> str:
 
 
 def render(lang: str, settings: dict, regular_checks: list | None = None, now: int | None = None,
-           stored_files: list | None = None, files_confirm: bool = True, trashed_files: list | None = None) -> str:
+           stored_files: list | None = None, files_confirm: bool = True, trashed_files: list | None = None,
+           ais: tuple[str, ...] = ("claude",)) -> str:
     """`settings` is agents.settings(user_id): the manager is the role "chef". `regular_checks` are the
-    project's checks (checks.list_checks)."""
+    project's checks (checks.list_checks). `ais`: the providers the user has connected (their models are offered)."""
     chef = settings["roles"]["chef"]
     model = ui.model_picker(lang, "manager", chef["model"], chef.get("effort", ""),
-                            label_model="chat_model", label_effort="chat_effort")
+                            label_model="chat_model", label_effort="chat_effort", providers=ais)
     autonomy = _select(lang, "autonomy", "autonomy", AUTONOMY, settings["autonomy"])
     return fill(
         MANAGER,
@@ -444,9 +445,10 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
         DEVICES=_soon(lang, "manager_devices", "manager_devices_hint", "m-grow"),
         CHECKS=_checks_tile(lang, regular_checks or [], int(now if now is not None else time.time())),
         FILES=_files_tile(lang, stored_files or [], files_confirm),
-        # "Claude answers": the name of the AI in use comes from its provider (catalog.py), never from the code
+        # "Claude answers": the name of the AI in use comes from its provider (catalog.py), never from the code; chat.js
+        # puts in the AI of the chosen model (data-ai of the option), so "{name}" stays in the text here
         CHAT=fill(CHAT, lang, MODEL=model, SEND=icon("arrow_up"),
-                  WAITING=esc(i18n.t(lang, "chat_waiting", name=catalog.provider().name)), NET=_net_switch(lang, settings["roles"]["chef"]["net"]),
+                  WAITING=esc(i18n.t(lang, "chat_waiting", name="{name}")), AI=esc(catalog.provider(catalog.provider_of(chef["model"])).name), NET=_net_switch(lang, settings["roles"]["chef"]["net"]),
                   INFO=ui.info_dot(i18n.t(lang, "manager_chat"), i18n.t(lang, "manager_chat_hint"))),
         AUTONOMY=autonomy,
         MVAULT=fill(MVAULT, lang, TRASH_LIST=_trash_list(lang, trashed_files or []),

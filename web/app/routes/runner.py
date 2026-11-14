@@ -16,7 +16,7 @@ import os
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 
-from .. import agents, chat, claude_link, power, throttle
+from .. import agents, ai_link, chat, claude_link, power, throttle
 from ..deps import fail, ok
 
 TOKEN_HASH_ENV = "HUB_RUNNER_TOKEN_HASH"
@@ -127,3 +127,39 @@ def power_result(request_id: int, success: str = Form("0")):
 @router.post("/logins/{user_id}/expired")
 def login_expired(user_id: int):
     return ok() if claude_link.mark_expired(user_id) else fail(409)
+
+
+# --- AIs with an API key (ai_link.py, Mistral): the runner fetches pasted keys once, checks them with the provider,
+# keeps them encrypted and reports how it went; it deletes the keys of disconnected or deleted users.
+def _key_provider(provider: str) -> None:
+    if provider not in ai_link.PROVIDERS:
+        raise HTTPException(status_code=404)
+
+
+@router.post("/keys/claim")
+def keys_claim():
+    """The keys users pasted, each handed over once (never stored by the hub)."""
+    return ok(keys=[{"user_id": uid, "provider": p, "key": key} for uid, p, key in ai_link.take_keys()])
+
+
+@router.post("/keys/{user_id}/{provider}/done")
+def key_done(user_id: int, provider: str, success: str = Form("0")):
+    _key_provider(provider)
+    return ok() if ai_link.complete(user_id, provider, success == "1") else fail(409)
+
+
+@router.post("/keys/{user_id}/{provider}/expired")
+def key_expired(user_id: int, provider: str):
+    _key_provider(provider)
+    return ok() if ai_link.mark_expired(user_id, provider) else fail(409)
+
+
+@router.get("/keys/wipes")
+def key_wipes():
+    return ok(wipes=[{"user_id": uid, "provider": p} for uid, p in ai_link.pending_wipes()])
+
+
+@router.post("/keys/{user_id}/{provider}/wiped")
+def key_wiped(user_id: int, provider: str):
+    _key_provider(provider)
+    return ok() if ai_link.wiped(user_id, provider) else fail(409)

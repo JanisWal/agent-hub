@@ -1,5 +1,5 @@
 """HTML of the project page: stations on the left, kanban board and trash on the right."""
-from . import agents, i18n, managerpage
+from . import agents, ai_link, i18n, managerpage
 from .board import KINDS, Item
 from .icons import icon
 from .layout import esc, fill
@@ -225,7 +225,8 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
         PID=str(project.id),
         STATIONS=_stations(lang),
         MANAGER=managerpage.render(lang, agents.settings(user.id), regular_checks or [], stored_files=stored_files or [],
-                                    files_confirm=user.files_confirm, trashed_files=trashed_files or []),
+                                    files_confirm=user.files_confirm, trashed_files=trashed_files or [],
+                                    ais=("claude", *ai_link.connected_providers(user.id))),
         MANAGER_DIALOGS=managerpage.dialogs(lang),
         TRASH=_trash(trashed, lang),
         ARCHIVE=_archive(archived, lang),

@@ -14,6 +14,10 @@ Format of one provider:
 version, so a new version needs no change here, only a new family does). `name` is shown as it is (a proper name),
 `hint` and the effort levels are keys whose texts are in i18n.py ("model_hint_<hint>", "effort_<level>"); an
 unknown key just shows nothing (hint) or the raw level. Standard library only.
+
+Several providers (Mistral since 14.11.2026): a model id belongs to exactly one provider (`store` refuses an id another
+provider already has), so a saved choice ("model.chef" = "mistral-small-2603") tells by itself which AI answers
+(`find`). Which providers a user may pick from depends on what he has connected (ui.model_picker, chat.send).
 """
 import json
 import re
@@ -21,7 +25,7 @@ from dataclasses import dataclass
 
 from . import db
 
-PROVIDERS = ("claude",)                   # providers the hub can start; more come with their own connection
+PROVIDERS = ("claude", "mistral")        # providers the hub can start; more come with their own connection
 DEFAULT_PROVIDER = "claude"
 HINTS = ("fast", "balanced", "thorough", "deepest")
 MAX_MODELS = 12
@@ -42,6 +46,19 @@ SEED = {
             {"id": "sonnet", "name": "Sonnet", "hint": "balanced", "efforts": _ALL, "default_effort": "high"},
             {"id": "opus", "name": "Opus", "hint": "thorough", "efforts": _ALL, "default_effort": "medium"},
             {"id": "fable", "name": "Fable", "hint": "deepest", "efforts": _ALL, "default_effort": "high"},
+        ],
+    },
+    # Mistral API (docs.mistral.ai, checked 14.11.2026): exact ids, because the levels (`reasoning_effort`) differ per
+    # model and an alias such as "mistral-small-latest" may move to a model with other levels. Small 4 knows none and
+    # high, Large 4 low, medium and high ("none" = no thinking: faster, fewer tokens). Medium 3.5 is deprecated.
+    "mistral": {
+        "name": "Mistral",
+        "default_model": "mistral-small-2603",
+        "models": [
+            {"id": "mistral-small-2603", "name": "Mistral Small", "hint": "fast", "efforts": ["none", "high"],
+             "default_effort": "none"},
+            {"id": "mistral-large-4", "name": "Mistral Large", "hint": "thorough", "efforts": ["low", "medium", "high"],
+             "default_effort": "high"},
         ],
     },
 }
@@ -124,8 +141,11 @@ def provider(provider_id: str = DEFAULT_PROVIDER) -> Provider:
 
 def store(provider_id: str, data: dict) -> Provider:
     """Keep a new list for the whole server (the check of step 2 calls it). ValueError, and nothing changes, if the
-    list is not valid."""
+    list is not valid or names a model id that another provider has (then `find` could not tell them apart)."""
     checked = parse(provider_id, data)
+    taken = {m.id for other in PROVIDERS if other != provider_id for m in provider(other).models}
+    if taken & {m.id for m in checked.models}:
+        raise ValueError("model ids")
     with db.connect() as conn:
         conn.execute("INSERT INTO server_settings (key, value) VALUES (?, ?)"
                      " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -133,18 +153,39 @@ def store(provider_id: str, data: dict) -> Provider:
     return checked
 
 
-def check(model: str, effort: str | None = None, provider_id: str = DEFAULT_PROVIDER) -> None:
-    """ValueError if the model is not in the list, or the level is not one of this model's."""
-    found = provider(provider_id).model(model)
-    if found is None:
+def find(model: str | None) -> tuple[Provider, Model] | None:
+    """The provider a model id belongs to, with the model; None if no provider has it."""
+    for provider_id in PROVIDERS:
+        current = provider(provider_id)
+        found = current.model(model)
+        if found is not None:
+            return current, found
+    return None
+
+
+def provider_of(model: str | None) -> str:
+    """The id of the provider of a model; the default provider for an unknown one (resolve makes it valid there)."""
+    hit = find(model)
+    return hit[0].id if hit else DEFAULT_PROVIDER
+
+
+def check(model: str, effort: str | None = None, provider_id: str | None = None) -> None:
+    """ValueError if the model is not in the list (of `provider_id`, or of any provider), or the level is not one of
+    this model's."""
+    hit = find(model)
+    if hit is None or (provider_id is not None and hit[0].id != provider_id):
         raise ValueError("model")
-    if effort is not None and effort not in found.efforts:
+    if effort is not None and effort not in hit[1].efforts:
         raise ValueError("effort")
 
 
-def resolve(model: str | None, effort: str | None, provider_id: str = DEFAULT_PROVIDER) -> tuple[str, str]:
-    """A saved choice made valid again: a model that left the list becomes the default model, a level the model
-    does not have becomes the model's default level. Nothing is stored here."""
-    current = provider(provider_id)
-    found = current.model(model) or current.model(current.default_model)
+def resolve(model: str | None, effort: str | None, provider_id: str | None = None) -> tuple[str, str]:
+    """A saved choice made valid again: a model that left the list becomes the default model (of `provider_id`, or of
+    the default provider), a level the model does not have becomes the model's default level. Nothing is stored."""
+    hit = find(model)
+    if hit is not None and provider_id in (None, hit[0].id):
+        found = hit[1]
+    else:
+        current = provider(provider_id or DEFAULT_PROVIDER)
+        found = current.model(current.default_model)
     return found.id, (effort if effort in found.efforts else found.default_effort)

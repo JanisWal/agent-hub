@@ -14,7 +14,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-from . import db, files
+from . import ai_link, db, files
 
 SESSION_SECONDS = 14 * 24 * 3600
 MIN_PASSWORD_LENGTH = 6      # floor for every password, also a start password given by an admin
@@ -255,6 +255,7 @@ def delete_user(actor: User, user_id: int) -> None:
         # deletion of that folder (claude_link.pending_wipes), in the same transaction as the deletion.
         conn.execute("INSERT OR IGNORE INTO claude_wipes (user_id, created_at) VALUES (?, strftime('%s','now'))",
                      (target.id,))
+        ai_link.wipe_user(conn, target.id)   # and his saved API keys (Mistral)
         conn.execute("DELETE FROM users WHERE id = ?", (target.id,))
     files.remove_orphans()   # the stored files of his projects
 

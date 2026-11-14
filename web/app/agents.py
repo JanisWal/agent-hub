@@ -133,7 +133,8 @@ def _enabled(conn: sqlite3.Connection, user_id: int) -> frozenset[str]:
 def _choice(conn: sqlite3.Connection, user_id: int, role: str) -> tuple[str, str]:
     """(model, effort) of a role, made valid against the current list (catalog.resolve): a model that left the list
     becomes the default model, a level the model does not have becomes its default level."""
-    return catalog.resolve(_setting(conn, user_id, f"model.{role}", ""), _setting(conn, user_id, f"effort.{role}", ""))
+    return catalog.resolve(_setting(conn, user_id, f"model.{role}", ""), _setting(conn, user_id, f"effort.{role}", ""),
+                           None if role == "chef" else catalog.DEFAULT_PROVIDER)
 
 
 def _model(conn: sqlite3.Connection, user_id: int, role: str) -> str:
@@ -210,7 +211,8 @@ def configure(user_id: int, role: str | None = None, *, enabled: bool | None = N
             else:
                 model_for_effort = model
             try:
-                catalog.check(model_for_effort, effort)
+                # only the manager can use another AI yet; the agent runs start Claude Code (runner/launcher.py)
+                catalog.check(model_for_effort, effort, None if role == "chef" else catalog.DEFAULT_PROVIDER)
             except ValueError:
                 raise ValueError("Unbekanntes Modell oder unbekannte Stufe") from None
             if model is not None:

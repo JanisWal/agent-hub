@@ -6,7 +6,7 @@ from .icons import icon
 from .layout import esc, fill, page
 from .users import User
 
-from . import claude_link
+from . import ai_link, claude_link
 
 
 def info_dot(label: str, text: str) -> str:
@@ -18,17 +18,21 @@ def info_dot(label: str, text: str) -> str:
 
 def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model: str = "picker_model",
                  label_effort: str = "picker_effort", css: str = "m-select", setting: bool = True,
-                 provider_id: str = catalog.DEFAULT_PROVIDER) -> str:
+                 providers: tuple[str, ...] = (catalog.DEFAULT_PROVIDER,)) -> str:
     """Two drop-downs in our own style, AI model and effort level, built from the list in catalog.py (Janis,
     14.11.2026). Used wherever a model is chosen: manager chat, regular checks, the roles. The level list holds every
     level of the provider; levels the chosen model does not have are hidden, and static/picker.js keeps that right
     when the model changes (`data-levels`, `data-defaults`). `setting` adds data-setting for pages that save a change
-    at once (manager.js). Unknown hints show nothing, unknown levels show their name as it is."""
-    current = catalog.provider(provider_id)
-    model, effort = catalog.resolve(model, effort, provider_id)
-    chosen = current.model(model)
+    at once (manager.js). Unknown hints show nothing, unknown levels show their name as it is.
+    `providers`: whose models the list holds, in this order (the user's connected AIs, Claude first); the provider of
+    the chosen model is always there. Each option carries its provider's name (data-ai) for "… is answering"."""
+    model, effort = catalog.resolve(model, effort)
+    own = catalog.provider_of(model)
+    shown = [catalog.provider(p) for p in dict.fromkeys((*providers, own)) if p in catalog.PROVIDERS]
+    all_models = [(prov, m) for prov in shown for m in prov.models]
+    chosen = next(m for _, m in all_models if m.id == model)
     levels: list[str] = []
-    for m in current.models:
+    for _, m in all_models:
         levels += [e for e in m.efforts if e not in levels]
 
     texts = i18n.STRINGS.get(lang, i18n.STRINGS["de"])
@@ -44,19 +48,19 @@ def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model
         return esc(texts.get(f"effort_{level}", level))
 
     # The closed box shows only the name (option label, saves room in a tile header); the list shows name and hint.
-    models = "".join(f'<option value="{m.id}" label="{esc(m.name)}"{" selected" if m.id == model else ""}>'
-                     f'{model_text(m)}</option>' for m in current.models)
+    models = "".join(f'<option value="{m.id}" label="{esc(m.name)}" data-ai="{esc(prov.name)}"'
+                     f'{" selected" if m.id == model else ""}>{model_text(m)}</option>' for prov, m in all_models)
     efforts = "".join(
         f'<option value="{e}"{" selected" if e == effort else ""}{"" if e in chosen.efforts else " hidden"}>'
         f'{effort_text(e)}</option>' for e in levels)
-    data_levels = esc(json.dumps({m.id: list(m.efforts) for m in current.models}, separators=(",", ":")))
-    data_defaults = esc(json.dumps({m.id: m.default_effort for m in current.models}, separators=(",", ":")))
+    data_levels = esc(json.dumps({m.id: list(m.efforts) for _, m in all_models}, separators=(",", ":")))
+    data_defaults = esc(json.dumps({m.id: m.default_effort for _, m in all_models}, separators=(",", ":")))
 
     def attr(name: str) -> str:
         return f' data-setting="{name}"' if setting else ""
     chevron = icon("chevron_down")
     return (   # no title on the selects: its tip would cover the list
-        f'<span class="model-picker" data-provider="{current.id}">'
+        f'<span class="model-picker" data-provider="{own}">'
         f'<label class="{css} has-select"><select name="model" id="{prefix}-model"{attr("model")} '
         f'aria-label="{label(label_model)}">{models}</select>{chevron}</label>'
         f'<label class="{css} has-select"><select name="effort" id="{prefix}-effort"{attr("effort")} '
@@ -64,8 +68,17 @@ def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model
         f'</select>{chevron}</label></span>'
     )
 
-# Other AI accounts (name): placeholders until they exist. Claude has its own row with a real state.
+# Other AI accounts (name): placeholders until they exist. Claude has its own row with a real state, the AIs with an
+# API key (ai_link.PROVIDERS: Mistral) have a row each in the folded list, after the placeholders.
 PLACEHOLDER_SERVICES = ("ChatGPT",)
+KEY_NAMES = {"mistral": "Mistral"}
+KEY_PAGES = {"mistral": "https://console.mistral.ai/api-keys"}   # where the user makes a key (fixed, never from a request)
+# Row of an AI with a key: style class of the dot, status text, link text.
+KEY_STATES = {
+    "connected": ("ok", "connected", "claude_disconnect"),
+    "connecting": ("pending", "key_checking", "connect"),
+    "expired": ("expired", "key_refused", "claude_renew"),
+}
 
 LOGIN = """<section class="glass">
   <h1>%t.login%</h1>
@@ -116,7 +129,39 @@ SETTINGS = """<div class="drawer" id="settings" data-theme-saved="%THEME%">
    </div>
   </div>
 </div>
-%CLAUDE_DIALOG%"""
+%CLAUDE_DIALOG%
+%KEY_DIALOGS%"""
+
+# The dialog of an AI that connects with an API key (ai_link.py, static/ailink.js): paste the key, the runner checks
+# it with the provider. All texts come from here; %NAME% is the AI's name, %PAGE% where the user makes a key.
+KEY_DIALOG = """<dialog class="dialog" id="key-dialog-%ID%" data-provider="%ID%">
+  <h2>%TITLE%</h2>
+  <form data-step="key" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
+    <p class="muted">%STEPS%</p>
+    <a class="primary" href="%PAGE%" target="_blank" rel="noopener noreferrer">%OPEN%</a>
+    <label>%t.key_label%<input type="password" name="key" required maxlength="200" autocomplete="off" spellcheck="false"></label>
+    <div class="actions">
+      <button type="button" data-close>%t.cancel%</button>
+      <button class="primary" type="submit">%t.claude_confirm%</button>
+    </div>
+  </form>
+  <div data-step="check" hidden><p class="muted" role="status">%t.key_wait%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p></div>
+  <div data-step="done" hidden>
+    <p class="muted">%DONE%</p>
+    <div class="actions"><button class="primary" type="button" data-finish>%t.close%</button></div>
+  </div>
+  <div data-step="failed" hidden>
+    <p class="error" role="alert">%t.key_failed%</p>
+    <div class="actions"><button type="button" data-finish>%t.close%</button></div>
+  </div>
+  <div data-step="disconnect" hidden>
+    <p class="muted">%t.key_disconnect_text%</p>
+    <div class="actions">
+      <button type="button" data-close autofocus>%t.cancel%</button>
+      <button class="danger-btn" type="button" data-disconnect>%t.claude_disconnect%</button>
+    </div>
+  </div>
+</dialog>"""
 
 # The dialog of the Claude connection. claude.js shows one step at a time; all texts are here,
 # translated by the server, none in the script.
@@ -191,7 +236,27 @@ def _claude_row(lang: str, state: str) -> str:
     )
 
 
-def _service_rows(lang: str, claude_state: str) -> str:
+def _key_row(lang: str, provider: str, state: str) -> str:
+    """The row of an AI with an API key in the folded list: state and one link that opens its dialog (ailink.js)."""
+    style, text_key, action_key = KEY_STATES.get(state, ("", "not_connected", "connect"))
+    return (
+        f'<div class="setting service {style}" id="key-row-{provider}">'
+        f'<span class="setting-label">{esc(KEY_NAMES[provider])}</span>'
+        f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>'
+        f'<button class="link inline" type="button" data-key-open="{provider}" data-status="{esc(state)}">'
+        f'{esc(i18n.t(lang, action_key))}</button></span></div>'
+    )
+
+
+def _key_dialogs(lang: str) -> str:
+    return "\n".join(
+        fill(KEY_DIALOG, lang, ID=p, PAGE=esc(KEY_PAGES[p]), TITLE=esc(i18n.t(lang, "key_title", name=KEY_NAMES[p])),
+             STEPS=esc(i18n.t(lang, "key_steps", name=KEY_NAMES[p])), OPEN=esc(i18n.t(lang, "key_open", name=KEY_NAMES[p])),
+             DONE=esc(i18n.t(lang, "key_done", name=KEY_NAMES[p])))
+        for p in ai_link.PROVIDERS)
+
+
+def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | None = None) -> str:
     """Claude, the folded list of the other AIs (Janis, 11.11.2026: it grows with every AI that is added, so it
     stays closed) and the chat history button. The button is type="button": it never submits the form."""
     clear = (f'<button class="clear-btn" type="button" id="chat-clear-open">'
@@ -204,6 +269,7 @@ def _service_rows(lang: str, claude_state: str) -> str:
         f'{esc(i18n.t(lang, "connect"))}</button></span></div>'
         for name in PLACEHOLDER_SERVICES
     )
+    others += "".join("\n        " + _key_row(lang, p, (key_states or {}).get(p, "none")) for p in ai_link.PROVIDERS)
     more = f'<div class="ai-more" id="ai-more" hidden>\n        {others}\n      </div>'
     return "\n      ".join([_claude_row(lang, claude_state), more, clear])
 
@@ -236,10 +302,11 @@ def settings_bar(user: User, extras: str = "") -> str:
         NAME_SHOWN=esc(user.name),
         DE="selected" if lang == "de" else "",
         EN="selected" if lang == "en" else "",
-        SERVICES=_service_rows(lang, claude_link.status(user.id)),
+        SERVICES=_service_rows(lang, claude_link.status(user.id), {p: ai_link.status(user.id, p) for p in ai_link.PROVIDERS}),
         ADMIN=_admin_button(user),
         ACCOUNT_LINKS=_account_links(user),
         CLAUDE_DIALOG=fill(CLAUDE_DIALOG, lang),
+        KEY_DIALOGS=_key_dialogs(lang),
     )
 
 
@@ -259,5 +326,5 @@ def logged_in_page(
     return page(
         title, body, user.language,
         top_right=settings_bar(user, drawer_extras), top_center=top_center, top_left=top_left,
-        scripts=("claude.js", *scripts), styles=styles, body_class=body_class,
+        scripts=("claude.js", "ailink.js", *scripts), styles=styles, body_class=body_class,
     )
