@@ -46,10 +46,17 @@
       split.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
       fade();
     }
+    // With a flex basis of 0 a tile never gets smaller than its padding and border: they stay, the share splits the rest.
+    function fixed(tile) {
+      var s = getComputedStyle(tile);
+      return ["paddingTop", "paddingBottom", "borderTopWidth", "borderBottomWidth"]
+        .reduce(function (sum, key) { return sum + (parseFloat(s[key]) || 0); }, 0);
+    }
     function limits() {   // each tile keeps at least its header
       var ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
-      var total = ra.height + rb.height;
-      return { top: ra.top, total: total, low: Math.min(folded(a) / total, 0.5), high: Math.max(1 - folded(b) / total, 0.5) };
+      var fa = fixed(a), inner = ra.height + rb.height - fa - fixed(b);
+      return { top: ra.top, fixed: fa, total: inner, low: Math.min((folded(a) - fa) / inner, 0.5),
+               high: Math.max(1 - (folded(b) - fixed(b)) / inner, 0.5) };
     }
     function clamp(value, box) { return Math.min(Math.max(value, box.low), box.high); }
     var saved = load(name);
@@ -69,7 +76,7 @@
     split.addEventListener("pointermove", function (event) {
       if (!drag || event.pointerId !== drag.id) return;
       var height = event.clientY - drag.offset - drag.box.top;
-      apply(clamp(height / drag.box.total, drag.box));
+      apply(clamp((height - drag.box.fixed) / drag.box.total, drag.box));
     });
     function end(event) {
       if (!drag || event.pointerId !== drag.id) return;
@@ -87,7 +94,7 @@
       event.preventDefault();
       var box = limits();
       var now = col.classList.contains("split-set") ? parseFloat(col.style.getPropertyValue("--split"))
-        : a.getBoundingClientRect().height / box.total;
+        : (a.getBoundingClientRect().height - box.fixed) / box.total;
       var next = clamp(now + step, box);
       apply(next);
       store(name, next);
