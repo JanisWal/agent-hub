@@ -87,6 +87,9 @@ class FakeSession:
     def exit_code(self):
         return self.exit
 
+    def refused(self):
+        return "OAuth error" in self.output
+
     def close(self):
         self.closed = True
 
@@ -187,6 +190,17 @@ class RunnerTest(unittest.TestCase):
         self.api.logins = [{"user_id": 2, "login_url": LINK}]
         self.runner.handle_logins()
         self.assertEqual(self.vault.saved, {})
+
+    def test_a_refused_code_fails_at_once(self):
+        self.api.logins = [{"user_id": 2, "login_url": None}]
+        self.runner.handle_logins()
+        self.api.logins = [{"user_id": 2, "login_url": LINK}]
+        self.api.codes[2] = "old-code"
+        self.runner.handle_logins()
+        self.made[2].output += "OAuth error: That code wasn't accepted. Press Enter to retry."
+        self.runner.handle_logins()                                              # no waiting for the time limit
+        self.assertEqual(self.api.posted("/2/done"), [{"success": "0"}])
+        self.assertTrue(self.made[2].closed)
 
     def test_an_exit_without_a_token_is_a_failure(self):
         self.api.logins = [{"user_id": 2, "login_url": None}]
@@ -404,7 +418,9 @@ class LoginTextTest(unittest.TestCase):
         screen = (f"Paste code here if prompted > abcDEF0123456789abcdef0123456789#state0123456789abcdef\r\n"
                   f"visit: {LINK}\r\nYour OAuth token (valid for 1 year):\r\n{TOKEN}\r\nOAuth error: invalid code")
         shown = login.redacted_tail(screen)
-        for secret in (TOKEN, "abcDEF0123456789", "state0123456789", "client_id=abc"):
+        screen += "\r\n" + "*" * 61 + "ABCDEF OAuth error"                       # the masked code shows its end
+        shown = login.redacted_tail(screen)
+        for secret in (TOKEN, "abcDEF0123456789", "state0123456789", "client_id=abc", "ABCDEF"):
             self.assertNotIn(secret, shown)
         self.assertIn("OAuth error: invalid code", shown)
 

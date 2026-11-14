@@ -25,7 +25,7 @@ _TOKEN = re.compile(r"sk-ant-oat[0-9]{2}-[A-Za-z0-9_-]{20,400}")
 # The UI may wrap the long token over two lines and draws the screen more than once (14.11.2026: the first version
 # saw a wrapped token as two different ones and took none). So the block between the two lines counts first.
 _BLOCK = re.compile(r"Your OAuth token[^\n]*\n(.*?)(?=Store this token|Use this token)", re.S)
-_LONG = re.compile(r"[A-Za-z0-9_\-#%.=&?/:+~]{24,}")
+_LONG = re.compile(r"[A-Za-z0-9_\-#%.=&?/:+~*]{24,}")   # with "*": the masked code shows its last characters
 
 
 def extract_login_url(raw: str) -> str | None:
@@ -104,8 +104,18 @@ class LoginSession:
         return extract_login_url(self.output)
 
     def send_code(self, code: str) -> None:
-        os.write(self.master, code.strip().encode() + b"\r")
+        """Type the code, then press Enter on its own: setup-token takes code and Enter in one go as pasted text and
+        never sends it (found on 14.11.2026, the reason the first sign-ins ran into the time limit)."""
+        self.mark = len(self.output)
+        os.write(self.master, code.strip().encode())
+        self._pump(0.6)
+        os.write(self.master, b"\r")
         self.code_sent_at = time.time()
+
+    def refused(self) -> bool:
+        """Claude did not accept the code ("OAuth error: That code wasn't accepted ... Press Enter to retry"): the
+        sign-in waits for ever then, so it counts as failed at once."""
+        return self.code_sent_at is not None and "OAuth error" in _clean(self.output[getattr(self, "mark", 0):])
 
     def exit_code(self) -> int | None:
         """None while the sign-in is still running."""
