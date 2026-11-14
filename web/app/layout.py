@@ -31,6 +31,11 @@ SHELL = """<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>%TITLE% – Agent-Hub</title>
+<link rel="icon" href="%ICON_SVG%" type="image/svg+xml">
+<link rel="icon" href="%ICON_PNG%" sizes="48x48" type="image/png">
+<link rel="apple-touch-icon" href="%ICON_TOUCH%">
+<meta name="theme-color" content="#EFDCC6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1F1713" media="(prefers-color-scheme: dark)">
 <script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t;if(sessionStorage.getItem("noanim")){document.documentElement.classList.add("noanim");sessionStorage.removeItem("noanim")}}catch(e){}</script>
 <link rel="stylesheet" href="%APP_CSS%">
 %STYLES%
@@ -105,6 +110,9 @@ def page(
         TITLE=esc(title),
         APP_CSS=static_url("app.css"),
         CORE_JS=static_url("core.js"),
+        ICON_SVG=static_url("icon.svg"),
+        ICON_PNG=static_url("icon-48.png"),
+        ICON_TOUCH=static_url("icon-180.png"),
         STYLES="\n".join(f'<link rel="stylesheet" href="{static_url(name)}">' for name in styles),
         SCRIPTS="\n".join(f'<script src="{static_url(name)}" defer></script>' for name in scripts),
         BODY_CLASS=esc(body_class),
