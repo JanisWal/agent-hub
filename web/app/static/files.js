@@ -91,8 +91,13 @@
         var next = fresh.querySelector('.file-tab[data-cat="' + tab.dataset.cat + '"] .file-count');
         if (next) tab.querySelector(".file-count").textContent = next.textContent;
       });
-    }).then(function () { if (typeof showMarks === "function") showMarks(); ensureThumbs(); }).catch(reload);
+    }).then(function () {
+      if (typeof showMarks === "function") showMarks();
+      ensureThumbs();
+      document.dispatchEvent(new CustomEvent("hub:trash-changed"));   // a deleted file is in the trash list now (mvault.js)
+    }).catch(reload);
   }
+  document.addEventListener("hub:files-changed", function () { refresh(); });   // restored from the trash (mvault.js)
   var refreshTimer = null;
   function refreshSoon() { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 300); }
 

@@ -144,6 +144,15 @@ class IsolationTest(unittest.TestCase):
         self.assertIsNone(files.read_text(self.b.id, item.id))
         self.assertFalse(files.write_text(self.b.id, item.id, "hacked"))
         self.assertFalse(files.delete(self.b.id, item.id))
+        files.delete(self.a.id, item.id)                                             # A's file in A's trash ...
+        self.assertEqual(files.list_trash(self.b.id, self.project.id), [])          # ... B sees nothing of it
+        self.assertIsNone(files.restore(self.b.id, item.id))
+        self.assertFalse(files.purge(self.b.id, item.id))
+        self.assertEqual(files.empty_trash(self.b.id, self.project.id), 0)
+        self.assertEqual(file_routes.restore(item.id, self.b).status_code, 404)
+        self.assertEqual(file_routes.purge(item.id, self.b).status_code, 404)
+        self.assertTrue(files.path_of(self.project.id, item.id).exists())
+        self.assertIsNotNone(files.restore(self.a.id, item.id))
         self.assertEqual(file_routes.serve(item.id, 0, self.b).status_code, 404)
         self.assertEqual(file_routes.serve(item.id, 1, self.b).status_code, 404)
         self.assertEqual(file_routes.read_text(item.id, self.b).status_code, 404)

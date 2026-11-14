@@ -27,8 +27,10 @@
     if (!panels[name]) name = "board";
     if (name === "manager") {
       // Close an open trash or archive list first, so the board is clean when it comes back.
-      var open = document.querySelector('.drawer-extra[aria-pressed="true"]');
+      var open = document.querySelector('.drawer-extra[aria-controls="vault"][aria-pressed="true"]');
       if (open) open.click();
+    } else if (window.AgentHub && window.AgentHub.closeManagerVault) {
+      window.AgentHub.closeManagerVault();   // trash or chat archive of the Manager closes with the view
     }
     current = name;
     document.body.classList.toggle("manager-open", name === "manager");

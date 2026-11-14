@@ -16,6 +16,7 @@ from .icons import icon
 from .layout import esc, fill
 
 MANAGER = """<section class="manager" id="manager-view" aria-label="%t.station_manager%" hidden>
+  %MVAULT%
   <div class="mcol">
     <section class="mtile glass m-status">
       <header><h2>%t.manager_status%</h2><span class="m-lamp" title="%t.manager_status_none%"></span></header>
@@ -116,6 +117,23 @@ CHECK_DIALOGS = """<dialog class="dialog" id="check-dialog" data-title-new="%t.c
 </dialog>"""
 
 
+MVAULT_DIALOGS = """<dialog class="dialog danger" id="mvault-confirm" data-purge="%t.files_trash_confirm_one%"
+        data-empty="%t.files_trash_confirm_all%" data-day="%t.chat_archive_confirm%">
+  <h2 id="mvault-confirm-text"></h2>
+  <div class="actions">
+    <button type="button" data-close autofocus>%t.cancel%</button>
+    <button class="danger-btn" type="button" id="mvault-confirm-yes">%t.yes%</button>
+  </div>
+</dialog>
+<dialog class="dialog archive-day" id="archive-dialog" aria-labelledby="archive-dialog-title">
+  <div class="viewer-head">
+    <h2 id="archive-dialog-title"></h2>
+    <button class="icon-button card-btn" type="button" data-close aria-label="%t.close%" title="%t.close%">%CROSS%</button>
+  </div>
+  <ol class="chat-log archive-log" id="archive-dialog-log"></ol>
+</dialog>"""
+
+
 def dialogs(lang: str) -> str:
     """The dialogs of the Manager view. They sit outside the view: a modal dialog inside a hidden element
     would not show (projectpage puts them next to the other dialogs)."""
@@ -131,7 +149,7 @@ def dialogs(lang: str) -> str:
     areas = "".join(
         f'<option value="{value}">{esc(i18n.t(lang, key))}</option>' for value, key in FILE_TABS if value != "links"
     )
-    return fill(CHECK_DIALOGS, lang, MAX_TEXT=str(checks.MAX_TEXT), CYCLES=options, DAYS=days,
+    return fill(MVAULT_DIALOGS, lang, CROSS=icon("cross")) + "\n" + fill(CHECK_DIALOGS, lang, MAX_TEXT=str(checks.MAX_TEXT), CYCLES=options, DAYS=days,
                 CHEVRON=icon("chevron_down")) + "\n" + fill(FILE_DIALOGS, lang, AREAS=areas, CHEVRON=icon("chevron_down"),
                                                          DOWNLOAD=icon("download"), CROSS=icon("cross"), PENCIL=icon("pencil"),
                                                          MANY=esc(i18n.t(lang, "files_confirm_delete_many", n="{n}")),
@@ -376,8 +394,44 @@ def _net_switch(lang: str, current: str) -> str:
     )
 
 
+# The trash of the files and the chat archive (Janis, 14.11.2026): the two round buttons next to the gear, the same as
+# trash and archive of the board, but for the Manager view (static/mvault.js). Opened, the list takes the place of the
+# tiles. Neither is ever given to the manager: the trash is out of every file list, the archive out of the chat context.
+MVAULT = """<section class="vault glass m-vault" id="mvault" hidden>
+    <div class="vault-view" data-mview="trash" hidden>
+      <h2>%t.trash%%TRASH_INFO%</h2>
+      <div id="mvault-trash">%TRASH_LIST%</div>
+    </div>
+    <div class="vault-view" data-mview="archive" hidden>
+      <h2>%t.chat_archive%%ARCHIVE_INFO%</h2>
+      <p class="muted" id="chat-archive-empty" hidden>%t.chat_archive_empty%</p>
+      <ul class="trash-list" id="chat-archive" data-questions="%QUESTIONS%" data-question="%t.chat_archive_one%"
+          data-delete="%t.chat_archive_delete%" data-you="%t.chat_you%" data-claude="%t.station_manager%"
+          data-failed="%t.chat_failed%" data-fail-auth="%t.chat_fail_auth%" data-fail-timeout="%t.chat_fail_timeout%"
+          data-fail-steps="%t.chat_fail_steps%" data-fail-other="%t.chat_fail_other%"></ul>
+    </div>
+  </section>"""
+
+
+def _trash_list(lang: str, trashed: list) -> str:
+    """The files in the trash: name, area and the days left, a restore and a delete-for-good button. The buttons carry
+    data-ftrash, not data-action (that one belongs to the board's trash, board.js)."""
+    if not trashed:
+        return f'<p class="muted">{esc(i18n.t(lang, "files_trash_empty"))}</p>'
+    restore, purge = esc(i18n.t(lang, "restore")), esc(i18n.t(lang, "delete_now"))
+    rows = "".join(
+        f'<li class="trash-row" data-id="{item.id}"><span class="trash-title">{esc(item.name)}'
+        f'<small>{esc(i18n.t(lang, dict(FILE_TABS)[item.category]))} · {esc(i18n.t(lang, "files_trash_left", n=left))}</small></span>'
+        f'<button class="icon-button card-btn" type="button" data-ftrash="restore" aria-label="{restore}" title="{restore}">{icon("undo")}</button>'
+        f'<button class="icon-button card-btn no" type="button" data-ftrash="purge" aria-label="{purge}" title="{purge}">{icon("cross")}</button></li>'
+        for item, left in trashed
+    )
+    return (f'<ul class="trash-list">{rows}</ul>'
+            f'<button class="link inline" type="button" data-ftrash="empty">{esc(i18n.t(lang, "trash_empty"))}</button>')
+
+
 def render(lang: str, settings: dict, regular_checks: list | None = None, now: int | None = None,
-           stored_files: list | None = None, files_confirm: bool = True) -> str:
+           stored_files: list | None = None, files_confirm: bool = True, trashed_files: list | None = None) -> str:
     """`settings` is agents.settings(user_id): the manager is the role "chef". `regular_checks` are the
     project's checks (checks.list_checks)."""
     chef = settings["roles"]["chef"]
@@ -395,4 +449,8 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
                   WAITING=esc(i18n.t(lang, "chat_waiting", name=catalog.provider().name)), NET=_net_switch(lang, settings["roles"]["chef"]["net"]),
                   INFO=ui.info_dot(i18n.t(lang, "manager_chat"), i18n.t(lang, "manager_chat_hint"))),
         AUTONOMY=autonomy,
+        MVAULT=fill(MVAULT, lang, TRASH_LIST=_trash_list(lang, trashed_files or []),
+                    TRASH_INFO=ui.info_dot(i18n.t(lang, "trash"), i18n.t(lang, "files_trash_hint", n=filestore.TRASH_DAYS)),
+                    ARCHIVE_INFO=ui.info_dot(i18n.t(lang, "chat_archive"), i18n.t(lang, "chat_archive_hint")),
+                    QUESTIONS=esc(i18n.t(lang, "chat_archive_many", n="{n}"))),
     )

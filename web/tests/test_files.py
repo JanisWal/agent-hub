@@ -5,7 +5,7 @@ import types
 import unittest
 from pathlib import Path
 
-from app import db, files, i18n, managerpage, projects, users
+from app import db, files, i18n, managerpage, memory, projects, users
 from app.routes import files as file_routes
 
 
@@ -306,13 +306,42 @@ class FilesTest(unittest.TestCase):
             with self.assertRaises(files.FileError):
                 files.update(self.user.id, item.id, "manual.pdf", category=bad)
 
-    def test_delete_removes_the_file_for_good(self):
+    def test_delete_puts_the_file_into_the_trash(self):
+        """Janis, 14.11.2026: a trash for files, kept TRASH_DAYS, then gone; the manager never sees it."""
         item = self.upload("a.txt", b"x")
         path = files.path_of(self.project.id, item.id)
-        self.assertTrue(files.delete(self.user.id, item.id))
-        self.assertFalse(path.exists())
-        self.assertEqual(files.list_files(self.user.id, self.project.id), [])
-        self.assertFalse(files.delete(self.user.id, item.id))
+        self.assertTrue(files.delete(self.user.id, item.id, now=1000))
+        self.assertTrue(path.exists())                                          # still there ...
+        self.assertEqual(files.list_files(self.user.id, self.project.id), [])  # ... but out of every list
+        with db.connect() as conn:
+            self.assertNotIn("a.txt", memory.listing(conn, self.user.id, self.project.id))   # the manager: nothing
+        trashed = files.list_trash(self.user.id, self.project.id, now=1000 + 86400)
+        self.assertEqual([(t.name, left) for t, left in trashed], [("a.txt", files.TRASH_DAYS - 1)])
+        self.assertIsNone(files.open_file(self.user.id, item.id))              # no download from the trash
+        self.assertEqual(files.restore(self.user.id, item.id).name, "a.txt")
+        self.assertEqual([f.name for f in files.list_files(self.user.id, self.project.id)], ["a.txt"])
+
+    def test_restore_gives_a_taken_name_a_number(self):
+        old = self.upload("a.txt", b"x")
+        files.delete(self.user.id, old.id)
+        self.upload("a.txt", b"new")
+        self.assertEqual(files.restore(self.user.id, old.id).name, "a (2).txt")
+        self.assertIsNone(files.restore(self.user.id, old.id))                  # not in the trash any more
+
+    def test_purge_empty_and_the_end_of_the_thirty_days(self):
+        a, b, c = self.upload("a.txt", b"x"), self.upload("b.txt", b"x"), self.upload("c.txt", b"x")
+        self.assertFalse(files.purge(self.user.id, a.id))                       # a finished file is never purged
+        for item in (a, b, c):
+            files.delete(self.user.id, item.id, now=1000)
+        self.assertTrue(files.purge(self.user.id, a.id))
+        self.assertFalse(files.path_of(self.project.id, a.id).exists())
+        self.assertEqual(files.purge_old_trash(now=1000 + files.TRASH_DAYS * 86400 - 10), 0)
+        self.assertEqual(files.purge_old_trash(now=1000 + files.TRASH_DAYS * 86400 + 10), 2)
+        self.assertEqual(files.list_trash(self.user.id, self.project.id), [])
+        d = self.upload("d.txt", b"x")
+        files.delete(self.user.id, d.id)
+        self.assertEqual(files.empty_trash(self.user.id, self.project.id), 1)
+        self.assertFalse(files.path_of(self.project.id, d.id).exists())
 
     def test_deleting_a_project_removes_its_files_from_the_disk(self):
         item = self.upload("a.txt", b"x")
@@ -473,6 +502,7 @@ class FilesTest(unittest.TestCase):
         self.assertIn("sandbox", response.headers["content-security-policy"])
         path = files.thumb_path(self.project.id, pic.id)
         files.delete(self.user.id, pic.id)
+        files.purge(self.user.id, pic.id)
         self.assertFalse(path.exists())
 
     def test_a_download_link_always_downloads(self):

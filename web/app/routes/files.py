@@ -122,7 +122,25 @@ def update(file_id: int, name: str = Form(""), url: str | None = Form(None), cat
 
 @router.post("/files/{file_id}/delete")
 def delete(file_id: int, user: users.User = Depends(api_user)):
+    """Into the trash (files.TRASH_DAYS); the trash list in the Manager view restores or deletes for good."""
     return ok() if files.delete(user.id, file_id) else fail(404)
+
+
+@router.post("/files/{file_id}/restore")
+def restore(file_id: int, user: users.User = Depends(api_user)):
+    item = files.restore(user.id, file_id)
+    return ok(name=item.name, category=item.category) if item else fail(404)
+
+
+@router.post("/files/{file_id}/purge")
+def purge(file_id: int, user: users.User = Depends(api_user)):
+    """Delete a file in the trash for good (the page asks first)."""
+    return ok() if files.purge(user.id, file_id) else fail(404)
+
+
+@router.post("/projects/{project_id}/files/trash/empty")
+def empty_trash(project_id: int, user: users.User = Depends(api_user)):
+    return ok(deleted=files.empty_trash(user.id, project_id))
 
 
 @router.get("/files/{file_id}/text")

@@ -149,6 +149,21 @@ CREATE TABLE IF NOT EXISTS power_requests (
     created_at   INTEGER NOT NULL,
     taken_at     INTEGER
 );
+-- Every question to the manager and its answer, kept for looking things up later (Janis, 14.11.2026; chat.py).
+-- Only for the user: the manager never reads it. Clearing the chat does not touch it.
+CREATE TABLE IF NOT EXISTS chat_archive (
+    id          INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    prompt      TEXT NOT NULL,
+    answer      TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    model       TEXT NOT NULL DEFAULT '',
+    effort      TEXT NOT NULL DEFAULT '',
+    created_at  INTEGER NOT NULL,
+    answered_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS chat_archive_project ON chat_archive (project_id, created_at);
 -- Settings of the whole server, chosen by the owner (serversettings.py), e.g. how uploads are cut.
 CREATE TABLE IF NOT EXISTS server_settings (
     key   TEXT PRIMARY KEY,
@@ -174,7 +189,8 @@ NEW_COLUMNS = {
                       "memory_saved": "INTEGER NOT NULL DEFAULT 0",   # the answer updated the memory file
                       "effort": "TEXT NOT NULL DEFAULT ''"},          # effort level (catalog.py); '' = older question
     "agent_runs": {"effort": "TEXT NOT NULL DEFAULT ''"},    # effort level of the run's model (catalog.py)
-    "files": {"parts": "TEXT NOT NULL DEFAULT ''"},          # one flag per chunk of an unfinished upload (files.py)
+    "files": {"parts": "TEXT NOT NULL DEFAULT ''",           # one flag per chunk of an unfinished upload (files.py)
+              "trashed_at": "INTEGER"},                      # when it went into the trash (files.py, TRASH_DAYS)
     "checks": {"days": "TEXT NOT NULL DEFAULT '1111111'"},   # weekdays of a daily check, Monday first (checks.py)
     "power_requests": {"result": "TEXT"},                    # how a manual backup ended: 'ok' or 'failed' (power.py)
     "claude_connections": {"expires_at": "INTEGER"},         # when the user's Claude token runs out (claude_link.py)
@@ -210,6 +226,7 @@ def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
 def _prepare(conn: sqlite3.Connection) -> None:
     """Bring a database up to date: create missing tables, add missing columns, and do the
     one-time conversions of old data (roles, pages, session tokens, the old `is_admin` column)."""
+    had_archive = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'chat_archive'").fetchone() is not None
     conn.executescript(SCHEMA)
     before = {table: _columns(conn, table) for table in {"users", "projects", "sessions", *NEW_COLUMNS}}
     for table, columns in NEW_COLUMNS.items():
@@ -219,6 +236,11 @@ def _prepare(conn: sqlite3.Connection) -> None:
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
                 except sqlite3.OperationalError:
                     pass  # another process added it first
+    if not had_archive:   # once: the answered questions from before the archive go into it (after the new columns exist)
+        conn.execute(
+            "INSERT INTO chat_archive (user_id, project_id, prompt, answer, status, model, effort, created_at, answered_at)"
+            " SELECT user_id, project_id, prompt, answer, status, model, effort, created_at, created_at FROM chat_messages"
+            " WHERE status IN ('done', 'failed')")
     if "is_admin" in before["users"]:
         if "role" not in before["users"]:   # roles come from the old admin flag, once
             for statement in ASSIGN_ROLES:

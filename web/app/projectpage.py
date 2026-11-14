@@ -6,7 +6,7 @@ from .layout import esc, fill
 from .projects import MAX_DESCRIPTION, MAX_NAME, Project
 from .users import User
 
-SCRIPTS = ("motion.js", "segment.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "picker.js", "manager.js", "splitter.js", "checks.js", "upload.js", "tiffthumb.js", "files.js")
+SCRIPTS = ("motion.js", "segment.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "picker.js", "manager.js", "splitter.js", "checks.js", "upload.js", "tiffthumb.js", "files.js", "mvault.js")
 STYLES = ("project.css",)
 
 COLUMN_LABEL = {"bug": "col_bug", "minor": "col_minor", "major": "col_major"}
@@ -200,11 +200,20 @@ def drawer_buttons(lang: str) -> str:
             f'<button class="drawer-extra" id="{view}-toggle" type="button" data-view="{view}" '
             f'aria-pressed="false" aria-controls="vault" aria-label="{label}" title="{label}">{icon(icon_name)}</button>'
         )
-    return button("archive", "archive", "done") + button("trash", "trash", "trash")
+    board = button("archive", "archive", "done") + button("trash", "trash", "trash")
+    # The same two buttons for the Manager view (Janis, 14.11.2026): same look and feel, other jobs: the chat archive
+    # (an inbox) and the trash of the files. Only one pair is shown at a time (project.css, body.manager-open).
+    def manager(view: str, label_key: str, icon_name: str) -> str:
+        label = esc(i18n.t(lang, label_key))
+        return (
+            f'<button class="drawer-extra m-extra" id="m{view}-toggle" type="button" data-mview="{view}" '
+            f'aria-pressed="false" aria-controls="mvault" aria-label="{label}" title="{label}">{icon(icon_name)}</button>'
+        )
+    return board + manager("archive", "chat_archive", "inbox") + manager("trash", "trash", "trash")
 
 
 def render(user: User, project: Project, items: list[Item], regular_checks: list | None = None,
-           stored_files: list | None = None) -> str:
+           stored_files: list | None = None, trashed_files: list | None = None) -> str:
     """Project page body with the kanban board and the Manager view (with the regular checks)."""
     lang = user.language
     trashed = [i for i in items if i.status == "trash"]
@@ -216,7 +225,7 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
         PID=str(project.id),
         STATIONS=_stations(lang),
         MANAGER=managerpage.render(lang, agents.settings(user.id), regular_checks or [], stored_files=stored_files or [],
-                                    files_confirm=user.files_confirm),
+                                    files_confirm=user.files_confirm, trashed_files=trashed_files or []),
         MANAGER_DIALOGS=managerpage.dialogs(lang),
         TRASH=_trash(trashed, lang),
         ARCHIVE=_archive(archived, lang),

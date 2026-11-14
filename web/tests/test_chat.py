@@ -70,6 +70,34 @@ class ChatQueueTest(Base):
         last = chat.list_messages(self.a.id, self.pa.id)[-1]
         self.assertEqual((last.status, last.answer), ("failed", "Timeout: no answer in time."))
 
+    def test_every_answer_goes_into_the_archive_and_stays_there(self):
+        """Janis, 14.11.2026: an archive of all chats, only for the user; clearing the chat leaves it alone, and the
+        manager never reads it."""
+        self.connect(self.a)
+        first = chat.send(self.a.id, self.pa.id, "What about the relay?").id
+        chat.claim_next()
+        chat.finish(first, True, "Use the 12 V one.")
+        second = chat.send(self.a.id, self.pa.id, "And the fuse?").id
+        chat.claim_next()
+        chat.finish(second, False, "Failed to authenticate. API Error: 401")
+        entries = chat.archive(self.a.id, self.pa.id)
+        self.assertEqual([(e.prompt, e.answer, e.failure) for e in entries],
+                         [("What about the relay?", "Use the 12 V one.", ""), ("And the fuse?", "", "auth")])
+        chat.delete_all(self.a.id)
+        self.assertEqual(chat.list_messages(self.a.id, self.pa.id), [])
+        self.assertEqual(len(chat.archive(self.a.id, self.pa.id)), 2)                     # the archive keeps it
+        third = chat.send(self.a.id, self.pa.id, "next").id
+        job = chat.claim_next()
+        self.assertNotIn("12 V", job.prompt)                                              # the manager does not see it
+        self.assertEqual(chat.archive(self.b.id, self.pa.id), [])                          # B sees nothing of A
+        self.assertEqual(chat.archive_delete(self.b.id, self.pa.id, [e.id for e in entries]), 0)
+        self.assertEqual(routes.archive(self.pa.id, user=self.b)["entries"], [])
+        self.assertEqual(chat.archive_delete(self.a.id, self.pa.id, [entries[0].id]), 1)
+        self.assertEqual([e.prompt for e in chat.archive(self.a.id, self.pa.id)], ["And the fuse?"])
+        got = routes.archive(self.pa.id, user=self.a)["entries"][0]
+        self.assertEqual((got["answer"], got["failure"]), ("", "auth"))                    # no raw error, as in the chat
+        chat.finish(third, True, "ok")
+
     def test_nobody_else_s_claude_is_used(self):
         self.connect(self.a)
         self.connect(self.b)

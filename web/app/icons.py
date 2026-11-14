@@ -22,6 +22,7 @@ ICONS = {
     "collapse": '<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/>',
     "arrow_left": '<path d="M15 6l-6 6 6 6"/>',
     "arrow_up": '<path d="M12 19V5M6 11l6-6 6 6"/>',
+    "inbox": '<path d="M4 13l2.4-7.2A1.2 1.2 0 0 1 7.5 5h9a1.2 1.2 0 0 1 1.1.8L20 13"/><path d="M4 13v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5h-5a3 3 0 0 1-6 0z"/>',
     "globe": '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.4 2.6 3.6 5.6 3.6 9s-1.2 6.4-3.6 9c-2.4-2.6-3.6-5.6-3.6-9S9.6 5.6 12 3z"/>',
     "trash": '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>',
     "key": '<circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3L21 2M16 7l3 3M13.5 9.5l2.5 2.5"/>',
