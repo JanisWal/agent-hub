@@ -30,6 +30,7 @@ Ein selbst gehostetes Verwaltungstool auf einem Raspberry Pi 4B (1 GB, per WLAN)
 ## Wo wir stehen
 
 - **Live und getestet:** siehe „Auf einen Blick“; Gateway live geprüft (Ticket → Anthropic, unbekanntes Ticket → 403, kein direkter Weg aus dem Lauf), `setup-token` gibt auf dem Pi den Link aus.
+- **Verknüpfen repariert (`signin-fix`, `signin-enter`):** Enter wird getrennt vom Code gedrückt (vorher kam der Code nie an), abgelehnte Codes scheitern sofort, Ladepunkte im Dialog, abgelaufene Tokens löscht der Runner selbst (die alten Dateien von Nutzer 5 sind weg).
 - **Nicht geprüft:** ein echter Chat mit dem neuen Token (braucht Janis’ Verknüpfen), eine echte Kamera-DNG, Hell-Stil, Handy, echter Upload mit vielen Dateien.
 - **Offen bei Janis:** neu verknüpfen; die alten Anmeldedateien von Nutzer 5 (Klartext, nicht mehr benutzt) löschen lassen, falls er nicht neu verknüpft; die am 13.11.2026 verlorenen Dateien aus dem Backup (`sudo`); Tunnel-Token erneuern.
 - **Als Nächstes (Janis’ Reihenfolge):** Ordner und Unterordner mit Leiste samt Ordner-Upload (PROJEKT.md 11b, Punkt 1), danach KI-Zugriff über den eingehängten Ordner (Punkt 2).
