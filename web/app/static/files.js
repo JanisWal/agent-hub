@@ -791,6 +791,7 @@
     downloadButton.style.opacity = String(Math.max(0, Math.min(1, p)));
     downloadButton.style.transform = "scale(" + (0.6 + 0.4 * p) + ")";
     downloadButton.style.visibility = p < 0.01 ? "hidden" : "";
+    tile.style.setProperty("--dl", Math.max(0, Math.min(1, p)).toFixed(3));   // the area name fades under it
   }, 0.002);
   function markedFileIds() {
     return markedIds().filter(function (id) {
