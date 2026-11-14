@@ -12,63 +12,26 @@
 .project-page main { display: flex; align-items: stretch; place-items: initial; padding-top: 4px; }
 .project { flex: 1; min-width: 0; width: 100%; max-width: none; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: calc(var(--space) * 3.5); align-items: stretch; }
 
-/* ===== Stations: sharp bars along the left edge of the window (no tiles, no arrows) ===== */
-/* The list starts at the window edge (main has 24 px padding, taken back here). Each station is a row of
-   text with a thin glowing line under it. The active one is a sharp rectangle that juts out to the right. */
-.stations { position: relative; display: flex; flex-direction: column; gap: 0; margin-left: calc(var(--space) * -3); padding-top: 6px; }
-/* The open station: the thumb of the segment slider (segment.js), the same element as under the file tabs, upright.
-   A sharp rectangle with the accent bar at the window edge that juts out to the right (116 % of the column); press
-   it and drag it up or down to open another station (Janis, 14.11.2026). Only transform moves. */
-.station-thumb { position: absolute; left: 0; top: 0; width: 116%; z-index: 0; pointer-events: none; transform-origin: left center; will-change: transform; }
-.station-thumb::before {
-  content: ""; position: absolute; inset: 5px 0;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 34%, transparent), color-mix(in srgb, var(--accent) 16%, transparent));
-  box-shadow: inset 4px 0 0 var(--accent), inset 0 1px 0 var(--highlight), 0 8px 20px color-mix(in srgb, var(--accent) 18%, transparent);
-  -webkit-backdrop-filter: blur(14px) saturate(1.5); backdrop-filter: blur(14px) saturate(1.5);
+/* ===== Stations: the segment slider of the file tabs, upright (Janis, 14.11.2026: the same look, not only the same
+   mechanics). A sunken glass groove holds the stations; the open one sits on a glass thumb (segment.js) that slides
+   with a spring and can be dragged up or down. Values as .file-tabs / .file-thumb. Only transform moves. */
+.stations {
+  position: relative; display: flex; flex-direction: column; gap: 0; padding: 3px; border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--text) 16%, transparent); background: color-mix(in srgb, var(--field) 70%, transparent);
+  box-shadow: inset 0 1px 3px rgba(80, 40, 10, 0.14); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6);
 }
-.stations.seg-dragging .station-thumb::before { box-shadow: inset 4px 0 0 var(--accent), inset 0 1px 0 var(--highlight), 0 14px 30px color-mix(in srgb, var(--accent) 30%, transparent); }
+.station-thumb {
+  position: absolute; top: 0; left: 3px; right: 3px; z-index: 0; border-radius: 11px; pointer-events: none; will-change: transform;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 60%), color-mix(in srgb, var(--accent) 38%, var(--glass));
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 28%, transparent), inset 0 1px 0 var(--highlight);
+}
+.stations.seg-dragging .station-thumb { box-shadow: 0 12px 26px color-mix(in srgb, var(--accent) 36%, transparent), inset 0 1px 0 var(--highlight); }
 .station {
-  position: relative;
-  isolation: isolate;
-  display: flex;
-  align-items: center;
-  min-height: 56px;
-  padding: 0 20px 0 calc(var(--space) * 3);
-  color: var(--muted);
-  font-weight: 650;
-  text-decoration: none;
-  transition: color 0.2s, translate 0.35s cubic-bezier(0.3, 1.5, 0.5, 1);
+  position: relative; z-index: 1; display: flex; align-items: center; min-height: 44px; padding: 0 14px; border-radius: 11px;
+  color: var(--muted); font-weight: 650; text-decoration: none; transition: color 0.2s, background-color 0.2s;
 }
-/* The rectangle behind the text: invisible, a faint outline on hover, filled and longer when active. */
-.station::before {
-  content: "";
-  position: absolute;
-  inset: 5px 0;
-  z-index: -1;
-  background: transparent;
-  box-shadow: inset 3px 0 0 transparent;
-  transform: scaleX(0.96);
-  transform-origin: left center;
-  transition: transform 0.45s cubic-bezier(0.3, 1.25, 0.5, 1), background 0.25s, box-shadow 0.25s;
-}
-/* The line under each row: strongest at the window edge, fading to the right, now thicker, now thinner. */
-.station::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: var(--cut, 12%);
-  bottom: 0;
-  height: var(--h, 1px);
-  background: linear-gradient(90deg, var(--line-core), transparent);
-  box-shadow: 0 0 10px var(--line-glow);
-}
-.station:nth-child(2n) { --h: 2px; --cut: 26%; }
-.station:nth-child(3n) { --h: 1px; --cut: 8%; }
-.station:nth-child(4n) { --h: 2.5px; --cut: 34%; }
-.station:last-child::after { display: none; }
 .station-label { position: relative; }
-a.station:not(.active):hover { color: var(--text); translate: 5px 0; }
-a.station:not(.active):hover::before { background: color-mix(in srgb, var(--field) 55%, transparent); box-shadow: inset 3px 0 0 color-mix(in srgb, var(--accent) 60%, transparent); transform: scaleX(1); }
+a.station:not(.active):hover { color: var(--text); }
 .station.active, .station.seg-over { color: var(--text); }
 .station.active { cursor: grab; }
 .stations.seg-dragging, .stations.seg-dragging .station { cursor: grabbing; }
@@ -182,13 +145,11 @@ textarea:focus { outline: none; border-color: var(--accent); box-shadow: inset 0
   .project { grid-template-columns: 1fr; }
   .board { grid-template-columns: 1fr; }
   .column, .vault { min-height: 0; }
-  /* The cycle becomes one swipeable row of sharp rectangles. */
-  .stations { flex-direction: row; align-items: center; margin-left: 0; padding: 0 0 12px; overflow-x: auto; scrollbar-width: none; }
+  /* The groove lies across and scrolls sideways; the thumb is as wide as the open station. */
+  .stations { flex-direction: row; align-items: stretch; margin-bottom: 12px; overflow-x: auto; scrollbar-width: none; }
   .stations::-webkit-scrollbar { display: none; }
-  .station { flex: none; white-space: nowrap; min-height: 44px; padding: 0 22px; }
-  .station::after { display: none; }
-  a.station:not(.active):hover { translate: none; }
-  .station-thumb { width: auto; top: 0; height: 44px; transform-origin: center; }   /* across: as wide as the station */
+  .station { flex: none; white-space: nowrap; min-height: 40px; padding: 0 18px; }
+  .station-thumb { left: 0; right: auto; top: 3px; bottom: 3px; }
 }
 @media (max-width: 560px) {
   .column { padding: 16px; }
