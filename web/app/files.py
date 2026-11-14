@@ -42,6 +42,7 @@ MIN_FREE = 1024 ** 3             # an upload is refused when less than this woul
 BLOCK_SIZE = 256 * 1024          # an upload is counted in blocks of this size (the unit of Cloudflare Stream and tus uploaders)
 MAX_REQUEST = 512 * 1024 ** 2    # hard ceiling of one request; the real limit is the owner's choice (max_request)
 THUMB_MAX = 256 * 1024            # largest preview picture (the browser makes them: 96 x 96 JPEG, a few KB)
+PREVIEW_MAX = 6 * 1024 ** 2      # largest big preview of a TIFF, HEIC or raw picture (2048 px JPEG from the browser)
 TEXT_MAX = 1024 ** 2             # largest file the text editor opens (also the limit of one form field)
 STALE = 24 * 3600                # an unfinished upload older than this is thrown away
 TRASH_DAYS = 30                  # a deleted file stays this long in the trash, then it is gone (Janis, 14.11.2026)
@@ -420,19 +421,20 @@ def update(user_id: int, file_id: int, name: str, url: str | None = None, catego
     return _to_file(row)
 
 
-def thumb_path(project_id: int, file_id: int) -> Path:
-    return files_dir() / str(project_id) / f"{file_id}.thumb"
+def thumb_path(project_id: int, file_id: int, large: bool = False) -> Path:
+    return files_dir() / str(project_id) / f"{file_id}.{'preview' if large else 'thumb'}"
 
 
 def has_thumb(item: "StoredFile") -> bool:
     return item.url is None and thumb_path(item.project_id, item.id).is_file()
 
 
-def save_thumb(user_id: int, file_id: int, data: bytes) -> bool:
+def save_thumb(user_id: int, file_id: int, data: bytes, large: bool = False) -> bool:
     """Keep the small preview picture of an image or video (a JPEG made by the browser). False if the file is not
     the user's, not finished, or not an image or video. Raises FileError: too_big, bad_type (not a JPEG). It is
-    served with a fixed type, so even a wrong body can run nothing."""
-    if len(data) > THUMB_MAX:
+    served with a fixed type, so even a wrong body can run nothing. `large`: the big preview the viewer shows for a
+    TIFF, HEIC or raw picture (Janis, 14.11.2026), which browsers can not show themselves; only for those."""
+    if len(data) > (PREVIEW_MAX if large else THUMB_MAX):
         raise FileError("too_big")
     if not data.startswith(b"\xff\xd8\xff"):
         raise FileError("bad_type")
@@ -441,18 +443,18 @@ def save_thumb(user_id: int, file_id: int, data: bytes) -> bool:
     if row is None or row["status"] != "ready":
         return False
     item = _to_file(row)
-    if item.kind not in ("image", "video", "photo"):
+    if item.kind not in (("photo",) if large else ("image", "video", "photo")):
         return False
-    thumb_path(item.project_id, item.id).write_bytes(data)
+    thumb_path(item.project_id, item.id, large).write_bytes(data)
     return True
 
 
-def open_thumb(user_id: int, file_id: int) -> Path | None:
+def open_thumb(user_id: int, file_id: int, large: bool = False) -> Path | None:
     with db.connect() as conn:
         row = _owned(conn, user_id, file_id)
     if row is None or row["url"] is not None:
         return None
-    path = thumb_path(row["project_id"], file_id)
+    path = thumb_path(row["project_id"], file_id, large)
     return path if path.is_file() else None
 
 
@@ -479,6 +481,7 @@ def purge(user_id: int, file_id: int) -> bool:
         conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
     path_of(row["project_id"], file_id).unlink(missing_ok=True)
     thumb_path(row["project_id"], file_id).unlink(missing_ok=True)
+    thumb_path(row["project_id"], file_id, True).unlink(missing_ok=True)
     return True
 
 
@@ -534,6 +537,7 @@ def purge_old_trash(now: int | None = None) -> int:
     for row in rows:
         path_of(row["project_id"], row["id"]).unlink(missing_ok=True)
         thumb_path(row["project_id"], row["id"]).unlink(missing_ok=True)
+        thumb_path(row["project_id"], row["id"], True).unlink(missing_ok=True)
     return len(rows)
 
 

@@ -106,8 +106,8 @@ class DrawerTest(unittest.TestCase):
         self.assertIn("claude.js", page)
 
     def test_menu_has_its_own_button_for_deleting_the_chat_history(self):
-        for lang, label, yes in (("de", "Chatverlauf löschen", "Endgültig löschen"),
-                                 ("en", "Delete chat history", "Delete for good")):
+        for lang, label, yes in (("de", "Chatverlauf löschen", "Chat leeren"),          # the archive keeps it (14.11.2026)
+                                 ("en", "Delete chat history", "Clear chat")):
             _, html = self.row(lang)
             self.assertIn('class="clear-btn" type="button" id="chat-clear-open"', html)   # a button, no longer a link
             self.assertIn(label, html)

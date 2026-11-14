@@ -22,11 +22,23 @@
       var style = getComputedStyle(tile), head = tile.querySelector(":scope > header");
       return (head ? head.offsetHeight : 0) + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + 2;
     }
+    // What the tile needs to show all it has: padding, header and every visible child with the gaps between them
+    // (14.11.2026: a hint taller than the minimum ran out of the tile, after a reload with a saved height).
+    function needed(tile) {
+      var style = getComputedStyle(tile), gap = parseFloat(style.rowGap) || 0, sum = 0, count = 0;
+      Array.prototype.forEach.call(tile.children, function (child) {
+        if (child.offsetParent === null && getComputedStyle(child).position !== "fixed") return;   // hidden
+        sum += child.offsetHeight;
+        count++;
+      });
+      return sum + Math.max(0, count - 1) * gap + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    }
     function fade() {
       [a, b].forEach(function (tile, i) {
         var low = folded(tile), height = tile.getBoundingClientRect().height;
-        var share = col.classList.contains("split-set") && natural[i] > low
-          ? Math.min(Math.max((height - low) / (natural[i] - low), 0), 1) : 1;
+        var full = Math.max(natural[i], needed(tile));
+        var share = col.classList.contains("split-set") && full > low + 1
+          ? Math.min(Math.max((height - low) / (full - low), 0), 1) : 1;
         tile.style.setProperty("--fold", share.toFixed(3));
         tile.classList.toggle("m-folded", share < 1);
         tile.classList.toggle("m-shut", share === 0);
@@ -62,6 +74,8 @@
     var saved = load(name);
     if (saved > 0 && saved < 1) apply(saved);
     window.addEventListener("resize", fade);
+    window.addEventListener("load", fade);   // fonts and pictures may change the heights after the first look
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(fade);
 
     var drag = null;
     split.addEventListener("pointerdown", function (event) {

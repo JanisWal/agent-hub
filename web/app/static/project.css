@@ -300,6 +300,9 @@ body:not(.manager-open) .drawer-extra.m-extra { display: none; }
 dialog.archive-day[open] { display: flex; flex-direction: column; width: min(760px, calc(100vw - 32px)); max-width: none; max-height: min(82vh, 900px); gap: 10px; }
 .archive-log { flex: 1; min-height: 0; overflow-y: auto; }
 .archive-log > :first-child { margin-top: 0; }
+/* The big preview of a TIFF or raw picture is being made: the three dots, larger, in the middle of the viewer. */
+.viewer-wait { margin: auto; color: var(--muted); }
+.viewer-wait i { width: 9px; height: 9px; }
 
 /* Files and links of the Manager view (Janis, 12.11.2026; glass and Apple-like on 13.11.2026, apple-design skill):
    five tabs in ONE row as a segmented control (a glass highlight slides under the chosen one with a spring), the

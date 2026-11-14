@@ -483,6 +483,15 @@ class FilesTest(unittest.TestCase):
         raw = self.upload("IMG_0001.dng", b"II*\x00 raw")                         # a camera file gets one too (14.11.2026)
         self.assertEqual(raw.kind, "photo")
         self.assertTrue(files.save_thumb(self.user.id, raw.id, b"\xff\xd8\xff data"))
+        # and a big preview for the viewer (a browser can not show a raw file), but only such files get one
+        self.assertTrue(files.save_thumb(self.user.id, raw.id, b"\xff\xd8\xff big", large=True))
+        self.assertEqual(files.open_thumb(self.user.id, raw.id, large=True).read_bytes(), b"\xff\xd8\xff big")
+        self.assertFalse(files.save_thumb(self.user.id, pic.id, b"\xff\xd8\xff big", large=True))
+        other = users.create_user("b@example.com", "Bbbb!pass12")
+        self.assertEqual(file_routes.preview(raw.id, other).status_code, 404)               # never someone else's
+        files.delete(self.user.id, raw.id)
+        files.purge(self.user.id, raw.id)
+        self.assertFalse(files.thumb_path(self.project.id, raw.id, True).exists())
         self.assertEqual(files.open_thumb(self.user.id, pic.id).read_bytes(), b"\xff\xd8\xff data")
         self.assertIsNone(files.open_thumb(self.user.id, doc.id))
         for bad, code in ((b"<script>alert(1)</script>", "bad_type"), (b"\xff\xd8\xff" + b"x" * files.THUMB_MAX, "too_big")):

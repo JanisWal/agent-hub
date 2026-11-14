@@ -239,8 +239,9 @@ def _prepare(conn: sqlite3.Connection) -> None:
     if not had_archive:   # once: the answered questions from before the archive go into it (after the new columns exist)
         conn.execute(
             "INSERT INTO chat_archive (user_id, project_id, prompt, answer, status, model, effort, created_at, answered_at)"
-            " SELECT user_id, project_id, prompt, answer, status, model, effort, created_at, created_at FROM chat_messages"
-            " WHERE status IN ('done', 'failed')")
+            " SELECT m.user_id, m.project_id, m.prompt, m.answer, m.status, m.model, m.effort, m.created_at, m.created_at"
+            " FROM chat_messages m JOIN projects p ON p.id = m.project_id JOIN users u ON u.id = m.user_id"
+            " WHERE m.status IN ('done', 'failed')")
     if "is_admin" in before["users"]:
         if "role" not in before["users"]:   # roles come from the old admin flag, once
             for statement in ASSIGN_ROLES:

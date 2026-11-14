@@ -121,10 +121,26 @@
     context.drawImage(element, (width - w) / 2, (height - h) / 2, w, h, 0, 0, THUMB, THUMB);
     return new Promise(function (resolve) { canvas.toBlob(resolve, "image/jpeg", 0.8); });
   }
-  function thumbFromImage(src, turn) {
+  // The big preview of a TIFF, HEIC or raw picture for the viewer (Janis, 14.11.2026): the whole picture, its long
+  // side at most LARGE pixels, as a JPEG the server keeps next to the file. Made once, here in the browser.
+  var LARGE = 2048;
+  function drawLarge(element, width, height, turn) {
+    if (!width || !height) return Promise.resolve(null);
+    var scale = Math.min(1, LARGE / Math.max(width, height));
+    var w = Math.round(width * scale), h = Math.round(height * scale), side = turn === 6 || turn === 8;
+    var canvas = document.createElement("canvas");
+    canvas.width = side ? h : w;
+    canvas.height = side ? w : h;
+    var context = canvas.getContext("2d");
+    var angle = { 3: Math.PI, 6: Math.PI / 2, 8: -Math.PI / 2 }[turn];
+    if (angle) { context.translate(canvas.width / 2, canvas.height / 2); context.rotate(angle); context.translate(-w / 2, -h / 2); }
+    context.drawImage(element, 0, 0, width, height, 0, 0, w, h);
+    return new Promise(function (resolve) { canvas.toBlob(resolve, "image/jpeg", 0.85); });
+  }
+  function thumbFromImage(src, turn, large) {
     return new Promise(function (resolve) {
       var image = new Image();
-      image.onload = function () { resolve(drawThumb(image, image.naturalWidth, image.naturalHeight, turn)); };
+      image.onload = function () { resolve((large ? drawLarge : drawThumb)(image, image.naturalWidth, image.naturalHeight, turn)); };
       image.onerror = function () { resolve(null); };
       image.src = src;
     });
@@ -153,21 +169,32 @@
     return use(url).then(function (made) { URL.revokeObjectURL(url); return made; },
                          function () { URL.revokeObjectURL(url); return null; });
   }
-  function photoFrom(buffer, type) {
-    return window.HubTiff.preview(buffer).then(function (found) {
-      if (found && found.blob) return withUrl(found.blob, function (url) { return thumbFromImage(url, found.turn); });
+  function photoFrom(buffer, type, large) {
+    return window.HubTiff.preview(buffer, large).then(function (found) {
+      if (found && found.blob) return withUrl(found.blob, function (url) { return thumbFromImage(url, found.turn, large); });
       if (found && found.image) {
         var canvas = document.createElement("canvas");
         canvas.width = found.image.width;
         canvas.height = found.image.height;
         canvas.getContext("2d").putImageData(found.image, 0, 0);
-        return drawThumb(canvas, canvas.width, canvas.height, found.turn);
+        return (large ? drawLarge : drawThumb)(canvas, canvas.width, canvas.height, found.turn);
       }
-      return withUrl(new Blob([buffer], { type: type }), function (url) { return thumbFromImage(url); });
+      return withUrl(new Blob([buffer], { type: type }), function (url) { return thumbFromImage(url, 1, large); });
     });
   }
+  function photoType(name) { return PHOTO_TYPE[(name.split(".").pop() || "").toLowerCase()] || "application/octet-stream"; }
+  // The big preview, from the file in hand (an upload) or fetched whole (an older file, the first time it is viewed).
+  function largeFromPhoto(src, name, file) {
+    var type = photoType(name);
+    var load = file ? (file.size <= PHOTO_MAX ? file.arrayBuffer() : Promise.resolve(null))
+      : fetch(src, { credentials: "same-origin" }).then(function (r) { return r.ok ? r.arrayBuffer() : null; });
+    return load.then(function (buffer) { return buffer ? photoFrom(buffer, type, true) : null; });
+  }
+  function sendPreview(id, blob) {
+    return blob ? fetch("/files/" + id + "/preview", { method: "POST", body: blob }).then(function (r) { return r.ok; }, function () { return false; }) : Promise.resolve(false);
+  }
   function thumbFromPhoto(src, name, file) {
-    var type = PHOTO_TYPE[(name.split(".").pop() || "").toLowerCase()] || "application/octet-stream";
+    var type = photoType(name);
     if (file) return file.size <= PHOTO_MAX ? file.arrayBuffer().then(function (b) { return photoFrom(b, type); }) : Promise.resolve(null);
     return fetch(src, { headers: { Range: "bytes=0-16777215" }, credentials: "same-origin" }).then(function (head) {
       if (!head.ok) return null;
@@ -184,8 +211,10 @@
   }
   function thumbOfUpload(job) {       // right after an upload we still hold the file itself
     var type = job.file.type || "";
-    if (PHOTO.test(job.file.name)) {
-      return thumbFromPhoto(null, job.file.name, job.file).then(function (blob) { return sendThumb(job.id, blob); });
+    if (PHOTO.test(job.file.name)) {   // the small preview, then the big one for the viewer
+      return thumbFromPhoto(null, job.file.name, job.file).then(function (blob) { return sendThumb(job.id, blob); })
+        .then(function () { return largeFromPhoto(null, job.file.name, job.file); })
+        .then(function (blob) { return sendPreview(job.id, blob); });
     }
     if (!/^(image|video)\//.test(type)) return Promise.resolve();
     var url = URL.createObjectURL(job.file);
@@ -593,7 +622,7 @@
     var picture = event.target.closest(".file-tile, .file-preview");
     if (!row || (!name && !picture)) return;
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;   // with a key held the browser decides
-    var viewable = ["image", "video", "audio"].indexOf(row.dataset.kind) >= 0;
+    var viewable = ["image", "photo", "video", "audio"].indexOf(row.dataset.kind) >= 0;
     if (row.dataset.editable === "1") { event.preventDefault(); openReader(row); }
     else if (picture && viewable) { event.preventDefault(); openViewer(row); }
     else if (picture && row.dataset.kind === "link") { window.open(row.dataset.url, "_blank", "noopener,noreferrer"); }
@@ -607,15 +636,37 @@
   var viewerId = null;
   var viewerPrev = document.getElementById("file-viewer-prev");
   var viewerNext = document.getElementById("file-viewer-next");
-  function viewable(row) { return ["image", "video", "audio"].indexOf(row.dataset.kind) >= 0; }
+  function viewable(row) { return ["image", "photo", "video", "audio"].indexOf(row.dataset.kind) >= 0; }
   function neighbours() {      // the pictures, videos and sounds of the list that is showing, in the order shown
     return Array.prototype.filter.call(tile.querySelectorAll(".file-list:not([hidden]) .file-row"), viewable);
   }
   function showInViewer(row) {
     var kind = row.dataset.kind;
-    var node = document.createElement(kind === "image" ? "img" : kind);
-    if (kind === "image") node.alt = ""; else { node.controls = true; node.preload = "metadata"; node.playsInline = true; }
-    node.src = "/files/" + row.dataset.id;
+    var picture = kind === "image" || kind === "photo";
+    var node = document.createElement(picture ? "img" : kind);
+    if (picture) node.alt = ""; else { node.controls = true; node.preload = "metadata"; node.playsInline = true; }
+    if (kind === "photo") {
+      // TIFF, HEIC, raw: the big preview the server keeps; without one yet it is made now, once (the file is fetched
+      // whole), shown and kept for the next time. The spinner dots show meanwhile.
+      var id = row.dataset.id;
+      node.src = "/files/" + id + "/preview";
+      node.onerror = function () {
+        node.onerror = null;
+        node.removeAttribute("src");
+        var waiting = document.createElement("span");
+        waiting.className = "loading-dots viewer-wait";
+        for (var d = 0; d < 3; d++) waiting.appendChild(document.createElement("i"));
+        viewerBody.appendChild(waiting);
+        largeFromPhoto("/files/" + id, row.dataset.name).then(function (blob) {
+          waiting.remove();
+          if (!blob || viewerId !== id) return;
+          node.src = URL.createObjectURL(blob);
+          sendPreview(id, blob);
+        });
+      };
+    } else {
+      node.src = "/files/" + row.dataset.id;
+    }
     viewerBody.textContent = "";
     viewerBody.appendChild(node);
     viewerTitle.textContent = row.dataset.name;
