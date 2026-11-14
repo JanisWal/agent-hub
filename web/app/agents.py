@@ -15,11 +15,10 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-from . import board, claude_link, db, workflow
+from . import board, catalog, claude_link, db, workflow
 
-MODELS = ("haiku", "sonnet", "opus")     # aliases of Claude Code, they follow the newest version
-DEFAULT_MODEL = {"chef": "sonnet", "programmer": "sonnet", "tester": "sonnet",
-                 "reviewer": "sonnet"}
+# Models and effort levels are not fixed here: they come from catalog.py (Janis, 14.11.2026). A role without a
+# choice gets the provider's default model and that model's default level.
 NEEDS = ("any", "mac")
 # How freely the manager decides (Janis, 07.11.2026): fully on its own, asks for big decisions, asks for small
 # things too. It is a threshold, not a switch: the manager first tries to derive the answer from the project.
@@ -84,6 +83,7 @@ class Job:
     note: str                       # the user's remark from his last rejection (data, not an order)
     reports: list[tuple[str, str]]  # (role, report) of the earlier runs of this task (data)
     net: str = DEFAULT_NET          # web and code together (open internet) or apart, the role's switch
+    effort: str = ""                # effort level of the model (catalog.py); empty = the program's own default
 
 
 def _task(row: sqlite3.Row) -> Task:
@@ -130,8 +130,19 @@ def _enabled(conn: sqlite3.Connection, user_id: int) -> frozenset[str]:
     return frozenset(roles | {"programmer"})   # without the programmer nothing happens at all
 
 
+def _choice(conn: sqlite3.Connection, user_id: int, role: str) -> tuple[str, str]:
+    """(model, effort) of a role, made valid against the current list (catalog.resolve): a model that left the list
+    becomes the default model, a level the model does not have becomes its default level."""
+    return catalog.resolve(_setting(conn, user_id, f"model.{role}", ""), _setting(conn, user_id, f"effort.{role}", ""))
+
+
 def _model(conn: sqlite3.Connection, user_id: int, role: str) -> str:
-    return _setting(conn, user_id, f"model.{role}", DEFAULT_MODEL[role])
+    return _choice(conn, user_id, role)[0]
+
+
+def effort_in(conn: sqlite3.Connection, user_id: int, role: str) -> str:
+    """The effort level of a role for this user, inside an open connection (the manager chat uses "chef")."""
+    return _choice(conn, user_id, role)[1]
 
 
 def _strictness(conn: sqlite3.Connection, user_id: int) -> str:
@@ -155,22 +166,23 @@ def net_in(conn: sqlite3.Connection, user_id: int, role: str) -> str:
 
 
 def settings(user_id: int) -> dict:
-    """{"strictness", "autonomy", "roles": {role: {"enabled": bool, "model": str, "net": str}}}, defaults filled in."""
+    """{"strictness", "autonomy", "roles": {role: {"enabled", "model", "effort", "net"}}}, defaults filled in."""
     with db.connect() as conn:
         enabled = _enabled(conn, user_id)
-        return {
-            "strictness": _strictness(conn, user_id),
-            "autonomy": autonomy_in(conn, user_id),
-            "roles": {r: {"enabled": r in enabled, "model": _model(conn, user_id, r), "net": net_in(conn, user_id, r)}
-                      for r in workflow.ROLES},
-        }
+        roles = {}
+        for r in workflow.ROLES:
+            model, effort = _choice(conn, user_id, r)
+            roles[r] = {"enabled": r in enabled, "model": model, "effort": effort, "net": net_in(conn, user_id, r)}
+        return {"strictness": _strictness(conn, user_id), "autonomy": autonomy_in(conn, user_id), "roles": roles}
 
 
 def configure(user_id: int, role: str | None = None, *, enabled: bool | None = None,
               model: str | None = None, strictness: str | None = None, autonomy: str | None = None,
-              net: str | None = None) -> None:
+              net: str | None = None, effort: str | None = None) -> None:
     """Change a setting of this user. Raises ValueError for unknown values or for switching the
-    programmer off."""
+    programmer off. Model and effort are checked against the list (catalog.py); an effort is checked against the
+    model sent with it, or the role's current model. A new model alone keeps the saved level where the model has
+    it, otherwise its default level counts (catalog.resolve)."""
     changes: list[tuple[str, str]] = []
     if strictness is not None:
         if strictness not in workflow.STRICTNESS:
@@ -180,7 +192,7 @@ def configure(user_id: int, role: str | None = None, *, enabled: bool | None = N
         if autonomy not in AUTONOMY:
             raise ValueError("Unbekannte Selbstständigkeit")
         changes.append(("autonomy", autonomy))
-    if enabled is not None or model is not None or net is not None:
+    if enabled is not None or model is not None or net is not None or effort is not None:
         if role not in workflow.ROLES:
             raise ValueError("Unbekannte Rolle")
         if net is not None:
@@ -191,10 +203,20 @@ def configure(user_id: int, role: str | None = None, *, enabled: bool | None = N
             if role == "programmer" and not enabled:
                 raise ValueError("Der Programmierer bleibt immer an")
             changes.append((f"enabled.{role}", "1" if enabled else "0"))
-        if model is not None:
-            if model not in MODELS:
-                raise ValueError("Unbekanntes Modell")
-            changes.append((f"model.{role}", model))
+        if model is not None or effort is not None:
+            if model is None:
+                with db.connect() as conn:
+                    model_for_effort = _model(conn, user_id, role)
+            else:
+                model_for_effort = model
+            try:
+                catalog.check(model_for_effort, effort)
+            except ValueError:
+                raise ValueError("Unbekanntes Modell oder unbekannte Stufe") from None
+            if model is not None:
+                changes.append((f"model.{role}", model))
+            if effort is not None:
+                changes.append((f"effort.{role}", effort))
     with db.connect() as conn:
         for key, value in changes:
             conn.execute(
@@ -235,9 +257,10 @@ def _queue(conn: sqlite3.Connection, user_id: int, task_id: int, status: str, no
     """Create the run for the stage the task has just entered (nothing for the user's own stage)."""
     role = workflow.STAGE_ROLE.get(status)
     if role is not None:
+        model, effort = _choice(conn, user_id, role)
         conn.execute(
-            "INSERT INTO agent_runs (task_id, role, model, status, created_at)"
-            " VALUES (?, ?, ?, 'queued', ?)", (task_id, role, _model(conn, user_id, role), now),
+            "INSERT INTO agent_runs (task_id, role, model, effort, status, created_at)"
+            " VALUES (?, ?, ?, ?, 'queued', ?)", (task_id, role, model, effort, now),
         )
 
 
@@ -431,7 +454,7 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
                 " ORDER BY id", (task["id"],))]
             return Job(run["id"], user_id, task["project_id"], task["id"], run["role"], run["model"],
                        branch_name(task["id"]), task["title"], task["kind"], task["round"],
-                       task["note"], reports, net_in(conn, user_id, run["role"]))
+                       task["note"], reports, net_in(conn, user_id, run["role"]), run["effort"])
     return None
 
 

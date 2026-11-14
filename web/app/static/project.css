@@ -198,6 +198,12 @@ html .card.drag-clone::after { display: none; }
 .m-select.has-select > svg { top: 50%; bottom: auto; right: 12px; width: 16px; height: 16px; translate: 0 -50%; }
 .m-select .select-menu { left: auto; right: -1px; min-width: 220px; z-index: 6; }
 .m-select .select-option { min-height: 40px; font-size: 0.86rem; }
+/* Model and effort level side by side (ui.model_picker). Each box is as wide as its value, not as its longest choice
+   (where the browser can); the title keeps its line, and when both do not fit the pair moves under it, to the right. */
+.model-picker { display: inline-flex; flex: none; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
+.model-picker select { field-sizing: content; }
+.mtile header:has(.model-picker) h2 { flex: 1 0 auto; }
+.model-picker .m-select:last-child .select-menu { min-width: 150px; }
 /* The switch "web + code together" (on: code has the open internet; off: web search, code without internet).
    A track with a knob like the system switches; the knob only moves with transform. The whole label is the hit area. */
 .m-chat-sub { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0 12px; margin-top: -6px; }

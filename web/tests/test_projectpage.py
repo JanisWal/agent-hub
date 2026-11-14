@@ -184,6 +184,8 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn("Fragt bei Großem", autonomy)
         chat_tile = page[page.index('id="chat"'):]
         self.assertIn('id="manager-model"', chat_tile[:chat_tile.index("</header>")])        # in the chat header
+        self.assertIn('id="manager-effort"', chat_tile[:chat_tile.index("</header>")])       # the level next to it
+        self.assertIn("picker.js", page)
         waiting = page[page.index('class="mtile glass m-waiting"'):]
         self.assertIn('id="manager-autonomy"', waiting[:waiting.index("</header>")])        # at "waiting for you"
         script = css_of("manager.js")

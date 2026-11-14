@@ -13,7 +13,11 @@ import re
 import sys
 from pathlib import Path
 
-MODELS = ("haiku", "sonnet", "opus")
+# Models and effort levels are a list of the hub (web/app/catalog.py) that can change without a code change, and
+# the hub checks every choice against it. Here they only have to be safe as one argument each: a fixed pattern,
+# lower case, never starting with "-" (the same patterns as catalog.py).
+_MODEL = re.compile(r"[a-z][a-z0-9.-]{0,47}")
+_EFFORT = re.compile(r"[a-z]{1,12}")
 ROLES = ("chef", "programmer", "tester", "reviewer")   # same as web/app/workflow.py; the chef also documents
 RESULTS = {
     "programmer": ("done", "failed"),
@@ -91,16 +95,25 @@ def _proxy_env(url: str) -> list[str]:
 RUN_PROXY = {"together": WEB_PROXY, "apart": API_PROXY}   # the role's switch "web + code together"
 
 
+def _model_args(model: str, effort: str) -> list[str]:
+    """`--model` and, if a level is set, `--effort`. ValueError for anything that does not fit the patterns."""
+    if not isinstance(model, str) or not _MODEL.fullmatch(model):
+        raise ValueError("bad model")
+    if not isinstance(effort, str) or (effort and not _EFFORT.fullmatch(effort)):
+        raise ValueError("bad effort")
+    return ["--model", model, *(["--effort", effort] if effort else [])]
+
+
 def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, claude_dir: str, net: str = "together",
-                  image: str = IMAGE, network: str = NETWORK, memory: str = "480m") -> list[str]:
+                  effort: str = "", image: str = IMAGE, network: str = NETWORK, memory: str = "480m") -> list[str]:
     """The `docker run` command for one run. Raises ValueError for anything unexpected. `net` is the role's
-    switch: "together" = open internet (public hosts only), "apart" = only Anthropic (code without internet)."""
+    switch: "together" = open internet (public hosts only), "apart" = only Anthropic (code without internet).
+    `effort` is the model's level (empty = Claude Code's own default)."""
     run_id = _number(run_id, "run_id")
     if net not in RUN_PROXY:
         raise ValueError("unknown net mode")
     uid = run_uid(user_id)
-    if model not in MODELS:
-        raise ValueError("unknown model")
+    model_args = _model_args(model, effort)
     if not re.fullmatch(r"[0-9]+[mg]", memory) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", image + network):
         raise ValueError("bad image, network or memory")
     work, claude = _folder(work_dir, "work_dir"), _folder(claude_dir, "claude_dir")
@@ -117,19 +130,19 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, claud
         "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude", *_proxy_env(RUN_PROXY[net]),
         image,
         # Inside the isolated container the agent may use its tools freely; the prompt comes via stdin.
-        "claude", "-p", "--model", model, "--output-format", "json", "--dangerously-skip-permissions",
+        "claude", "-p", *model_args, "--output-format", "json", "--dangerously-skip-permissions",
     ]
 
 
 def build_chat_command(*, chat_id: int, user_id: int, model: str, claude_dir: str, mode: str = "all",
-                       image: str = IMAGE, network: str = NETWORK, memory: str = "480m") -> list[str]:
+                       effort: str = "", image: str = IMAGE, network: str = NETWORK, memory: str = "480m") -> list[str]:
     """The manager chat (see web/app/chat.py): one question to Claude, in a container like a run but with no
     work folder at all (nothing of any project is mounted; the project context comes on stdin). `mode` (see
-    CHAT_MODES) decides the tools and the way out; "all" = web search and a shell, only Anthropic reachable."""
+    CHAT_MODES) decides the tools and the way out; "all" = web search and a shell, only Anthropic reachable.
+    `effort` is the model's level (empty = Claude Code's own default)."""
     chat_id = _number(chat_id, "chat_id")
     uid = run_uid(user_id)
-    if model not in MODELS:
-        raise ValueError("unknown model")
+    model_args = _model_args(model, effort)
     if mode not in CHAT_MODES:
         raise ValueError("unknown mode")
     if not re.fullmatch(r"[0-9]+[mg]", memory) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", image + network):
@@ -152,7 +165,7 @@ def build_chat_command(*, chat_id: int, user_id: int, model: str, claude_dir: st
         "-e", "HOME=/claude", "-e", "CLAUDE_CONFIG_DIR=/claude", "-e", "PYTHONDONTWRITEBYTECODE=1",
         *_proxy_env(spec["proxy"]),
         image,
-        "claude", "-p", "--model", model, "--output-format", "json", "--no-session-persistence",
+        "claude", "-p", *model_args, "--output-format", "json", "--no-session-persistence",
         # Exactly the tools of the mode. In -p mode nobody can confirm a permission, so exactly these are
         # allowed; --max-turns keeps a search or a program from running away (and eating quota).
         "--tools", ",".join(tools),

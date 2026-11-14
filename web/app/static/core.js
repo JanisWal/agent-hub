@@ -158,8 +158,17 @@
       items.forEach(function (item, i) { item.classList.toggle("active", i === index); });
     }
     function isOpen() { return menu.classList.contains("open"); }
+    // An option can be hidden (the effort levels a model does not have, picker.js): its entry is hidden, too,
+    // and the arrow keys skip it.
+    function step(from, by) {
+      for (var i = from + by; i >= 0 && i < items.length; i += by) if (!items[i].hidden) return i;
+      return from;
+    }
     function open() {
-      items.forEach(function (item, i) { item.setAttribute("aria-selected", String(i === select.selectedIndex)); });
+      items.forEach(function (item, i) {
+        item.hidden = select.options[i].hidden;
+        item.setAttribute("aria-selected", String(i === select.selectedIndex));
+      });
       mark(select.selectedIndex);
       menu.classList.add("open");
       select.parentNode.classList.add("open");   // turns the arrow
@@ -200,8 +209,8 @@
       }
       event.preventDefault();
       event.stopPropagation(); // Escape closes only the list, not the drawer
-      if (key === "ArrowDown") mark(Math.min(active + 1, items.length - 1));
-      else if (key === "ArrowUp") mark(Math.max(active - 1, 0));
+      if (key === "ArrowDown") mark(step(active, 1));
+      else if (key === "ArrowUp") mark(step(active, -1));
       else if (key === "Enter" || key === " ") choose(active);
       else if (key === "Escape" || key === "Tab") close();
     });

@@ -1,10 +1,60 @@
-"""Parts shared by several pages: the login page and the logged-in frame with its settings drawer."""
-from . import i18n
+"""Parts shared by several pages: the login page, the logged-in frame with its settings drawer, the model picker."""
+import json
+
+from . import catalog, i18n
 from .icons import icon
 from .layout import esc, fill, page
 from .users import User
 
 from . import claude_link
+
+
+def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model: str = "picker_model",
+                 label_effort: str = "picker_effort", css: str = "m-select", setting: bool = True,
+                 provider_id: str = catalog.DEFAULT_PROVIDER) -> str:
+    """Two drop-downs in our own style, AI model and effort level, built from the list in catalog.py (Janis,
+    14.11.2026). Used wherever a model is chosen: manager chat, regular checks, the roles. The level list holds every
+    level of the provider; levels the chosen model does not have are hidden, and static/picker.js keeps that right
+    when the model changes (`data-levels`, `data-defaults`). `setting` adds data-setting for pages that save a change
+    at once (manager.js). Unknown hints show nothing, unknown levels show their name as it is."""
+    current = catalog.provider(provider_id)
+    model, effort = catalog.resolve(model, effort, provider_id)
+    chosen = current.model(model)
+    levels: list[str] = []
+    for m in current.models:
+        levels += [e for e in m.efforts if e not in levels]
+
+    texts = i18n.STRINGS.get(lang, i18n.STRINGS["de"])
+
+    def label(key: str) -> str:
+        return esc(i18n.t(lang, key))
+
+    def model_text(m: catalog.Model) -> str:
+        hint = texts.get(f"model_hint_{m.hint}", "") if m.hint else ""
+        return esc(f"{m.name} · {hint}" if hint else m.name)
+
+    def effort_text(level: str) -> str:
+        return esc(texts.get(f"effort_{level}", level))
+
+    models = "".join(f'<option value="{m.id}"{" selected" if m.id == model else ""}>{model_text(m)}</option>'
+                     for m in current.models)
+    efforts = "".join(
+        f'<option value="{e}"{" selected" if e == effort else ""}{"" if e in chosen.efforts else " hidden"}>'
+        f'{effort_text(e)}</option>' for e in levels)
+    data_levels = esc(json.dumps({m.id: list(m.efforts) for m in current.models}, separators=(",", ":")))
+    data_defaults = esc(json.dumps({m.id: m.default_effort for m in current.models}, separators=(",", ":")))
+
+    def attr(name: str) -> str:
+        return f' data-setting="{name}"' if setting else ""
+    chevron = icon("chevron_down")
+    return (   # no title on the selects: its tip would cover the list
+        f'<span class="model-picker" data-provider="{current.id}">'
+        f'<label class="{css} has-select"><select name="model" id="{prefix}-model"{attr("model")} '
+        f'aria-label="{label(label_model)}">{models}</select>{chevron}</label>'
+        f'<label class="{css} has-select"><select name="effort" id="{prefix}-effort"{attr("effort")} '
+        f'aria-label="{label(label_effort)}" data-levels="{data_levels}" data-defaults="{data_defaults}">{efforts}'
+        f'</select>{chevron}</label></span>'
+    )
 
 # Other AI accounts (name): placeholders until they exist. Claude has its own row with a real state.
 PLACEHOLDER_SERVICES = ("ChatGPT",)
