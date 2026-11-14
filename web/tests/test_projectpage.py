@@ -223,7 +223,8 @@ class ProjectPageTest(unittest.TestCase):
 
     def test_the_waiting_line_names_the_ai_in_use(self):
         """Janis, 14.11.2026: "Claude answers" must follow the provider, another AI brings its own name."""
-        self.assertIn('data-waiting="Claude antwortet"', self.html())
+        html = self.html()
+        self.assertIn('data-waiting="{name} antwortet" data-ai="Claude"', html)   # chat.js fills in the chosen model's AI
 
     def test_segment_slider_for_stations_and_file_tabs(self):
         page = self.html()
