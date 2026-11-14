@@ -261,7 +261,8 @@
     },
     onProgress: function (job, info) {
       job.meta.bar.style.transform = "scaleX(" + (info.size ? Math.min(info.sent / info.size, 1) : 1) + ")";
-      job.meta.status.textContent = info.speed > 0 && info.left !== null ? formatSpeed(info.speed) + " \u00b7 " + formatLeft(info.left) : tile.dataset.starting;
+      job.meta.status.textContent = info.waiting ? tile.dataset.waiting
+        : info.speed > 0 && info.left !== null ? formatSpeed(info.speed) + " \u00b7 " + formatLeft(info.left) : tile.dataset.starting;
     },
     onRequest: function (job, info) {
       window.__uploadLog.push({ file: job.file.name, offset: info.offset, bytes: info.length, ms: info.ms, attempt: info.attempt });

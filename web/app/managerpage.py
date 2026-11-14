@@ -336,7 +336,7 @@ def _files_tile(lang: str, items: list, files_confirm: bool = True) -> str:
     attrs = " ".join(f'data-{name}="{esc(i18n.t(lang, key, n="{n}", name="{name}"))}"' for name, key in (
         ("add-file", "files_add_file"), ("add-link", "files_add_link"), ("err-net", "files_err_net"),
         ("eta-s", "files_eta_s"), ("eta-m", "files_eta_m"), ("eta-h", "files_eta_h"), ("drop-to", "files_drop_to"),
-        ("starting", "files_starting"), ("expand", "files_expand"), ("collapse", "files_collapse"),
+        ("starting", "files_starting"), ("waiting", "files_waiting"), ("expand", "files_expand"), ("collapse", "files_collapse"),
         ("note-no-ask", "files_note_no_ask"), ("note-ask", "files_note_ask"), ("delete-selected", "files_delete_selected"),
         ("drop", "files_drop"), ("marked", "files_marked"), ("zip-name", "files_zip_name"),
         ("download-marked", "files_download_marked")))
