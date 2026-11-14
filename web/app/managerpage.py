@@ -25,10 +25,12 @@ MANAGER = """<section class="manager" id="manager-view" aria-label="%t.station_m
   </div>
   <div class="mcol">
     %CHECKS%
+    <div class="m-split" data-split="checks-files" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="%t.split_label%"></div>
     %FILES%
   </div>
   <div class="mcol">
     %CHAT%
+    <div class="m-split" data-split="chat-waiting" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="%t.split_label%"></div>
     <section class="mtile glass m-waiting">
       <header><h2>%t.manager_waiting%</h2>%AUTONOMY%<span class="count">0</span></header>
       <p class="muted">%t.manager_waiting_empty%</p>
@@ -42,8 +44,7 @@ MANAGER = """<section class="manager" id="manager-view" aria-label="%t.station_m
 # ui.model_picker) are settings of the manager, so they hold for everything the manager does (manager.js saves them).
 CHAT = """<section class="mtile glass m-chat" id="chat" data-you="%t.chat_you%" data-claude="%t.station_manager%"
              data-waiting="%t.chat_waiting%" data-failed="%t.chat_failed%" data-memory="%t.chat_memory_saved%">
-      <header><h2>%t.manager_chat%</h2>%MODEL%</header>
-      <div class="m-chat-sub"><p class="muted">%t.manager_chat_hint%</p>%NET%</div>
+      <header><h2>%t.manager_chat%</h2>%INFO%<span class="m-chat-tools">%NET%%MODEL%</span></header>
       <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
       <p class="error" id="chat-error" role="alert" hidden></p>
       <form class="chat-form" id="chat-form" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
@@ -322,7 +323,7 @@ def _files_tile(lang: str, items: list, files_confirm: bool = True) -> str:
         mine = [f for f in items if f.category == category]
         name = esc(i18n.t(lang, key))
         tabs.append(   # symbol when the tile is narrow, name when it is wide (CSS container query), always one row
-            f'<button class="file-tab" type="button" role="tab" data-cat="{category}" data-name="{name}" title="{name}" '
+            f'<button class="file-tab" type="button" role="tab" data-seg data-cat="{category}" data-name="{name}" title="{name}" '
             f'aria-label="{name}" aria-selected="false">{icon(TAB_ICON[category])}'
             f'<span class="file-tab-label">{name}</span><span class="file-count">{len(mine)}</span></button>'
         )
@@ -360,13 +361,14 @@ def _files_tile(lang: str, items: list, files_confirm: bool = True) -> str:
 
 
 def _net_switch(lang: str, current: str) -> str:
-    """The switch "web and code together" (on: code has the open internet; off: web search, code offline)."""
-    label = esc(i18n.t(lang, "net_together"))
-    checked = " checked" if current == "together" else ""
+    """"Web and code together" as a pill that looks like the drop-downs next to it (Janis, 14.11.2026). Pressed, it is
+    red like the armed trash circle of the files: code then has the open internet (the bolder choice); not pressed,
+    web search and code without internet. The tip says both."""
+    label, tip = esc(i18n.t(lang, "net_together")), esc(i18n.t(lang, "net_together_tip"))
+    pressed = "true" if current == "together" else "false"
     return (
-        f'<label class="m-switch"><input type="checkbox" role="switch" id="manager-net" data-setting="net" '
-        f'data-on="together" data-off="apart"{checked}><span class="m-switch-track" aria-hidden="true"></span>'
-        f'<span class="m-switch-label">{label}</span></label>'
+        f'<button type="button" class="m-pill" id="manager-net" data-setting="net" data-on="together" data-off="apart" '
+        f'aria-pressed="{pressed}" aria-label="{label}" data-tip="{tip}">{esc(i18n.t(lang, "net_pill"))}</button>'
     )
 
 
@@ -384,6 +386,7 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
         DEVICES=_soon(lang, "manager_devices", "manager_devices_hint", "m-grow"),
         CHECKS=_checks_tile(lang, regular_checks or [], int(now if now is not None else time.time())),
         FILES=_files_tile(lang, stored_files or [], files_confirm),
-        CHAT=fill(CHAT, lang, MODEL=model, NET=_net_switch(lang, settings["roles"]["chef"]["net"])),
+        CHAT=fill(CHAT, lang, MODEL=model, NET=_net_switch(lang, settings["roles"]["chef"]["net"]),
+                  INFO=ui.info_dot(i18n.t(lang, "manager_chat"), i18n.t(lang, "manager_chat_hint"))),
         AUTONOMY=autonomy,
     )

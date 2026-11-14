@@ -95,8 +95,8 @@ class ProjectPageTest(unittest.TestCase):
         self.assertEqual(positions, sorted(positions))
         self.assertEqual(nav.count('class="station off"'), 4)                  # board and manager exist so far
         self.assertEqual(nav.count('class="station active"'), 1)
-        self.assertIn('href="#manager" data-station="manager"', nav)
-        self.assertIn('href="#board" data-station="board"', nav)
+        self.assertIn('href="#manager" data-seg data-station="manager"', nav)
+        self.assertIn('href="#board" data-seg data-station="board"', nav)
         self.assertNotIn("Alle Projekte", nav)                                # the way back is in the top bar now
         self.assertNotIn("station-back", page)
         self.assertNotIn("clip-path", css_of("project.css"))                 # sharp edges, no arrows
@@ -179,7 +179,7 @@ class ProjectPageTest(unittest.TestCase):
         for part in ('class="m-select has-select"', "<svg", 'data-setting='):
             self.assertIn(part, model)                                        # core.js styles it like the language select
             self.assertIn(part, autonomy)
-        self.assertIn('value="opus" selected', model)                         # what the server has
+        self.assertIn('value="opus" label="Opus" selected', model)                         # what the server has
         self.assertIn('value="all" selected', autonomy)
         self.assertIn("Fragt bei Großem", autonomy)
         chat_tile = page[page.index('id="chat"'):]
@@ -206,16 +206,45 @@ class ProjectPageTest(unittest.TestCase):
             self.assertNotIn(gone, page)                                       # the old Web/Code buttons are gone
         header = page[page.index('id="chat"'):]
         header = header[:header.index('id="chat-log"')]
-        self.assertIn('id="manager-net"', header)                              # at the top of the chat, beside the hint
-        self.assertIn('role="switch"', header)
-        self.assertIn('data-on="together" data-off="apart" checked', header)   # on by default (Janis: open internet)
-        self.assertIn("Web + Code zusammen", header)
+        # a pill next to the model in the chat header (Janis, 14.11.2026), red while pressed (open internet)
+        tools = header[header.index('class="m-chat-tools"'):header.index("</header>")]
+        self.assertIn('id="manager-net"', tools)
+        self.assertLess(tools.index('id="manager-net"'), tools.index('id="manager-model"'))   # left of the model
+        self.assertIn('data-on="together" data-off="apart" aria-pressed="true"', tools)      # on by default (open internet)
+        self.assertIn('aria-label="Web + Code zusammen"', tools)
+        self.assertIn('class="info-dot"', header)                                           # the hint is an "i" now
+        self.assertNotIn("m-chat-sub", header)
         agents.configure(self.user.id, "chef", net="apart")
-        off = self.html()
-        self.assertNotIn('data-off="apart" checked', off)
+        self.assertIn('aria-pressed="false"', self.html()[self.html().index('id="manager-net"') - 200:][:400])
         self.assertNotIn("chatMode", css_of("chat.js"))
-        self.assertIn("box.dataset.on", css_of("manager.js"))
-        self.assertIn(".m-switch input:checked + .m-switch-track::after { transform: translateX(16px);", css_of("project.css"))
+        self.assertIn("pill.dataset.on", css_of("manager.js"))
+        self.assertIn('.m-pill[aria-pressed="true"] { color: var(--on-danger); background: var(--danger);', css_of("project.css"))
+        self.assertNotIn(".m-switch", css_of("project.css"))
+
+    def test_segment_slider_for_stations_and_file_tabs(self):
+        page = self.html()
+        nav = page[page.index('class="stations"'):page.index("</nav>")]
+        self.assertIn('class="station-thumb"', nav)                            # the shared slider, upright
+        self.assertEqual(nav.count("data-seg"), 6)                              # every station, also those not built
+        self.assertIn('data-seg data-cat="memory"', page)                      # the file tabs use the same slider
+        self.assertIn("segment.js", page)
+        self.assertLess(page.index("motion.js"), page.index("segment.js"))     # it needs the springs
+        script = css_of("segment.js")
+        for needle in ("Motion.spring", "Motion.rubberband", "Motion.velocityOf", "setPointerCapture", "seg-over"):
+            self.assertIn(needle, script)
+        self.assertIn("Segment.attach", css_of("stations.js"))
+        self.assertIn("Segment.attach", css_of("files.js"))
+
+    def test_splitters_between_the_tiles(self):
+        page = self.html()
+        middle = page[page.index('id="checks"'):page.index('id="files"')]
+        self.assertIn('data-split="checks-files" role="separator"', middle)
+        right = page[page.index('id="chat"'):page.index("m-waiting")]
+        self.assertIn('data-split="chat-waiting"', right)
+        self.assertIn("splitter.js", page)
+        css = css_of("project.css")
+        self.assertIn(".m-split:hover::after", css)
+        self.assertIn(".m-split { display: none; }", css)                     # not in the one-column layout
 
     def test_stations_script_swaps_the_views_by_the_address(self):
         script = css_of("stations.js")

@@ -9,6 +9,13 @@ from .users import User
 from . import claude_link
 
 
+def info_dot(label: str, text: str) -> str:
+    """The "i" of DESIGN.md (section 4, Janis 14.11.2026): explains a control in our own tip on hover, focus, click or
+    tap, instead of a line of text that takes room. `label` and `text` are plain text (escaped here)."""
+    return (f'<button type="button" class="info-dot" data-tip="{esc(text)}" aria-label="{esc(label)}: {esc(text)}">'
+            f'{icon("info")}</button>')
+
+
 def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model: str = "picker_model",
                  label_effort: str = "picker_effort", css: str = "m-select", setting: bool = True,
                  provider_id: str = catalog.DEFAULT_PROVIDER) -> str:
@@ -36,8 +43,9 @@ def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model
     def effort_text(level: str) -> str:
         return esc(texts.get(f"effort_{level}", level))
 
-    models = "".join(f'<option value="{m.id}"{" selected" if m.id == model else ""}>{model_text(m)}</option>'
-                     for m in current.models)
+    # The closed box shows only the name (option label, saves room in a tile header); the list shows name and hint.
+    models = "".join(f'<option value="{m.id}" label="{esc(m.name)}"{" selected" if m.id == model else ""}>'
+                     f'{model_text(m)}</option>' for m in current.models)
     efforts = "".join(
         f'<option value="{e}"{" selected" if e == effort else ""}{"" if e in chosen.efforts else " hidden"}>'
         f'{effort_text(e)}</option>' for e in levels)

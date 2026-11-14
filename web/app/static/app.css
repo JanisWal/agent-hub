@@ -491,6 +491,10 @@ main { padding-bottom: 96px; } /* room for the toggle */
 .setting select option { color: var(--text); background: var(--bg); }
 .setting select:focus-visible { outline: none; } /* the whole block shows the focus ring (:focus-within) */
 .has-select > svg { position: absolute; right: 12px; bottom: 13px; width: 18px; height: 18px; fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; transition: transform 0.45s cubic-bezier(0.3, 1.4, 0.5, 1); }
+/* Only our own list opens (core.js): the block takes every tap, the select none, so iPhone Safari never shows its
+   system picker. The select stays as the form field and for the keyboard. */
+.has-select { cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.has-select select { pointer-events: none; }
 /* The arrow turns around while the list is open, like the arrow of the AI list and of the drawer (core.js sets .open). */
 .has-select.open > svg { transform: rotate(180deg); }
 /* Both arrows of the drawer sit at the same spot (Janis, 11.11.2026): top right, on the line of the small label.
@@ -563,7 +567,9 @@ a.primary { display: flex; align-items: center; justify-content: center; text-de
 .dialog .primary + label, .dialog a.primary + label { margin-top: calc(var(--space) * 2); }
 .dialog .error[hidden], .dialog [data-step][hidden] { display: none; }
 .link.inline { display: inline-flex; margin: 0; min-height: 28px; padding: 0 4px; font-size: 0.9rem; text-decoration-color: currentColor; }
-.drawer-box .save { margin-top: 12px; }
+/* One rhythm in the box (Janis, 14.11.2026): 8 px between all blocks and buttons, "Save" right under the others,
+   password and logout close below it, and no empty strip at the bottom; the box is as tall as its content. */
+.drawer-box .save { margin-top: 0; min-height: 50px; }
 /* "Delete chat history": as wide as the save button, half as high, with more presence than a link. Warm red
    (never the accent: deleting is not a main action). The click area stays 44px high (::after). */
 .drawer-box .clear-btn {
@@ -583,20 +589,28 @@ a.primary { display: flex; align-items: center; justify-content: center; text-de
 }
 .drawer-box .clear-btn::after { content: ""; position: absolute; inset: -8px 0; }
 .drawer-box .clear-btn:hover { background: color-mix(in srgb, var(--danger) 24%, var(--glass)); }
-/* The way to the administration page (owner and admins): a quiet button, less colour than "Save", above it. */
+/* The way to the administration page (owner and admins): a glass button like the others (it lifts off the box
+   with shadow and light edge), less colour than "Save", above it. */
 .drawer-box .admin-btn {
   position: relative; display: flex; align-items: center; justify-content: center;
   width: 100%; height: 40px; margin: 0 0 8px; padding: 0 12px;
   font-size: 0.88rem; font-weight: 600; color: var(--text); text-decoration: none;
-  background: var(--field); border: 1px solid var(--glass-border); border-radius: var(--radius-button);
-  transition: border-color 0.2s;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--highlight) 70%, transparent), transparent 60%), var(--glass);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6);
+  border: 1px solid var(--glass-border); border-radius: var(--radius-button);
+  box-shadow: 0 6px 16px rgba(60, 30, 10, 0.18), inset 0 1px 0 var(--highlight);
+  transition: transform 0.25s cubic-bezier(0.3, 1.5, 0.5, 1), border-color 0.2s;
 }
 .drawer-box .admin-btn::after { content: ""; position: absolute; inset: -2px 0; }
-.drawer-box .admin-btn:hover { border-color: var(--accent); }
+.drawer-box .admin-btn:hover { border-color: var(--accent); transform: translateY(-1px); }
+.drawer-box .admin-btn:active { transform: scale(0.97); }
 .drawer-box .admin-btn:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-.drawer-box .link { width: 100%; justify-content: center; margin-top: 4px; }
+.drawer-box .link { position: relative; width: 100%; justify-content: center; min-height: 34px; margin: 0; }
+.drawer-box .link::after { content: ""; position: absolute; inset: -5px 0; }   /* the click area stays 44 px high */
 .drawer-box .link.inline { width: auto; margin-top: 0; }
-.drawer-box form + a.link { margin-top: 12px; }
+.drawer-box .link.inline::after { display: none; }
+.drawer-box form + a.link { margin-top: 8px; }
+.drawer-scroll { padding-bottom: 12px; }
 /* Low windows (up to 640 px high): the box gets tighter so everything still fits without scrolling. */
 @media (max-height: 640px) {
   .drawer-scroll { padding: 12px; }
@@ -608,7 +622,7 @@ a.primary { display: flex; align-items: center; justify-content: center; text-de
   .ai-toggle { height: 30px; }
   .drawer-box .admin-btn { height: 32px; margin-bottom: 5px; }
   .drawer-box .clear-btn { margin-bottom: 5px; }
-  .drawer-box .save { min-height: 44px; margin-top: 6px; }
+  .drawer-box .save { min-height: 44px; margin-top: 0; }
   .drawer-scroll > a.link, .drawer-scroll > form > .link { min-height: 32px; margin-top: 0; }
   .drawer-box form + a.link { margin-top: 6px; }
 }
@@ -741,6 +755,22 @@ main { overflow: clip; } /* shadows may reach to the window edge, but their empt
 @supports not selector(::-webkit-scrollbar) {
   * { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent; }
 }
+
+/* ===== Small round controls: one design (Janis, 14.11.2026: as few button designs as possible) ===== */
+/* Gear, trash and archive next to it, the way back, the pencil at the title and the plus buttons of the tiles were
+   five slightly different circles. Now they share one glass: see-through fill with blur, glass rim, light edge on
+   top, a soft shadow; on hover the rim turns accent, a press gives way (scale 0.94) and springs back. Their own
+   states (pressed, armed, marked) keep their colours, those rules are more specific. */
+.drawer-extra, .drawer-handle, .topbar-back, .topbar .title-edit, .m-add, .add {
+  background: color-mix(in srgb, var(--glass) 70%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.5);
+  backdrop-filter: blur(14px) saturate(1.5);
+  border: 1px solid var(--glass-border);
+  box-shadow: inset 0 1px 0 var(--highlight), 0 4px 12px rgba(60, 30, 10, 0.12);
+}
+.drawer-extra:hover, .drawer-handle:hover, .topbar-back:hover, .topbar .title-edit:hover, .m-add:hover, .add:hover { border-color: var(--accent); }
+.drawer-extra:active, .drawer-handle:active, .topbar .title-edit:active, .m-add:active, .add:active { transform: scale(0.94); }
+.drawer-extra[aria-pressed="true"], .topbar .title-edit[aria-expanded="true"] { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, transparent); }
 
 /* ===== Phone ===== */
 @media (max-width: 560px) {

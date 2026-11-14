@@ -12,6 +12,16 @@
   };
   var links = project.querySelectorAll("a.station[data-station]");
   var current = "board";
+  var nav = project.querySelector(".stations");
+  // The same segment slider as the file tabs (segment.js), upright here: the thumb lies under the open station and
+  // can be dragged to another one; the stations that are not built yet are skipped.
+  var segment = Segment.attach(nav, {
+    thumb: nav.querySelector(".station-thumb"),
+    items: function () { return Array.prototype.slice.call(nav.querySelectorAll(".station")); },
+    current: function () { return nav.querySelector(".station.active"); },
+    enabled: function (el) { return !el.classList.contains("off"); },
+    pick: function (el) { show(el.dataset.station, true); }
+  });
 
   function show(name, animate) {
     if (!panels[name]) name = "board";
@@ -28,6 +38,7 @@
       link.classList.toggle("active", on);
       if (on) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current");
     });
+    segment.place(!animate);
     if (animate) {   // a short fade, restarted each time
       panels[name].classList.remove("appear");
       void panels[name].offsetWidth;

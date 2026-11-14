@@ -185,22 +185,25 @@
         select.dispatchEvent(new Event("change", { bubbles: true }));
       }
       close();
-      select.focus();
+      if (document.activeElement === select || !touched) select.focus({ preventScroll: true });
     }
+    var touched = false;   // the last pointer was a finger: never focus the select (see below)
+    menu.addEventListener("pointerdown", function (event) { touched = event.pointerType === "touch"; });
 
-    select.addEventListener("mousedown", function (event) {
-      event.preventDefault();
-      select.focus();
-      if (isOpen()) close(); else open();
-    });
     // The whole block opens the list, not only the line with the value: the arrow, the small label and the
     // padding count too (Janis, 11.11.2026: same click area as the arrow of the AI list).
-    select.parentNode.addEventListener("mousedown", function (event) {
-      if (event.target === select || menu.contains(event.target)) return;
+    // The select itself takes no pointer at all (app.css: pointer-events: none): iPhone Safari opened its own
+    // picker on a tap, which preventDefault on mousedown cannot stop (Janis, 14.11.2026). The block takes the
+    // tap instead; its click is cancelled too, so the label never hands the tap on to the select. On a touch
+    // screen the select is not focused either, so no system picker can come up; keyboards still use it.
+    var box = select.parentNode;
+    box.addEventListener("pointerdown", function (event) {
+      if (menu.contains(event.target)) return;
       event.preventDefault();
-      select.focus();
+      if (event.pointerType !== "touch") select.focus({ preventScroll: true });
       if (isOpen()) close(); else open();
     });
+    box.addEventListener("click", function (event) { event.preventDefault(); });   // also for taps in the list
     select.addEventListener("keydown", function (event) {
       var key = event.key;
       if (!isOpen()) {

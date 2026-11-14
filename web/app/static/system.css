@@ -7,24 +7,24 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space) calc(var(--space) * 2);
-  min-height: 72px;
-  padding: 12px 14px;
+  gap: var(--space) calc(var(--space) * 1.5);
+  padding: 10px 12px;
   background: var(--field);
   border: 1px solid var(--glass-border);
   border-radius: var(--radius-button);
 }
-.sys-main { display: flex; flex-direction: column; flex: 1 1 200px; min-width: 0; }
+.sys-main { display: flex; align-items: center; gap: 2px; flex: 0 0 auto; min-width: 0; }
 .sys-name { font-weight: 600; }
-.sys-hint { font-size: 0.82rem; color: var(--muted); }
-.sys-row button { flex: 0 0 auto; min-width: 140px; }
-/* Upload settings: two drop-downs side by side, each with its "i" at the top right, left of the arrow. */
-.sys-fields { display: flex; flex-wrap: wrap; gap: var(--space); flex: 1 1 100%; }   /* below the title, side by side or stacked */
-.sys-field { position: relative; flex: 1 1 200px; min-width: 0; }
-.sys-field .setting { margin: 0; background: color-mix(in srgb, var(--bg) 40%, var(--field)); }
-.sys-field .setting-label { padding-right: 64px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }   /* room for the "i" and the arrow */
-.sys-field .info-dot { position: absolute; top: 1px; right: 34px; }
-.sys-row .sys-field button.info-dot { min-width: 0; width: 36px; }
+/* One action per row (Janis, 14.11.2026): the button carries the name and takes the width, the "i" next to it explains. */
+.sys-action { flex-wrap: nowrap; padding: 8px 8px 8px 10px; }
+.sys-action .sys-btn { flex: 1 1 auto; min-height: 46px; }
+.sys-action .info-dot, .sys-main .info-dot { flex: none; }
+/* Upload: the title with its "i", then the two choices side by side, compact. */
+.sys-fields { display: flex; flex-wrap: wrap; gap: var(--space); flex: 1 1 260px; }
+.sys-field.setting { flex: 1 1 120px; min-width: 0; margin: 0; padding: 6px 12px; background: color-mix(in srgb, var(--bg) 40%, var(--field)); }
+.sys-field .setting-label { padding-right: 24px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.sys-field select { min-height: 24px; font-size: 0.95rem; }
+.sys-field.has-select > svg { top: 8px; }
 .sys-note {
   margin: calc(var(--space) * 2) 0 0;
   padding: 12px 16px;
@@ -34,6 +34,5 @@
   font-weight: 600;
 }
 @media (max-width: 560px) {
-  .sys-row button:not(.info-dot) { width: 100%; }
-  .sys-fields { width: 100%; }
+  .sys-fields { flex-basis: 100%; }
 }
