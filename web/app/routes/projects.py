@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from .. import board, checks, dashboard, files, i18n, projectpage, projects, ui, users
+from .. import board, checks, dashboard, files, i18n, memory, projectpage, projects, ui, users
 from ..deps import api_user, fail, ok, page_user, reauth, redirect
 
 router = APIRouter()
@@ -44,6 +44,7 @@ def project_view(project_id: int, user: users.User = Depends(page_user)):
     project = projects.get_project(user.id, project_id)
     if project is None:
         raise HTTPException(status_code=404)
+    memory.ensure_skeleton(user.id, project.id, user.language)   # the fixed memory files, once per project
     body = projectpage.render(
         user, project, board.list_items(user.id, project.id), checks.list_checks(user.id, project.id),
         files.list_files(user.id, project.id), files.list_trash(user.id, project.id),
