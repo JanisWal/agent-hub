@@ -179,7 +179,7 @@ class ProjectPageTest(unittest.TestCase):
         for part in ('class="m-select has-select"', "<svg", 'data-setting='):
             self.assertIn(part, model)                                        # core.js styles it like the language select
             self.assertIn(part, autonomy)
-        self.assertIn('value="opus" label="Opus" selected', model)                         # what the server has
+        self.assertIn('value="opus" label="Opus" data-ai="Claude" selected', model)                         # what the server has
         self.assertIn('value="all" selected', autonomy)
         self.assertIn("Fragt bei Großem", autonomy)
         chat_tile = page[page.index('id="chat"'):]
