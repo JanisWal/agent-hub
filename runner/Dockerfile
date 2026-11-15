@@ -6,7 +6,8 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends curl ca-certificates git ripgrep python3 \
  && rm -rf /var/lib/apt/lists/*
 ENV HOME=/opt/claude-install
-RUN mkdir -p "$HOME" && curl -fsSL https://claude.ai/install.sh | bash \
+# Pinned (15.11.2026): a new Claude Code version is tried on a branch first (its options and output may change).
+RUN mkdir -p "$HOME" && curl -fsSL https://claude.ai/install.sh | bash -s 2.1.319 \
  && chmod -R a+rX /opt/claude-install
 ENV PATH="/opt/claude-install/.local/bin:${PATH}" \
     DISABLE_AUTOUPDATER=1
