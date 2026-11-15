@@ -6,7 +6,7 @@ import unittest
 import urllib.error
 from unittest import mock
 
-from app import adminpage, db, i18n, mail, mailtext, resetpages, resets, ui, userspage, users
+from app import adminpage, db, i18n, mail, mailtext, resetpages, resets, userspage, users
 from app.routes import accounts
 
 
