@@ -1,6 +1,12 @@
 services:
   web:
     build: ./web
+    # Own user, no extra rights, a memory limit (15.11.2026): ./data belongs to 9000 (deploy/restore.sh sets it).
+    # 9000 is outside the run users (10000+id) and the egress proxy (65534).
+    user: "9000:9000"
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
     ports:
       - "127.0.0.1:8000:8000"   # only the Pi itself; the tunnel reaches the hub over the Docker network
     volumes:
