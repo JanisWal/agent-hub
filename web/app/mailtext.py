@@ -75,7 +75,7 @@ HTML = """<!doctype html>
   <table role="presentation" width="520" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:520px;border-collapse:separate;border-spacing:0;">
     <tr><td class="t" style="padding:0 8px 16px;font-family:%FONT%;font-size:18px;font-weight:700;letter-spacing:-0.01em;color:%TEXT%;">Agent-Hub</td></tr>
 <!--[if !mso]><!-->
-    <tr><td class="card" style="padding:0;font-size:0;line-height:0;background-color:%CARD%;border:1px solid %BORDER%;border-bottom:0;border-radius:28px 28px 0 0;">%CAP_TOP%</td></tr>
+    <tr><td class="card" style="padding:0;font-size:0;line-height:0;background-color:%CARD%;border-radius:28px 28px 0 0;">%CAP_TOP%</td></tr>
 <!--<![endif]-->
 <!--[if mso]>
     <tr><td bgcolor="%CARD%" height="24" style="background-color:%CARD%;border-top:1px solid %BORDER%;border-left:1px solid %BORDER%;border-right:1px solid %BORDER%;font-size:0;line-height:0;">&nbsp;</td></tr>
@@ -84,12 +84,12 @@ HTML = """<!doctype html>
       <h1 class="t" style="margin:0 0 16px;font-family:%FONT%;font-size:30px;line-height:1.15;mso-line-height-rule:exactly;font-weight:700;letter-spacing:-0.03em;color:%TEXT%;">%GREETING%</h1>
       <p class="t" style="margin:0 0 28px;font-family:%FONT%;font-size:17px;line-height:1.55;color:%TEXT%;">%BODY%</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:320px;margin:0 auto;"><tr>
-        <td align="center"%GLOW% style="padding:13px 16px;%GLOW_CSS%">
+        <td class="card" align="center" bgcolor="%CARD%"%GLOW% style="padding:23px 16px;background-color:%CARD%;%GLOW_CSS%">
 <!--[if mso]>
           <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="%LINK%" style="height:54px;width:260px;v-text-anchor:middle;" arcsize="30%" strokecolor="%ACCENT%" fillcolor="%ACCENT%"><v:fill type="gradient" color="%SHEEN%" color2="%ACCENT%" angle="180"/><w:anchorlock/><center style="font-family:Arial,sans-serif;font-size:17px;font-weight:bold;color:%ON_ACCENT%;">%BUTTON%</center></v:roundrect>
 <![endif]-->
 <!--[if !mso]><!-->
-          <table role="presentation" width="260" cellpadding="0" cellspacing="0" border="0" align="center" style="width:260px;margin:0 auto;"><tr>
+          <table role="presentation" width="260" cellpadding="0" cellspacing="0" border="0" align="center" bgcolor="%CARD%" style="width:260px;margin:0 auto;background-color:%CARD%;"><tr>
             <td class="btn" align="center" bgcolor="%ACCENT%"%SHEEN_PIC% style="width:260px;height:54px;border-radius:16px;background-color:%ACCENT%;%SHEEN_CSS%">
               <a class="bt" href="%LINK%" style="display:block;height:54px;line-height:54px;white-space:nowrap;font-family:%FONT%;font-size:17px;font-weight:700;color:%ON_ACCENT%;text-decoration:none;border-radius:16px;">%BUTTON%</a>
             </td>
@@ -102,7 +102,7 @@ HTML = """<!doctype html>
       <p class="m" style="margin:28px 0 0;font-size:13px;line-height:1.55;color:%MUTED%;">%NOTE%</p>
     </td></tr>
 <!--[if !mso]><!-->
-    <tr><td class="card" style="padding:0;font-size:0;line-height:0;background-color:%CARD%;border:1px solid %BORDER%;border-top:0;border-radius:0 0 28px 28px;">%CAP_BOTTOM%</td></tr>
+    <tr><td class="card" style="padding:0;font-size:0;line-height:0;background-color:%CARD%;border-radius:0 0 28px 28px;">%CAP_BOTTOM%</td></tr>
 <!--<![endif]-->
 <!--[if mso]>
     <tr><td bgcolor="%CARD%" height="24" style="background-color:%CARD%;border-bottom:1px solid %BORDER%;border-left:1px solid %BORDER%;border-right:1px solid %BORDER%;font-size:0;line-height:0;">&nbsp;</td></tr>
@@ -115,7 +115,7 @@ HTML = """<!doctype html>
 </html>"""
 
 # Sizes of the pictures as shown (the files are twice as large), see tools/make_mail_images.py.
-PICTURES = {"backdrop": (600, 360), "glow": (300, 80), "button": (260, 54)}
+PICTURES = {"backdrop": (600, 360), "glow": (300, 100), "button": (260, 54)}
 CAPS = {"card-top": (520, 40), "card-bottom": (520, 28)}
 
 
