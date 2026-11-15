@@ -114,7 +114,7 @@ Aufbau:
 - **Geprüft auf dem Pi (07.11.2026)** mit dem echten Befehl der Vorlage (nur das Netz war `none`): Der Lauf ist UID 10002, `/` ist schreibgeschützt, sichtbar sind nur `/work` (schreibbar) und `/claude`, es gibt kein `/data` und keinen Docker-Socket, `claude --version` läuft (2.1.319). Nicht geprüft: ein echter Lauf mit Anmeldung, das Netz `agent-hub-agents` (wird beim Ausrollen angelegt, das ist eine Netzwerk-Änderung und wartet auf Janis’ Ja).
 - **Berechtigungen im Lauf:** `--dangerously-skip-permissions`, weil der Agent nur den Arbeitsordner und seinen Claude-Ordner sieht und im Container nicht Root ist (so ist es im Container üblich). Das ist die eine Stelle in der Vorlage, die man bei Bedenken auf `acceptEdits` mit Werkzeugliste umstellen kann.
 - **Ergebnis des Agenten:** Er beendet seine Antwort mit einer letzten Zeile `RESULT: <Wert>` (Werte je Rolle wie in Abschnitt 3). Fehlt sie, ist der Wert falsch, ist die Ausgabe kein lesbares JSON oder meldet Claude Code einen Fehler, gilt `failed` und die Aufgabe geht zu dir (`parse_output`). Jede Rolle darf `failed` melden. **Ungeprüft:** das genaue JSON von `claude -p --output-format json` (Felder `result`, `usage`); der Leser ist tolerant, aber erst der erste echte Lauf bestätigt es (PROJEKT.md Abschnitt 3 verlangt diese Prüfung).
-- **Git im Lauf:** Der Agent committet nicht, der Runner committet danach von außen. Ein Git-Worktree taugt dafür schlecht, weil seine `.git`-Datei auf einen Ordner außerhalb zeigt, der nicht eingehängt ist. Vorschlag für das Modul „Arbeitsordner“: pro Aufgabe ein eigener Klon des Projekt-Repos (`git clone --shared` spart Platz), dann ist der Ordner in sich geschlossen.
+- **Git im Lauf:** Der Agent committet nicht, der Runner committet danach von außen. Ein Git-Worktree taugt dafür schlecht, weil seine `.git`-Datei auf einen Ordner außerhalb zeigt, der nicht eingehängt ist. Vorschlag für das Modul „Arbeitsordner“: pro Aufgabe ein eigener Klon des Projekt-Repos (`git clone --shared` spart Platz), dann ist der Ordner in sich geschlossen. **So gebaut (15.11.2026):** statt eines Klons ein getrenntes Git-Verzeichnis beim Runner (`gitdirs/<Aufgabe>.git`) und ein Ordner nur mit den Dateien (`tasks/<Aufgabe>/`), der allein eingehängt wird; so kann ein Agent über `.git/config` oder Hooks nichts beim Runner auslösen (`runner/workspace.py`).
 
 ## 6b. Geräte, Heimnetz und Mac (entschieden 07.11.2026, Janis)
 
@@ -246,15 +246,15 @@ Grenzen (Vorschlag, beim Bau festzulegen): höchstens 3 `<ask>`, 5 `<task>`, 1 `
 - **Später, fortgeschritten (Janis):** die Wahl berücksichtigt das restliche Kontingent und die Zeit bis zum Zurücksetzen (viel übrig kurz vor dem Zurücksetzen = großzügiger, wenig übrig = sparsam). Setzt die Verbrauchsanzeige voraus (PROJEKT.md 11a, Punkt 7).
 - Der Prüfer soll, sobald eine zweite KI verbunden ist, eine andere KI nutzen als der Programmierer (PROJEKT.md 11a, Punkt 4b).
 
-### 9.9 Reihenfolge der Umsetzung (Vorschlag, Janis entscheidet den Start)
+### 9.9 Reihenfolge der Umsetzung (Stand 15.11.2026)
 
-1. Antwortformat und strenges Lesen im Manager-Chat: `<ask>`, `<status>`, `<task>` (Parser wie `memory.parse_answer`, Tests mit Fremdprojekten in `test_isolation.py`).
-2. Kachel „Wartet auf dich“ mit Antworten (Knöpfe, freies Feld, groß bei großen Fragen) und der Regeltext der Selbstständigkeit.
-3. Status-Kachel und Projektkachel.
-4. Schleife der Agentenläufe samt Verteilen der Aufgaben (Board → Kette), Arbeitsordner je Aufgabe.
-5. Zeitplan der Manager-Runden nach Fälligkeit.
-6. Modell je Rolle mit Automatik.
-7. Ein zweiter Anbieter-Adapter als Beweis, dass alles ohne Claude geht.
+1. Antwortformat und strenges Lesen im Manager-Chat: `<ask>`, `<status>`, `<task>` (Parser wie `memory.parse_answer`, Tests mit Fremdprojekten in `test_isolation.py`). **Offen.**
+2. Kachel „Wartet auf dich“ mit Antworten (Knöpfe, freies Feld, groß bei großen Fragen) und der Regeltext der Selbstständigkeit. **Offen.**
+3. Status-Kachel und Projektkachel. **Offen.**
+4. Schleife der Agentenläufe samt Verteilen der Aufgaben (Board → Kette), Arbeitsordner je Aufgabe. **Gebaut 15.11.2026** (`ai-default`): Start auf der Board-Karte, Freigabe auf der Karte, Merge durch den Runner, Manager dokumentiert. Noch nicht: der Manager verteilt Aufgaben selbst (`<task>`, Punkt 1).
+5. Zeitplan der Manager-Runden nach Fälligkeit. **Offen.**
+6. Modell je Rolle mit Automatik. **Teilweise:** Modell und Stufe je Rolle und je KI gebaut, „Automatisch“ offen.
+7. Ein zweiter Anbieter-Adapter als Beweis, dass alles ohne Claude geht. **Gebaut 15.11.2026** (Mistral Vibe).
 
 ### 9.10 Dateien der Erinnerung: Namen und Sprache
 
