@@ -284,6 +284,63 @@ class InviteTest(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM users WHERE email = 'new@example.com'").fetchone()[0], 0)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM password_resets").fetchone()[0], 0)
 
+    def resend(self, actor, account, sent=True):
+        with mock.patch.object(mailtext, "send_link_mail", return_value=sent) as send:
+            answer = accounts.resend_invitation(account.id, actor)
+        return answer, send
+
+    def test_invitation_can_be_sent_again_until_the_password_is_chosen(self):
+        account = users.add_user(self.owner, "new@example.com", "Start1234")
+        answer, send = self.resend(self.owner, account)
+        self.assertEqual(answer["ok"], True)
+        self.assertIn("message", answer)
+        kind, target, token, seconds = send.call_args.args
+        self.assertEqual((kind, target.id, seconds), ("invite", account.id, resets.INVITE_SECONDS))
+        self.assertEqual(resets.user_for_token(token).id, account.id)
+        self.assertTrue(resets.consume(token, "Mein!Pass12"))
+        answer, send = self.resend(self.owner, users.get_by_id(account.id))   # now he has chosen one
+        self.assertEqual(answer.status_code, 400)
+        send.assert_not_called()
+
+    def test_new_link_replaces_the_old_one_and_mails_wait_a_minute(self):
+        account = users.add_user(self.owner, "new@example.com", "Start1234")
+        _, first = self.resend(self.owner, account)
+        old = first.call_args.args[2]
+        answer, second = self.resend(self.owner, account)
+        self.assertEqual(answer.status_code, 429)                              # cooldown, no second mail
+        second.assert_not_called()
+        with db.connect() as conn:
+            conn.execute("UPDATE password_resets SET created_at = created_at - ?", (resets.COOLDOWN_SECONDS + 1,))
+        _, third = self.resend(self.owner, account)
+        self.assertIsNone(resets.user_for_token(old))
+        self.assertIsNotNone(resets.user_for_token(third.call_args.args[2]))
+
+    def test_resend_needs_rights_over_the_account(self):
+        account = users.add_user(self.owner, "new@example.com", "Start1234")
+        answer, send = self.resend(self.plain, account)                       # a normal user is no admin
+        self.assertEqual(answer.status_code, 403)
+        admin = users.add_user(self.owner, "admin@example.com", "Admin!pass12")
+        users.set_admin(self.owner, admin.id, True)
+        other = users.add_user(self.owner, "other@example.com", "Start1234")
+        users.set_admin(self.owner, other.id, True)                           # an admin manages no other admin
+        answer, send = self.resend(users.get_by_id(admin.id), users.get_by_id(other.id))
+        self.assertEqual(answer.status_code, 403)
+        send.assert_not_called()
+        self.assertEqual(self.resend(self.owner, type("Gone", (), {"id": 9999})())[0].status_code, 400)
+
+    def test_failed_resend_keeps_the_account(self):
+        account = users.add_user(self.owner, "new@example.com", "Start1234")
+        answer, _ = self.resend(self.owner, account, sent=False)
+        self.assertEqual(answer.status_code, 502)
+        self.assertEqual(users.get_by_id(account.id).email, "new@example.com")
+
+    def test_resend_button_only_for_accounts_without_their_own_password(self):
+        pending = users.add_user(self.owner, "new@example.com", "Start1234")
+        html = userspage.render(self.owner, [self.owner, self.plain, users.get_by_id(pending.id)])
+        rows = html.split('<div class="user-row"')[1:]
+        self.assertEqual([("data-invite" in row) for row in rows], [False, False, True])
+        self.assertIn("Einladungslink erneut senden", rows[2])
+
     def test_failed_mail_for_an_account_that_came_back_keeps_its_data(self):
         from app import projects
         account = users.add_user(self.owner, "old@example.com", "Start1234")

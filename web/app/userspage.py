@@ -102,6 +102,8 @@ def _row(actor: User, account: User, lang: str) -> str:
     if actor.role == "owner" and account.role != "owner" and not account.must_change:
         actions.append(("data-owner", "crown", "owner_transfer"))  # only to somebody who can log in
     if can_manage(actor, account):
+        if account.must_change:   # still on the start password: the invitation can be sent again
+            actions.append(("data-invite", "link", "invite_resend"))
         actions += [("data-reset", "key", "reset_password"), ("data-delete", "trash", "delete_user")]
     for attr, icon_name, label in actions:
         text = esc(i18n.t(lang, label))
@@ -111,7 +113,8 @@ def _row(actor: User, account: User, lang: str) -> str:
     return (
         f'<div class="user-row" data-id="{account.id}" data-email="{esc(account.email)}">'
         f'<div class="user-main"><span class="user-email">{esc(account.email)}</span>'
-        f'<span class="user-role">{esc(i18n.t(lang, ROLE_LABEL[account.role]))}{you}</span></div>'
+        f'<span class="user-role">{esc(i18n.t(lang, ROLE_LABEL[account.role]))}{you}</span>'
+        f'<span class="user-note" data-note role="status" hidden></span></div>'
         f'<div class="user-actions">{"".join(buttons)}</div></div>'
     )
 

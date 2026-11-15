@@ -48,11 +48,31 @@
     dialog.showModal();
   }
 
+  // "Send the invitation link again": no dialog (nothing is lost, the new link replaces the old one); the answer
+  // appears under the role in the same row, the page is not reloaded.
+  function resendInvite(button) {
+    var row = button.closest(".user-row");
+    var note = row.querySelector("[data-note]");
+    function say(text, failed) {
+      note.textContent = text || networkText;
+      note.classList.toggle("is-error", failed);
+      note.hidden = false;
+    }
+    button.disabled = true;
+    fetch("/users/" + row.dataset.id + "/invite", { method: "POST" })
+      .then(function (response) {
+        return response.json().then(function (data) { say(data.message, !data.ok); }, function () { say("", true); });
+      })
+      .catch(function () { say("", true); })
+      .then(function () { button.disabled = false; });
+  }
+
   document.addEventListener("click", function (event) {
     var button = event.target.closest("button");
     if (!button) return;
     if (button.id === "add-user") dialogOf("add-dialog").showModal();
     else if (button.hasAttribute("data-reset")) openFor(button, "reset-dialog");
+    else if (button.hasAttribute("data-invite")) resendInvite(button);
     else if (button.hasAttribute("data-owner")) openFor(button, "owner-dialog");
     else if (button.hasAttribute("data-delete")) openFor(button, "delete-user-dialog");
     else if (button.hasAttribute("data-admin")) {
