@@ -121,6 +121,16 @@ class WorkspaceTest(unittest.TestCase):
         self.work.remove(7)
         self.assertFalse(tree.exists() or self.work.gitdir(7).exists())
 
+    def test_caches_of_running_the_code_are_not_committed(self):
+        tree = self.work.prepare(9, 1, "agent/task-9")
+        (tree / "__pycache__").mkdir()
+        (tree / "__pycache__" / "a.cpython-313.pyc").write_bytes(b"x")
+        (tree / "a.py").write_text("A = 1\n")
+        self.work.commit(9, "agent/task-9", "Task 9")
+        names = git(f"--git-dir={self.work.repo(1)}", "ls-tree", "-r", "--name-only", "agent/task-9")
+        self.assertIn("a.py", names)
+        self.assertNotIn("pyc", names)
+
     def test_hooks_and_settings_in_the_folder_do_nothing(self):
         tree = self.work.prepare(8, 1, "agent/task-8")
         (tree / ".git").mkdir()                                               # a run plants a fake git folder
