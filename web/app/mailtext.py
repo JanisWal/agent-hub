@@ -10,12 +10,14 @@ palette: the style the user saw last on the site (`users.theme`, reported by the
 cannot be asked which one the reader likes.
 
 Glass and glow (Janis, 15.11.2026: "the flat 2D version" in other programs): mail programs know no blur, no shadow
-and often no gradient, so the light edge, the sheen of the button, the halo around it and the coloured fields behind
+and often no gradient, so the light edge, the sheen of the button and the coloured fields behind
 the card are pictures (`static/mail/*.png`, drawn by `tools/make_mail_images.py`, served from `HUB_BASE_URL`).
 They are overlays with transparency over solid colours, so a program that blocks pictures still shows a complete,
 flat mail. Outlook for Windows gets no pictures (no round corners there) but a flat card and a VML button.
 Robust against recolouring: every cell carries its colours explicitly, no pure white or black, and `[data-ogsc]`
-and `[data-ogsb]` (set by Outlook.com and its apps when they recolour) bring our colours back. Programs that
+and `[data-ogsb]` (set by Outlook.com and its apps when they recolour) bring our colours back. Yahoo's dark mode (Janis' screenshots, 15.11.2026) recolours a
+cell only by its `bgcolor` attribute and leaves cells with a background picture light: so every cell that must follow the
+card carries `bgcolor` and no picture (the halo of the button is a shadow, not a picture). Programs that
 recolour on their own (Gmail app) we cannot stop, so the colours are chosen to stay readable when inverted.
 Texts live in i18n.py (`mail_<kind>_subject|body|button|note`), so they exist in both languages.
 """
@@ -46,7 +48,7 @@ FONT = "system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 
 # Page with the coloured fields behind it, a card made of top end, middle and bottom end (the ends are
 # pictures with round corners and the light edge; programs that block them show the solid colour), headline,
-# text, the button (halo and sheen as pictures over the solid colour; a VML button for Outlook for Windows),
+# text, the button (the sheen as a picture over the solid colour, the halo as a shadow; a VML button for Outlook for Windows),
 # the link as text for programs that block buttons, a note. `<!--[if !mso]><!-->` is read by everything but Outlook
 # for Windows, `<!--[if mso]>` only by it.
 HTML = """<!doctype html>
@@ -79,7 +81,7 @@ HTML = """<!doctype html>
   <table role="presentation" width="520" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:520px;border-collapse:separate;border-spacing:0;">
     <tr><td class="t" style="padding:0 8px 16px;font-family:%FONT%;font-size:18px;font-weight:700;letter-spacing:-0.01em;color:%TEXT%;">Agent-Hub</td></tr>
 <!--[if !mso]><!-->
-    <tr><td class="card" style="padding:0;font-size:0;line-height:0;background-color:%CARD%;border-radius:28px 28px 0 0;">%CAP_TOP%</td></tr>
+    <tr><td class="card" bgcolor="%CARD%" style="padding:0;font-size:0;line-height:0;background-color:%CARD%;border-radius:28px 28px 0 0;">%CAP_TOP%</td></tr>
 <!--<![endif]-->
 <!--[if mso]>
     <tr><td bgcolor="%CARD%" height="24" style="background-color:%CARD%;border-top:1px solid %BORDER%;border-left:1px solid %BORDER%;border-right:1px solid %BORDER%;font-size:0;line-height:0;">&nbsp;</td></tr>
@@ -88,13 +90,13 @@ HTML = """<!doctype html>
       <h1 class="t" style="margin:0 0 16px;font-family:%FONT%;font-size:30px;line-height:1.15;mso-line-height-rule:exactly;font-weight:700;letter-spacing:-0.03em;color:%TEXT%;">%GREETING%</h1>
       <p class="t" style="margin:0 0 28px;font-family:%FONT%;font-size:17px;line-height:1.55;color:%TEXT%;">%BODY%</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:320px;margin:0 auto;"><tr>
-        <td class="card" align="center" bgcolor="%CARD%"%GLOW% style="padding:23px 16px;background-color:%CARD%;%GLOW_CSS%">
+        <td class="card" align="center" bgcolor="%CARD%" style="padding:18px 16px;background-color:%CARD%;">
 <!--[if mso]>
           <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="%LINK%" style="height:54px;width:260px;v-text-anchor:middle;" arcsize="30%" strokecolor="%ACCENT%" fillcolor="%ACCENT%"><v:fill type="gradient" color="%SHEEN%" color2="%ACCENT%" angle="180"/><w:anchorlock/><center style="font-family:Arial,sans-serif;font-size:17px;font-weight:bold;color:%ON_ACCENT%;">%BUTTON%</center></v:roundrect>
 <![endif]-->
 <!--[if !mso]><!-->
           <table role="presentation" width="260" cellpadding="0" cellspacing="0" border="0" align="center" style="width:260px;margin:0 auto;"><tr>
-            <td class="btn" align="center" bgcolor="%ACCENT%"%SHEEN_PIC% style="width:260px;height:54px;border-radius:16px;background-color:%ACCENT%;%SHEEN_CSS%">
+            <td class="btn" align="center" bgcolor="%ACCENT%"%SHEEN_PIC% style="width:260px;height:54px;border-radius:16px;background-color:%ACCENT%;box-shadow:0 0 18px 2px rgba(%ACCENT_RGB%,0.45);%SHEEN_CSS%">
               <a class="bt" href="%LINK%" style="display:block;height:54px;line-height:54px;white-space:nowrap;font-family:%FONT%;font-size:17px;font-weight:700;color:%ON_ACCENT%;text-decoration:none;border-radius:16px;">%BUTTON%</a>
             </td>
           </tr></table>
@@ -106,7 +108,7 @@ HTML = """<!doctype html>
       <p class="m" style="margin:28px 0 0;font-size:13px;line-height:1.55;color:%MUTED%;">%NOTE%</p>
     </td></tr>
 <!--[if !mso]><!-->
-    <tr><td class="card" style="padding:0;font-size:0;line-height:0;background-color:%CARD%;border-radius:0 0 28px 28px;">%CAP_BOTTOM%</td></tr>
+    <tr><td class="card" bgcolor="%CARD%" style="padding:0;font-size:0;line-height:0;background-color:%CARD%;border-radius:0 0 28px 28px;">%CAP_BOTTOM%</td></tr>
 <!--<![endif]-->
 <!--[if mso]>
     <tr><td bgcolor="%CARD%" height="24" style="background-color:%CARD%;border-bottom:1px solid %BORDER%;border-left:1px solid %BORDER%;border-right:1px solid %BORDER%;font-size:0;line-height:0;">&nbsp;</td></tr>
@@ -119,7 +121,7 @@ HTML = """<!doctype html>
 </html>"""
 
 # Sizes of the pictures as shown (the files are twice as large), see tools/make_mail_images.py.
-PICTURES = {"backdrop": (600, 360), "glow": (300, 100), "button": (260, 54)}
+PICTURES = {"backdrop": (600, 360), "button": (260, 54)}
 CAPS = {"card-top": (520, 40), "card-bottom": (520, 28)}
 
 
@@ -140,7 +142,7 @@ def _lighter(colour: str, share: float = 0.28) -> str:
 def _pictures(theme: str) -> dict[str, str]:
     """Placeholders for the pictures: `X` is the HTML attribute, `X_CSS` the style part (programs read one or the
     other). All empty when `HUB_BASE_URL` is not set: a flat mail, still complete."""
-    names = ("BACKDROP", "BACKDROP_CSS", "GLOW", "GLOW_CSS", "SHEEN_PIC", "SHEEN_CSS", "CAP_TOP", "CAP_BOTTOM")
+    names = ("BACKDROP", "BACKDROP_CSS", "SHEEN_PIC", "SHEEN_CSS", "CAP_TOP", "CAP_BOTTOM")
     base = mail.base_url()
     if not base:
         return {name: "" for name in names}
@@ -160,7 +162,6 @@ def _pictures(theme: str) -> dict[str, str]:
 
     return {
         "BACKDROP": f' background="{url("backdrop")}"', "BACKDROP_CSS": css("backdrop", "backdrop", "center top"),
-        "GLOW": f' background="{url("glow")}"', "GLOW_CSS": css("glow", "glow", "center"),
         "SHEEN_PIC": f' background="{url("button")}"', "SHEEN_CSS": css("button", "button", "center"),
         "CAP_TOP": cap("card-top"), "CAP_BOTTOM": cap("card-bottom"),
     }
@@ -195,7 +196,7 @@ def build(kind: str, user: User, link: str, seconds: int, theme: str | None = No
         GREETING=esc(greeting), BODY=esc(body), BUTTON=esc(button), NOTE=esc(note),
         LINK=esc(link), LINK_TEXT=esc(link), LINK_HELP=esc(i18n.t(lang, "mail_link_help")),
         FOOTER=esc(i18n.t(lang, "mail_footer")),
-        **palette, SHEEN=_lighter(palette["ACCENT"]), **_pictures(theme),
+        **palette, SHEEN=_lighter(palette["ACCENT"]), ACCENT_RGB=",".join(str(int(palette["ACCENT"][i:i + 2], 16)) for i in (1, 3, 5)), **_pictures(theme),
     )
     return subject, text, html
 
