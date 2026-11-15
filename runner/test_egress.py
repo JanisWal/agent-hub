@@ -202,6 +202,22 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(answer.startswith(b"HTTP/1.1 403"))
         self.assertEqual(self.received, [])
 
+    async def test_the_mistral_gateway_takes_only_mistral_tickets_and_never_says_invalid_key(self):
+        server = await asyncio.start_server(
+            lambda r, w: E.gateway(r, w, self.tmp.name, open_upstream=lambda: None, log=self.logs.append,
+                                   provider="mistral"), "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        try:
+            reader, writer = await asyncio.open_connection("127.0.0.1", port)
+            writer.write(self.request())                                       # a valid ticket, but Claude's
+            await writer.drain()
+            answer = await asyncio.wait_for(reader.read(), 5)
+            writer.close()
+        finally:
+            server.close()
+        self.assertTrue(answer.startswith(b"HTTP/1.1 502"))                    # not 401/403: the key is kept
+        self.assertEqual(self.received, [])
+
     async def test_only_the_api_paths_and_plain_lengths(self):
         for path in ("/admin", "http://evil.example/v1/messages", "/v1/../etc", "/v2/messages"):
             answer = await self.send(self.request(path=path))
