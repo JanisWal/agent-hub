@@ -15,7 +15,7 @@ from . import catalog, checks, files as filestore, i18n, serversettings, ui
 from .icons import icon
 from .layout import esc, fill
 
-MANAGER = """<section class="manager" id="manager-view" aria-label="%t.station_manager%" hidden>
+MANAGER = """<section class="manager" id="manager-view" data-view-panel="manager" data-settings-url="/manager/settings" aria-label="%t.station_manager%" hidden>
   %MVAULT%
   <div class="mcol">
     <section class="mtile glass m-status">

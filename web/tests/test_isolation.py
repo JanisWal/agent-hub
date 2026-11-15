@@ -73,6 +73,9 @@ class IsolationTest(unittest.TestCase):
         for decision in ("approve", "reject", "cancel"):
             self.assertFalse(agents.decide(self.b.id, task.id, decision))
         self.assertEqual(agents.usage(self.b.id)["runs"], 0)
+        self.assertEqual(agents.role_runs(self.b.id, self.project.id, "programmer"), [])      # role views (15.11.2026)
+        self.assertEqual(agents.waiting_tasks(self.b.id, self.project.id), [])
+        self.assertEqual(len(agents.role_runs(self.a.id, self.project.id, "programmer")), 1)
         # B is not connected: B's own task would wait, A's connection is never a stand-in
         mine = agents.start_task(self.b.id, self.mine.id, self.mine_item.id)
         job = agents.claim_next(can_mac=True)
