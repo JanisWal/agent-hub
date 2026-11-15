@@ -187,8 +187,12 @@ def parse_request(head: bytes) -> tuple[str, str, list[tuple[str, str]]] | None:
         method, path, version = lines[0].split(" ")
     except ValueError:
         return None
+    # A bare CR, LF or NUL inside a line would be read as a line end by the AI's server: a run could smuggle a
+    # header or a second request past the checks here, with the real token on the connection.
+    if any(c in line for line in lines for c in "\r\n\x00"):
+        return None
     if method not in ("GET", "POST") or not version.startswith("HTTP/1.") or not path.startswith("/v1/") \
-            or any(c in path for c in "\\#") or "/../" in path or "://" in path:
+            or any(c in path for c in "\\#") or ".." in path.split("?")[0].split("/") or "://" in path:
         return None
     headers = []
     for line in lines[1:]:

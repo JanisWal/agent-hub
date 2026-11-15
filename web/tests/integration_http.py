@@ -55,6 +55,8 @@ status, headers, body = call("GET", "/login")
 check("login page", status == 200 and 'name="password"' in body)
 check("security headers", headers.get("X-Content-Type-Options") == "nosniff"
       and headers.get("X-Frame-Options") == "SAMEORIGIN" and headers.get("Cache-Control") == "no-store")
+check("content security policy", "script-src 'self'" in (headers.get("Content-Security-Policy") or "")
+      and "<script>" not in body, headers.get("Content-Security-Policy"))
 for path in ("/docs", "/redoc", "/openapi.json"):
     check(f"{path} is off", call("GET", path)[0] == 404, path)
 check("health", call("GET", "/health")[0] == 200)

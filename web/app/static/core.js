@@ -1,6 +1,6 @@
 // Loaded on every page: theme toggle, form validation, settings drawer, dialog buttons and
 // the quiet reload. Published as window.AgentHub for the page scripts.
-// The saved theme is applied earlier by a small inline script in <head> (layout.py).
+// The saved theme is applied earlier by theme.js in <head> (layout.py).
 (function () {
   var root = document.documentElement;
 

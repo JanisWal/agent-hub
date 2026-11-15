@@ -30,10 +30,23 @@ def _api_login_required(request: Request, error: ApiLoginRequired):
     return fail(401)
 
 
+# What a page may load (14.11.2026 checklist, built 15.11.2026). Scripts only from /static: text that slips into a
+# page unescaped can not run. Styles also inline (the pages set positions with style attributes). Pictures from
+# anywhere over http(s): the icon of a linked website; blob: for previews the browser makes itself. Nothing may
+# frame the site, post a form elsewhere or change the base address. Stored files are served with a stricter policy
+# of their own (routes/files.py), which stays (setdefault).
+CONTENT_POLICY = "; ".join((
+    "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob: https: http:", "media-src 'self' blob:", "connect-src 'self' blob:",
+    "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'self'",
+))
+
+
 @app.middleware("http")
 async def safety_headers(request: Request, call_next):
     response = await call_next(request)
     headers = response.headers
+    headers.setdefault("Content-Security-Policy", CONTENT_POLICY)
     headers.setdefault("X-Content-Type-Options", "nosniff")
     headers.setdefault("X-Frame-Options", "SAMEORIGIN")
     headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
