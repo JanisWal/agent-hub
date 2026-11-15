@@ -158,8 +158,6 @@ def lookup(folder: str | Path, ticket: str, now: float | None = None, max_age: i
         owner, _, token = path.read_text().strip().partition("\n")
     except (OSError, UnicodeDecodeError):
         return None
-    if not token:                       # a ticket file from before 15.11.2026 held only a Claude token
-        owner, token = "claude", owner
     return token if owner == provider and _secret_ok(provider, token) else None
 
 

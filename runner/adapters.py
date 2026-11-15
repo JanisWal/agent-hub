@@ -33,12 +33,9 @@ class Claude:
         """(ok, text, tokens_in, tokens_out, login_problem) of an agent run of Claude Code."""
         try:
             data = json.loads(stdout)
-            usage = data.get("usage") or {}
-            tokens_in = sum(int(usage.get(k) or 0) for k in (
-                "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+            tokens_in, tokens_out = launcher.claude_tokens(data)
             text, failed = str(data.get("result", "")), bool(data.get("is_error"))
-            return not failed, text, tokens_in, int(usage.get("output_tokens") or 0), \
-                failed and launcher.parse_chat_output(stdout)[4]
+            return not failed, text, tokens_in, tokens_out, failed and launcher.parse_chat_output(stdout)[4]
         except (ValueError, AttributeError, TypeError):
             return False, "No readable answer from Claude Code.", 0, 0, False
 

@@ -150,7 +150,7 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
 
         self.upstream = await asyncio.start_server(upstream, "127.0.0.1", 0)
         port = self.upstream.sockets[0].getsockname()[1]
-        open_upstream = lambda: asyncio.open_connection("127.0.0.1", port)
+        open_upstream = lambda host: asyncio.open_connection("127.0.0.1", port)
         self.logs = []
         self.server = await asyncio.start_server(
             lambda r, w: E.gateway(r, w, self.tmp.name, open_upstream=open_upstream, log=self.logs.append), "127.0.0.1", 0)
@@ -204,7 +204,7 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_the_mistral_gateway_takes_only_mistral_tickets_and_never_says_invalid_key(self):
         server = await asyncio.start_server(
-            lambda r, w: E.gateway(r, w, self.tmp.name, open_upstream=lambda: None, log=self.logs.append,
+            lambda r, w: E.gateway(r, w, self.tmp.name, open_upstream=lambda host: None, log=self.logs.append,
                                    provider="mistral"), "127.0.0.1", 0)
         port = server.sockets[0].getsockname()[1]
         try:

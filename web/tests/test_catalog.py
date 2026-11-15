@@ -17,7 +17,6 @@ class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         db.DB_PATH = os.path.join(self.tmp.name, "test.db")
-        claude_link.BASE_DIR = Path(self.tmp.name) / "claude"
         self.a = users.create_user("a@example.com", "Aaaa!pass12")
         self.b = users.create_user("b@example.com", "Bbbb!pass12")
         self.pa = projects.create_project(self.a.id, "Project of A")

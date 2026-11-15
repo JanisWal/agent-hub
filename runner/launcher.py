@@ -13,7 +13,6 @@ sends every request there (ANTHROPIC_BASE_URL) and nothing else to Anthropic (no
 import json
 import os
 import re
-import sys
 from pathlib import Path
 
 # Models and effort levels are a list of the hub (web/app/catalog.py) that can change without a code change, and
@@ -97,6 +96,12 @@ def _folder(value, name: str) -> str:
     return text
 
 
+def _check_container(memory: str, image: str, network: str) -> None:
+    """The fixed values of a `docker run`: a memory size and plain names. ValueError for anything else."""
+    if not re.fullmatch(r"[0-9]+[mg]", memory) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", image + network):
+        raise ValueError("bad image, network or memory")
+
+
 def _proxy_env(url: str) -> list[str]:
     return ["-e", f"HTTPS_PROXY={url}", "-e", f"https_proxy={url}"]
 
@@ -137,8 +142,7 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, ticke
         raise ValueError("unknown net mode")
     uid = run_uid(user_id)
     model_args = _model_args(model, effort)
-    if not re.fullmatch(r"[0-9]+[mg]", memory) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", image + network):
-        raise ValueError("bad image, network or memory")
+    _check_container(memory, image, network)
     work = _folder(work_dir, "work_dir")
     return [
         "docker", "run", "--rm", "--init", "-i", "--name", f"agent-run-{run_id}",
@@ -167,8 +171,7 @@ def build_chat_command(*, chat_id: int, user_id: int, model: str, ticket: str, m
     model_args = _model_args(model, effort)
     if mode not in CHAT_MODES:
         raise ValueError("unknown mode")
-    if not re.fullmatch(r"[0-9]+[mg]", memory) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", image + network):
-        raise ValueError("bad image, network or memory")
+    _check_container(memory, image, network)
     spec = CHAT_MODES[mode]
     tools = spec["tools"]
     # Nothing of the run is kept: no saved login, no settings, so a changed configuration (a hook, say) can not
@@ -196,6 +199,14 @@ def build_chat_command(*, chat_id: int, user_id: int, model: str, ticket: str, m
 _AUTH_PROBLEM = re.compile(r"/login|not logged in|log in|authenticat|invalid api key|oauth|401", re.I)
 
 
+def claude_tokens(data: dict) -> tuple[int, int]:
+    """(tokens_in, tokens_out) from the JSON of `claude -p`; what was read from or written to the cache counts as in."""
+    usage = data.get("usage") or {}
+    tokens_in = sum(int(usage.get(k) or 0) for k in (
+        "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+    return tokens_in, int(usage.get("output_tokens") or 0)
+
+
 def parse_chat_output(stdout: str) -> tuple[bool, str, int, int, bool]:
     """(ok, text, tokens_in, tokens_out, login_problem) from the JSON of `claude -p`.
 
@@ -205,10 +216,7 @@ def parse_chat_output(stdout: str) -> tuple[bool, str, int, int, bool]:
     try:
         data = json.loads(stdout)
         text = str(data.get("result", "")).strip()
-        usage = data.get("usage") or {}
-        tokens_in = sum(int(usage.get(k) or 0) for k in (
-            "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
-        tokens_out = int(usage.get("output_tokens") or 0)
+        tokens_in, tokens_out = claude_tokens(data)
         failed = bool(data.get("is_error"))
         subtype = str(data.get("subtype") or "")
     except (ValueError, AttributeError, TypeError):
@@ -227,8 +235,7 @@ def build_login_command(*, user_id: int, image: str = IMAGE, network: str = NETW
     the setup token lasts a year. It prints the token at the end and saves nothing (its home is in memory and
     gone with the container); the runner takes the token from the terminal and keeps it encrypted (tokens.py)."""
     uid = run_uid(user_id)
-    if not re.fullmatch(r"[0-9]+[mg]", memory) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", image + network):
-        raise ValueError("bad image, network or memory")
+    _check_container(memory, image, network)
     return [
         "docker", "run", "--rm", "--init", "-t", "-i", "--name", f"agent-login-{int(user_id)}",
         "--user", f"{uid}:{uid}",
@@ -271,8 +278,7 @@ def build_vibe_command(*, name: str, user_id: int, model: str, ticket: str, job:
     proxy = {"chat-all": WEB_PROXY, "chat-apart": API_PROXY}.get(job) or RUN_PROXY.get(net)
     if proxy is None:
         raise ValueError("unknown net mode")
-    if not re.fullmatch(r"[0-9]+[mg]", memory) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", image + network):
-        raise ValueError("bad image, network or memory")
+    _check_container(memory, image, network)
     uid = run_uid(user_id)
     turns, seconds = VIBE_JOBS[job]
     mount = ["--mount", f"type=bind,src={_folder(work_dir, 'work_dir')},dst=/work", "--workdir", "/work"] if work_dir else []
@@ -309,7 +315,9 @@ def parse_vibe(stdout: str) -> tuple[bool, str, int, int, bool]:
 
 
 def result_of(role: str, text: str, failed: bool = False) -> tuple[str, str]:
-    """(result, report) from an agent's answer: the last line `RESULT: <value>` (anything else is "failed")."""
+    """(result, report) from an agent's answer, the same for every AI: the last line is `RESULT: <value>`. Anything
+    else (no marker, a value that does not fit the role, a failed run) is "failed": the task then goes to the user
+    instead of guessing."""
     if role not in RESULTS:
         raise ValueError("unknown role")
     lines = text.rstrip().splitlines()
@@ -318,34 +326,3 @@ def result_of(role: str, text: str, failed: bool = False) -> tuple[str, str]:
     if failed or match is None or match.group(1) not in RESULTS[role]:
         return "failed", report or "The agent gave no valid result."
     return match.group(1), report
-
-
-def parse_output(role: str, stdout: str) -> tuple[str, str, int, int]:
-    """(result, report, tokens_in, tokens_out) from the JSON that `claude -p` prints.
-
-    The agent ends its answer with a line `RESULT: <value>`. Anything else (no JSON, an error, no
-    marker, a value that does not fit the role) is reported as "failed": the task then goes to
-    the user instead of guessing.
-    """
-    if role not in RESULTS:
-        raise ValueError("unknown role")
-    try:
-        data = json.loads(stdout)
-        text = str(data.get("result", ""))
-        usage = data.get("usage") or {}
-        tokens_in = sum(int(usage.get(k) or 0) for k in (
-            "input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
-        tokens_out = int(usage.get("output_tokens") or 0)
-        failed = bool(data.get("is_error"))
-    except (ValueError, AttributeError, TypeError):
-        return "failed", "No readable answer from Claude Code.", 0, 0
-    lines = text.rstrip().splitlines()
-    match = _MARKER.match(lines[-1].strip()) if lines else None
-    report = "\n".join(lines[:-1] if match else lines).strip()[:MAX_REPORT]
-    if failed or match is None or match.group(1) not in RESULTS[role]:
-        return "failed", report or "The agent gave no valid result.", tokens_in, tokens_out
-    return match.group(1), report, tokens_in, tokens_out
-
-
-if __name__ == "__main__":   # `python launcher.py role < output.json` for a quick look
-    print(parse_output(sys.argv[1], sys.stdin.read()))

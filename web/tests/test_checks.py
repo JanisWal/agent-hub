@@ -167,7 +167,6 @@ class ChecksTest(unittest.TestCase):
             self.assertNotIn("%t.", dialogs)
 
     def test_the_manager_hears_the_days_of_a_daily_check(self):
-        claude_link.BASE_DIR = Path(self.tmp.name) / "claude"
         claude_link.begin(self.user.id)
         claude_link.complete(self.user.id, True)
         checks.create(self.user.id, self.project.id, "Gym", "daily", "1010101", now=0)
@@ -219,7 +218,6 @@ class ChecksTest(unittest.TestCase):
 
     # --- the manager knows the checks
     def test_the_manager_reads_the_checks_in_its_context(self):
-        claude_link.BASE_DIR = Path(self.tmp.name) / "claude"
         claude_link.begin(self.user.id)
         claude_link.complete(self.user.id, True)
         self.make("Check security", "weekly", now=0)

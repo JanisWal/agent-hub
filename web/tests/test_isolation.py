@@ -59,7 +59,6 @@ class IsolationTest(unittest.TestCase):
     def test_b_cannot_touch_the_agents_of_a(self):
         from pathlib import Path
         from app import agents, claude_link
-        claude_link.BASE_DIR = Path(self.tmp.name) / "claude"
         claude_link.begin(self.a.id)
         claude_link.complete(self.a.id, True)
         task = agents.start_task(self.a.id, self.project.id, self.open.id)
@@ -88,7 +87,6 @@ class IsolationTest(unittest.TestCase):
     def test_b_cannot_touch_the_chat_of_a(self):
         from pathlib import Path
         from app import chat, claude_link
-        claude_link.BASE_DIR = Path(self.tmp.name) / "claude"
         claude_link.begin(self.a.id)
         claude_link.complete(self.a.id, True)
         chat.send(self.a.id, self.project.id, "private question of A")
@@ -170,7 +168,6 @@ class IsolationTest(unittest.TestCase):
     def test_the_manager_of_b_never_sees_the_memory_or_files_of_a(self):
         from pathlib import Path
         from app import chat, claude_link
-        claude_link.BASE_DIR = Path(self.tmp.name) / "claude"
         files.FILES_DIR = Path(self.tmp.name) / "files"
         files.free_bytes = lambda: 10 * 1024 ** 3
         secret = files.start_upload(self.a.id, self.project.id, "secret-plan.md", 6)
@@ -201,7 +198,6 @@ class IsolationTest(unittest.TestCase):
     def test_the_manager_of_b_never_sees_the_checks_of_a(self):
         from app import chat, claude_link
         from pathlib import Path
-        claude_link.BASE_DIR = Path(self.tmp.name) / "claude"
         claude_link.begin(self.b.id)
         claude_link.complete(self.b.id, True)
         chat.send(self.b.id, self.mine.id, "Question of B")
@@ -213,7 +209,6 @@ class IsolationTest(unittest.TestCase):
     def test_the_manager_of_b_never_sees_the_project_of_a(self):
         from app import chat, claude_link
         from pathlib import Path
-        claude_link.BASE_DIR = Path(self.tmp.name) / "claude"
         for user in (self.a, self.b):
             claude_link.begin(user.id)
             claude_link.complete(user.id, True)
@@ -357,7 +352,7 @@ class IsolationTest(unittest.TestCase):
             chat.send(self.b.id, self.mine.id, "Use the Mistral of A")               # no fallback to A's key
         from app import aichoice
         self.assertFalse(aichoice.set_default(self.b.id, "mistral"))                 # nor as his standard
-        self.assertEqual(ai_link.connected_providers(self.b.id), ())
+        self.assertEqual(aichoice.connected(self.b.id), [])
         self.assertEqual(ai_link.status(self.a.id, "mistral"), "connected")
 
     def test_b_can_not_start_or_decide_tasks_of_a(self):

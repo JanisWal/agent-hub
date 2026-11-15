@@ -71,7 +71,6 @@ def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model
 # Other AI accounts (name): placeholders until they exist. Claude has its own row with a real state, the AIs with an
 # API key (ai_link.PROVIDERS: Mistral) have a row each in the folded list, after the placeholders.
 PLACEHOLDER_SERVICES = ("ChatGPT",)
-KEY_NAMES = {"mistral": "Mistral"}
 KEY_PAGES = {"mistral": "https://console.mistral.ai/api-keys"}   # where the user makes a key (fixed, never from a request)
 # Row of an AI with a key: style class of the dot, status text, link text.
 KEY_STATES = {
@@ -244,7 +243,7 @@ def _claude_row(lang: str, state: str, first: bool = True, as_default: bool = Fa
     return (
         f'<div class="setting service {style}" id="claude-row" data-ai="claude" '
         f'data-expired="{esc(i18n.t(lang, "claude_expired"))}" data-renew="{esc(i18n.t(lang, "claude_renew"))}">'
-        f'<span class="setting-label">Claude</span>{corner}'
+        f'<span class="setting-label">{esc(catalog.provider("claude").name)}</span>{corner}'
         f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>{action}</span></div>'
     )
 
@@ -257,7 +256,7 @@ def _key_row(lang: str, provider: str, state: str, first: bool = False, as_defau
     corner = _toggle(lang) if first else (_make_default(lang, provider) if as_default and state == "connected" else "")
     return (
         f'<div class="setting service {style}" id="key-row-{provider}" data-ai="{provider}">'
-        f'<span class="setting-label">{esc(KEY_NAMES[provider])}</span>{corner}'
+        f'<span class="setting-label">{esc(catalog.provider(provider).name)}</span>{corner}'
         f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>{action}</span></div>'
     )
 
@@ -271,11 +270,11 @@ def _placeholder_row(lang: str, name: str) -> str:
 
 
 def _key_dialogs(lang: str) -> str:
-    return "\n".join(
-        fill(KEY_DIALOG, lang, ID=p, PAGE=esc(KEY_PAGES[p]), TITLE=esc(i18n.t(lang, "key_title", name=KEY_NAMES[p])),
-             STEPS=esc(i18n.t(lang, "key_steps", name=KEY_NAMES[p])), OPEN=esc(i18n.t(lang, "key_open", name=KEY_NAMES[p])),
-             DONE=esc(i18n.t(lang, "key_done", name=KEY_NAMES[p])))
-        for p in ai_link.PROVIDERS)
+    def dialog(provider: str) -> str:
+        name = catalog.provider(provider).name                # the AI's name comes from the catalog, never from here
+        return fill(KEY_DIALOG, lang, ID=provider, PAGE=esc(KEY_PAGES[provider]),
+                    **{part.upper(): esc(i18n.t(lang, f"key_{part}", name=name)) for part in ("title", "steps", "open", "done")})
+    return "\n".join(dialog(p) for p in ai_link.PROVIDERS)
 
 
 def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | None = None,

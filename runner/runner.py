@@ -76,9 +76,6 @@ class Runner:
         self.workers: list[threading.Thread] = []
         self.sessions: dict[int, login.LoginSession] = {}
 
-    def folder(self, user_id: int) -> str:
-        return str(self.claude_base / str(int(user_id)))
-
     def _docker_session(self, user_id: int) -> login.LoginSession:
         command = launcher.build_login_command(user_id=user_id)
         return login.LoginSession(command, f"agent-login-{int(user_id)}")
@@ -155,7 +152,7 @@ class Runner:
             if user_id not in self.sessions and self.vault.forget(int(user_id)):
                 print(f"runner: deleted the expired token of user {int(user_id)}", file=sys.stderr, flush=True)
 
-    # --- the chat window (web/app/chat.py): one question, one answer, no tools, no project files
+    # --- the manager chat (web/app/chat.py): one question, one answer, no project files
     def _run_chat(self, command: list[str], prompt: str):
         return subprocess.run(command, input=prompt, capture_output=True, text=True, timeout=CHAT_TIMEOUT)
 
