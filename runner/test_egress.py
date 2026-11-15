@@ -222,6 +222,11 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
         for path in ("/admin", "http://evil.example/v1/messages", "/v1/../etc", "/v2/messages"):
             answer = await self.send(self.request(path=path))
             self.assertTrue(answer.startswith(b"HTTP/1.1 400"), path)
+        for extra in ("X-A: 1\nAuthorization: Bearer x\r\n", "X-A: 1\rHost: evil.example\r\n", "X-A: \x00\r\n"):
+            answer = await self.send(self.request(extra=extra))                # no bare line break or NUL in a header
+            self.assertTrue(answer.startswith(b"HTTP/1.1 400"), repr(extra))
+        answer = await self.send(self.request(path="/v1/messages/.."))
+        self.assertTrue(answer.startswith(b"HTTP/1.1 400"))
         answer = await self.send(self.request(extra="Transfer-Encoding: chunked\r\n"))
         self.assertTrue(answer.startswith(b"HTTP/1.1 411"))
         answer = await self.send(b"CONNECT api.anthropic.com:443 HTTP/1.1\r\n\r\n")

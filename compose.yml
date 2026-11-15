@@ -14,6 +14,12 @@ services:
       # SHA-256 of the runner's token (the runner itself holds the token). Empty = runner interface off.
       HUB_RUNNER_TOKEN_HASH: "${HUB_RUNNER_TOKEN_HASH:-}"
     restart: unless-stopped
+    healthcheck:                 # `docker compose ps` shows "healthy"; python is in the image, curl is not
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
     networks:
       default: {}
       web:

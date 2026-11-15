@@ -222,7 +222,11 @@ class Runner:
         user_id, chat_id = int(job["user_id"]), int(job["chat_id"])
         provider = job.get("provider") or "claude"
         adapter = adapters.ADAPTERS.get(provider)
-        secret = adapter.secret(self, user_id) if adapter else None
+        if adapter is None:   # an AI this runner has no adapter for (hub and runner of different versions)
+            self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="0",
+                          answer="This AI is not available on the server.", tokens_in=0, tokens_out=0)
+            return
+        secret = adapter.secret(self, user_id)
         if secret is None:   # no saved credential (or the key changed): the user links this AI again
             self._expired(user_id, provider)
             self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="0",
@@ -264,7 +268,9 @@ class Runner:
         run_id, user_id, task_id = int(job["run_id"]), int(job["user_id"]), int(job["task_id"])
         role, provider = job["role"], job.get("provider") or "claude"
         adapter = adapters.ADAPTERS.get(provider)
-        secret = adapter.secret(self, user_id) if adapter else None
+        if adapter is None:
+            return self._finish_run(run_id, "failed", "This AI is not available on the server.")
+        secret = adapter.secret(self, user_id)
         if secret is None:
             self._expired(user_id, provider)
             return self._finish_run(run_id, "failed", "Not logged in: no saved credential.")

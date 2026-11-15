@@ -209,4 +209,12 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(len(hub.posted("/runner/keys/5/mistral/expired")), 1)
         self.assertIn("Not logged in", hub.posted("/runner/chat/9/finish")[0]["answer"])
 
+    def test_an_ai_without_an_adapter_fails_the_question_and_touches_no_key(self):
+        job = {"chat_id": 9, "user_id": 5, "model": "x", "prompt": "P", "provider": "nobody"}
+        keys, hub = FakeKeys({(5, "mistral"): KEY}), FakeHub(job=job)
+        make(hub, keys).handle_chat()
+        self.assertEqual(hub.posted("/runner/chat/9/finish")[0]["success"], "0")
+        self.assertEqual(keys.saved, {(5, "mistral"): KEY})
+        self.assertEqual([path for path, _ in hub.calls if "expired" in path], [])
+
 

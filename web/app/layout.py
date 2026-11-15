@@ -23,8 +23,9 @@ def static_url(name: str) -> str:
     digest = hashlib.sha256((STATIC_DIR / name).read_bytes()).hexdigest()[:10]
     return f"/static/{name}?v={digest}"
 
-# The inline script applies the saved theme before first paint (no flash) and switches off the
-# entrance animation after a reload we triggered ourselves ("noanim", see core.js).
+# theme.js runs before the first paint (no defer): it applies the saved theme (no flash) and switches off the
+# entrance animation after a reload we triggered ourselves. No page has inline script: the content security
+# policy (main.py) allows scripts from /static only.
 SHELL = """<!doctype html>
 <html lang="%LANG%">
 <head>
@@ -36,7 +37,7 @@ SHELL = """<!doctype html>
 <link rel="apple-touch-icon" href="%ICON_TOUCH%">
 <meta name="theme-color" content="#EFDCC6" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1F1713" media="(prefers-color-scheme: dark)">
-<script>try{var t=localStorage.getItem("theme");if(t)document.documentElement.dataset.theme=t;if(sessionStorage.getItem("noanim")){document.documentElement.classList.add("noanim");sessionStorage.removeItem("noanim")}}catch(e){}</script>
+<script src="%THEME_JS%"></script>
 <link rel="stylesheet" href="%APP_CSS%">
 %STYLES%
 <script src="%CORE_JS%" defer></script>
@@ -110,6 +111,7 @@ def page(
         TITLE=esc(title),
         APP_CSS=static_url("app.css"),
         CORE_JS=static_url("core.js"),
+        THEME_JS=static_url("theme.js"),
         ICON_SVG=static_url("icon.svg"),
         ICON_PNG=static_url("icon-48.png"),
         ICON_TOUCH=static_url("icon-180.png"),
