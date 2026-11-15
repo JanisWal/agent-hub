@@ -1,6 +1,7 @@
 """The manager's memory and files (memory.py) and how the chat uses them."""
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from app import chat, db, files, i18n, memory
 from app.routes import chat as chat_routes
@@ -54,9 +55,9 @@ class MemoryFolderTest(MemoryBase):
     """Janis, 14.11.2026: fixed memory files per project, all given to whatever AI answers, any of them kept up."""
 
     def test_the_fixed_files_are_made_once(self):
-        self.assertEqual(memory.ensure_skeleton(self.a.id, self.pa.id, "de"), 4)
+        self.assertEqual(memory.ensure_skeleton(self.a.id, self.pa.id, "de"), 5)
         names = sorted(f.name for f in files.list_files(self.a.id, self.pa.id))
-        self.assertEqual(names, ["MEMORY.md", "PROJEKT.md", "REGELN.md", "ROADMAP.md"])
+        self.assertEqual(names, ["ARCHIVE.md", "MEMORY.md", "PROJEKT.md", "REGELN.md", "ROADMAP.md"])
         self.assertTrue(all(f.category == "memory" for f in files.list_files(self.a.id, self.pa.id)))
         roadmap = next(f for f in files.list_files(self.a.id, self.pa.id) if f.name == "ROADMAP.md")
         files.delete(self.a.id, roadmap.id)
@@ -65,9 +66,9 @@ class MemoryFolderTest(MemoryBase):
 
     def test_english_names_and_an_existing_memory_stays(self):
         self.put(self.a, self.pa, "MEMORY.md", b"# Status\nmine")
-        self.assertEqual(memory.ensure_skeleton(self.a.id, self.pa.id, "en"), 3)
+        self.assertEqual(memory.ensure_skeleton(self.a.id, self.pa.id, "en"), 4)
         names = sorted(f.name for f in files.list_files(self.a.id, self.pa.id))
-        self.assertEqual(names, ["MEMORY.md", "PROJECT.md", "ROADMAP.md", "RULES.md"])
+        self.assertEqual(names, ["ARCHIVE.md", "MEMORY.md", "PROJECT.md", "ROADMAP.md", "RULES.md"])
         memo = next(f for f in files.list_files(self.a.id, self.pa.id) if f.name == "MEMORY.md")
         self.assertEqual(files.read_text(self.a.id, memo.id), "# Status\nmine")
 
@@ -86,6 +87,54 @@ class MemoryFolderTest(MemoryBase):
         self.assertNotIn("script.sh", texts)
         self.assertFalse(any("evil" in name for name in texts))
         self.assertEqual(chat.list_messages(self.a.id, self.pa.id)[-1].answer, "Done.")
+
+
+class ArchiveTest(MemoryBase):
+    """Janis, 15.11.2026: ARCHIVE.md keeps what once existed, was dropped or changed, and why. It only grows."""
+
+    def text(self, name="ARCHIVE.md"):
+        return next(files.read_text(self.a.id, f.id) for f in files.list_files(self.a.id, self.pa.id) if f.name == name)
+
+    def test_older_projects_get_the_archive_once(self):
+        with db.connect() as conn:                       # a project seeded before the archive existed
+            conn.execute("UPDATE projects SET memory_seeded = 1 WHERE id = ?", (self.pa.id,))
+        self.put(self.a, self.pa, "MEMORY.md", b"# Stand\nmine")
+        self.assertEqual(memory.ensure_skeleton(self.a.id, self.pa.id, "de"), 1)
+        self.assertEqual(sorted(f.name for f in files.list_files(self.a.id, self.pa.id)), ["ARCHIVE.md", "MEMORY.md"])
+        self.assertIn("# Archiv", self.text())
+        archive = next(f for f in files.list_files(self.a.id, self.pa.id) if f.name == "ARCHIVE.md")
+        files.delete(self.a.id, archive.id)
+        self.assertEqual(memory.ensure_skeleton(self.a.id, self.pa.id, "de"), 0)      # deleted by the user: stays gone
+
+    def test_the_manager_only_adds_with_the_date_and_never_replaces(self):
+        memory.ensure_skeleton(self.a.id, self.pa.id, "de")
+        job = self.ask()
+        self.assertIn('<file name="ARCHIVE.md">', job.prompt)
+        self.assertIn("ADDED at its end", job.prompt)                               # the rule says how it works
+        self.assertLess(job.prompt.index('<file name="ROADMAP.md">'), job.prompt.index('<file name="ARCHIVE.md">'))
+        self.assertTrue(chat.finish(job.chat_id, True,
+                                    'Ok.<memory file="ARCHIVE.md">- Verworfen: eigene Websuche. Grund: Struktur</memory>'))
+        self.assertTrue(memory.save_memory(self.a.id, self.pa.id, "# Archiv\n(alles weg)", "ARCHIVE.md"))
+        text = self.text()
+        self.assertTrue(text.startswith("# Archiv\n\nWas es einmal gab"))                # the start is still there
+        self.assertIn("- Verworfen: eigene Websuche. Grund: Struktur", text)          # the first entry too
+        self.assertRegex(text, r"\n## \d{4}-\d{2}-\d{2}\n- Verworfen")
+        self.assertTrue(text.rstrip().endswith("(alles weg)"))                         # a "rewrite" is only added
+
+    def test_without_a_file_it_is_made_and_it_stops_at_its_size(self):
+        self.assertTrue(memory._append_archive(self.a.id, self.pa.id, "- first", today="2026-11-15"))
+        self.assertEqual(self.text(), "## 2026-11-15\n- first\n")
+        with mock.patch.object(memory, "MAX_ARCHIVE", len(self.text()) + 10):
+            self.assertFalse(memory.save_memory(self.a.id, self.pa.id, "- far too long " * 5, "ARCHIVE.md"))
+        self.assertEqual(self.text(), "## 2026-11-15\n- first\n")                    # nothing changed
+        self.assertFalse(memory._append_archive(self.b.id, self.pa.id, "- planted"))   # never in someone else's project
+
+    def test_a_long_archive_gives_its_newest_part(self):
+        self.put(self.a, self.pa, "ARCHIVE.md", ("# Archiv\n" + "- old entry\n" * 3000 + "- newest entry\n").encode())
+        with db.connect() as conn:
+            text = memory.folder(conn, self.a.id, self.pa.id)
+        self.assertIn("- newest entry", text)
+        self.assertIn('<file name="ARCHIVE.md">\n… ', text)
 
 
 class MemoryTest(MemoryBase):
