@@ -131,6 +131,26 @@ class WorkspaceTest(unittest.TestCase):
         self.assertIn("a.py", names)
         self.assertNotIn("pyc", names)
 
+    def test_caches_already_in_the_project_are_taken_out_and_its_own_files_stay(self):
+        repo = self.work.ensure_repo(1)
+        seed = Path(self.tmp.name) / "seed"
+        (seed / "__pycache__").mkdir(parents=True)
+        (seed / "__pycache__" / "old.pyc").write_bytes(b"x")
+        (seed / "keep.txt").write_text("k")
+        (seed / ".gitignore").write_text("keep.txt\n")                     # the project tracks it on purpose
+        git("init", "-q", "-b", "main", cwd=seed)
+        git("add", "-A", "-f", cwd=seed)
+        git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "old", cwd=seed)
+        git("push", "-q", "-f", str(repo), "main", cwd=seed)
+        tree = self.work.prepare(10, 1, "agent/task-10")
+        (tree / "b.py").write_text("B = 1\n")
+        self.work.commit(10, "agent/task-10", "Task 10")
+        names = git(f"--git-dir={repo}", "ls-tree", "-r", "--name-only", "agent/task-10")
+        self.assertIn("b.py", names)
+        self.assertIn("keep.txt", names)
+        self.assertNotIn("old.pyc", names)
+        self.assertTrue((tree / "__pycache__" / "old.pyc").exists())        # the file itself stays in the folder
+
     def test_hooks_and_settings_in_the_folder_do_nothing(self):
         tree = self.work.prepare(8, 1, "agent/task-8")
         (tree / ".git").mkdir()                                               # a run plants a fake git folder

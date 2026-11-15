@@ -72,8 +72,14 @@ class Workspace:
         """Commit what the run changed and push the branch to the project. False if nothing changed."""
         git_dir, tree = self.gitdir(task_id), self.tree(task_id)
         (git_dir / "info").mkdir(exist_ok=True)              # outside the folder: a run can not change it
-        (git_dir / "info" / "exclude").write_text("\n".join(NEVER_COMMIT) + "\n")
+        exclude = git_dir / "info" / "exclude"
+        exclude.write_text("\n".join(NEVER_COMMIT) + "\n")
         self._git("add", "-A", git_dir=git_dir, work=tree)
+        # Caches committed before this list existed stay tracked otherwise (15.11.2026); only what the list names.
+        tracked = self._git("ls-files", "-z", "-c", "-i", f"--exclude-from={exclude}", git_dir=git_dir,
+                            work=tree).stdout.split("\0")
+        if any(tracked):
+            self._git("rm", "-q", "-r", "--cached", "--", *[t for t in tracked if t], git_dir=git_dir, work=tree)
         if self._git("diff", "--cached", "--quiet", git_dir=git_dir, work=tree, check=False).returncode == 0:
             return False
         self._git("commit", "-q", "-m", message, git_dir=git_dir, work=tree)
