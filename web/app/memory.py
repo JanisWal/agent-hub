@@ -57,7 +57,7 @@ SKELETON = {
         ("MEMORY.md", "# Stand\n\n# Entscheidungen\n\n# Offene Fragen\n\n# Notizen\n"),
         ("PROJEKT.md", "# Ziel\n\n# Umfang\n\n# Aufbau\n\n## Hardware\n\n## Software\n\n# Entscheidungen und Gründe\n\n# Begriffe\n"),
         ("ROADMAP.md", "# Als Nächstes\n\n# Später\n\n# Ideen\n\n# Erledigt\n"),
-        ("REGELN.md", "# Arbeitsweise\n\n# Vorgaben\n\n# Nie tun\n"),
+        ("REGELN.md", "# Arbeitsweise\n\n# Vorgaben\n\n# Design\n\n# Nie tun\n"),
         ("ARCHIVE.md", "# Archiv\n\nWas es einmal gab, was verworfen oder geändert wurde, und warum. Neue Einträge kommen "
                        "unten dazu.\n"),
     ),
@@ -65,7 +65,7 @@ SKELETON = {
         ("MEMORY.md", "# Status\n\n# Decisions\n\n# Open questions\n\n# Notes\n"),
         ("PROJECT.md", "# Goal\n\n# Scope\n\n# Structure\n\n## Hardware\n\n## Software\n\n# Decisions and reasons\n\n# Terms\n"),
         ("ROADMAP.md", "# Next\n\n# Later\n\n# Ideas\n\n# Done\n"),
-        ("RULES.md", "# How we work\n\n# Requirements\n\n# Never do\n"),
+        ("RULES.md", "# How we work\n\n# Requirements\n\n# Design\n\n# Never do\n"),
         ("ARCHIVE.md", "# Archive\n\nWhat once existed, what was dropped or changed, and why. New entries are added at "
                        "the bottom.\n"),
     ),

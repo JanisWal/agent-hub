@@ -5,8 +5,9 @@ tokens.py), API keys of other AIs (Mistral: checked with the provider and kept e
 manager chat and the agent runs (one container per question or run, Claude Code or Mistral Vibe, always with a
 ticket instead of the credential: adapters.py), the work folders of the tasks and merging approved work
 (workspace.py), restart, shutdown and backup of the Pi, and deleting the saved credentials of users who
-disconnected. An agent run takes minutes, so it runs in a thread of its own; meanwhile the loop goes on with sign-ins
-and keys, but starts no chat (the Pi has room for one big container at a time; the hub lets the question wait). The runner always asks, the hub never
+disconnected. Every chat answer and every agent run runs in a thread of its own, so the loop goes on with sign-ins
+and keys meanwhile. How many containers run at once the hub decides (the owner's setting "AI runs",
+serversettings.ai_parallel): it hands out no job while all slots are taken. The runner always asks, the hub never
 calls it.
 
 Environment: HUB_URL (e.g. http://web:8000), RUNNER_TOKEN (the token whose SHA-256 the hub knows),
@@ -72,7 +73,7 @@ class Runner:
         self.work = work or workspace.Workspace(os.environ.get("HUB_WORK_DIR", "/opt/agent-hub/work"))
         self.run_agent = run_agent or self._run_agent
         self.background = background
-        self.agent_thread: threading.Thread | None = None
+        self.workers: list[threading.Thread] = []
         self.sessions: dict[int, login.LoginSession] = {}
 
     def folder(self, user_id: int) -> str:
@@ -197,10 +198,27 @@ class Runner:
             self.keys.forget(int(user_id), provider)
             self.api.call("POST", f"/runner/keys/{int(user_id)}/{provider}/expired")
 
+    MAX_WORKERS = 16        # a safety net only: the hub's setting is the real limit
+
+    def _start(self, target, job: dict) -> None:
+        """Run a job in its own thread (in tests: right away)."""
+        if not self.background:
+            target(job)
+            return
+        worker = threading.Thread(target=target, args=(job,), daemon=True)
+        self.workers.append(worker)
+        worker.start()
+
+    def busy(self) -> bool:
+        self.workers = [w for w in self.workers if w.is_alive()]
+        return len(self.workers) >= self.MAX_WORKERS
+
     def handle_chat(self) -> None:
         job = self.api.call("POST", "/runner/chat/claim").get("job")
-        if not job:
-            return
+        if job:
+            self._start(self.do_chat, job)
+
+    def do_chat(self, job: dict) -> None:
         user_id, chat_id = int(job["user_id"]), int(job["chat_id"])
         provider = job.get("provider") or "claude"
         adapter = adapters.ADAPTERS.get(provider)
@@ -233,18 +251,10 @@ class Runner:
     def _run_agent(self, command: list[str], prompt: str):
         return subprocess.run(command, input=prompt, capture_output=True, text=True, timeout=RUN_TIMEOUT)
 
-    def agent_busy(self) -> bool:
-        return self.agent_thread is not None and self.agent_thread.is_alive()
-
     def handle_runs(self) -> None:
         job = self.api.call("POST", "/runner/claim", can_mac="0").get("job")
-        if not job:
-            return
-        if self.background:
-            self.agent_thread = threading.Thread(target=self.do_run, args=(job,), daemon=True)
-            self.agent_thread.start()
-        else:
-            self.do_run(job)
+        if job:
+            self._start(self.do_run, job)
 
     def _finish_run(self, run_id: int, result: str, report: str, tokens_in=0, tokens_out=0, seconds=0) -> None:
         self.api.call("POST", f"/runner/runs/{run_id}/finish", result=result, report=report,
@@ -337,11 +347,11 @@ class Runner:
         self.handle_key_wipes()
         self.handle_keys()
         self.handle_logins()
-        if self.agent_busy():
-            return              # one big container at a time: chat and the next run wait for this run
-        self.handle_chat()
         self.handle_merges()
         self.handle_cleanups()
+        if self.busy():
+            return
+        self.handle_chat()
         self.handle_runs()
 
 

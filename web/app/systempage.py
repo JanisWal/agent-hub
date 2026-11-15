@@ -8,11 +8,13 @@ from .ui import info_dot
 from .users import User
 
 
-def _upload_field(lang: str, name: str, label_key: str, choices: tuple, current: int, unit: str) -> str:
-    """One choice of the upload settings: a compact drop-down in our own style (core.js `.has-select`)."""
+def _upload_field(lang: str, name: str, label_key: str, choices: tuple, current: int, unit: str,
+                  zero: str = "") -> str:
+    """One choice of the server settings: a compact drop-down in our own style (core.js `.has-select`). `zero` is the
+    text of the value 0 ("no limit")."""
     label = esc(i18n.t(lang, label_key))
-    options = "".join(f'<option value="{value}"{" selected" if value == current else ""}>{value}{unit}</option>'
-                      for value in choices)
+    options = "".join(f'<option value="{value}"{" selected" if value == current else ""}>'
+                      f'{esc(zero) if value == 0 and zero else f"{value}{unit}"}</option>' for value in choices)
     return (f'<label class="setting has-select sys-field"><span class="setting-label">{label}</span>'
             f'<select name="{name}">{options}</select>{icon("chevron_down")}</label>')
 
@@ -31,6 +33,10 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
     <div class="sys-row sys-upload" data-url="/system/upload">
       <div class="sys-main"><span class="sys-name">%t.sys_upload%</span>%UPLOAD_INFO%</div>
       <div class="sys-fields">%UPLOAD_FIELDS%</div>
+    </div>
+    <div class="sys-row sys-upload" data-url="/system/ai">
+      <div class="sys-main"><span class="sys-name">%t.sys_ai%</span>%AI_INFO%</div>
+      <div class="sys-fields">%AI_FIELD%</div>
     </div>
     %REBOOT%
     %POWEROFF%
@@ -78,7 +84,10 @@ def render(user: User) -> str:
     t = lambda key: i18n.t(lang, key)   # noqa: E731
     upload_info = " ".join((t("sys_upload_hint"), f'{t("sys_upload_parallel")}: {t("sys_upload_parallel_info")}',
                             f'{t("sys_upload_size")}: {t("sys_upload_size_info")}'))
+    ai_field = _upload_field(lang, "value", "sys_upload_parallel", serversettings.AI_PARALLEL,
+                             serversettings.ai_parallel(), "", t("sys_ai_unlimited"))
     return fill(SYSTEM, lang, UPLOAD_FIELDS=fields, UPLOAD_INFO=info_dot(t("sys_upload"), upload_info),
+                AI_FIELD=ai_field, AI_INFO=info_dot(t("sys_ai"), t("sys_ai_info")),
                 BACKUP=_action(lang, "sys_backup", "data-backup"),
                 REBOOT=_action(lang, "sys_reboot", 'data-power="reboot"'),
                 POWEROFF=_action(lang, "sys_poweroff", 'data-power="poweroff"'))

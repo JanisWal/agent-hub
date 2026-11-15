@@ -227,21 +227,24 @@ def _toggle(lang: str) -> str:
 
 
 def _make_default(lang: str, provider: str) -> str:
-    """"Make standard" (Janis, 15.11.2026): in the row of a connected AI that is not the standard (ailink.js)."""
-    return (f'<button class="link inline" type="button" data-ai-default="{provider}" '
-            f'data-tip="{esc(i18n.t(lang, "ai_default_hint"))}">{esc(i18n.t(lang, "ai_make_default"))}</button>')
+    """"Use as standard" (Janis, 15.11.2026): a small round green button with a star at the top right of the row of a
+    connected AI that is not the standard, above its "disconnect" (the spot of the arrow in the first row), so the
+    row keeps one line (ailink.js). Name and explanation in the tip."""
+    label = esc(i18n.t(lang, "ai_default_short"))
+    return (f'<button class="ai-default" type="button" data-ai-default="{provider}" aria-label="{label}" '
+            f'data-tip="{label}. {esc(i18n.t(lang, "ai_default_hint"))}">{icon("star")}</button>')
 
 
 def _claude_row(lang: str, state: str, first: bool = True, as_default: bool = False) -> str:
     """The Claude block: state and the link of its dialog (claude.js), or "make standard" (`as_default`)."""
     style, text_key, action_key = CLAUDE_STATES.get(state, ("", "not_connected", "connect"))
-    action = (_make_default(lang, "claude") if as_default and state == "connected" else
-              f'<button class="link inline" type="button" id="claude-open" data-status="{esc(state)}">'
+    action = (f'<button class="link inline" type="button" id="claude-open" data-status="{esc(state)}">'
               f'{esc(i18n.t(lang, action_key))}</button>')
+    corner = _toggle(lang) if first else (_make_default(lang, "claude") if as_default and state == "connected" else "")
     return (
         f'<div class="setting service {style}" id="claude-row" data-ai="claude" '
         f'data-expired="{esc(i18n.t(lang, "claude_expired"))}" data-renew="{esc(i18n.t(lang, "claude_renew"))}">'
-        f'<span class="setting-label">Claude</span>{_toggle(lang) if first else ""}'
+        f'<span class="setting-label">Claude</span>{corner}'
         f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>{action}</span></div>'
     )
 
@@ -249,12 +252,12 @@ def _claude_row(lang: str, state: str, first: bool = True, as_default: bool = Fa
 def _key_row(lang: str, provider: str, state: str, first: bool = False, as_default: bool = False) -> str:
     """The block of an AI with an API key: state and one link that opens its dialog (ailink.js), or "make standard"."""
     style, text_key, action_key = KEY_STATES.get(state, ("", "not_connected", "connect"))
-    action = (_make_default(lang, provider) if as_default and state == "connected" else
-              f'<button class="link inline" type="button" data-key-open="{provider}" data-status="{esc(state)}">'
+    action = (f'<button class="link inline" type="button" data-key-open="{provider}" data-status="{esc(state)}">'
               f'{esc(i18n.t(lang, action_key))}</button>')
+    corner = _toggle(lang) if first else (_make_default(lang, provider) if as_default and state == "connected" else "")
     return (
         f'<div class="setting service {style}" id="key-row-{provider}" data-ai="{provider}">'
-        f'<span class="setting-label">{esc(KEY_NAMES[provider])}</span>{_toggle(lang) if first else ""}'
+        f'<span class="setting-label">{esc(KEY_NAMES[provider])}</span>{corner}'
         f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>{action}</span></div>'
     )
 
@@ -279,8 +282,8 @@ def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | Non
                   standard: str = "claude", connected: tuple[str, ...] = ()) -> str:
     """The AIs and the chat history button (Janis, 15.11.2026). On top the standard AI with the arrow; below, folded
     (Janis, 11.11.2026: the list grows with every AI), the others in a fixed order: Claude, ChatGPT (not built yet),
-    the AIs with a key. With two or more connected, each connected one that is not the standard says "make standard"
-    instead of "disconnect" (the standard itself keeps "disconnect"). The button is type="button": no submit."""
+    the AIs with a key. With two or more connected, each connected one that is not the standard has the green star
+    "use as standard" at its top right; every connected AI keeps "disconnect". The button is type="button": no submit."""
     key_states = key_states or {}
     several = len(connected) >= 2
 

@@ -79,8 +79,9 @@ class StandardTest(Base):
         self.assertIn('id="claude-row"', top)
         self.assertIn('id="ai-toggle"', top)
         self.assertIn('id="claude-open" data-status="connected"', top)      # the standard keeps "disconnect"
-        self.assertIn('data-ai-default="mistral"', folded)
-        self.assertIn(i18n.t("de", "ai_make_default"), folded)
+        self.assertIn('class="ai-default" type="button" data-ai-default="mistral"', folded)   # the green star
+        self.assertIn(i18n.t("de", "ai_default_short"), folded)
+        self.assertIn('data-key-open="mistral" data-status="connected"', folded)    # "disconnect" stays
         self.assertIn("ChatGPT", folded)
         aichoice.set_default(self.a.id, "mistral")
         bar = ui.settings_bar(self.a)
@@ -89,7 +90,8 @@ class StandardTest(Base):
         self.assertIn('id="ai-toggle"', top)
         self.assertIn('data-key-open="mistral" data-status="connected"', top)
         self.assertIn('data-ai-default="claude"', folded)
-        self.assertNotIn('id="claude-open"', bar)
+        self.assertIn('id="claude-open" data-status="connected"', folded)
+        self.assertNotIn("data-ai-default", top)                              # the standard has no star
 
     def test_the_picker_shows_only_the_standard_ais_models(self):
         self.claude(self.a)
@@ -209,6 +211,54 @@ class AgentRunTest(Base):
         self.assertEqual(agents.pending_merges(), [])
 
 
+class ParallelTest(Base):
+    """Janis, 15.11.2026: how many AI runs go at once is the owner's setting (1 on a small server)."""
+
+    def setUp(self):
+        super().setUp()
+        self.claude(self.a)
+        self.claude(self.b)
+
+    def test_one_at_a_time_by_default_more_when_the_owner_says_so(self):
+        from app import serversettings
+        self.assertEqual(serversettings.ai_parallel(), 1)
+        agents.start_item(self.a.id, self.item.id)
+        self.assertIsNotNone(agents.claim_next(can_mac=True))                 # an agent run takes the slot
+        chat.send(self.b.id, self.pb.id, "Hello", now=10**10)
+        self.assertIsNone(chat.claim_next(now=10**10))                        # the question waits ...
+        self.assertEqual(chat.list_messages(self.b.id, self.pb.id)[-1].status, "queued")   # ... and does not run out
+        serversettings.set_ai_parallel(2)
+        self.assertIsNotNone(chat.claim_next(now=10**10))
+        serversettings.set_ai_parallel(0)                                     # no limit
+        with db.connect() as conn:
+            self.assertTrue(agents.slot_free(conn))
+        with self.assertRaises(ValueError):
+            serversettings.set_ai_parallel(7)
+
+    def test_the_owners_page_and_route(self):
+        from app import serversettings, systempage
+        from app.routes import system as system_routes
+        owner = users.create_user("owner@example.com", "Own3r!pass", role="owner")
+        html = systempage.render(owner)
+        self.assertIn('data-url="/system/ai"', html)
+        self.assertIn(i18n.t("de", "sys_ai_unlimited"), html)
+        self.assertEqual(system_routes.ai_settings(3, user=owner), {"ok": True})
+        self.assertEqual(serversettings.ai_parallel(), 3)
+        self.assertEqual(system_routes.ai_settings(9, user=owner).status_code, 400)
+        self.assertEqual(system_routes.ai_settings(1, user=self.a).status_code, 403)   # only the owner
+        self.assertEqual(serversettings.ai_parallel(), 3)
+
+
+class DesignRuleTest(Base):
+    def test_the_design_lives_in_the_rules(self):
+        memory.ensure_skeleton(self.a.id, self.pa.id, "de")
+        rules = next(f for f in files.list_files(self.a.id, self.pa.id) if f.name == "REGELN.md")
+        self.assertIn("# Design", files.read_text(self.a.id, rules.id))
+        self.claude(self.a)
+        chat.send(self.a.id, self.pa.id, "Hello")
+        self.assertIn("under the heading Design", chat.claim_next().prompt)
+
+
 class BoardTest(Base):
     def html(self):
         return projectpage.render(self.a, self.pa, board.list_items(self.a.id, self.pa.id))
@@ -241,7 +291,8 @@ class BoardTest(Base):
         self.assertIn(i18n.t("de", "task_no_ai"), self.html())
 
     def test_every_new_text_in_both_languages(self):
-        for key in ("chat_err_none", "chat_fail_limit", "chat_fallback", "ai_make_default", "ai_default_hint",
+        for key in ("chat_err_none", "chat_fail_limit", "chat_fallback", "ai_default_short", "ai_default_hint",
+                    "sys_ai", "sys_ai_unlimited", "sys_ai_info",
                     "agent_start", "agent_approve", "agent_reject", "agent_cancel", "agent_report", "task_coding",
                     "task_testing", "task_reviewing", "task_awaiting_approval", "task_documenting", "task_done",
                     "task_escalated", "task_cancelled", "task_no_ai"):
