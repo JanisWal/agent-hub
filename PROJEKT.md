@@ -1,6 +1,6 @@
 # Agent-Hub – Projektsheet
 
-Stand: 14.11.2026 (nach `docs-ai-concept`: Konzept KI-unabhängiger Ablauf festgelegt; Tests: siehe Änderungsprotokoll, alle grün) · Autor: Janis (mit Claude) · Zweck: Philosophie, Ziel, Entscheidungen und Reihenfolge, damit jeder Claude-Chat im Projekt denselben Stand hat.
+Stand: 15.11.2026 (nach `ai-parallel` und `docs-full`: Mistral, Standard-KI, Agentenläufe live; Merkliste in 11a; 441 Web- und 113 Runner-Tests grün) · Autor: Janis (mit Claude) · Zweck: Philosophie, Ziel, Entscheidungen und Reihenfolge, damit jeder Claude-Chat im Projekt denselben Stand hat.
 
 ## Auf einen Blick (zuerst lesen, für neue Chats)
 
@@ -38,6 +38,7 @@ Stand: 14.11.2026 (nach `docs-ai-concept`: Konzept KI-unabhängiger Ablauf festg
 - Rollen: Owner (genau einer, übertragbar), Admin, Nutzer. Keine Selbstregistrierung. Jeder Nutzer sieht und ändert nur seine eigenen Daten, und jeder verbindet sein eigenes Claude-Konto (Pflichtregeln in Abschnitt 3 und 6).
 - Eine Installation pro Pi, mit Benutzerkonten. Andere nutzen entweder Janis’ Pi als Server mit eigener Claude-Anbindung oder installieren das Paket auf einem eigenen Pi. Janis’ Abo wird nie geteilt.
 - Zuerst nur Claude. Andere KIs (z. B. ChatGPT) später als separate Anmeldung hinter einer gemeinsamen Schnittstelle. **Seit 14.11.2026 (live):** Mistral per API-Schlüssel für den Manager-Chat (Änderungsprotokoll, Eintrag `mistral`).
+- **Mehrere KIs (15.11.2026):** Jede KI ist austauschbar und hängt hinter einem Adapter; der Hub hält Erinnerung, Regeln und Ablauf. Je Nutzer eine Standard-KI mit automatischem Rückfall auf seine nächste eigene KI. Zusatzkosten nur, wenn der Nutzer sie selbst einschaltet (Mistral: Pay-as-you-go).
 - Programmiersprache Python; ein Wechsel nur, wenn JavaScript große Vorteile bringt.
 - Eigene Struktur konsequent umsetzen, vorhandene Open-Source-Bausteine nutzen, wo sie passen.
 - Tägliches Backup auf einen USB-Stick bzw. eine externe Platte, verschlüsselt (seit 11.11.2026 mit `tar` und `gpg` statt restic, siehe Abschnitt 9), zusätzlich Git-Spiegel auf GitHub. Struktur, Doku und offene Punkte haben höchste Priorität. Zurückrollen von Versionen gehört von Anfang an dazu.
@@ -97,6 +98,35 @@ Ziel von Janis: eine Anmeldung, die nicht abläuft, und Tokens, die weder der Be
 **Was das schützt:** Ein Agent kann den Token nicht lesen und nicht ins Internet bringen, auch nicht mit offenem Internet und Code: Im Lauf gibt es ihn nicht, das Ticket gilt nur im Agenten-Netz und nur bis zum Ende des Laufs. Andere Nutzer kommen nicht an fremde Tokens (eigener Ordner, kein gemeinsames Volume, kein Rückfall auf ein anderes Konto). Weder Admins noch der Owner haben in der Oberfläche einen Weg, einen Token zu sehen oder auszulesen. Eine Kopie von `data/` oder ein falsch eingehängter Ordner verrät nichts (verschlüsselt, Schlüssel nur im Runner). Das Backup enthält `token.enc` und `.env`; es ist selbst mit einem eigenen Passwort verschlüsselt.
 
 **Grenze (ehrlich):** Wer root auf dem Pi ist, kann technisch alles, was der Runner kann, also auch entschlüsseln: Ein Dienst, der ohne den Nutzer arbeiten soll, braucht den Schlüssel auf derselben Maschine. Gegen den Betreiber selbst schützt nur Vertrauen (oder ein eigener Pi des Freundes). Was die Lösung garantiert: kein Weg über die Oberfläche, nichts im Klartext auf der Karte oder im Backup, nichts in einem Lauf.
+
+### Mistral und weitere KIs: Abo, Schlüssel und Läufe, so gebaut (14./15.11.2026)
+
+**Anlass:** Ein Kollege von Janis hat das **Mistral-Pro-Abo** (rund 18 € im Monat mit Steuer, auf der Preisseite 14,99 USD). Ziel: Wer nur Mistral hat, kann den Hub ganz nutzen (Manager-Chat, Agentenläufe), ohne Zusatzkosten.
+
+**Was das Abo kann (Recherche 14.11.2026, Quellen im Chat; Zahlen ändern sich bei Mistral oft, vor Entscheidungen auf `mistral.ai/pricing` prüfen):**
+- Das Pro-Abo enthält **jeden Monat ein Guthaben für die API**: laut Preisseite heute 15 USD (andere Quellen nennen 25,50 bzw. früher 30 USD). Das Guthaben teilen sich **API, Studio und Vibe**. Anders als bei Claude kostet die API-Anbindung also **nichts extra**, ein Umweg wie `claude setup-token` ist **nicht nötig**.
+- **Keine Zusatzkosten**, solange unter Admin → Billing „Pay-as-you-go“ **aus** bleibt: Ist das Guthaben aufgebraucht, antwortet Mistral mit 429 bis zum nächsten Monat (im Hub Fehlerart `limit`, dann springt die nächste eigene KI ein).
+- Schlüssel legt man unter **console.mistral.ai/api-keys** an („New key“, Name, Ablaufdatum, Zugriff „Shared connectors only“); er wird **nur einmal angezeigt** und **läuft ab** (Datum beim Anlegen). Ob Mistral beim ersten Schlüssel eine Zahlungsart oder Telefonnummer verlangt, ist nicht eindeutig dokumentiert.
+- Das kostenlose Mistral-Konto hat seit etwa November 2026 wohl keine API mehr (Quellen widersprechen sich).
+- **Le Chat heißt seit Mai 2026 „Vibe“** (dasselbe Konto, derselbe Plan). Das Kommandozeilen-Programm **Mistral Vibe** (Open Source, Apache 2.0, Python ab 3.12, `curl -LsSf https://mistral.ai/vibe/install.sh | bash` bzw. `pip install mistral-vibe`) ist Mistrals Gegenstück zu Claude Code und Codex; der frühere „Mistral Code“ ist darin aufgegangen.
+- **Modelle** (docs.mistral.ai, 14.11.2026): aktuell Mistral Large 4 (`mistral-large-4`, Stufen `low`/`medium`/`high`) und Mistral Small 4 (`mistral-small-2603`, `none`/`high`), Codestral 25.08 für Code-Vervollständigung; Medium 3.5, Devstral und Magistral sind abgekündigt. Der Hub nimmt genaue Kennungen statt `-latest`, weil die Stufen je Modell verschieden sind (`catalog.SEED["mistral"]`).
+
+**Schlüssel, so gebaut (gleiche Struktur wie bei Claude):**
+1. **Verknüpfen:** Zahnrad → Pfeil → Mistral → „Verknüpfen“ öffnet einen Dialog (Link zur Schlüsselseite, Passwortfeld). Der Schlüssel geht per `POST /ai/mistral/connect` an den Web-Dienst, liegt dort **nur einige Minuten im Arbeitsspeicher** (`ai_link._keys`, nie in der Datenbank, nie im Log) und wird dem Runner **einmal** übergeben (`/runner/keys/claim`).
+2. **Prüfen und speichern:** Der Runner fragt `GET https://api.mistral.ai/v1/models` (`runner/mistral.py`) und legt den Schlüssel **verschlüsselt** ab: `tokens.ProviderKeys`, Fernet mit demselben `HUB_TOKEN_KEY` wie die Claude-Tokens, Datei `/opt/agent-hub/claude/keys/mistral/<Nutzer-Nr.>.enc` (Ordner 0700, Datei 0600, root). Eigener Unterordner `keys/`, damit Trennen oder Ablauf von Claude ihn nicht mitlöscht; im nächtlichen Backup mit dem Claude-Ordner.
+3. **Benutzen:** Kein Lauf bekommt den Schlüssel und kein Container entschlüsselt selbst (Janis’ Vorschlag „der Container entschlüsselt“ wurde zugunsten derselben Lösung wie bei Claude verworfen, damit Code im Lauf den Schlüssel nie lesen kann). Der Lauf bekommt ein **Ticket**; das Ticket **nennt seine KI** und gilt nur an deren Gateway im Egress-Proxy: Claude Port 3130 → api.anthropic.com, **Mistral Port 3131 → api.mistral.ai**. Der Gateway setzt den echten Schlüssel ein.
+4. **Abgelehnt:** Antwortet Mistral mit 401, löscht der Runner den Schlüssel und die Schublade zeigt „Schlüssel abgelehnt · Erneuern“; ein neuer Schlüssel, der nicht klappt, lässt den alten weiterarbeiten (`ai_connections.previous`). **Wichtig:** Das Mistral-Gateway beantwortet ein unbekanntes Ticket mit **502**, nicht 403, weil Vibe 403 als falschen Schlüssel liest und der Runner ihn sonst löschen würde (live gefunden 15.11.2026). Eine Störung beim Hub kostet nie den Schlüssel.
+5. **Trennen / Konto gelöscht:** Zeile auf `wipe`, der Runner löscht die Datei (`/runner/keys/wipes`); `ai_connections` hat absichtlich keinen Fremdschlüssel, damit auch die Dateien gelöschter Konten gelöscht werden.
+
+**Mistral Vibe im Container (Adapter, `runner/adapters.py`):** Image `agent-hub-vibe` (`runner/Dockerfile.vibe`, **Version fest: mistral-vibe 3.1.2**, eine neue Version erst auf einem Branch probieren), Startskript `runner/vibe_entry.py`. Erprobt am 15.11.2026 auf dem Pi:
+- Modus ohne Bildschirm: `vibe -p --output json --auto-approve --trust --workdir … --max-turns … --time-limit … --output-dir …` (Prompt über stdin); Token-Verbrauch steht in `export.json`. Grenzen: Chat 12 Schritte/180 s (bei „getrennt“ 10), Agentenlauf 60 Schritte/1050 s.
+- Einstellungen schreibt das Startskript in den Arbeitsspeicher des Containers (`VIBE_HOME`): Anbieter `mistral` mit `api_base = http://egress:3131/v1`, das Modell mit `thinking` = Stufe (`none` → `off`); **Telemetrie, Update-Prüfung, Hinweise, Unteragenten, Hintergrundprozesse aus**. Vibe fragt beim Start `chat.mistral.ai/api/v1/code/managed-config` und schickt dabei den Schlüssel mit; deshalb zeigen `vibe_base_url`, `vibe_code_sessions_base_url` und `console_base_url` auf das Gateway, das nur `/v1/…` durchlässt.
+- Werkzeuge: Dateien lesen, schreiben und ändern, `grep`, Shell, **Websuche** (über ein Mistral-Modell auf derselben API, also durch das Gateway) und **Seiten lesen** (über den Web-Proxy 3128). Bei „Web + Code getrennt“ ohne `web_fetch` und mit dem Proxy 3129 (Code ohne Internet). Bekannter Fehler von Vibe: mit `--enabled-tools` verschwinden die Webwerkzeuge im Modus ohne Bildschirm, deshalb nur `--disabled-tools`.
+- Messwerte: Start bis zur ersten Anfrage etwa 18 s; Speicher höchstens etwa 400 MB (mit Installation gemessen), Grenze des Containers 480 MB.
+- **Verworfen:** eine eigene Werkzeug-Schleife des Hubs (gibt es fertig), die Mistral Agents API mit eingebautem Code-Interpreter (läuft bei Mistral und kommt nie an unsere Dateien und Geräte), MCP-Server für die Websuche (Vibe hat sie eingebaut; Brave- oder DuckDuckGo-MCP bleiben eine Reserve).
+- Der erste Weg vom 14.11.2026 (Runner fragt die API direkt, ohne Werkzeuge) ist ersetzt; `runner/mistral.py` prüft nur noch Schlüssel.
+
+**Standard-KI und Rückfall (`web/app/aichoice.py`, 15.11.2026):** Jeder Nutzer hat eine Standard-KI (`agent_settings` Schlüssel `ai.default`; ist sie nicht mehr verknüpft, gilt die erste verknüpfte in der Reihenfolge von `catalog.PROVIDERS`). Chat und Agentenläufe nutzen sie; kann sie nicht (nicht verknüpft, abgelaufen, Kontingent leer), übernimmt **automatisch** die nächste **eigene** KI, mit Hinweis unter der Antwort. Modell und Stufe gelten je Rolle **und** je KI (`model.<rolle>.<anbieter>`). Der Prüfer nimmt eine andere KI als der Programmierer, wenn zwei verknüpft sind. **Anleitung für Nutzer:** `ANLEITUNG-MISTRAL.md` (im Repo und im iCloud-Ordner; bei Änderungen an Schublade oder Mistral mit anpassen).
 
 ### Tresor für Zugangsdaten (Ziel)
 
@@ -394,6 +424,25 @@ web/tests/                   Unit-Tests (test_users, test_accounts, test_resets,
                              integration_http.py (End-to-End über HTTP, mit zweitem Konto), integration_files.py (Dateiablage über HTTP in einer Wegwerf-Instanz: Hochladen in Stücken, Bereich, Köpfe)  und preview_mail.py (schreibt die Mails als HTML-Dateien, kein Test)
 ```
 
+**Neu seit 14./15.11.2026 (KIs, Agentenläufe):**
+
+```
+web/app/catalog.py           Modelle und Stufen je KI als Daten (server_settings „ai_catalog.<anbieter>“, Startliste SEED); find, check, resolve
+web/app/aichoice.py          Standard-KI je Nutzer, verknüpfte KIs, Reihenfolge für den Rückfall
+web/app/ai_link.py           Verbindung per API-Schlüssel (Mistral): Zustand, Übergabe an den Runner, nie der Schlüssel selbst
+web/app/runtask.py           Paket eines Agentenlaufs je Rolle (Regeln, Erinnerung, Projekt, Aufgabe, Berichte)
+web/app/routes/ai.py         /ai/default, /ai/{anbieter}/status|connect|disconnect (Schublade)
+web/app/static/ailink.js     Dialog für API-Schlüssel, Knopf „Als Standard verwenden“ (Feder nach oben)
+runner/adapters.py           ein Adapter je KI: Claude Code, Mistral Vibe (Befehl bauen, Antwort lesen, Zugangsdaten holen)
+runner/workspace.py          Projekt-Repos und Arbeitsordner je Aufgabe (Git nur beim Runner, Lauf ohne .git), Commit, Merge, Aufräumen
+runner/vibe_entry.py         Startskript im Vibe-Container (Einstellungen in den Arbeitsspeicher, eine JSON-Zeile als Ergebnis)
+runner/Dockerfile.vibe       Image agent-hub-vibe (python:3.13-slim, git, ripgrep, mistral-vibe 3.1.2)
+runner/mistral.py            prüft einen Mistral-Schlüssel (GET /v1/models)
+runner/tokens.py             zusätzlich ProviderKeys (verschlüsselte API-Schlüssel) und Tickets, die ihre KI nennen
+runner/egress.py             zusätzlich Gateway Mistral (Port 3131)
+web/tests/test_aichoice.py, test_mistral.py; runner/test_agent_runs.py (echtes Git), test_mistral.py
+```
+
 **Schnittstellen für später:** Jede Route hängt an einem eigenen Router (`routes/`), neue Bereiche (Agenten, Dateiablage, Tresor) kommen als weiteres Modul plus Router dazu, ohne `main.py` umzubauen. Die Anmeldeprüfung ist eine Abhängigkeit (`page_user` für Seiten, `api_user` für fetch-Aufrufe), eine Rollenprüfung lässt sich dort ergänzen. Neue Seiten bauen auf `ui.logged_in_page()` auf, neue Texte kommen in `i18n.py` in beide Sprachen, neue Symbole in `icons.py`. Claude-Vorschläge legt der spätere Agenten-Code mit `board.create_suggestion(user_id, project_id, kind, title)` an.
 
 ### Datenmodell (SQLite, `/data/hub.db`)
@@ -405,6 +454,9 @@ web/tests/                   Unit-Tests (test_users, test_accounts, test_resets,
 - `login_attempts`: ip (Schlüssel), failures, window_start, locked_until. Zählt falsche Passwörter pro IP (hinter dem Tunnel aus `CF-Connecting-IP`). Zehn Fehlversuche innerhalb von 30 Minuten sperren die IP für eine Stunde, dann antworten Anmeldung und Projekt-Löschen mit 429 (auch bei richtigem Passwort). Ein richtiges Passwort setzt den Zähler nicht zurück, er läuft mit dem Zeitfenster ab. Gezählt wird nie pro E-Mail, damit niemand den Owner aussperren kann.
 - `password_resets`: token_hash (Schlüssel, SHA-256 des Tokens, der Token selbst steht nur in der Mail), user_id, created_at, expires_at. Gültig 1 Stunde, wird beim Benutzen gelöscht. Eine neue Anfrage ersetzt die alte; für dasselbe Konto geht frühestens nach 60 Sekunden eine neue Mail raus. Löscht man den Nutzer, verschwinden seine Tokens (Cascade).
 - `claude_connections`, `agent_settings`, `agent_tasks`, `agent_runs`: Claude-Verbindung, Einstellungen, Aufgaben und Läufe der Agenten (Felder in `KONZEPT-AGENTEN.md`, Abschnitt 4). Alle hängen über Cascade am Nutzer bzw. Projekt.
+- `ai_connections` (seit 14.11.2026): user_id, provider, status (`connecting`/`connected`/`expired`/`wipe`), previous (Zustand vor einer Prüfung), updated_at; Schlüssel (user_id, provider), **ohne Fremdschlüssel** (gelöschte Konten bleiben als `wipe`, bis der Runner die Schlüsseldatei gelöscht hat). Der Schlüssel selbst steht nie in der Datenbank.
+- Neue Spalten (14./15.11.2026): `chat_messages.provider` (welche KI antwortet), `chat_messages.tried` (KIs, die die Frage nicht beantworten konnten, Rückfall), `agent_runs.provider`, `agent_tasks.merged` (0 offen, 1 zusammengeführt, -1 Konflikt), `projects.memory_seeded` ist die **Version** des Erinnerungs-Grundgerüsts (2 seit ARCHIVE.md).
+- Wichtige Schlüssel: `agent_settings` `ai.default` (Standard-KI), `model.<rolle>.<anbieter>` und `effort.<rolle>.<anbieter>` (alte `model.<rolle>` gelten weiter für ihre KI), `net.<rolle>`, `autonomy`; `server_settings` `ai_catalog.<anbieter>`, `ai_parallel` (KI-Läufe gleichzeitig, 0 = keine Grenze), `upload_parallel`, `upload_request_mb`.
 - Schemaänderungen laufen über `NEW_COLUMNS` in `db.py` (Spalten werden beim ersten Datenbankzugriff nach dem Start ergänzt). Umwandlungen alter Daten (Rollen aus dem früheren `is_admin`, Seiten der Projekte, Sitzungs-Hashes) laufen **einmalig** und nur für alte Datenbanken, nie bei jedem Start; vor dem Deploy einer Migration wird sie an einer Kopie der echten Datenbank geprobt. Vor jeder Änderung an Daten ein Backup.
 
 ### Routen
@@ -426,6 +478,11 @@ web/tests/                   Unit-Tests (test_users, test_accounts, test_resets,
 | GET `/system/backup` | Zustand des letzten manuellen Backups für die Seite: `none`, `running`, `ok`, `failed` (nur Owner, sonst 403; ein nie abgeholtes oder nie gemeldetes Backup gilt nach 2 bzw. 5 Minuten als `failed`) | 401 |
 | POST `/runner/power/{id}/result` | Der Runner meldet, wie ein manuelles Backup endete (`success=1/0`, einmal; sonst 409); wie die anderen `/runner/...`-Routen | nur Runner |
 | POST `/system/power` | Block „System“ der Verwaltungsseite (nur Owner): Pi neu starten oder ausschalten oder ein Backup starten (`action` = `reboot`/`poweroff`/`backup`; Neustart und Ausschalten verlangen das Passwort des Owners, das Backup nicht; sonst 403; läuft schon eine Anfrage, 409). Der Hub schreibt nur die Anfrage in `power_requests`; der Runner holt sie einmal über POST `/runner/power/claim` (nach 120 s verfällt sie) und führt einen festen Befehl aus (`launcher.build_power_command`: kurzlebiger privilegierter Container mit `nsenter` und `systemctl --no-block`) | Umleitung auf `/login` bzw. 401 |
+| GET `/ai/{anbieter}/status`, POST `/ai/{anbieter}/connect` (Schlüssel), `/ai/{anbieter}/disconnect`, POST `/ai/default` | Verbindungen mit API-Schlüssel (Mistral) und Standard-KI des angemeldeten Nutzers; unbekannter Anbieter 404 | 401 |
+| POST `/items/{id}/agent-start`, `/agent-approve`, `/agent-reject`, `/agent-cancel` | Board-Karte an die Agenten geben, freigeben, noch eine Runde, abbrechen (nur eigene Punkte, sonst 404) | 401 |
+| POST `/system/ai` | KI-Läufe gleichzeitig (nur Owner; 1, 2, 3, 4 oder 0 = keine Grenze) | 401 |
+| POST `/runner/keys/claim`, `/runner/keys/{nutzer}/{anbieter}/done`, `/expired`, `/wiped`, GET `/runner/keys/wipes` | Runner: eingefügte Schlüssel einmal abholen, Ergebnis der Prüfung, abgelehnte und zu löschende Schlüssel | nur Runner |
+| POST `/runner/claim` (Auftrag mit `provider` und `prompt`), GET `/runner/merges`, POST `/runner/merges/{aufgabe}/done`, GET `/runner/cleanups` | Runner: Agentenläufe, Zusammenführen nach der Freigabe, Aufräumen der Arbeitsordner | nur Runner |
 | GET `/health` | Lebenszeichen | offen |
 
 `/docs`, `/redoc` und `/openapi.json` sind abgeschaltet. Alle Antworten tragen `X-Content-Type-Options`, `X-Frame-Options: SAMEORIGIN` und `Referrer-Policy`; Seiten (nicht `/static`) zusätzlich `Cache-Control: no-store`, bei HTTPS `Strict-Transport-Security`.
@@ -457,7 +514,8 @@ Auf dem Windows-PC ist kein Git installiert und das Repo liegt nur auf dem Pi un
 
 1. Backup der Datenbank: `cp data/hub.db /opt/agent-hub/backups/hub-$(date +%F).db` (im Klon-Ordner, Dienst darf laufen).
 2. Änderungen auf einem Branch entwickeln und testen, dann nach `main` mergen und pushen.
-3. Auf dem Pi im Klon-Ordner: `git pull`, dann `docker compose up -d --build web`.
+3. Auf dem Pi im Klon-Ordner: `git pull`, dann `docker compose up -d --build web`. Ändert sich der Runner, die Schnittstelle zwischen Hub und Runner oder der Egress-Proxy: `docker compose build web runner && docker compose up -d web runner egress` (**Hub und Runner immer zusammen**, sonst gibt ein alter Runner z. B. Mistral-Fragen an Claude Code). Die Lauf-Images baut Compose nicht: bei Änderung von `runner/Dockerfile` `docker build -t agent-hub-agent -f runner/Dockerfile runner`, bei `runner/Dockerfile.vibe` oder `runner/vibe_entry.py` `docker build -t agent-hub-vibe -f runner/Dockerfile.vibe runner` (beide auch in `restore.sh`).
+   Ordner auf dem Pi: `/opt/agent-hub/work` (Projekt-Repos `repos/`, Git der Aufgaben `gitdirs/`, Arbeitsordner `tasks/`; legt der Runner an, 0700; `repos/` ist im nächtlichen Backup).
 4. Prüfen: `curl -s http://127.0.0.1:8000/health` und `https://hub.janis-home.de/login`.
 5. Zurück: `git revert <Commit>`, erneut bauen; Daten notfalls aus dem Backup.
 
@@ -465,6 +523,8 @@ Auf dem Windows-PC ist kein Git installiert und das Repo liegt nur auf dem Pi un
 
 - **Unit-Tests** (laufen im Container, ohne den Dienst anzufassen), im Klon-Ordner (für Code, der noch nicht im Image steckt, zusätzlich `-v "$PWD/web/app:/app/app"` angeben): `docker compose run --rm --no-deps -v "$PWD/web/tests:/app/tests" -v "$(mktemp -d):/data" web python -W ignore -m unittest discover -s tests -t .`
 - **Launcher-Tests** (Ordner `runner/`, brauchen zusätzlich dessen Einhängung): `docker compose run --rm --no-deps -v "$PWD/web/tests:/app/tests" -v "$PWD/web/app:/app/app" -v "$PWD/runner:/app/runner" web python -W ignore -m unittest runner.test_launcher`. Ein echter Lauf mit Anmeldung ist damit nicht geprüft.
+- **Runner-Tests** im frisch gebauten Runner-Image (hat `cryptography` und `git`): `bash ~/t.sh <branch>` für die Web-Tests, `bash ~/rt.sh <branch>` für die Runner-Tests (`test_tokens`, `test_egress`, `test_runner`, `test_launcher`, `test_agent_runs`, `test_mistral`). `test_agent_runs` arbeitet mit echtem Git und prüft, dass ein eingeschleustes `.git/config` beim Committen nichts ausführt.
+- **Probe von Vibe ohne Schlüssel:** Vibe in einem Wegwerf-Container gegen eine nachgebaute Mistral-API (`fake.py`, Ablauf im Änderungsprotokoll `ai-default`), oder live im Agenten-Netz mit einem erfundenen Ticket: Das Gateway lehnt ab (502), der Lauf endet ohne Anmeldeproblem.
 - **HTTP-Test** gegen eine Wegwerf-Instanz mit eigener Datenbank und Testkonto, z. B. `docker run -d --name hub-test -p 8001:8000 -e HUB_DB=/tmp/test.db -e HUB_SECURE_COOKIE=0 agent-hub-web`, Testnutzer mit `users.create_user` anlegen, dann `python3 web/tests/integration_http.py http://127.0.0.1:8001 EMAIL PASSWORT [EMAIL2 PASSWORT2]` (mit einem zweiten normalen Konto prüft der Test zusätzlich, dass es nichts vom ersten sieht oder ändert). Bei HTTP muss `HUB_SECURE_COOKIE=0` stehen, sonst sendet der Client den Cookie nicht zurück. Nie mit dem echten Konto testen.
 - **Mail-Vorschau:** `docker compose run --rm --no-deps -v "$PWD/web/tests:/app/tests" -v /tmp/mailprev:/out web python -W ignore tests/preview_mail.py /out` schreibt die Mails (Reset und Einladung, hell und dunkel) als HTML-Dateien; ansehen im Browser der Claude-App (Datei öffnen), ohne einen Port freizugeben. Das Aussehen in echten Mailprogrammen prüft nur Janis.
 - **Browser-Prüfung** der Oberfläche in Claude in Chrome gegen die Testinstanz auf Port 8001 (Seite `http://home.local:8001`). Fenstergrößen werden über Rahmen (iframe) in der gewünschten Größe geprüft, weil `resize_window` das Fenster nicht ändert. In einem minimierten Test-Fenster pausiert Chrome `requestAnimationFrame` und CSS-Animationen: dann den Takt durch einen 16-ms-Zeitgeber ersetzen und endliche Animationen mit `getAnimations().finish()` beenden. Das Feld mit `autofocus` bekommt keinen Fokus, daher per `input.focus()` setzen und 2 bis 3 s nach dem Laden warten. Klicks per Koordinate: Bildschirmfoto ist skaliert (1568 px breit), also `getBoundingClientRect` über `javascript_tool` lesen und umrechnen.
@@ -581,6 +641,15 @@ Dinge, die wegen Aufwand oder geringer Dringlichkeit warten. Bei jeder Planung m
 - **Chat lädt den Anfang** einer Unterhaltung; er soll bei der letzten Antwort stehen.
 - **Handy:** Beim Tippen in den Chat zoomt der Browser ein Stück hinein (Eingabefeld unter 16 px Schrift); darf nicht passieren.
 - **Text „Web + Code zusammen“** kürzer, aussagekräftiger und für Laien verständlich, mit dem Grund, warum man beides trennt, in einem Satz.
+- **Mails landen bei Freunden im Spam** (Janis, 15.11.2026): prüfen, warum. Ansatzpunkte: SPF, DKIM und DMARC für `janis-home.de` bei Resend und Cloudflare (DMARC-Eintrag vorhanden? Ausrichtung von Absender- und Rückweg-Domain), Absender `noreply@` (manche Anbieter werten das ab), Verhältnis Text zu HTML und Links, ein Testversand an Mail-Tester-Dienste und an Gmail, Yahoo, Outlook, GMX, web.de.
+- **Mails sehen in anderen Programmen schlecht aus** (Janis, 15.11.2026: z. B. Yahoo und Outlook; nur bei Janis sieht es aus wie gestaltet): prüfen, welche Teile von `mailtext.py` diese Programme nicht können (Hell/Dunkel über `prefers-color-scheme`, `<style>`-Blöcke statt Angaben im Element, Abstände, runde Knöpfe, Webfonts; Outlook für Windows nutzt Word zum Darstellen und braucht Tabellen-Aufbau). Ziel: überall lesbar und ordentlich, der Knopf immer klickbar.
+
+**Noch nicht im echten Betrieb geprüft (Stand 15.11.2026, Janis holt es nach)**
+- Ein echter Mistral-Chat und ein echter Mistral-Agentenlauf mit Schlüssel (Websuche über das Gateway, Code, Token-Zählung aus `export.json`); das Anlegen des Schlüssels im Pro-Abo des Kollegen; das Verhalten, wenn das Monatsguthaben aufgebraucht ist.
+- Ein echter Agentenlauf mit Claude (vom Board bis zur Freigabe, Merge, Manager trägt Erinnerung und ARCHIVE.md nach) und der Speicher des Pi bei einem langen Lauf.
+- Der Rückfall auf die zweite KI im echten Betrieb; die Einstellung „KI-Läufe“ mit mehr als einem Lauf.
+- Aussehen im Browser und am Handy: Schublade mit Standard-KI und grünem Stern, Board-Karten mit Zustand und Knöpfen, Zeile „KI-Läufe“, Dialog für den Mistral-Schlüssel.
+- Ob der Manager ARCHIVE.md und den Abschnitt „Design“ in den Regeln von sich aus füllt.
 
 ### Ideenliste von Janis (11.11.2026, nichts gebaut)
 
