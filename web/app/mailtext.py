@@ -89,7 +89,7 @@ HTML = """<!doctype html>
           <v:roundrect xmlns:v="urn:schemas-microsoft-com:vml" xmlns:w="urn:schemas-microsoft-com:office:word" href="%LINK%" style="height:54px;width:260px;v-text-anchor:middle;" arcsize="30%" strokecolor="%ACCENT%" fillcolor="%ACCENT%"><v:fill type="gradient" color="%SHEEN%" color2="%ACCENT%" angle="180"/><w:anchorlock/><center style="font-family:Arial,sans-serif;font-size:17px;font-weight:bold;color:%ON_ACCENT%;">%BUTTON%</center></v:roundrect>
 <![endif]-->
 <!--[if !mso]><!-->
-          <table role="presentation" width="260" cellpadding="0" cellspacing="0" border="0" align="center" bgcolor="%CARD%" style="width:260px;margin:0 auto;background-color:%CARD%;"><tr>
+          <table role="presentation" width="260" cellpadding="0" cellspacing="0" border="0" align="center" style="width:260px;margin:0 auto;"><tr>
             <td class="btn" align="center" bgcolor="%ACCENT%"%SHEEN_PIC% style="width:260px;height:54px;border-radius:16px;background-color:%ACCENT%;%SHEEN_CSS%">
               <a class="bt" href="%LINK%" style="display:block;height:54px;line-height:54px;white-space:nowrap;font-family:%FONT%;font-size:17px;font-weight:700;color:%ON_ACCENT%;text-decoration:none;border-radius:16px;">%BUTTON%</a>
             </td>
