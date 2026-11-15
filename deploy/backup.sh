@@ -15,6 +15,8 @@ DEST=${DEST:-/mnt/backup/agent-hub}
 PASS_FILE=${PASS_FILE:-/etc/agent-hub-backup.pass}
 KEEP_DAILY=${KEEP_DAILY:-7}
 KEEP_WEEKLY=${KEEP_WEEKLY:-4}
+DEPLOY_COPIES=${DEPLOY_COPIES:-/opt/agent-hub/backups}   # the copies made before each deploy (database, .env)
+KEEP_COPY_DAYS=${KEEP_COPY_DAYS:-35}                      # as long as the nightly backups keep a state (7 days + 4 Sundays)
 
 if [ -n "$MOUNT_POINT" ] && ! mountpoint -q "$MOUNT_POINT"; then
   echo "Backup stick is not mounted at $MOUNT_POINT" >&2
@@ -70,6 +72,11 @@ for f in $(ls -1 "$DEST"/hub-*.tar.gz.gpg | sort -r); do
   if [ "$(date -d "$d" +%u)" = 7 ] && [ "$weekly" -lt "$KEEP_WEEKLY" ]; then weekly=$((weekly + 1)); continue; fi
   rm -- "$f"
 done
+
+# 7. Deploy copies older than KEEP_COPY_DAYS go, so data of a deleted account does not stay there either (15.11.2026).
+if [ -d "$DEPLOY_COPIES" ]; then
+  find "$DEPLOY_COPIES" -mindepth 1 -maxdepth 1 -type f -mtime +$((KEEP_COPY_DAYS - 1)) -delete
+fi
 
 SIZE=$(stat -c %s "$OUT")
 echo "$(date -Is) ok $(basename "$OUT") $SIZE bytes" | tee -a "$DEST/backup.log" > "$DEST/last-ok.txt"
