@@ -1,6 +1,6 @@
 # Agent-Hub – Projektsheet
 
-Stand: 15.11.2026 (nach `ai-parallel` und `docs-full`: Mistral, Standard-KI, Agentenläufe live; Merkliste in 11a; 441 Web- und 113 Runner-Tests grün) · Autor: Janis (mit Claude) · Zweck: Philosophie, Ziel, Entscheidungen und Reihenfolge, damit jeder Claude-Chat im Projekt denselben Stand hat.
+Stand: 15.11.2026, nachts (nach der Durchsicht des ganzen Codes: `hardening`, `account-trash`, `cleanup`, `small-fixes`; Content-Security-Policy, Konto löschen mit 30 Tagen Frist, Altlasten entfernt, Kleinigkeiten der Merkliste; 453 Web- und 115 Runner-Tests grün, HTTP-Test mit zwei Konten grün) · Autor: Janis (mit Claude) · Zweck: Philosophie, Ziel, Entscheidungen und Reihenfolge, damit jeder Claude-Chat im Projekt denselben Stand hat.
 
 ## Auf einen Blick (zuerst lesen, für neue Chats)
 
