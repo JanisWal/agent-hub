@@ -461,3 +461,8 @@ dialog.archive-day[open] { display: flex; flex-direction: column; width: min(760
   display: grid; place-items: center; border-radius: 13px; font-weight: 700; font-size: 0.85rem;
   color: var(--on-accent); background: var(--accent); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.25);
 }
+
+/* No zoom while typing on a phone (app.css): the fields of this page that are smaller elsewhere. */
+@media (pointer: coarse) {
+  .chat-form textarea, .m-select select, .title-menu input, .title-menu textarea, .reader-edit { font-size: max(16px, 1rem); }
+}

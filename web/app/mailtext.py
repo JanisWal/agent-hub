@@ -1,6 +1,9 @@
 """The mails with a button and a link (password reset, invitation): text, HTML and sending.
 
-The HTML uses tables and inline styles only, because mail programs ignore most CSS. Colours
+The HTML uses tables and inline styles only, because mail programs ignore most CSS. It is built for the weakest of
+them (Janis, 15.11.2026: Outlook for Windows draws with Word, Yahoo drops much): colours also as `bgcolor`
+attributes, the width as an attribute, standard font weights, and a button whose coloured cell carries the padding
+(`mso-padding-alt`), so it is a real button there too. Round corners and the gloss are extras that may be missing. Colours
 follow DESIGN.md; the two palettes are the light and the dark style of the site. The mail
 shows one fixed palette: the style the user saw last on the site (`users.theme`, reported by
 the theme switch). A mail program cannot be asked which one the reader likes.
@@ -38,17 +41,17 @@ HTML = """<!doctype html>
 <meta name="supported-color-schemes" content="%SCHEME%">
 <title>%TITLE%</title>
 </head>
-<body style="margin:0;padding:0;background-color:%BG%;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:%BG%;">
+<body bgcolor="%BG%" style="margin:0;padding:0;background-color:%BG%;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="%BG%" style="background-color:%BG%;">
 <tr><td align="center" style="padding:32px 16px;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;">
-    <tr><td style="padding:0 8px 16px;font-family:%FONT%;font-size:18px;font-weight:650;letter-spacing:-0.01em;color:%TEXT%;">Agent-Hub</td></tr>
-    <tr><td style="background-color:%CARD%;border:1px solid %BORDER%;border-radius:28px;padding:40px 32px;font-family:%FONT%;color:%TEXT%;">
+  <table role="presentation" width="520" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:520px;">
+    <tr><td style="padding:0 8px 16px;font-family:%FONT%;font-size:18px;font-weight:700;letter-spacing:-0.01em;color:%TEXT%;">Agent-Hub</td></tr>
+    <tr><td bgcolor="%CARD%" style="background-color:%CARD%;border:1px solid %BORDER%;border-radius:28px;padding:40px 32px;font-family:%FONT%;color:%TEXT%;">
       <h1 style="margin:0 0 16px;font-size:30px;line-height:1.15;font-weight:700;letter-spacing:-0.03em;color:%TEXT%;">%GREETING%</h1>
       <p style="margin:0 0 32px;font-size:17px;line-height:1.55;color:%TEXT%;">%BODY%</p>
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
-        <td align="center" bgcolor="%ACCENT%" style="border-radius:16px;background-color:%ACCENT%;background-image:linear-gradient(180deg,rgba(255,255,255,0.38),rgba(255,255,255,0) 55%);">
-          <a href="%LINK%" style="display:block;padding:17px 24px;font-family:%FONT%;font-size:17px;font-weight:650;color:%ON_ACCENT%;text-decoration:none;border-radius:16px;">%BUTTON%</a>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+        <td align="center" bgcolor="%ACCENT%" style="border-radius:16px;background-color:%ACCENT%;background-image:linear-gradient(180deg,rgba(255,255,255,0.38),rgba(255,255,255,0) 55%);mso-padding-alt:17px 24px;">
+          <a href="%LINK%" style="display:block;padding:17px 24px;font-family:%FONT%;font-size:17px;line-height:1.3;font-weight:700;color:%ON_ACCENT%;text-decoration:none;border-radius:16px;">%BUTTON%</a>
         </td>
       </tr></table>
       <p style="margin:28px 0 4px;font-size:13px;line-height:1.4;color:%MUTED%;">%LINK_HELP%</p>

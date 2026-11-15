@@ -211,7 +211,7 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn('id="manager-net"', tools)
         self.assertLess(tools.index('id="manager-net"'), tools.index('id="manager-model"'))   # left of the model
         self.assertIn('data-on="together" data-off="apart" aria-pressed="true"', tools)      # on by default (open internet)
-        self.assertIn('aria-label="Web + Code zusammen"', tools)
+        self.assertIn('aria-label="Code mit Internet"', tools)
         self.assertIn('class="info-dot"', header)                                           # the hint is an "i" now
         self.assertNotIn("m-chat-sub", header)
         agents.configure(self.user.id, "chef", net="apart")

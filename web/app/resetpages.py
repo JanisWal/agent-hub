@@ -43,16 +43,16 @@ def _error(text: str) -> str:
     return f'<p class="error" role="alert">{esc(text)}</p>' if text else ""
 
 
-def forgot_page(error_key: str = "", **values) -> str:
-    """Ask for the e-mail address (German, the user is not known yet, like the login page).
+def forgot_page(error_key: str = "", lang: str = "de", **values) -> str:
+    """Ask for the e-mail address. The user is not known yet: `lang` is the browser's language, like the login page.
     `values` fill the placeholders of the error text (e.g. minutes)."""
-    error = _error(i18n.t("de", error_key, **values)) if error_key else ""
-    return page(i18n.t("de", "forgot_title"), fill(FORGOT, "de", ERROR=error), "de")
+    error = _error(i18n.t(lang, error_key, **values)) if error_key else ""
+    return page(i18n.t(lang, "forgot_title"), fill(FORGOT, lang, ERROR=error), lang)
 
 
-def sent_page() -> str:
+def sent_page(lang: str = "de") -> str:
     """Same answer for every address, whether it has an account or not."""
-    return page(i18n.t("de", "forgot_sent_title"), fill(SENT, "de"), "de")
+    return page(i18n.t(lang, "forgot_sent_title"), fill(SENT, lang), lang)
 
 
 def reset_page(token: str, lang: str, error_key: str = "") -> str:
@@ -62,6 +62,6 @@ def reset_page(token: str, lang: str, error_key: str = "") -> str:
     return page(i18n.t(lang, "reset_title"), fill(RESET, lang, ERROR=error, TOKEN=esc(token)), lang)
 
 
-def invalid_page() -> str:
+def invalid_page(lang: str = "de") -> str:
     """The link is unknown, expired or already used."""
-    return page(i18n.t("de", "reset_invalid_title"), fill(INVALID, "de"), "de")
+    return page(i18n.t(lang, "reset_invalid_title"), fill(INVALID, lang), lang)

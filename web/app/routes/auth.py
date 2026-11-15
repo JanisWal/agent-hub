@@ -8,9 +8,14 @@ from ..deps import COOKIE_NAME, COOKIE_SECURE, api_user, fail, ok, page_user, re
 router = APIRouter()
 
 
+def _lang(request: Request) -> str:
+    """Nobody is logged in yet: the page speaks the browser's language."""
+    return i18n.from_header(request.headers.get("accept-language"))
+
+
 @router.get("/login", response_class=HTMLResponse)
-def login_form() -> str:
-    return ui.login_page()
+def login_form(request: Request) -> str:
+    return ui.login_page(lang=_lang(request))
 
 
 @router.post("/login", response_class=HTMLResponse)
@@ -18,14 +23,14 @@ def login(request: Request, email: str = Form(""), password: str = Form("")):
     ip = throttle.client_ip(request)
     wait = throttle.seconds_locked(ip)  # checked first: a locked IP gets no answer about the password
     if wait:
-        return HTMLResponse(ui.login_page(locked_minutes=throttle.minutes(wait)), status_code=429)
+        return HTMLResponse(ui.login_page(locked_minutes=throttle.minutes(wait), lang=_lang(request)), status_code=429)
     user = users.check_login(email, password)
     if user is None:
         throttle.record_failure(ip)
         wait = throttle.seconds_locked(ip)
         if wait:
-            return HTMLResponse(ui.login_page(locked_minutes=throttle.minutes(wait)), status_code=429)
-        return HTMLResponse(ui.login_page(failed=True), status_code=401)
+            return HTMLResponse(ui.login_page(locked_minutes=throttle.minutes(wait), lang=_lang(request)), status_code=429)
+        return HTMLResponse(ui.login_page(failed=True, lang=_lang(request)), status_code=401)
     response = redirect("/")
     response.set_cookie(
         COOKIE_NAME,

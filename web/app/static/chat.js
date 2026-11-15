@@ -107,9 +107,21 @@
       }
     });
     send.disabled = open;
-    log.scrollTop = log.scrollHeight;
+    toEnd();
     clearTimeout(timer);
     if (open) timer = setTimeout(load, 2000);
+  }
+
+  // The chat stands at the newest answer (Janis, 15.11.2026). The answers may arrive while the Manager view is still
+  // hidden (the page opens on the board): a hidden list has no height, so scrolling does nothing then. When the list
+  // gets its size (the view opens, a tile is resized) it goes to the end again, unless the user scrolled up to read.
+  var follow = true;
+  function toEnd() { follow = true; log.scrollTop = log.scrollHeight; }
+  log.addEventListener("scroll", function () {
+    if (log.clientHeight) follow = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+  });
+  if (window.ResizeObserver) {
+    new ResizeObserver(function () { if (follow) log.scrollTop = log.scrollHeight; }).observe(log);
   }
 
   function load() {
