@@ -93,7 +93,10 @@ class ProjectPageTest(unittest.TestCase):
         names = ["Board", "Manager", "Programmierer", "Tester", "Prüfer", "Für dich"]
         positions = [nav.index(f">{name}<") for name in names]
         self.assertEqual(positions, sorted(positions))
-        self.assertEqual(nav.count('class="station off"'), 4)                  # board and manager exist so far
+        self.assertEqual(nav.count('class="station off"'), 0)                  # every station has a view (15.11.2026)
+        for name in ("programmer", "tester", "reviewer", "me"):
+            self.assertIn(f'href="#{name}" data-seg data-station="{name}"', nav)
+            self.assertIn(f'data-view-panel="{name}"', page)
         self.assertEqual(nav.count('class="station active"'), 1)
         self.assertIn('href="#manager" data-seg data-station="manager"', nav)
         self.assertIn('href="#board" data-seg data-station="board"', nav)
@@ -121,7 +124,7 @@ class ProjectPageTest(unittest.TestCase):
         for tall in ("m-grow", "m-chat"):
             self.assertIn(tall, manager)
         self.assertIn("nicht Teil des Boards", manager)                       # the checks are not board items
-        self.assertNotIn("/settings", manager)                                # name and description moved to the pencil
+        self.assertNotIn("/projects/", manager)                               # name and description moved to the pencil
         self.assertIn("stations.js", page)
         self.assertNotIn('id="manager"', page)                                # the hash must not make the page scroll
 
@@ -189,7 +192,8 @@ class ProjectPageTest(unittest.TestCase):
         waiting = page[page.index('class="mtile glass m-waiting"'):]
         self.assertIn('id="manager-autonomy"', waiting[:waiting.index("</header>")])        # at "waiting for you"
         script = css_of("manager.js")
-        self.assertIn('fetch("/manager/settings"', script)
+        self.assertIn("fetch(area.dataset.settingsUrl", script)                  # one script for every agent's area
+        self.assertIn('data-settings-url="/manager/settings"', page)
         self.assertIn("manager.js", page)
         self.assertIn("Decides alone", self.html("en"))
 
@@ -253,7 +257,7 @@ class ProjectPageTest(unittest.TestCase):
 
     def test_stations_script_swaps_the_views_by_the_address(self):
         script = css_of("stations.js")
-        for needle in ('"#manager"', "replaceState", "data-station", "drawer-extra", "manager-view"):
+        for needle in ("location.hash", "replaceState", "data-station", "drawer-extra", "data-view-panel", "manager-open"):
             self.assertIn(needle, script)
         self.assertIn(".manager {", css_of("project.css"))
         self.assertIn("[hidden] { display: none !important; }", css_of("project.css"))
@@ -402,3 +406,73 @@ class ProjectPageTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RoleViewsTest(unittest.TestCase):
+    """The views of programmer, tester, reviewer and "For you" (rolepage.py, 15.11.2026)."""
+    setUp, tearDown, html = ProjectPageTest.setUp, ProjectPageTest.tearDown, ProjectPageTest.html
+
+    def run_task(self, results):
+        from app import agents, claude_link
+        claude_link.begin(self.user.id)
+        claude_link.complete(self.user.id, True)
+        task = agents.start_task(self.user.id, self.project.id, self.bug.id)
+        for result, report in results:
+            job = agents.claim_next(can_mac=True)
+            self.assertTrue(agents.finish_run(job.run_id, result, report, tokens_in=1200, tokens_out=30, seconds=12))
+        return task
+
+    def test_each_role_shows_its_settings_its_runs_and_its_usage(self):
+        from app import agents
+        agents.configure(self.user.id, "tester", enabled=True, net="apart")
+        self.run_task([("done", "Built <it>"), ("pass", "All green")])
+        page = self.html()
+        prog = page[page.index('id="view-programmer"'):page.index('id="view-tester"')]
+        tester = page[page.index('id="view-tester"'):page.index('id="view-reviewer"')]
+        self.assertIn('data-settings-url="/roles/programmer/settings"', prog)
+        self.assertNotIn('id="role-programmer-enabled"', prog)               # the programmer is always on
+        self.assertIn('id="role-tester-enabled"', tester)
+        self.assertIn('id="role-tester-model"', tester)
+        self.assertIn('id="role-tester-net" data-setting="net" data-on="together" data-off="apart" aria-pressed="false"', tester)
+        self.assertIn("Built &lt;it&gt;", prog)                               # the report, escaped
+        self.assertIn("Fertig", prog)
+        self.assertIn("Bestanden", tester)
+        self.assertIn("Läufe: 1", prog)
+        self.assertIn("1.2k", prog)
+        reviewer = page[page.index('id="view-reviewer"'):page.index('id="view-me"')]
+        self.assertIn("Prüfer", page)
+        self.assertIn('class="r-now queued"', reviewer)                       # the reviewer's run waits
+        self.assertIn("Gerade nichts zu tun.", prog)
+        self.assertIn("roles.js", page)
+        self.assertIn("Approvals and interventions", self.html("en"))
+
+    def test_for_you_lists_what_waits_and_counts_it_at_the_station(self):
+        page = self.html()
+        self.assertIn("Gerade wartet nichts auf dich.", page)
+        self.assertNotIn("station-count", page[page.index('<nav class="stations"'):page.index("</nav>")])
+        self.run_task([("done", "Built"), ("pass", "Green"), ("ok", "Fine by me")])
+        page = self.html()
+        me = page[page.index('id="view-me"'):]
+        self.assertIn("A bug", me)
+        self.assertIn("Wartet auf deine Freigabe", me)
+        self.assertIn("Fine by me", me)
+        self.assertIn('data-goto="board"', me)
+        self.assertNotIn("agent-approve", me)                                 # deciding stays on the board card
+        self.assertIn('<span class="station-count">1</span>', page)
+
+
+    def test_the_settings_route_takes_only_the_three_roles(self):
+        from app import agents
+        from app.routes import roles as routes
+
+        def call(role, **form):
+            values = {"enabled": "", "model": "", "net": "", "effort": ""} | form
+            return routes.role_settings(role, user=self.user, **values)
+        answer = call("tester", enabled="0", net="apart")
+        self.assertEqual((answer["enabled"], answer["net"]), ("0", "apart"))
+        self.assertFalse(agents.settings(self.user.id)["roles"]["tester"]["enabled"])
+        self.assertEqual(call("reviewer", model="opus", effort="max")["effort"], "max")
+        self.assertEqual(call("programmer", enabled="0").status_code, 400)    # the programmer stays on
+        self.assertEqual(call("chef", net="apart").status_code, 400)          # the manager has its own route
+        self.assertEqual(call("tester", enabled="yes").status_code, 400)
+        self.assertEqual(call("tester", model="gpt-9").status_code, 400)

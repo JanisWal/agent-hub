@@ -377,8 +377,8 @@ def waiting_reason(user_id: int, task: Task) -> str | None:
     return None
 
 
-def usage(user_id: int, project_id: int | None = None) -> dict:
-    """Tokens and seconds used by this user's runs (of one project, or of all)."""
+def usage(user_id: int, project_id: int | None = None, role: str | None = None) -> dict:
+    """Tokens and seconds used by this user's runs (of one project, or of all; of one role, or of all)."""
     sql = ("SELECT COALESCE(SUM(r.tokens_in), 0) AS tokens_in, COALESCE(SUM(r.tokens_out), 0) AS tokens_out,"
            " COALESCE(SUM(r.seconds), 0) AS seconds, COUNT(r.id) AS runs FROM agent_runs r"
            " JOIN agent_tasks t ON t.id = r.task_id JOIN projects p ON p.id = t.project_id"
@@ -387,8 +387,47 @@ def usage(user_id: int, project_id: int | None = None) -> dict:
     if project_id is not None:
         sql += " AND p.id = ?"
         args.append(project_id)
+    if role is not None:
+        sql += " AND r.role = ?"
+        args.append(role)
     with db.connect() as conn:
         return dict(conn.execute(sql, args).fetchone())
+
+
+@dataclass
+class RoleRun:
+    """One run of a role as its tab shows it (rolepage.py): the run and what it belongs to."""
+    run: Run
+    task_title: str
+    provider: str
+    created_at: int
+    started_at: int | None
+    finished_at: int | None
+
+
+ROLE_RUNS = 30            # runs a role's tab shows at most (newest)
+
+
+def role_runs(user_id: int, project_id: int, role: str, limit: int = ROLE_RUNS) -> list[RoleRun]:
+    """The newest runs of one role in one project, newest first; empty if the project is not the user's."""
+    if role not in workflow.ROLES:
+        return []
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT r.*, t.title AS task_title FROM agent_runs r JOIN agent_tasks t ON t.id = r.task_id"
+            " JOIN projects p ON p.id = t.project_id WHERE p.id = ? AND p.user_id = ? AND r.role = ?"
+            " ORDER BY r.id DESC LIMIT ?", (project_id, user_id, role, max(1, min(int(limit), 200))),
+        ).fetchall()
+    return [RoleRun(_run(r), r["task_title"], r["provider"] or "", r["created_at"], r["started_at"], r["finished_at"])
+            for r in rows]
+
+
+WAITS_FOR_USER = ("awaiting_approval", "escalated")
+
+
+def waiting_tasks(user_id: int, project_id: int) -> list[Task]:
+    """Tasks of the project that wait for the user (approval, or they need him), oldest first."""
+    return sorted((t for t in list_tasks(user_id, project_id) if t.status in WAITS_FOR_USER), key=lambda t: t.id)
 
 
 def decide(user_id: int, task_id: int, decision: str, note: str = "", now: int | None = None) -> bool:

@@ -466,3 +466,35 @@ dialog.archive-day[open] { display: flex; flex-direction: column; width: min(760
 @media (pointer: coarse) {
   .chat-form textarea, .m-select select, .title-menu input, .title-menu textarea, .reader-edit { font-size: max(16px, 1rem); }
 }
+
+/* The role views (rolepage.py, 15.11.2026): the tiles of the Manager view, two columns (now and usage | runs), and
+   "For you" as one column. Only shared tokens and classes, nothing fixed (skins later, Janis 15.11.2026). */
+body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="vault"] { display: none; }
+.manager.role-view { grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr); align-items: start; }
+.manager.me-view { grid-template-columns: minmax(0, 1fr); max-width: 980px; }
+.role-view .mtile { min-height: 0; }
+.role-view .mtile header .m-chat-tools { flex-wrap: wrap; }
+.r-scroll { min-height: 0; max-height: 70dvh; overflow-y: auto; overscroll-behavior: contain; padding: 2px 4px 4px; margin: 0 -4px; }
+.r-runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.r-run { border: 1px solid var(--glass-border); border-radius: 16px; background: color-mix(in srgb, var(--glass) 55%, transparent); }
+.r-run > summary {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 10px; align-items: center; padding: 10px 14px;
+  min-height: 44px; cursor: pointer; list-style: none; border-radius: 16px;
+}
+.r-run > summary::-webkit-details-marker { display: none; }
+.r-run > summary:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.r-run > summary:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+.r-title { font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.r-facts { grid-column: 1 / -1; color: var(--muted); font-size: 0.8rem; }
+.r-result { padding: 2px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; color: var(--muted); background: var(--field); white-space: nowrap; }
+.r-result.go { color: var(--on-go); background: var(--go); }
+.r-result.stop { color: var(--on-danger); background: var(--danger); }
+.r-report { margin: 0; padding: 4px 14px 14px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.88rem; line-height: 1.5; }
+.r-now { display: flex; align-items: center; gap: 10px; }
+.r-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.r-now.running .r-dot { background: var(--go); box-shadow: 0 0 0 4px color-mix(in srgb, var(--go) 25%, transparent); animation: r-pulse 1.6s ease-in-out infinite; }
+@keyframes r-pulse { 50% { opacity: 0.45; } }
+.station-count { margin-left: 8px; min-width: 20px; padding: 0 6px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; line-height: 20px; text-align: center; color: var(--on-accent); background: var(--accent); }
+.me-view header .link.inline { margin-left: 4px; }
+@media (max-width: 1100px) { .manager.role-view { grid-template-columns: 1fr; } .r-scroll { max-height: none; } }
+@media (prefers-reduced-motion: reduce) { .r-now.running .r-dot { animation: none; } }

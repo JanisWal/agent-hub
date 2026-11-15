@@ -1,14 +1,15 @@
-// Settings of the manager in the Manager view (routes/manager.py): model and effort level, how freely it decides and
-// the switch "web and code together". They hold for everything the manager does, so a change is saved at once.
+// Settings of an agent, saved at once: the Manager view (routes/manager.py: model and effort level, how freely it
+// decides, "web and code together") and since 15.11.2026 the role views (routes/roles.py: on or off, the same switch,
+// model and level). Each area names its address in data-settings-url; the same code serves all of them.
 // The server answers with all settings as it has them now; the controls show that (after a new model the level can
 // have become the model's default). If saving fails, the control goes back to the value the server had.
-(function () {
-  var selects = document.querySelectorAll("#manager-view select[data-setting]");
+document.querySelectorAll("[data-settings-url]").forEach(function (area) {
+  var selects = area.querySelectorAll("select[data-setting]");
 
   function save(name, value, done) {
     var data = new FormData();
     data.append(name, value);
-    fetch("/manager/settings", { method: "POST", body: data })
+    fetch(area.dataset.settingsUrl, { method: "POST", body: data })
       .then(function (r) { return r.json().catch(function () { return {}; }); })
       .then(function (answer) { done(answer.ok ? answer : null); })
       .catch(function () { done(null); });
@@ -34,7 +35,7 @@
 
   // A pill that is pressed or not (aria-pressed): pressed = its data-on value, else its data-off value. It changes at
   // once on the click and goes back if the server does not take it.
-  document.querySelectorAll("#manager-view button[aria-pressed][data-setting]").forEach(function (pill) {
+  area.querySelectorAll("button[aria-pressed][data-setting]").forEach(function (pill) {
     var was = pill.getAttribute("aria-pressed") === "true";
     pill.addEventListener("click", function () {
       var on = pill.getAttribute("aria-pressed") !== "true";
@@ -46,4 +47,4 @@
       });
     });
   });
-})();
+});

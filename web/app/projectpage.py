@@ -1,19 +1,19 @@
 """HTML of the project page: stations on the left, kanban board and trash on the right."""
-from . import agents, aichoice, i18n, managerpage, ui
+from . import agents, aichoice, i18n, managerpage, rolepage, ui
 from .board import KINDS, Item
 from .icons import icon
 from .layout import esc, fill
 from .projects import MAX_DESCRIPTION, MAX_NAME, Project
 from .users import User
 
-SCRIPTS = ("motion.js", "segment.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "picker.js", "manager.js", "splitter.js", "checks.js", "upload.js", "tiffthumb.js", "files.js", "mvault.js")
+SCRIPTS = ("motion.js", "segment.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "picker.js", "manager.js", "splitter.js", "checks.js", "upload.js", "tiffthumb.js", "files.js", "mvault.js", "roles.js")
 STYLES = ("project.css",)
 
 COLUMN_LABEL = {"bug": "col_bug", "minor": "col_minor", "major": "col_major"}
 
 PROJECT = """<div class="project" data-id="%PID%">
   %STATIONS%
-  <div class="boardwrap">
+  <div class="boardwrap" data-view-panel="board">
     <section class="vault glass" id="vault" hidden>
       <div class="vault-view" data-view="trash" hidden>
         <h2>%t.trash%</h2>
@@ -29,6 +29,7 @@ PROJECT = """<div class="project" data-id="%PID%">
     </div>
   </div>
   %MANAGER%
+  %ROLES%
 </div>
 <dialog class="dialog" id="item-dialog" data-title-new="%t.new_item%" data-title-edit="%t.edit_item%"
         data-btn-new="%t.create%" data-btn-edit="%t.save%">
@@ -147,34 +148,28 @@ def _archive(items: list[Item], lang: str) -> str:
     return f'<ul class="trash-list">{rows}</ul>'
 
 
-# The cycle of an idea, top to bottom (Janis, 07.11.2026). The board and the manager exist so far;
-# a click swaps the main window (web/app/static/stations.js), the stations stay.
-VIEWS = (("board", "station_board"), ("manager", "station_manager"))
-STATION_KEYS = ("station_programmer", "station_tester", "station_reviewer", "station_me")
+# The cycle of an idea, top to bottom (Janis, 07.11.2026); a click swaps the main window (web/app/static/stations.js),
+# the stations stay. Since 15.11.2026 every station has a view (the role views: rolepage.py).
+VIEWS = (("board", "station_board"), ("manager", "station_manager"),
+         *((name, f"station_{name}") for name in rolepage.VIEWS))
 
 
-def _stations(lang: str) -> str:
-    soon = esc(i18n.t(lang, "coming_soon"))
-
+def _stations(lang: str, waiting: int = 0) -> str:
     def view(name: str, key: str) -> str:
         current = ' aria-current="page"' if name == "board" else ""
         active = " active" if name == "board" else ""
+        badge = f'<span class="station-count">{waiting}</span>' if name == "me" and waiting else ""
         return (
             f'<a class="station{active}" href="#{name}" data-seg data-station="{name}"{current}>'
-            f'<span class="station-label">{esc(i18n.t(lang, key))}</span></a>'
+            f'<span class="station-label">{esc(i18n.t(lang, key))}</span>{badge}</a>'
         )
 
-    off = "".join(
-        f'<span class="station off" data-seg aria-disabled="true" title="{soon}">'
-        f'<span class="station-label">{esc(i18n.t(lang, key))}</span></span>'
-        for key in STATION_KEYS
-    )
     # The thumb of the segment slider (segment.js, Janis 14.11.2026): it lies under the open station, juts out to
     # the right, and can be dragged up and down to another station.
     return (
         f'<nav class="stations" aria-label="{esc(i18n.t(lang, "stations"))}">'
         f'<span class="station-thumb" aria-hidden="true"></span>'
-        f'{"".join(view(name, key) for name, key in VIEWS)}{off}</nav>'
+        f'{"".join(view(name, key) for name, key in VIEWS)}</nav>'
     )
 
 
@@ -250,14 +245,19 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
     archived = [i for i in items if i.status == "archived"]
     live = [i for i in items if i.status not in ("trash", "archived")]
     tasks = _tasks(user, project)
+    settings, ais = agents.settings(user.id), (aichoice.default(user.id),)
+    roles = "".join(rolepage.render_role(lang, role, settings, agents.role_runs(user.id, project.id, role),
+                                         agents.usage(user.id, project.id, role), ais) for role in rolepage.ROLES)
+    waiting = [(t, agents.last_report(user.id, t.id)) for t in agents.waiting_tasks(user.id, project.id)]
     return fill(
         PROJECT,
         lang,
         PID=str(project.id),
-        STATIONS=_stations(lang),
-        MANAGER=managerpage.render(lang, agents.settings(user.id), regular_checks or [], stored_files=stored_files or [],
+        STATIONS=_stations(lang, len(waiting)),
+        MANAGER=managerpage.render(lang, settings, regular_checks or [], stored_files=stored_files or [],
                                     files_confirm=user.files_confirm, trashed_files=trashed_files or [],
-                                    ais=(aichoice.default(user.id),)),
+                                    ais=ais),
+        ROLES=roles + rolepage.render_me(lang, waiting),
         MANAGER_DIALOGS=managerpage.dialogs(lang),
         TRASH=_trash(trashed, lang),
         ARCHIVE=_archive(archived, lang),
