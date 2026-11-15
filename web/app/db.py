@@ -198,7 +198,6 @@ NEW_COLUMNS = {
         "had_project": "INTEGER NOT NULL DEFAULT 0",
         "role": "TEXT NOT NULL DEFAULT 'user'",
         "must_change_password": "INTEGER NOT NULL DEFAULT 0",
-        "theme": "TEXT NOT NULL DEFAULT 'light'",
         "files_confirm": "INTEGER NOT NULL DEFAULT 1",    # does deleting a file ask first? (the trash circle of the file tile)
         "deleted_at": "INTEGER",                          # when the account was deleted; gone for good DELETED_DAYS later (users.py)
     },
@@ -272,6 +271,11 @@ def _prepare(conn: sqlite3.Connection) -> None:
             for statement in ASSIGN_ROLES:
                 conn.execute(statement)
         conn.execute("ALTER TABLE users DROP COLUMN is_admin")   # `role` says it all now
+    if "theme" in before["users"]:
+        # Until 15.11.2026 the server kept a copy of the style each user saw, only so mails could use it. Mails now
+        # follow the reader's mail program (mailtext.py), so the copy goes, once. Remove this once no database can
+        # have the column any more.
+        conn.execute("ALTER TABLE users DROP COLUMN theme")
     if "page" not in before["projects"]:
         conn.execute(ASSIGN_PAGES)
     if "expires_at" not in before["claude_connections"]:

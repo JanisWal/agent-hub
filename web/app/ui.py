@@ -101,7 +101,7 @@ def login_page(failed: bool = False, locked_minutes: int = 0, lang: str = "de") 
 
 # Closed: only the gear and the arrow show at the top right. Open: the box slides out of
 # the corner and the handle rides along on its left edge (see app.css).
-SETTINGS = """<div class="drawer" id="settings" data-theme-saved="%THEME%">
+SETTINGS = """<div class="drawer" id="settings">
   %DRAWER_EXTRAS%
   <button class="drawer-handle" id="settings-toggle" type="button"
           aria-expanded="false" aria-controls="settings-panel" aria-label="%t.settings_toggle%">%GEAR%%ARROW%</button>
@@ -323,7 +323,6 @@ def settings_bar(user: User, extras: str = "") -> str:
         SETTINGS,
         lang,
         DRAWER_EXTRAS=extras,
-        THEME=esc(user.theme),
         GEAR=icon("gear"),
         ARROW=icon("arrow_left", "drawer-arrow"),
         CHEVRON=icon("chevron_down"),

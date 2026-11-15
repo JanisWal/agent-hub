@@ -77,6 +77,18 @@ class DatabaseUpgradeTest(unittest.TestCase):
         conn.close()
         self.assertIn("users_one_owner", names)
 
+    def test_the_old_copy_of_the_style_goes_once(self):
+        with db.connect():
+            pass
+        conn = sqlite3.connect(self.path)
+        conn.execute("ALTER TABLE users ADD COLUMN theme TEXT NOT NULL DEFAULT 'light'")   # as until 15.11.2026
+        conn.commit()
+        conn.close()
+        self.reopen()
+        with db.connect():
+            pass
+        self.assertNotIn("theme", columns(self.path, "users"))
+
     def test_sessions_are_stored_only_as_hashes(self):
         user = users.create_user("a@example.com", "Aaaa!pass12")
         token = users.create_session(user.id)

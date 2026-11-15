@@ -315,12 +315,11 @@ class IsolationTest(unittest.TestCase):
                     power.request_action(who, action)
         self.assertIsNone(power.claim_next())
 
-    def test_profile_theme_and_password_only_change_the_own_account(self):
+    def test_profile_and_password_only_change_the_own_account(self):
         users.set_profile(self.b.id, "Bee", "en")
-        users.set_theme(self.b.id, "dark")
         users.change_own_password(self.b, "Bbbb!pass12", "Neu!Pass1234")
         again = users.get_by_id(self.a.id)
-        self.assertEqual((again.display_name, again.language, again.theme), (None, "de", "light"))
+        self.assertEqual((again.display_name, again.language), (None, "de"))
         self.assertIsNotNone(users.check_login("a@example.com", "Aaaa!pass12"))
 
     def test_sessions_belong_to_one_user(self):
