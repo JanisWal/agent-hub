@@ -148,6 +148,7 @@ Regeln:
 - Der Server prüft immer selbst; fehlende Felder gelten dort als leer (`Form("")`) und führen zur Fehlermeldung statt zu einer technischen Fehlerseite. Falsche Anmeldung liefert Status 401 und dieselbe Meldung für „E-Mail“ und „Passwort“.
 - Meldung vom Server („E-Mail oder Passwort falsch.“): getönte Box (`.error`) oben im Formular, Schrift 600 in `--error`, Hintergrund 12 % und Rand 30 % Fehlerfarbe, Rundung 16 px, `role="alert"`. Nie als lose rote Schrift.
 - **Eingabefeld:** volle Breite, Höhe mindestens 50 px, Innenabstand 16 px seitlich, Schrift 1 rem in `--text`, Füllung `--field`, Rand 1 px `--glass-border`, Rundung 16 px, leichter Innenschatten `inset 0 1px 3px rgba(80,40,10,0.14)`.
+- **Handy (15.11.2026):** Bei Fingerbedienung (`@media (pointer: coarse)`) hat jedes Eingabefeld mindestens 16 px Schrift, sonst zoomt der Browser beim Tippen hinein. Seiten mit kleineren Feldern wiederholen die Regel (`project.css`, `system.css`).
 - **Fokus:** Rand `--accent` plus Ring 4 px in 28 % Akzent; Cursor (`caret-color`) in `--accent`. Für Tastaturnutzer auf anderen Elementen: `:focus-visible` mit 3 px `--accent` und 2 px Abstand.
 - **Platzhalter:** `--muted` bei 60 % Deckkraft. Login: E-Mail `name@beispiel.de`, Passwort `••••••••`.
 - **Autofill des Browsers** bekommt den Ton der Seite (70 % `--bg` mit 30 % `--accent`) und die Textfarbe `--text`, nicht Gelb oder Blau.
@@ -211,9 +212,9 @@ Stand 07.11.2026, von Janis beauftragt, mit Testkonten im Browser geprüft (Dunk
 - Rot, aber warm: Fläche 22 % `--danger` in `--bg` gemischt, Rahmen 2 px `--danger` (70 %) mit Leuchten (48 px, 35 %), Titel in `--danger` (1,55 rem), Löschknopf in `--danger` mit Glanz und farbigem Schatten. Hintergrund hinter dem Dialog abgedunkelt und unscharf.
 - Gelöscht wird endgültig (kein Papierkorb für Projekte). Der Server verlangt immer das Passwort und prüft, dass das Projekt dem Nutzer gehört.
 
-**Token-Anzeige (unten)**
+**Token-Anzeige (unten): seit 15.11.2026 entfernt (`small-fixes`), Beschreibung für später aufgehoben**
 - Balken (10 px hoch, voll rund, Akzentverlauf), darüber links „Geschätztes Token-Kontingent“, rechts „Noch keine Messdaten“. Breite höchstens 560 px, mittig.
-- **Ist:** Der Balken ist leer, es gibt noch keine Messung. Angebunden wird er mit dem Runner (Phase 2).
+- **Ist:** nicht mehr im Dashboard (Janis, 15.11.2026: zu aufwendig, um sie jetzt sinnvoll zu bauen). Kommt mit der Verbrauchsanzeige wieder.
 
 **Dialoge allgemein (`.dialog`):** höchstens 440 px, Rundung 28 px, Fläche 82 % `--bg` mit Weichzeichner, gleiche Lichtkante wie Glas, federnde Einblendung (0,45 s). Knöpfe in Dialogen sind gleich breit nebeneinander (Höhe 48 px). Pro Dialog genau ein Hauptknopf. **Drei Antworten** (`.actions.three`, z. B. „Gibt es schon“ in der Dateiablage): der Hauptknopf steht als volle Zeile oben, die beiden anderen gleich breit darunter. Geht es um bestimmte Dinge (Dateinamen), stehen sie als kurze Liste in einem Feld (Feldfarbe, Rand, Rundung 16 px, Schrift 600, scrollt ab 30 % der Fensterhöhe).
 
@@ -321,6 +322,7 @@ Stand 07.11.2026, von Janis beauftragt (Passwort-Reset und Einladung). Code: `we
 - Aufbau: Hintergrund `--bg`, darauf die Karte (Rundung 28 px, Rand 1 px, Innenabstand 40 × 32 px, höchstens 520 px breit), Marke „Agent-Hub“ darüber, Begrüßung „Hallo Name,“ als große Überschrift (30 px, Laufweite −0,03 em), ein kurzer Text, **ein** Hauptknopf (Akzentfarbe mit hellem Glanz oben, Rundung 16 px, volle Breite), darunter der Link als Text (falls der Knopf blockiert wird), ein Hinweis (13 px, `--muted`) und eine Fußzeile.
 - Farben wie in Abschnitt 2, nur als feste Werte, weil Mailprogramme keine CSS-Variablen kennen: Hell `--bg` `#EFDCC6`, Karte `#F7E6D3`; Dunkel `--bg` `#1F1713`, Karte `#33241C`. Die Glasfläche ist in Mails eine deckende Farbe (kein Weichzeichner möglich). Ändert sich eine Farbe in Abschnitt 2, wird `PALETTES` in `mailtext.py` mitgeändert.
 - Technik: Tabellen und Inline-Stile (Mailprogramme ignorieren das meiste CSS), Knopf als Link mit Hintergrundfarbe, Glanz als Verlauf (fehlt er, bleibt die Fläche einfarbig). Keine Bilder, keine Webfonts, Systemschrift.
+- **Für schwache Mailprogramme (15.11.2026, Outlook für Windows, Yahoo):** Farben zusätzlich als `bgcolor`-Attribut, Breite der Karte als Attribut (520) mit `width:100%;max-width:520px`, nur die Schriftstärken 400 und 700, der Innenabstand des Knopfs auch an der Zelle (`mso-padding-alt`). Runde Ecken und Glanz dürfen dort fehlen. In Outlook und Yahoo noch nicht angesehen.
 - Der Stil (hell oder dunkel) ist fest pro Mail und folgt dem Stil, den der Nutzer zuletzt auf der Seite gesehen hat (`users.theme`, siehe Abschnitt 5). **Ungeprüft:** das Aussehen in echten Mailprogrammen (Gmail, Apple Mail, Outlook).
 
 ## 11. Umsetzung
@@ -341,7 +343,7 @@ Aufbau des Codes und Betrieb stehen in PROJEKT.md (Abschnitte 8 und 9). Für die
 - Handy-Layout am echten Gerät prüfen (Abschnitt 8, bisher nur am 390-px-Rahmen), dazu Aussparungen wie die iPhone-Notch (`safe-area-inset`).
 - Seitenwechsel beim Ziehen ist gebaut (Abschnitt 10). Ungeprüft: Touch auf dem Handy, ein Ziehen mit der Tastatur und das Verhalten bei sehr vielen Seiten (Punkte am Rand, wenn es über 15 sind).
 - Begrenzung falscher Passworteingaben und zu vieler „Passwort vergessen“-Anfragen ist gebaut (PROJEKT.md, `throttle.py`): Die Meldung „Zu viele Versuche. Bitte in N Minuten erneut versuchen.“ steht auf der Login-Seite in der getönten Fehlerbox, im Lösch-Dialog an der Stelle von „Passwort falsch.“
-- Login-Seite auf Englisch (erst nach der Anmeldung ist die Sprache bekannt).
+- Login-Seite auf Englisch: **gebaut 15.11.2026**, die Seiten vor der Anmeldung folgen der Sprache des Browsers.
 - Board: Punkte per Tastatur ordnen, Touch, weitere Infos pro Punkt (Beschreibung, Priorität, Freigabe durch Janis laut PROJEKT.md) und die Agenten-Bugs folgen später.
 - Inhalt der Kacheln („weitere Infos“) wird später festgelegt.
 - Kontrastmessung aller Farbpaare (Abschnitt 2).
