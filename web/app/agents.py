@@ -329,10 +329,12 @@ def start_task(user_id: int, project_id: int, item_id: int, needs: str = "any",
             raise ValueError("Unbekannter Punkt")
         if _taken(conn, item_id):
             raise ValueError("Punkt ist schon in Arbeit")
+        # never the number of a deleted task whose work folder the runner has not deleted yet
+        new_id = db.fresh_id(conn, "agent_tasks", "SELECT MAX(ref) FROM work_wipes WHERE kind = 'task'")
         cur = conn.execute(
-            "INSERT INTO agent_tasks (project_id, item_id, title, kind, needs, status, round,"
-            " created_at, deadline) VALUES (?, ?, ?, ?, ?, 'coding', 1, ?, ?)",
-            (project_id, item_id, item["title"], item["kind"], needs, now, now + TASK_SECONDS),
+            "INSERT INTO agent_tasks (id, project_id, item_id, title, kind, needs, status, round,"
+            " created_at, deadline) VALUES (?, ?, ?, ?, ?, ?, 'coding', 1, ?, ?)",
+            (new_id, project_id, item_id, item["title"], item["kind"], needs, now, now + TASK_SECONDS),
         )
         _queue(conn, user_id, cur.lastrowid, "coding", now)
         row = conn.execute("SELECT * FROM agent_tasks WHERE id = ?", (cur.lastrowid,)).fetchone()

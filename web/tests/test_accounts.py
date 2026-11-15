@@ -118,7 +118,7 @@ class AccountsTest(unittest.TestCase):
     def test_inviting_the_address_again_brings_the_account_back_as_it_was(self):
         project = projects.create_project(self.user.id, "Mine")
         users.set_profile(self.user.id, "Uwe", "en")
-        users.delete_user(self.admin, self.user.id, now=1000)
+        users.delete_user(self.admin, self.user.id)
         back = users.add_user(self.owner, " User@Example.com ", "Neustart1")
         self.assertEqual(back.id, self.user.id)                                # the same account, not a new one
         self.assertEqual((back.display_name, back.language, back.role), ("Uwe", "en", "user"))
@@ -147,8 +147,20 @@ class AccountsTest(unittest.TestCase):
         self.assertEqual(self._count("SELECT COUNT(*) FROM board_items WHERE project_id = ?", project.id), 0)
         self.assertEqual(self._count("SELECT COUNT(*) FROM users WHERE email = 'user@example.com'"), 0)
         new = users.add_user(self.owner, "user@example.com", "Neustart1")     # a later invitation is a new account
-        self.assertNotEqual(new.id, self.user.id)
+        self.assertNotEqual(new.id, self.user.id)                              # its number is not given out again ...
         self.assertEqual(projects.layout(new.id), [])
+        from app import claude_link
+        claude_link.wiped(self.user.id)                                        # ... until the runner deleted the folders
+        self.assertEqual(self._count("SELECT COUNT(*) FROM claude_wipes"), 0)
+
+    def test_a_number_waiting_for_its_folders_is_not_given_to_a_new_project(self):
+        from app import agents
+        project = projects.create_project(self.user.id, "Mine")               # the newest project
+        projects.delete_project(self.user.id, project.id)
+        again = projects.create_project(self.user.id, "Next")
+        self.assertNotEqual(again.id, project.id)                              # else it would inherit the old code
+        self.assertTrue(agents.wipe_done("project", project.id))
+        self.assertEqual(agents.pending_wipes(), [])
 
     def test_the_time_to_bring_an_account_back_ends_before_an_invitation(self):
         users.delete_user(self.admin, self.user.id)

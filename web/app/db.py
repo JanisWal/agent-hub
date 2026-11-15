@@ -289,6 +289,15 @@ def _prepare(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def fresh_id(conn: sqlite3.Connection, table: str, waiting: str) -> int:
+    """The id for a new row of `table`: above every row it has AND above every number in `waiting` (a SELECT that
+    gives one number: the highest id whose folders the runner still has to delete). SQLite gives the number of a
+    deleted last row out again; a new project or account with that number would inherit the old folders (code, a
+    saved token) or lose its own when the runner gets to the deletion. Call it inside the inserting transaction."""
+    return 1 + max(conn.execute(f"SELECT COALESCE(MAX(id), 0) FROM {table}").fetchone()[0],
+                   conn.execute(waiting).fetchone()[0] or 0)
+
+
 @contextmanager
 def connect() -> Iterator[sqlite3.Connection]:
     """Open the database (path read at call time) for one unit of work.

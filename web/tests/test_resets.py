@@ -251,6 +251,21 @@ class InviteTest(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM users WHERE email = 'new@example.com'").fetchone()[0], 0)
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM password_resets").fetchone()[0], 0)
 
+    def test_failed_mail_for_an_account_that_came_back_keeps_its_data(self):
+        from app import projects
+        account = users.add_user(self.owner, "old@example.com", "Start1234")
+        projects.create_project(account.id, "Mine")
+        users.delete_user(self.owner, account.id)
+        answer, _ = self.invite(self.owner, "old@example.com", sent=False)
+        self.assertEqual(answer.status_code, 502)
+        with db.connect() as conn:                                             # deleted again, not removed
+            row = conn.execute("SELECT id, deleted_at FROM users WHERE email = 'old@example.com'").fetchone()
+            self.assertEqual(row["id"], account.id)
+            self.assertIsNotNone(row["deleted_at"])
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM projects WHERE user_id = ?", (account.id,)).fetchone()[0], 1)
+        answer, _ = self.invite(self.owner, "old@example.com")                 # the next invitation brings it back
+        self.assertEqual(users.get_by_id(account.id).email, "old@example.com")
+
     def test_errors_and_permissions(self):
         self.assertEqual(self.invite(self.owner, "plain@example.com")[0].status_code, 400)  # taken
         self.assertEqual(self.invite(self.owner, "nonsense")[0].status_code, 400)

@@ -109,10 +109,12 @@ def create_project(user_id: int, name: str) -> Project:
             page, position = free[0]["page"], free[-1]["position"] + 1
         else:
             page, position = (pages[-1][0]["page"] + 1 if pages else 1), 0
+        # never the number of a deleted project whose code the runner has not deleted yet
+        new_id = db.fresh_id(conn, "projects", "SELECT MAX(ref) FROM work_wipes WHERE kind = 'project'")
         cur = conn.execute(
-            "INSERT INTO projects (user_id, name, position, page, created_at)"
-            " VALUES (?, ?, ?, ?, ?)",
-            (user_id, name, position, page, int(time.time())),
+            "INSERT INTO projects (id, user_id, name, position, page, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
+            (new_id, user_id, name, position, page, int(time.time())),
         )
         conn.execute("UPDATE users SET had_project = 1 WHERE id = ?", (user_id,))
     return Project(cur.lastrowid, name, position, page)

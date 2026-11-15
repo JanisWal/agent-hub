@@ -126,10 +126,14 @@ def create_user(email: str, password: str, role: str = "user", must_change: bool
         raise UserError("owner_exists", "Es gibt schon einen Owner")
     with db.connect() as conn:
         try:
+            # never the number of a deleted account whose saved credentials the runner has not deleted yet
+            new_id = db.fresh_id(conn, "users", "SELECT MAX(n) FROM (SELECT MAX(user_id) AS n FROM claude_wipes"
+                                 " UNION ALL SELECT MAX(user_id) FROM ai_connections"
+                                 " UNION ALL SELECT MAX(user_id) FROM claude_connections)")
             cur = conn.execute(
-                "INSERT INTO users (email, password_hash, role, must_change_password, created_at)"
-                " VALUES (?, ?, ?, ?, ?)",
-                (email, _hash_password(password), role, int(must_change), int(time.time())),
+                "INSERT INTO users (id, email, password_hash, role, must_change_password, created_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (new_id, email, _hash_password(password), role, int(must_change), int(time.time())),
             )
         except sqlite3.IntegrityError:
             raise UserError("taken", "E-Mail-Adresse ist schon vergeben") from None
@@ -282,6 +286,23 @@ def delete_user(actor: User, user_id: int, now: int | None = None) -> None:
         conn.execute("DELETE FROM password_resets WHERE user_id = ?", (target.id,))
         claude_link.wipe_user(conn, target.id)   # the runner deletes the saved Claude token ...
         ai_link.wipe_user(conn, target.id)       # ... and the saved API keys
+
+
+def is_deleted(email: str) -> bool:
+    """Is there a deleted account with this address that an invitation would bring back?"""
+    with db.connect() as conn:
+        return conn.execute("SELECT 1 FROM users WHERE email = ? AND deleted_at IS NOT NULL",
+                            (_normalize(email),)).fetchone() is not None
+
+
+def cancel_invitation(actor: User, user_id: int, restored: bool) -> None:
+    """The invitation mail could not be sent. An account that was brought back is deleted again (it keeps its
+    data); a new one has nothing yet and goes at once, so no account is left that nobody can reach."""
+    if restored:
+        return delete_user(actor, user_id)
+    target = _managed(actor, user_id)
+    with db.connect() as conn:
+        conn.execute("DELETE FROM users WHERE id = ?", (target.id,))
 
 
 def purge_deleted(now: int | None = None) -> int:
