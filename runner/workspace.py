@@ -16,6 +16,9 @@ from pathlib import Path
 
 GIT = ["git", "-c", "core.hooksPath=/dev/null", "-c", "safe.directory=*", "-c", "user.name=Agent-Hub",
        "-c", "user.email=agents@agent-hub.local", "-c", "commit.gpgsign=false", "-c", "core.fsmonitor=false"]
+# What running the code leaves behind (first real run, 15.11.2026: __pycache__ ended up in the project). Written to the
+# task's git dir on every commit; the project's own .gitignore counts in addition.
+NEVER_COMMIT = ("__pycache__/", "*.pyc", ".pytest_cache/", ".mypy_cache/", "node_modules/", ".DS_Store")
 
 
 class Workspace:
@@ -68,6 +71,8 @@ class Workspace:
     def commit(self, task_id: int, branch: str, message: str) -> bool:
         """Commit what the run changed and push the branch to the project. False if nothing changed."""
         git_dir, tree = self.gitdir(task_id), self.tree(task_id)
+        (git_dir / "info").mkdir(exist_ok=True)              # outside the folder: a run can not change it
+        (git_dir / "info" / "exclude").write_text("\n".join(NEVER_COMMIT) + "\n")
         self._git("add", "-A", git_dir=git_dir, work=tree)
         if self._git("diff", "--cached", "--quiet", git_dir=git_dir, work=tree, check=False).returncode == 0:
             return False
