@@ -124,7 +124,7 @@ class ProjectPageTest(unittest.TestCase):
         for tall in ("m-grow", "m-chat"):
             self.assertIn(tall, manager)
         self.assertIn("nicht Teil des Boards", manager)                       # the checks are not board items
-        self.assertNotIn("/settings", manager)                                # name and description moved to the pencil
+        self.assertNotIn("/projects/", manager)                               # name and description moved to the pencil
         self.assertIn("stations.js", page)
         self.assertNotIn('id="manager"', page)                                # the hash must not make the page scroll
 
@@ -257,7 +257,7 @@ class ProjectPageTest(unittest.TestCase):
 
     def test_stations_script_swaps_the_views_by_the_address(self):
         script = css_of("stations.js")
-        for needle in ('"#manager"', "replaceState", "data-station", "drawer-extra", "manager-view"):
+        for needle in ("location.hash", "replaceState", "data-station", "drawer-extra", "data-view-panel", "manager-open"):
             self.assertIn(needle, script)
         self.assertIn(".manager {", css_of("project.css"))
         self.assertIn("[hidden] { display: none !important; }", css_of("project.css"))

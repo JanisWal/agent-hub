@@ -60,8 +60,8 @@ def _run_row(lang: str, item: agents.RoleRun, now: int) -> str:
         facts.append(_duration(lang, run.seconds))
     if run.tokens_in or run.tokens_out:
         facts.append(i18n.t(lang, "role_tokens", tin=_tokens(run.tokens_in), tout=_tokens(run.tokens_out)))
-    model = catalog.find(run.model)
-    facts.append(" ".join(x for x in (_provider_name(item.provider), model.name if model else run.model) if x))
+    found = catalog.find(run.model)
+    facts.append(" ".join(x for x in (_provider_name(item.provider), found[1].name if found else run.model) if x))
     head = (f'<summary><span class="r-title">{esc(item.task_title)}</span>'
             f'<span class="r-result {tone}">{esc(label)}</span>'
             f'<small class="r-facts">{esc(" · ".join(f for f in facts if f))}</small></summary>')
