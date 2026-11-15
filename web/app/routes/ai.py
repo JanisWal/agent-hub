@@ -5,10 +5,16 @@ any request. The key is handed to the runner once and never stored here (ai_link
 """
 from fastapi import APIRouter, Depends, Form
 
-from .. import ai_link, users
+from .. import ai_link, aichoice, users
 from ..deps import api_user, fail, ok
 
 router = APIRouter(prefix="/ai")
+
+
+@router.post("/default")
+def make_default(provider: str = Form(""), user: users.User = Depends(api_user)):
+    """Make one of the user's own connected AIs his standard (aichoice.py); 400 for anything else."""
+    return ok(standard=aichoice.default(user.id)) if aichoice.set_default(user.id, provider) else fail(400)
 
 
 def _provider(provider: str) -> str | None:

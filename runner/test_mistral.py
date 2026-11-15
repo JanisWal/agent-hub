@@ -6,6 +6,7 @@ import io
 import json
 import os
 import tempfile
+import types
 import unittest
 import urllib.error
 from pathlib import Path
@@ -41,43 +42,12 @@ def reply(content, prompt_tokens=120, completion_tokens=30):
             "usage": {"prompt_tokens": prompt_tokens, "completion_tokens": completion_tokens}}
 
 
-class AdapterTest(unittest.TestCase):
-    def test_one_question_one_answer(self):
-        fake = FakeMistral(reply("Hello"))
-        self.assertEqual(mistral.ask(KEY, "mistral-small-2603", "none", "The package", opener=fake),
-                         (True, "Hello", 120, 30, False))
-        request = fake.requests[0]
-        self.assertEqual(request.full_url, "https://api.mistral.ai/v1/chat/completions")
-        self.assertEqual(request.get_header("Authorization"), f"Bearer {KEY}")
-        body = json.loads(request.data)
-        self.assertEqual(body["model"], "mistral-small-2603")
-        self.assertEqual(body["messages"], [{"role": "user", "content": "The package"}])
-        self.assertEqual(body["reasoning_effort"], "none")
-
-    def test_no_level_sends_none_of_it_and_thinking_is_left_out(self):
-        fake = FakeMistral(reply([{"type": "thinking", "thinking": [{"type": "text", "text": "secret thoughts"}]},
-                                  {"type": "text", "text": "The answer"}]))
-        ok, text, *_ = mistral.ask(KEY, "mistral-large-4", "", "Q", opener=fake)
-        self.assertEqual((ok, text), (True, "The answer"))
-        self.assertNotIn("reasoning_effort", json.loads(fake.requests[0].data))
-
-    def test_failures(self):
-        ok, text, _, _, auth = mistral.ask(KEY, "mistral-small-2603", "high", "Q", opener=FakeMistral(error=401))
-        self.assertEqual((ok, auth), (False, True))
-        self.assertTrue(text.startswith("Not logged in"))
-        ok, text, _, _, auth = mistral.ask(KEY, "mistral-small-2603", "high", "Q", opener=FakeMistral(error=429))
-        self.assertEqual((ok, auth), (False, False))
-        self.assertIn("429", text)
-        self.assertNotIn(KEY, text)                                   # an error text never carries the key
-        ok, text, *_ = mistral.ask(KEY, "mistral-small-2603", "high", "Q", opener=FakeMistral(reply({"choices": []})))
-        self.assertFalse(ok)
-        self.assertFalse(mistral.ask(KEY, "-rf", "", "Q", opener=FakeMistral())[0])   # never a bad model
-        self.assertFalse(mistral.ask(KEY, "mistral-small-2603", "x y", "Q", opener=FakeMistral())[0])
-
+class VerifyTest(unittest.TestCase):
     def test_verify(self):
         fake = FakeMistral({"data": []})
         self.assertEqual(mistral.verify(KEY, opener=fake), "ok")
         self.assertEqual(fake.requests[0].full_url, "https://api.mistral.ai/v1/models")
+        self.assertEqual(fake.requests[0].get_header("Authorization"), f"Bearer {KEY}")
         self.assertEqual(mistral.verify(KEY, opener=FakeMistral(error=401)), "refused")
         self.assertEqual(mistral.verify(KEY, opener=FakeMistral(error=503)), "error")
 
@@ -131,16 +101,25 @@ class FakeKeys:
         return self.saved.pop((user_id, provider), None) is not None
 
 
-class FakeAdapter:
-    def __init__(self, verdict="ok", answer=(True, "Answer", 10, 5, False)):
-        self.verdict, self.answer, self.asked = verdict, answer, []
+class FakeVerifier:
+    def __init__(self, verdict="ok"):
+        self.verdict = verdict
 
     def verify(self, api_key):
         return self.verdict
 
-    def ask(self, api_key, model, effort, prompt):
-        self.asked.append((api_key, model, effort, prompt))
-        return self.answer
+
+class FakeTickets:
+    def __init__(self):
+        self.issued, self.revoked = [], []
+
+    def issue(self, secret, provider="claude"):
+        ticket = "hubrun-" + str(len(self.issued)).rjust(43, "m")
+        self.issued.append((ticket, secret, provider))
+        return ticket
+
+    def revoke(self, ticket):
+        self.revoked.append(ticket)
 
 
 class FakeHub:
@@ -162,9 +141,15 @@ class FakeHub:
         return [form for path, form in self.calls if path.endswith(suffix)]
 
 
-def make(hub, keys=None, adapter=None):
-    return runner.Runner(hub, "/nowhere", vault=object(), tickets=object(), keys=keys or FakeKeys(),
-                         adapters={"mistral": adapter or FakeAdapter()})
+def make(hub, keys=None, verifier=None, tickets=None):
+    return runner.Runner(hub, "/nowhere", vault=object(), tickets=tickets or FakeTickets(), keys=keys or FakeKeys(),
+                         verifiers={"mistral": verifier or FakeVerifier()}, background=False)
+
+
+def vibe_line(**kw):
+    data = {"ok": True, "text": "Hallo", "tokens_in": 30, "tokens_out": 9, "outcome": "finished", "error": ""}
+    data.update(kw)
+    return json.dumps(data) + "\n"
 
 
 class RunnerTest(unittest.TestCase):
@@ -177,7 +162,7 @@ class RunnerTest(unittest.TestCase):
     def test_a_refused_or_strange_key_is_not_saved(self):
         for verdict, key in (("refused", KEY), ("error", KEY), ("ok", "bad key with spaces")):
             hub, keys = FakeHub(keys=[{"user_id": 5, "provider": "mistral", "key": key}]), FakeKeys()
-            make(hub, keys, FakeAdapter(verdict)).handle_keys()
+            make(hub, keys, FakeVerifier(verdict)).handle_keys()
             self.assertEqual(keys.saved, {})
             self.assertEqual(hub.posted("/done"), [{"success": "0"}])
 
@@ -187,23 +172,32 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(keys.saved, {})
         self.assertEqual(len(hub.posted("/runner/keys/5/mistral/wiped")), 1)
 
-    def test_a_question_goes_to_mistral_without_a_container(self):
+    def test_a_question_goes_to_mistral_vibe_in_a_container_with_a_ticket(self):
         job = {"chat_id": 9, "user_id": 5, "model": "mistral-small-2603", "prompt": "Package", "mode": "all",
                "effort": "none", "provider": "mistral"}
-        adapter = FakeAdapter()
-        hub = FakeHub(job=job)
-        r = make(hub, FakeKeys({(5, "mistral"): KEY}), adapter)
-        r.run_chat = lambda *a: self.fail("no container for Mistral")
+        hub, tickets, seen = FakeHub(job=job), FakeTickets(), []
+        r = make(hub, FakeKeys({(5, "mistral"): KEY}), tickets=tickets)
+        r.run_chat = lambda command, prompt: seen.append((command, prompt)) or types.SimpleNamespace(
+            stdout=vibe_line(), returncode=0)
         r.handle_chat()
-        self.assertEqual(adapter.asked, [(KEY, "mistral-small-2603", "none", "Package")])
+        command, prompt = seen[0]
+        self.assertEqual(prompt, "Package")
+        self.assertIn("agent-hub-vibe", command)
+        self.assertNotIn(KEY, " ".join(command))                                  # the key never reaches the run
+        self.assertIn("MISTRAL_API_KEY=" + tickets.issued[0][0], command)
+        self.assertEqual(tickets.issued[0][1:], (KEY, "mistral"))
+        self.assertEqual(tickets.revoked, [tickets.issued[0][0]])
         self.assertEqual(hub.posted("/runner/chat/9/finish"),
-                         [{"success": "1", "answer": "Answer", "tokens_in": 10, "tokens_out": 5}])
+                         [{"success": "1", "answer": "Hallo", "tokens_in": 30, "tokens_out": 9}])
 
     def test_a_refused_key_goes_and_the_hub_hears_it(self):
         job = {"chat_id": 9, "user_id": 5, "model": "mistral-small-2603", "prompt": "P", "provider": "mistral"}
-        keys = FakeKeys({(5, "mistral"): KEY})
-        hub = FakeHub(job=job)
-        make(hub, keys, FakeAdapter(answer=(False, "Not logged in: refused (401)", 0, 0, True))).handle_chat()
+        keys, hub = FakeKeys({(5, "mistral"): KEY}), FakeHub(job=job)
+        r = make(hub, keys)
+        r.run_chat = lambda command, prompt: types.SimpleNamespace(
+            stdout=vibe_line(ok=False, text="", outcome="infrastructure_failure", error="HTTP 401 Unauthorized"),
+            returncode=0)
+        r.handle_chat()
         self.assertEqual(keys.saved, {})
         self.assertEqual(len(hub.posted("/runner/keys/5/mistral/expired")), 1)
         self.assertEqual(hub.posted("/runner/chat/9/finish")[0]["success"], "0")
@@ -216,5 +210,3 @@ class RunnerTest(unittest.TestCase):
         self.assertIn("Not logged in", hub.posted("/runner/chat/9/finish")[0]["answer"])
 
 
-if __name__ == "__main__":
-    unittest.main()

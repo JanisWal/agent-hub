@@ -15,7 +15,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-from . import agents, ai_link, catalog, checks, claude_link, db, memory
+from . import agents, aichoice, catalog, checks, db, memory
 
 # The manager is the role "chef": model and effort level are settings of the user (agents.py, list in catalog.py).
 MAX_PROMPT = 2000
@@ -43,8 +43,9 @@ TOOLS_TEXT = {
     "none": "You have no tools here: no web search, no web pages, no shell. Answer from what you know and from the "
             "blocks below; say so when something should be checked on the web.",
 }
-# Which tools a provider's answers can use: Claude Code has them (switch "web and code"), the plain APIs have none.
-PROVIDER_TOOLS = {"claude": True, "mistral": False}
+# Which tools a provider's answers can use: Claude Code and Mistral Vibe have them (switch "web and code"); an AI
+# asked over its plain API would have none (TOOLS_TEXT["none"]).
+PROVIDER_TOOLS = {"claude": True, "mistral": True}
 
 
 # Memory and files (memory.py): the hub gives the memory file and a list of the other files with every question.
@@ -90,8 +91,12 @@ MODES = ("all", "apart")
 NET_TO_MODE = {"together": "all", "apart": "apart"}
 # Why a question failed, read from the reason the runner sent (Janis, 14.11.2026: show a short text, not what Claude
 # Code says). The reason stays in the answer column for looking into problems; the page only gets the kind.
-FAILURES = ("auth", "timeout", "steps", "other")
+FAILURES = ("auth", "timeout", "steps", "limit", "other")
 _AUTH = re.compile(r"authenticat|not logged in|/login|oauth|invalid api key|\b401\b", re.I)
+# The AI's quota or rate limit (Claude: "usage limit reached", Mistral: 429 when the month's credit is used up).
+_LIMIT = re.compile(r"usage limit|limit reached|rate.?limit|\b429\b|no credit|quota", re.I)
+# A question whose AI fails like this goes to the user's next AI (aichoice.order_in), Janis 15.11.2026.
+FALLBACK_KINDS = ("auth", "limit")
 
 
 @dataclass
@@ -106,6 +111,8 @@ class Message:
     model: str = ""
     memory_saved: bool = False     # this answer updated the memory file
     effort: str = ""
+    provider: str = "claude"       # the AI that answered (or is to answer)
+    tried: str = ""                # AIs that could not answer it before, comma separated (the fallback)
 
 
 @dataclass
@@ -121,13 +128,15 @@ class ChatJob:
 
 def _message(row: sqlite3.Row) -> Message:
     return Message(row["id"], row["project_id"], row["prompt"], row["status"], row["answer"], row["created_at"],
-                   row["mode"], row["model"], bool(row["memory_saved"]), row["effort"])
+                   row["mode"], row["model"], bool(row["memory_saved"]), row["effort"], row["provider"], row["tried"])
 
 
 def failure_kind(reason: str) -> str:
     """auth (lost sign-in), timeout, steps (the step limit was reached) or other, for a failed answer."""
     if _AUTH.search(reason):
         return "auth"
+    if _LIMIT.search(reason):
+        return "limit"
     if reason.lower().startswith("timeout"):
         return "timeout"
     if reason.startswith("Too many steps"):
@@ -196,16 +205,18 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
 
 
 def _drop_stale(conn: sqlite3.Connection, now: int) -> None:
-    conn.execute(
-        "UPDATE chat_messages SET status = 'failed', answer = 'timeout'"
-        " WHERE status IN ('queued', 'running') AND created_at < ?", (now - RUN_SECONDS,),
-    )
+    """A question that got no answer in time fails. While an agent run is going (one container at a time on the Pi),
+    a waiting question keeps waiting instead: only one that is being answered can run out."""
+    busy = conn.execute("SELECT 1 FROM agent_runs WHERE status = 'running'").fetchone() is not None
+    statuses = "'running'" if busy else "'queued', 'running'"
+    conn.execute(f"UPDATE chat_messages SET status = 'failed', answer = 'timeout'"
+                 f" WHERE status IN ({statuses}) AND created_at < ?", (now - RUN_SECONDS,))
 
 
 def send(user_id: int, project_id: int, prompt: str, mode: str | None = None, now: int | None = None,
          model: str | None = None, effort: str | None = None) -> Message:
-    """Ask the manager something. Raises ValueError("claude") if the user's Claude is not connected (or
-    ValueError("mistral") for Mistral: the provider of the model, catalog.find, answers),
+    """Ask the manager something. The user's standard AI answers (aichoice.py); raises ValueError("none") if he has
+    no AI connected at all, ValueError(provider) if `model` names an AI of his that is not connected,
     ValueError("busy") while an earlier question of his is still open, ValueError("prompt") for an
     empty or too long text, ValueError("mode") for an unknown mode, model or level and ValueError("project")
     if the project is not his. `mode`, `model` and `effort` default to the user's settings of the manager
@@ -219,6 +230,8 @@ def send(user_id: int, project_id: int, prompt: str, mode: str | None = None, no
     with db.connect() as conn:
         if conn.execute("SELECT 1 FROM projects WHERE id = ? AND user_id = ?", (project_id, user_id)).fetchone() is None:
             raise ValueError("project")
+        if not aichoice.connected_list(conn, user_id):
+            raise ValueError("none")
         model = model or agents.model_in(conn, user_id, "chef")
         if effort is None:
             effort = catalog.resolve(model, agents.effort_in(conn, user_id, "chef"))[1]
@@ -228,7 +241,7 @@ def send(user_id: int, project_id: int, prompt: str, mode: str | None = None, no
             raise ValueError("mode") from None
         mode = mode or NET_TO_MODE.get(agents.net_in(conn, user_id, "chef"), "apart")
         provider = catalog.provider_of(model)
-        if not _connected(conn, user_id, provider):
+        if not aichoice.connected_in(conn, user_id, provider):
             raise ValueError(provider)
         _drop_stale(conn, now)
         if conn.execute("SELECT 1 FROM chat_messages WHERE user_id = ? AND status IN ('queued', 'running')",
@@ -264,25 +277,39 @@ def delete_all(user_id: int) -> int:
         return conn.execute("DELETE FROM chat_messages WHERE user_id = ?", (user_id,)).rowcount
 
 
-def _connected(conn: sqlite3.Connection, user_id: int, provider: str) -> bool:
-    """Can this user's own account of this provider answer now? (Never anybody else's.)"""
-    if provider == "claude":
-        return claude_link.connected_in(conn, user_id)
-    return provider in ai_link.PROVIDERS and ai_link.connected_in(conn, user_id, provider)
+def _next_ai(conn: sqlite3.Connection, row: sqlite3.Row, failed: str | None = None) -> str | None:
+    """The user's next AI for this question that has not failed it yet (the fallback), or None."""
+    tried = {p for p in row["tried"].split(",") if p} | ({failed} if failed else set())
+    return next((p for p in aichoice.order_in(conn, row["user_id"])
+                 if p not in tried and aichoice.connected_in(conn, row["user_id"], p)), None)
+
+
+def _switch(conn: sqlite3.Connection, row: sqlite3.Row, provider: str, failed: str) -> None:
+    """Give the question to another AI of the same user: its model and level for the manager, the failed AI noted."""
+    model, effort = agents._choice(conn, row["user_id"], "chef", provider)
+    tried = ",".join(p for p in dict.fromkeys([*row["tried"].split(","), failed]) if p)
+    conn.execute("UPDATE chat_messages SET provider = ?, model = ?, effort = ?, tried = ? WHERE id = ?",
+                 (provider, model, effort, tried, row["id"]))
 
 
 def claim_next(now: int | None = None) -> ChatJob | None:
-    """Runner: the oldest open question whose user has the AI of that question connected (nobody else's is used)."""
+    """Runner: the oldest open question that one of its user's own AIs can answer: the AI it was asked of, else his
+    next one (the fallback, noted in `tried`). Nobody else's AI is ever used."""
     now = int(now if now is not None else time.time())
     with db.connect() as conn:
         _drop_stale(conn, now)
         if conn.execute("SELECT 1 FROM chat_messages WHERE status = 'running'").fetchone():
             return None   # the Pi answers one at a time
         for row in conn.execute("SELECT * FROM chat_messages WHERE status = 'queued' ORDER BY id").fetchall():
-            if _connected(conn, row["user_id"], row["provider"]):
-                conn.execute("UPDATE chat_messages SET status = 'running', started_at = ? WHERE id = ?", (now, row["id"]))
-                return ChatJob(row["id"], row["user_id"], row["model"], build_input(conn, row), row["mode"],
-                               row["effort"], row["provider"])
+            if not aichoice.connected_in(conn, row["user_id"], row["provider"]):
+                other = _next_ai(conn, row, row["provider"])
+                if other is None:
+                    continue
+                _switch(conn, row, other, row["provider"])
+                row = conn.execute("SELECT * FROM chat_messages WHERE id = ?", (row["id"],)).fetchone()
+            conn.execute("UPDATE chat_messages SET status = 'running', started_at = ? WHERE id = ?", (now, row["id"]))
+            return ChatJob(row["id"], row["user_id"], row["model"], build_input(conn, row), row["mode"],
+                           row["effort"], row["provider"])
     return None
 
 
@@ -298,6 +325,14 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
         row = conn.execute("SELECT * FROM chat_messages WHERE id = ? AND status = 'running'", (chat_id,)).fetchone()
         if row is None:
             return False
+        if not ok and failure_kind(answer) in FALLBACK_KINDS:      # lost sign-in or quota: the user's next AI
+            other = _next_ai(conn, row, row["provider"])
+            if other is not None:
+                _switch(conn, row, other, row["provider"])
+                conn.execute("UPDATE chat_messages SET status = 'queued', tokens_in = tokens_in + ?,"
+                             " tokens_out = tokens_out + ?, created_at = ? WHERE id = ?",
+                             (tokens_in, tokens_out, int(time.time()), chat_id))
+                return True
         parsed = memory.parse_answer(answer) if ok else None
         if parsed is not None and parsed.reads and row["rounds"] < memory.READ_ROUNDS:
             extra = (row["extra"] + "\n\n" if row["extra"] else "") + memory.contents(

@@ -27,6 +27,7 @@ BASE=${BASE:-/opt/agent-hub}
 REPO=${REPO:-git@github.com:JanisWal/agent-hub.git}
 CLONE=$BASE/workspaces/agent-hub
 CLAUDE_DIR=$BASE/claude
+WORK_DIR=$BASE/work
 TUNNEL_DIR=$ADMIN_HOME/cloudflared
 SSH_DIR=$ADMIN_HOME/.ssh
 SKIP_SYSTEM=${SKIP_SYSTEM:-0}
@@ -121,6 +122,10 @@ own "$ADMIN_USER": "$CLONE/.env"
 rmdir "$CLAUDE_DIR" 2> /dev/null || true                              # an empty folder may be here, never a full one (checked above)
 cp -a "$P/claude" "$CLAUDE_DIR"                                       # owners and 0700 are kept (the run users are 10000+id)
 chmod 700 "$CLAUDE_DIR"
+if [ -d "$P/repos" ]; then                                            # the projects' code (since 15.11.2026)
+  install -d -m 700 "$WORK_DIR"
+  cp -a "$P/repos" "$WORK_DIR/repos"
+fi
 
 install -d -m 755 "$TUNNEL_DIR"
 install -m 600 "$P/tunnel.env" "$TUNNEL_DIR/.env"
@@ -138,6 +143,7 @@ say "Building and starting the hub (this takes a few minutes on a Pi)"
 docker network inspect web > /dev/null 2>&1 || docker network create web
 cd "$CLONE"
 as_admin docker build -t agent-hub-agent -f runner/Dockerfile runner
+as_admin docker build -t agent-hub-vibe -f runner/Dockerfile.vibe runner
 as_admin docker compose up -d --build
 cd "$TUNNEL_DIR"
 as_admin docker compose up -d

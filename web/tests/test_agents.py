@@ -151,7 +151,7 @@ class ChainTest(Base):
         self.connect(self.b)                                      # somebody else's Claude does not help
         self.assertIsNone(agents.claim_next(can_mac=True))
         task = agents.list_tasks(self.a.id, self.project.id)[0]
-        self.assertEqual(agents.waiting_reason(self.a.id, task), "no_claude")
+        self.assertEqual(agents.waiting_reason(self.a.id, task), "no_ai")       # none of HIS AIs is connected
         self.connect(self.a)
         self.assertEqual(agents.claim_next(can_mac=True).user_id, self.a.id)
 
@@ -169,6 +169,9 @@ class ChainTest(Base):
         self.assertEqual(agents.get_task(self.a.id, task.id).status, "awaiting_approval")
         self.assertIsNone(agents.claim_next(can_mac=True))        # waits for the user
         self.assertTrue(agents.decide(self.a.id, task.id, "approve"))
+        self.assertIsNone(agents.claim_next(can_mac=True))                     # the runner merges first
+        self.assertEqual([m["task_id"] for m in agents.pending_merges()], [task.id])
+        self.assertTrue(agents.merge_done(task.id, True))
         self.assertEqual(self.run_stage("done", "documented").role, "chef")   # the manager documents
         done = agents.get_task(self.a.id, task.id)
         self.assertEqual((done.status, done.round), ("done", 2))

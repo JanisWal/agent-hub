@@ -56,6 +56,23 @@ def finish(run_id: int, result: str = Form(""), report: str = Form(""), tokens_i
     return ok() if done else fail(409)   # the run is over already, or the task has moved on
 
 
+@router.get("/merges")
+def merges():
+    """Approved tasks whose branch the runner merges into the project's main (agents.pending_merges)."""
+    return ok(merges=agents.pending_merges())
+
+
+@router.post("/merges/{task_id}/done")
+def merge_done(task_id: int, success: str = Form("0")):
+    return ok() if agents.merge_done(task_id, success == "1") else fail(409)
+
+
+@router.get("/cleanups")
+def cleanups():
+    """Finished tasks: the runner deletes their work folders."""
+    return ok(task_ids=agents.finished_tasks())
+
+
 @router.post("/chat/claim")
 def chat_claim():
     """The next question of the chat window (see chat.py), or null."""

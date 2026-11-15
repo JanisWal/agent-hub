@@ -1,5 +1,5 @@
 """HTML of the project page: stations on the left, kanban board and trash on the right."""
-from . import agents, ai_link, i18n, managerpage
+from . import agents, aichoice, i18n, managerpage, ui
 from .board import KINDS, Item
 from .icons import icon
 from .layout import esc, fill
@@ -60,7 +60,30 @@ def _action_button(lang: str, action: str, label_key: str, icon_name: str, css: 
     )
 
 
-def _card(item: Item, lang: str) -> str:
+# What a card says about its task (Janis, 15.11.2026): the stage, and the buttons of the user's decision.
+TASK_BUTTONS = {
+    "awaiting_approval": (("agent-reject", "agent_reject", "cross", "stop"), ("agent-approve", "agent_approve", "check", "go")),
+    "escalated": (("agent-cancel", "agent_cancel", "cross", "stop"), ("agent-reject", "agent_reject", "play", "go")),
+}
+
+
+def _task_card(item: Item, lang: str, task, report: str, waiting: str | None) -> str:
+    """A card whose item is with the agents: its stage under the title, the last report behind an "i", and the
+    user's buttons (approve or another round; a task that needs him: another round or cancel; else cancel)."""
+    state = esc(i18n.t(lang, "task_no_ai" if waiting == "no_ai" else f"task_{task.status}"))
+    tip = ui.info_dot(i18n.t(lang, "agent_report"), report[:600]) if report else ""
+    title = (f'<span class="card-title">{esc(item.title)}'
+             f'<small class="card-task" data-status="{esc(task.status)}">{state}{tip}</small></span>')
+    pair = TASK_BUTTONS.get(task.status)
+    buttons = ("".join(_action_button(lang, *b) for b in pair) if pair
+               else _action_button(lang, "agent-cancel", "agent_cancel", "cross", "quiet no"))
+    return f'<article class="card with-task" data-id="{item.id}">{title}<div class="card-actions">{buttons}</div></article>'
+
+
+def _card(item: Item, lang: str, tasks: dict | None = None) -> str:
+    entry = (tasks or {}).get(item.id)
+    if entry is not None and item.status == "open" and entry[0].status in agents.OPEN_STATUSES:
+        return _task_card(item, lang, *entry)
     title = f'<span class="card-title">{esc(item.title)}</span>'
     if item.status == "proposed":
         # Green and red buttons (Janis, 07.11.2026): "go" takes the suggestion over, "stop" rejects it.
@@ -69,11 +92,12 @@ def _card(item: Item, lang: str) -> str:
         )
         return f'<article class="card proposed" data-id="{item.id}">{title}<div class="card-actions">{buttons}</div></article>'
     discard = _action_button(lang, "discard", "discard", "trash", "quiet")
+    start = _action_button(lang, "agent-start", "agent_start", "play", "quiet start") if tasks is not None else ""
     origin = " from-claude" if item.source == "claude" else ""
-    return f'<article class="card{origin}" data-id="{item.id}">{title}{discard}</article>'
+    return f'<article class="card{origin}" data-id="{item.id}">{title}{start}{discard}</article>'
 
 
-def _column(kind: str, items: list[Item], lang: str) -> str:
+def _column(kind: str, items: list[Item], lang: str, tasks: dict | None = None) -> str:
     agreed = [i for i in items if i.kind == kind and i.status == "open"]
     proposed = [i for i in items if i.kind == kind and i.status == "proposed"]
     suggestions = ""
@@ -89,7 +113,7 @@ def _column(kind: str, items: list[Item], lang: str) -> str:
         f'<span class="count">{len(agreed) + len(proposed)}</span>'
         f'<button class="icon-button add" type="button" data-kind="{kind}" aria-label="{add}" title="{add}">'
         f'{icon("plus")}</button></header>'
-        f'<div class="cards open-list" data-kind="{kind}">{"".join(_card(i, lang) for i in agreed)}</div>'
+        f'<div class="cards open-list" data-kind="{kind}">{"".join(_card(i, lang, tasks) for i in agreed)}</div>'
         f"{suggestions}</section>"
     )
 
@@ -212,6 +236,12 @@ def drawer_buttons(lang: str) -> str:
     return board + manager("archive", "chat_archive", "inbox") + manager("trash", "trash", "trash")
 
 
+def _tasks(user: User, project: Project) -> dict:
+    """item id -> (task, last report, waiting reason) for the cards of the board."""
+    return {item_id: (task, agents.last_report(user.id, task.id), agents.waiting_reason(user.id, task))
+            for item_id, task in agents.tasks_by_item(user.id, project.id).items()}
+
+
 def render(user: User, project: Project, items: list[Item], regular_checks: list | None = None,
            stored_files: list | None = None, trashed_files: list | None = None) -> str:
     """Project page body with the kanban board and the Manager view (with the regular checks)."""
@@ -219,6 +249,7 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
     trashed = [i for i in items if i.status == "trash"]
     archived = [i for i in items if i.status == "archived"]
     live = [i for i in items if i.status not in ("trash", "archived")]
+    tasks = _tasks(user, project)
     return fill(
         PROJECT,
         lang,
@@ -226,9 +257,9 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
         STATIONS=_stations(lang),
         MANAGER=managerpage.render(lang, agents.settings(user.id), regular_checks or [], stored_files=stored_files or [],
                                     files_confirm=user.files_confirm, trashed_files=trashed_files or [],
-                                    ais=("claude", *ai_link.connected_providers(user.id))),
+                                    ais=(aichoice.default(user.id),)),
         MANAGER_DIALOGS=managerpage.dialogs(lang),
         TRASH=_trash(trashed, lang),
         ARCHIVE=_archive(archived, lang),
-        COLUMNS="\n      ".join(_column(kind, live, lang) for kind in KINDS),
+        COLUMNS="\n      ".join(_column(kind, live, lang, tasks) for kind in KINDS),
     )

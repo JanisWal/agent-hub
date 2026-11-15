@@ -199,8 +199,11 @@ NEW_COLUMNS = {
                       "rounds": "INTEGER NOT NULL DEFAULT 0",       # how often it was answered again with such files
                       "memory_saved": "INTEGER NOT NULL DEFAULT 0",   # the answer updated the memory file
                       "effort": "TEXT NOT NULL DEFAULT ''",           # effort level (catalog.py); '' = older question
-                      "provider": "TEXT NOT NULL DEFAULT 'claude'"},  # which AI answers (catalog.PROVIDERS)
-    "agent_runs": {"effort": "TEXT NOT NULL DEFAULT ''"},    # effort level of the run's model (catalog.py)
+                      "provider": "TEXT NOT NULL DEFAULT 'claude'",   # which AI answers (catalog.PROVIDERS)
+                      "tried": "TEXT NOT NULL DEFAULT ''"},           # AIs that could not answer it (chat fallback)
+    "agent_runs": {"effort": "TEXT NOT NULL DEFAULT ''",     # effort level of the run's model (catalog.py)
+                   "provider": "TEXT NOT NULL DEFAULT 'claude'"},   # which AI does the run (aichoice.py)
+    "agent_tasks": {"merged": "INTEGER NOT NULL DEFAULT 0"},   # the runner merged the approved branch (agents.py)
     "files": {"parts": "TEXT NOT NULL DEFAULT ''",           # one flag per chunk of an unfinished upload (files.py)
               "trashed_at": "INTEGER"},                      # when it went into the trash (files.py, TRASH_DAYS)
     "checks": {"days": "TEXT NOT NULL DEFAULT '1111111'"},   # weekdays of a daily check, Monday first (checks.py)

@@ -6,7 +6,7 @@ from .icons import icon
 from .layout import esc, fill, page
 from .users import User
 
-from . import ai_link, claude_link
+from . import ai_link, aichoice, claude_link
 
 
 def info_dot(label: str, text: str) -> str:
@@ -219,33 +219,52 @@ CLAUDE_STATES = {
 }
 
 
-def _claude_row(lang: str, state: str) -> str:
-    """The Claude block. The arrow at the top right (the same place as the arrow of the language block) opens the
-    list of the other AIs below it (core.js); it is a button inside the block, so the block stays one box."""
+def _toggle(lang: str) -> str:
+    """The arrow at the top right of the first AI block (the same place as the arrow of the language block): it opens
+    the list of the other AIs below (core.js). A button inside the block, so the block stays one box."""
+    return (f'<button class="ai-toggle" type="button" id="ai-toggle" aria-expanded="false" aria-controls="ai-more" '
+            f'aria-label="{esc(i18n.t(lang, "ai_more"))}">{icon("chevron_down")}</button>')
+
+
+def _make_default(lang: str, provider: str) -> str:
+    """"Make standard" (Janis, 15.11.2026): in the row of a connected AI that is not the standard (ailink.js)."""
+    return (f'<button class="link inline" type="button" data-ai-default="{provider}" '
+            f'data-tip="{esc(i18n.t(lang, "ai_default_hint"))}">{esc(i18n.t(lang, "ai_make_default"))}</button>')
+
+
+def _claude_row(lang: str, state: str, first: bool = True, as_default: bool = False) -> str:
+    """The Claude block: state and the link of its dialog (claude.js), or "make standard" (`as_default`)."""
     style, text_key, action_key = CLAUDE_STATES.get(state, ("", "not_connected", "connect"))
-    more = esc(i18n.t(lang, "ai_more"))
+    action = (_make_default(lang, "claude") if as_default and state == "connected" else
+              f'<button class="link inline" type="button" id="claude-open" data-status="{esc(state)}">'
+              f'{esc(i18n.t(lang, action_key))}</button>')
     return (
-        f'<div class="setting service {style}" id="claude-row" data-expired="{esc(i18n.t(lang, "claude_expired"))}" '
-        f'data-renew="{esc(i18n.t(lang, "claude_renew"))}">'
-        f'<span class="setting-label">Claude</span>'
-        f'<button class="ai-toggle" type="button" id="ai-toggle" aria-expanded="false" aria-controls="ai-more" '
-        f'aria-label="{more}">{icon("chevron_down")}</button>'
-        f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>'
-        f'<button class="link inline" type="button" id="claude-open" data-status="{esc(state)}">'
-        f'{esc(i18n.t(lang, action_key))}</button></span></div>'
+        f'<div class="setting service {style}" id="claude-row" data-ai="claude" '
+        f'data-expired="{esc(i18n.t(lang, "claude_expired"))}" data-renew="{esc(i18n.t(lang, "claude_renew"))}">'
+        f'<span class="setting-label">Claude</span>{_toggle(lang) if first else ""}'
+        f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>{action}</span></div>'
     )
 
 
-def _key_row(lang: str, provider: str, state: str) -> str:
-    """The row of an AI with an API key in the folded list: state and one link that opens its dialog (ailink.js)."""
+def _key_row(lang: str, provider: str, state: str, first: bool = False, as_default: bool = False) -> str:
+    """The block of an AI with an API key: state and one link that opens its dialog (ailink.js), or "make standard"."""
     style, text_key, action_key = KEY_STATES.get(state, ("", "not_connected", "connect"))
+    action = (_make_default(lang, provider) if as_default and state == "connected" else
+              f'<button class="link inline" type="button" data-key-open="{provider}" data-status="{esc(state)}">'
+              f'{esc(i18n.t(lang, action_key))}</button>')
     return (
-        f'<div class="setting service {style}" id="key-row-{provider}">'
-        f'<span class="setting-label">{esc(KEY_NAMES[provider])}</span>'
-        f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>'
-        f'<button class="link inline" type="button" data-key-open="{provider}" data-status="{esc(state)}">'
-        f'{esc(i18n.t(lang, action_key))}</button></span></div>'
+        f'<div class="setting service {style}" id="key-row-{provider}" data-ai="{provider}">'
+        f'<span class="setting-label">{esc(KEY_NAMES[provider])}</span>{_toggle(lang) if first else ""}'
+        f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>{action}</span></div>'
     )
+
+
+def _placeholder_row(lang: str, name: str) -> str:
+    return ('<div class="setting service">'
+            f'<span class="setting-label">{name}</span>'
+            f'<span class="service-line"><span class="status">{esc(i18n.t(lang, "not_connected"))}</span>'
+            f'<button class="link inline" type="button" disabled title="{esc(i18n.t(lang, "coming_soon"))}">'
+            f'{esc(i18n.t(lang, "connect"))}</button></span></div>')
 
 
 def _key_dialogs(lang: str) -> str:
@@ -256,22 +275,30 @@ def _key_dialogs(lang: str) -> str:
         for p in ai_link.PROVIDERS)
 
 
-def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | None = None) -> str:
-    """Claude, the folded list of the other AIs (Janis, 11.11.2026: it grows with every AI that is added, so it
-    stays closed) and the chat history button. The button is type="button": it never submits the form."""
+def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | None = None,
+                  standard: str = "claude", connected: tuple[str, ...] = ()) -> str:
+    """The AIs and the chat history button (Janis, 15.11.2026). On top the standard AI with the arrow; below, folded
+    (Janis, 11.11.2026: the list grows with every AI), the others in a fixed order: Claude, ChatGPT (not built yet),
+    the AIs with a key. With two or more connected, each connected one that is not the standard says "make standard"
+    instead of "disconnect" (the standard itself keeps "disconnect"). The button is type="button": no submit."""
+    key_states = key_states or {}
+    several = len(connected) >= 2
+
+    def row(name: str, first: bool) -> str:
+        as_default = several and not first
+        if name == "claude":
+            return _claude_row(lang, claude_state, first, as_default)
+        if name in ai_link.PROVIDERS:
+            return _key_row(lang, name, key_states.get(name, "none"), first, as_default)
+        return _placeholder_row(lang, name)
+
+    names = ["claude", *PLACEHOLDER_SERVICES, *ai_link.PROVIDERS]
+    top = standard if standard in names else "claude"
+    others = "\n        ".join(row(n, False) for n in names if n != top)
     clear = (f'<button class="clear-btn" type="button" id="chat-clear-open">'
              f'{esc(i18n.t(lang, "chat_clear"))}</button>')
-    others = "\n        ".join(
-        '<div class="setting service">'
-        f'<span class="setting-label">{name}</span>'
-        f'<span class="service-line"><span class="status">{esc(i18n.t(lang, "not_connected"))}</span>'
-        f'<button class="link inline" type="button" disabled title="{esc(i18n.t(lang, "coming_soon"))}">'
-        f'{esc(i18n.t(lang, "connect"))}</button></span></div>'
-        for name in PLACEHOLDER_SERVICES
-    )
-    others += "".join("\n        " + _key_row(lang, p, (key_states or {}).get(p, "none")) for p in ai_link.PROVIDERS)
     more = f'<div class="ai-more" id="ai-more" hidden>\n        {others}\n      </div>'
-    return "\n      ".join([_claude_row(lang, claude_state), more, clear])
+    return "\n      ".join([row(top, True), more, clear])
 
 
 def _admin_button(user: User) -> str:
@@ -302,7 +329,8 @@ def settings_bar(user: User, extras: str = "") -> str:
         NAME_SHOWN=esc(user.name),
         DE="selected" if lang == "de" else "",
         EN="selected" if lang == "en" else "",
-        SERVICES=_service_rows(lang, claude_link.status(user.id), {p: ai_link.status(user.id, p) for p in ai_link.PROVIDERS}),
+        SERVICES=_service_rows(lang, claude_link.status(user.id), {p: ai_link.status(user.id, p) for p in ai_link.PROVIDERS},
+                               aichoice.default(user.id), tuple(aichoice.connected(user.id))),
         ADMIN=_admin_button(user),
         ACCOUNT_LINKS=_account_links(user),
         CLAUDE_DIALOG=fill(CLAUDE_DIALOG, lang),

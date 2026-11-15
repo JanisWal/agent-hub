@@ -45,8 +45,8 @@ class ChatQueueTest(Base):
 
     def test_rules(self):
         with self.assertRaises(ValueError) as problem:
-            chat.send(self.a.id, self.pa.id, "x")                      # Claude not connected
-        self.assertEqual(str(problem.exception), "claude")
+            chat.send(self.a.id, self.pa.id, "x")                      # no AI connected at all
+        self.assertEqual(str(problem.exception), "none")
         self.connect(self.a)
         for bad in ("", "   ", "x" * (chat.MAX_PROMPT + 1)):
             with self.assertRaises(ValueError):
@@ -315,7 +315,7 @@ class ChatRoutesTest(Base):
         self.assertEqual(routes.ask(self.pa.id, "  ", user=self.a).status_code, 400)
         self.assertEqual(routes.ask(self.pb.id, "x", user=self.a).status_code, 404)      # B's project
         english = dataclasses.replace(self.b, language="en")
-        self.assertIn("not connected", routes.ask(self.pb.id, "x", user=english).body.decode())  # B has no Claude
+        self.assertIn("No AI is connected", routes.ask(self.pb.id, "x", user=english).body.decode())  # B has no AI
 
     def test_a_failure_shows_only_its_kind(self):
         """Janis, 14.11.2026: a short text, not what Claude Code said; the menu learns of a lost sign-in."""

@@ -38,7 +38,7 @@ class FakeTickets:
     def __init__(self):
         self.issued, self.revoked = [], []
 
-    def issue(self, token):
+    def issue(self, token, provider="claude"):
         ticket = "hubrun-" + str(len(self.issued)).rjust(43, "x")
         self.issued.append((ticket, token))
         return ticket

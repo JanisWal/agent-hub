@@ -12,6 +12,8 @@ run can reach nothing but this proxy. The proxy listens twice, with two policies
   requests here in plain HTTP (ANTHROPIC_BASE_URL, inside the agent network only) with the run's ticket as its
   token; the gateway swaps the ticket for the user's real token (runner/tokens.py) and sends the request on to
   api.anthropic.com over TLS. So the real token never enters a run: code in a run can not read it or send it out.
+- "gateway mistral" (port 3131, since 15.11.2026): the same for Mistral Vibe: its API key never enters a run, the
+  ticket (which names its AI, runner/tokens.py) is swapped for the key and the request goes to api.mistral.ai.
 
 The proxy resolves names itself and connects to the address it checked (no second lookup that could
 answer differently). It never looks into the traffic (HTTPS passes through) and logs only the
@@ -33,6 +35,8 @@ IDLE_TIMEOUT = 120
 TOTAL_TIMEOUT = 300
 MAX_CLIENTS = 32
 UPSTREAM = "api.anthropic.com"
+# The gateways: AI -> (upstream host, port). A ticket only works at the gateway of its own AI.
+GATEWAYS = {"claude": ("api.anthropic.com", 3130), "mistral": ("api.mistral.ai", 3131)}
 GATEWAY_HEAD_LIMIT = 65536
 GATEWAY_BODY_LIMIT = 64 * 1024 * 1024    # a request with images or long context; Claude Code always sends the length
 GATEWAY_IDLE = 300                       # a long answer streams with pauses (thinking); the ping events keep it alive
@@ -197,10 +201,11 @@ def parse_request(head: bytes) -> tuple[str, str, list[tuple[str, str]]] | None:
     return method, path, headers
 
 
-def rewrite(method: str, path: str, headers: list[tuple[str, str]], token: str, length: int) -> bytes:
-    """The request as it goes to Anthropic: the real token instead of the ticket, one request per connection."""
+def rewrite(method: str, path: str, headers: list[tuple[str, str]], token: str, length: int,
+            upstream: str = UPSTREAM) -> bytes:
+    """The request as it goes to the AI: the real token instead of the ticket, one request per connection."""
     keep = [(n, v) for n, v in headers if n.lower() not in _DROP]
-    out = [f"{method} {path} HTTP/1.1", f"Host: {UPSTREAM}", f"Authorization: Bearer {token}",
+    out = [f"{method} {path} HTTP/1.1", f"Host: {upstream}", f"Authorization: Bearer {token}",
            *(f"{n}: {v}" for n, v in keep), f"Content-Length: {length}", "Connection: close", "", ""]
     return "\r\n".join(out).encode("latin-1")
 
@@ -215,22 +220,22 @@ async def _gateway_reply(writer: asyncio.StreamWriter, status: str, message: str
         pass
 
 
-async def _open_upstream():
-    addresses = await asyncio.wait_for(_resolve(UPSTREAM, 443), CONNECT_TIMEOUT)
+async def _open_upstream(upstream: str = UPSTREAM):
+    addresses = await asyncio.wait_for(_resolve(upstream, 443), CONNECT_TIMEOUT)
     context = ssl.create_default_context()
     for address in addresses:   # connect to an address we checked, with the certificate checked for the name
         if not is_public(address):
             continue
         try:
             return await asyncio.wait_for(asyncio.open_connection(
-                address, 443, ssl=context, server_hostname=UPSTREAM), CONNECT_TIMEOUT)
+                address, 443, ssl=context, server_hostname=upstream), CONNECT_TIMEOUT)
         except (asyncio.TimeoutError, OSError, ssl.SSLError):
             continue
     raise OSError("no upstream")
 
 
 async def gateway(client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter, tickets_dir: str,
-                  open_upstream=_open_upstream, log=print) -> None:
+                  open_upstream=_open_upstream, log=print, provider: str = "claude") -> None:
     """One request of a run: check it, swap ticket for token, pass it to Anthropic, stream the answer back.
 
     Exactly one request per connection: the body is read by its length and nothing after it is passed on, so a
@@ -259,22 +264,25 @@ async def gateway(client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter
             await _gateway_reply(client_w, "413 Payload Too Large", "bad length")
             return
         auth = values.get("authorization", "")
-        token = tokens.lookup(tickets_dir, auth[7:].strip()) if auth.lower().startswith("bearer ") else None
+        token = (tokens.lookup(tickets_dir, auth[7:].strip(), provider=provider)
+                 if auth.lower().startswith("bearer ") else None)
+        upstream = GATEWAYS[provider][0]
         if token is None:   # 403, not 401: an unknown ticket is the hub's matter, not a lost sign-in of the user
             log(f"gateway: refused {method} {path} (no valid ticket)")
             await _gateway_reply(client_w, "403 Forbidden", "no valid ticket")
             return
         body = await asyncio.wait_for(client_r.readexactly(length), GATEWAY_IDLE) if length else b""
         try:
-            upstream_r, upstream_w = await open_upstream()
+            upstream_r, upstream_w = await (open_upstream(upstream) if open_upstream is _open_upstream
+                                            else open_upstream())
         except (asyncio.TimeoutError, OSError):
-            await _gateway_reply(client_w, "502 Bad Gateway", "anthropic not reachable")
+            await _gateway_reply(client_w, "502 Bad Gateway", f"{provider} not reachable")
             return
-        upstream_w.write(rewrite(method, path, headers, token, length) + body)
+        upstream_w.write(rewrite(method, path, headers, token, length, upstream) + body)
         await upstream_w.drain()
         first = await asyncio.wait_for(upstream_r.read(65536), GATEWAY_IDLE)
         status = first.split(b"\r\n", 1)[0].decode("latin-1", "replace")[9:12]
-        log(f"gateway: {method} {path.split('?')[0]} -> {status or '?'}")
+        log(f"gateway {provider}: {method} {path.split('?')[0]} -> {status or '?'}")
         if first:
             client_w.write(first)
             await client_w.drain()
@@ -300,12 +308,13 @@ async def serve(policy: Policy, host: str, port: int, log=print) -> asyncio.Abst
     return await asyncio.start_server(on_client, host, port, limit=HEAD_LIMIT * 2)
 
 
-async def serve_gateway(host: str, port: int, tickets_dir: str, log=print) -> asyncio.AbstractServer:
+async def serve_gateway(host: str, port: int, tickets_dir: str, log=print,
+                        provider: str = "claude") -> asyncio.AbstractServer:
     slots = asyncio.Semaphore(MAX_CLIENTS)
 
     async def on_client(reader, writer):
         async with slots:
-            await gateway(reader, writer, tickets_dir, log=log)
+            await gateway(reader, writer, tickets_dir, log=log, provider=provider)
 
     return await asyncio.start_server(on_client, host, port, limit=GATEWAY_HEAD_LIMIT * 2)
 
@@ -317,8 +326,11 @@ async def main() -> None:
         await serve(API, bind, int(os.environ.get("EGRESS_API_PORT", "3129"))),
         await serve_gateway(bind, int(os.environ.get("EGRESS_GATEWAY_PORT", "3130")),
                             os.environ.get("HUB_TICKETS_DIR", "/tickets")),
+        await serve_gateway(bind, int(os.environ.get("EGRESS_MISTRAL_PORT", "3131")),
+                            os.environ.get("HUB_TICKETS_DIR", "/tickets"), provider="mistral"),
     ]
-    print("egress: listening (web 3128, api 3129, gateway 3130)", file=sys.stderr, flush=True)
+    print("egress: listening (web 3128, api 3129, gateway claude 3130, gateway mistral 3131)", file=sys.stderr,
+          flush=True)
     await asyncio.gather(*(s.serve_forever() for s in servers))
 
 

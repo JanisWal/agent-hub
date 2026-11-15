@@ -29,6 +29,7 @@ RESULTS = {
     "chef": ("done", "failed"),
 }
 IMAGE = "agent-hub-agent"         # built from runner/Dockerfile
+VIBE_IMAGE = "agent-hub-vibe"     # built from runner/Dockerfile.vibe (Mistral Vibe)
 NETWORK = "agent-hub-agents"      # separate from the "web" network: a run cannot reach the hub
 UID_BASE = 10000                  # run user = UID_BASE + user_id, never root
 MAX_REPORT = 20000
@@ -36,6 +37,9 @@ MAX_REPORT = 20000
 WEB_PROXY = "http://egress:3128"   # any public host on 443, never the home network or the Pi itself
 API_PROXY = "http://egress:3129"   # only Anthropic (sign-ins)
 GATEWAY = "http://egress:3130"     # the Claude API with the user's token put in by the proxy (runner/egress.py)
+MISTRAL_GATEWAY = "http://egress:3131"   # the same for Mistral (its key put in by the proxy)
+# Mistral runs: limits per job (turns, seconds); the proxy follows the same switch as Claude.
+VIBE_JOBS = {"chat-all": (12, 180), "chat-apart": (10, 180), "run": (60, 1050)}
 _TICKET = re.compile(r"hubrun-[A-Za-z0-9_-]{43}")   # runner/tokens.py
 # What the manager chat may do: tools, proxy and steps (model turns) per question.
 CHAT_MODES = {
@@ -248,6 +252,72 @@ def prepare_folder(path: str, user_id: int, recursive: bool = False) -> None:
     for item in ([root, *root.rglob("*")] if recursive else [root]):
         os.chown(item, uid, uid, follow_symlinks=False)
     os.chmod(root, 0o700)
+
+
+def build_vibe_command(*, name: str, user_id: int, model: str, ticket: str, job: str, effort: str = "",
+                       net: str = "together", work_dir: str | None = None, image: str = VIBE_IMAGE,
+                       network: str = NETWORK, memory: str = "480m") -> list[str]:
+    """The `docker run` command of a Mistral run (Mistral Vibe, runner/vibe_entry.py): the chat ("chat-all",
+    "chat-apart": no folder of any project) or an agent run ("run": the task's work folder at /work). Like Claude:
+    run user, read-only, nothing but a home in memory, the ticket instead of the key, every request to the gateway,
+    the web only through the proxy of the switch. `name` is "agent-chat-<n>" or "agent-run-<n>"."""
+    if job not in VIBE_JOBS or (job == "run") != (work_dir is not None):
+        raise ValueError("unknown job")
+    if not re.fullmatch(r"agent-(chat|run)-[0-9]+", name):
+        raise ValueError("bad name")
+    if not isinstance(ticket, str) or not _TICKET.fullmatch(ticket):
+        raise ValueError("bad ticket")
+    _model_args(model, effort)                        # the same patterns as for Claude
+    proxy = {"chat-all": WEB_PROXY, "chat-apart": API_PROXY}.get(job) or RUN_PROXY.get(net)
+    if proxy is None:
+        raise ValueError("unknown net mode")
+    if not re.fullmatch(r"[0-9]+[mg]", memory) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", image + network):
+        raise ValueError("bad image, network or memory")
+    uid = run_uid(user_id)
+    turns, seconds = VIBE_JOBS[job]
+    mount = ["--mount", f"type=bind,src={_folder(work_dir, 'work_dir')},dst=/work", "--workdir", "/work"] if work_dir else []
+    return [
+        "docker", "run", "--rm", "--init", "-i", "--name", name, "--user", f"{uid}:{uid}",
+        "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+        "--read-only", "--tmpfs", "/tmp:rw,size=64m,mode=1777", "--tmpfs", "/home/vibe:rw,size=128m,mode=1777",
+        "--memory", memory, "--memory-swap", memory, "--pids-limit", "256", "--cpus", "2",
+        "--network", network, *mount,
+        "-e", "HOME=/home/vibe", "-e", f"MISTRAL_API_KEY={ticket}", "-e", f"HUB_GATEWAY={MISTRAL_GATEWAY}",
+        "-e", f"HUB_MODEL={model}", "-e", f"HUB_EFFORT={effort}", "-e", f"HUB_JOB={job}",
+        "-e", f"HUB_TURNS={turns}", "-e", f"HUB_SECONDS={seconds}",
+        "-e", "NO_PROXY=egress", "-e", "no_proxy=egress", *_proxy_env(proxy),
+        image, "python", "/opt/hub/vibe_entry.py",
+    ]
+
+
+def parse_vibe(stdout: str) -> tuple[bool, str, int, int, bool]:
+    """(ok, text, tokens_in, tokens_out, login_problem) from the one JSON line of vibe_entry.py. A refused key (401
+    from Mistral) is a login problem; anything unreadable is a failure, never a guess."""
+    try:
+        data = json.loads((stdout or "").strip().splitlines()[-1])
+        ok, text = bool(data.get("ok")), str(data.get("text") or "")
+        tokens_in, tokens_out = int(data.get("tokens_in") or 0), int(data.get("tokens_out") or 0)
+        error = str(data.get("error") or "")
+    except (ValueError, IndexError, AttributeError, TypeError):
+        return False, "No readable answer from Mistral Vibe.", 0, 0, False
+    login = bool(re.search(r"\b401\b|unauthori[sz]ed|invalid api key", error, re.I))
+    if ok:
+        return True, text.strip()[:MAX_REPORT], tokens_in, tokens_out, False
+    reason = ("Not logged in: Mistral refused the key (401)" if login
+              else f"Mistral Vibe stopped ({data.get('outcome')}): {error}".strip())
+    return False, reason[:2000], tokens_in, tokens_out, login
+
+
+def result_of(role: str, text: str, failed: bool = False) -> tuple[str, str]:
+    """(result, report) from an agent's answer: the last line `RESULT: <value>` (anything else is "failed")."""
+    if role not in RESULTS:
+        raise ValueError("unknown role")
+    lines = text.rstrip().splitlines()
+    match = _MARKER.match(lines[-1].strip()) if lines else None
+    report = "\n".join(lines[:-1] if match else lines).strip()[:MAX_REPORT]
+    if failed or match is None or match.group(1) not in RESULTS[role]:
+        return "failed", report or "The agent gave no valid result."
+    return match.group(1), report
 
 
 def parse_output(role: str, stdout: str) -> tuple[str, str, int, int]:

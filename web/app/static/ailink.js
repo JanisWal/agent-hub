@@ -2,6 +2,25 @@
 // Mistral). The server renders all texts; this script shows one step at a time. Paste the key -> the runner checks it
 // with the provider (GET /ai/<provider>/status tells how it went). The key leaves the page once and is not kept here.
 (function () {
+  // "Make standard" (Janis, 15.11.2026): the row glides to the top (Motion.flip), then the page comes again quietly,
+  // because the model picker shows only the standard AI's models.
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-ai-default]");
+    if (!button) return;
+    button.disabled = true;
+    var body = new FormData();
+    body.append("provider", button.dataset.aiDefault);
+    fetch("/ai/default", { method: "POST", body: body }).then(function (r) {
+      if (!r.ok) throw new Error("default");
+      var row = button.closest("[data-ai]");
+      var first = document.querySelector("#settings .service[data-ai]");
+      var rows = Array.prototype.slice.call(document.querySelectorAll("#settings .service"));
+      var move = function () { if (row && first && row !== first) first.parentNode.insertBefore(row, first); };
+      if (window.Motion && !window.Motion.reduced()) window.Motion.flip(rows, move, row); else move();
+      setTimeout(function () { window.AgentHub.reload(); }, 450);
+    }).catch(function () { button.disabled = false; });
+  });
+
   var CHECK_FOR = 150000; // ms: the hub gives up a check after two minutes (ai_link.CHECK_SECONDS)
 
   function post(url, body) {

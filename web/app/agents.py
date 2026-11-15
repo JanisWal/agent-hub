@@ -15,10 +15,12 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-from . import board, catalog, claude_link, db, workflow
+from . import aichoice, board, catalog, db, memory, runtask, workflow
 
 # Models and effort levels are not fixed here: they come from catalog.py (Janis, 14.11.2026). A role without a
-# choice gets the provider's default model and that model's default level.
+# choice gets the provider's default model and that model's default level. Since 15.11.2026 the choice is kept per
+# role AND per AI ("model.<role>.<provider>"), so switching the standard AI (aichoice.py) and back finds it again;
+# the older keys "model.<role>" / "effort.<role>" still count for the provider their model belongs to (no conversion).
 NEEDS = ("any", "mac")
 # How freely the manager decides (Janis, 07.11.2026): fully on its own, asks for big decisions, asks for small
 # things too. It is a threshold, not a switch: the manager first tries to derive the answer from the project.
@@ -84,6 +86,8 @@ class Job:
     reports: list[tuple[str, str]]  # (role, report) of the earlier runs of this task (data)
     net: str = DEFAULT_NET          # web and code together (open internet) or apart, the role's switch
     effort: str = ""                # effort level of the model (catalog.py); empty = the program's own default
+    provider: str = "claude"        # which AI does the run (aichoice.py); the runner picks the adapter by it
+    prompt: str = ""                # the package for the AI (runtask.build_input): rules, memory, project, task
 
 
 def _task(row: sqlite3.Row) -> Task:
@@ -130,11 +134,17 @@ def _enabled(conn: sqlite3.Connection, user_id: int) -> frozenset[str]:
     return frozenset(roles | {"programmer"})   # without the programmer nothing happens at all
 
 
-def _choice(conn: sqlite3.Connection, user_id: int, role: str) -> tuple[str, str]:
-    """(model, effort) of a role, made valid against the current list (catalog.resolve): a model that left the list
-    becomes the default model, a level the model does not have becomes its default level."""
-    return catalog.resolve(_setting(conn, user_id, f"model.{role}", ""), _setting(conn, user_id, f"effort.{role}", ""),
-                           None if role == "chef" else catalog.DEFAULT_PROVIDER)
+def _choice(conn: sqlite3.Connection, user_id: int, role: str, provider: str | None = None) -> tuple[str, str]:
+    """(model, effort) of a role for one AI (default: the user's standard), made valid against the current list
+    (catalog.resolve): a model that left the list becomes the default model, a missing level the model's default."""
+    provider = provider or aichoice.default_in(conn, user_id)
+    model = _setting(conn, user_id, f"model.{role}.{provider}", "")
+    effort = _setting(conn, user_id, f"effort.{role}.{provider}", "")
+    if not model:                                  # a choice from before 15.11.2026, if it is one of this AI
+        old = _setting(conn, user_id, f"model.{role}", "")
+        if old and catalog.provider_of(old) == provider and catalog.find(old):
+            model, effort = old, effort or _setting(conn, user_id, f"effort.{role}", "")
+    return catalog.resolve(model, effort, provider)
 
 
 def _model(conn: sqlite3.Connection, user_id: int, role: str) -> str:
@@ -167,14 +177,17 @@ def net_in(conn: sqlite3.Connection, user_id: int, role: str) -> str:
 
 
 def settings(user_id: int) -> dict:
-    """{"strictness", "autonomy", "roles": {role: {"enabled", "model", "effort", "net"}}}, defaults filled in."""
+    """{"strictness", "autonomy", "provider", "roles": {role: {"enabled", "model", "effort", "net"}}}, defaults filled
+    in. Model and effort are those of the standard AI ("provider")."""
     with db.connect() as conn:
         enabled = _enabled(conn, user_id)
+        provider = aichoice.default_in(conn, user_id)
         roles = {}
         for r in workflow.ROLES:
-            model, effort = _choice(conn, user_id, r)
+            model, effort = _choice(conn, user_id, r, provider)
             roles[r] = {"enabled": r in enabled, "model": model, "effort": effort, "net": net_in(conn, user_id, r)}
-        return {"strictness": _strictness(conn, user_id), "autonomy": autonomy_in(conn, user_id), "roles": roles}
+        return {"strictness": _strictness(conn, user_id), "autonomy": autonomy_in(conn, user_id),
+                "provider": provider, "roles": roles}
 
 
 def configure(user_id: int, role: str | None = None, *, enabled: bool | None = None,
@@ -211,14 +224,14 @@ def configure(user_id: int, role: str | None = None, *, enabled: bool | None = N
             else:
                 model_for_effort = model
             try:
-                # only the manager can use another AI yet; the agent runs start Claude Code (runner/launcher.py)
-                catalog.check(model_for_effort, effort, None if role == "chef" else catalog.DEFAULT_PROVIDER)
+                catalog.check(model_for_effort, effort)
             except ValueError:
                 raise ValueError("Unbekanntes Modell oder unbekannte Stufe") from None
+            provider = catalog.provider_of(model_for_effort)     # kept per AI: switching back finds it again
             if model is not None:
-                changes.append((f"model.{role}", model))
+                changes.append((f"model.{role}.{provider}", model))   # the saved level stays (resolve on reading)
             if effort is not None:
-                changes.append((f"effort.{role}", effort))
+                changes.append((f"effort.{role}.{provider}", effort))
     with db.connect() as conn:
         for key, value in changes:
             conn.execute(
@@ -255,14 +268,27 @@ def pick_next(user_id: int, project_id: int) -> board.Item | None:
     return None
 
 
+def _run_provider(conn: sqlite3.Connection, user_id: int, task_id: int, role: str) -> str:
+    """The AI of a new run: the standard. The reviewer takes another of the user's AIs than the programmer of this
+    task when he has two (Janis: one model overlooks its own mistakes)."""
+    order = aichoice.order_in(conn, user_id)
+    if role == "reviewer" and len(order) > 1:
+        row = conn.execute("SELECT provider FROM agent_runs WHERE task_id = ? AND role = 'programmer'"
+                           " ORDER BY id DESC LIMIT 1", (task_id,)).fetchone()
+        if row is not None:
+            return next((p for p in order if p != row["provider"]), order[0])
+    return order[0]
+
+
 def _queue(conn: sqlite3.Connection, user_id: int, task_id: int, status: str, now: int) -> None:
     """Create the run for the stage the task has just entered (nothing for the user's own stage)."""
     role = workflow.STAGE_ROLE.get(status)
     if role is not None:
-        model, effort = _choice(conn, user_id, role)
+        provider = _run_provider(conn, user_id, task_id, role)
+        model, effort = _choice(conn, user_id, role, provider)
         conn.execute(
-            "INSERT INTO agent_runs (task_id, role, model, effort, status, created_at)"
-            " VALUES (?, ?, ?, ?, 'queued', ?)", (task_id, role, model, effort, now),
+            "INSERT INTO agent_runs (task_id, role, model, effort, provider, status, created_at)"
+            " VALUES (?, ?, ?, ?, ?, 'queued', ?)", (task_id, role, model, effort, provider, now),
         )
 
 
@@ -340,11 +366,11 @@ def task_runs(user_id: int, task_id: int) -> list[Run]:
 
 
 def waiting_reason(user_id: int, task: Task) -> str | None:
-    """Why a task does not move: "no_claude" (his Claude is not connected) or None."""
+    """Why a task does not move: "no_ai" (none of his AIs is connected) or None."""
     if task.status in ACTIVE and task.status in workflow.STAGE_ROLE:
         with db.connect() as conn:
-            if not claude_link.connected_in(conn, user_id):
-                return "no_claude"
+            if not aichoice.connected_list(conn, user_id):
+                return "no_ai"
     return None
 
 
@@ -379,7 +405,7 @@ def decide(user_id: int, task_id: int, decision: str, note: str = "", now: int |
         elif decision == "reject" and status in ("awaiting_approval", "escalated"):
             step = workflow.after_rejection(mc)
             note_value = note.strip()[:1000]
-            conn.execute("UPDATE agent_tasks SET deadline = ? WHERE id = ?", (now + TASK_SECONDS, task_id))
+            conn.execute("UPDATE agent_tasks SET deadline = ?, merged = 0 WHERE id = ?", (now + TASK_SECONDS, task_id))
         elif decision == "cancel" and status in OPEN_STATUSES:
             step, note_value = workflow.Step("cancelled", rnd, mc), None
         else:
@@ -431,8 +457,9 @@ def _skip_waiting_tests(conn: sqlite3.Connection, can_mac: bool, now: int) -> No
 def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
     """Runner: take the oldest run that may start now, or None. Only MAX_RUNNING runs at a time.
 
-    A run is skipped (it keeps waiting) when its user's Claude is not connected or it needs the Mac
-    and `can_mac` is False. There is no stand-in: nobody else's connection is ever used.
+    A run is skipped (it keeps waiting) when none of its user's AIs is connected or it needs the Mac and `can_mac` is
+    False. If the AI of the run is not connected any more, the user's next AI takes it (aichoice.order_in); nobody
+    else's connection is ever used. The chef's run after an approval waits until the runner merged the branch.
     """
     now = int(now if now is not None else time.time())
     with db.connect() as conn:
@@ -447,16 +474,26 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
             if run["needs"] == "mac" and not can_mac:
                 continue
             user_id = _owner(conn, run["task_id"])
-            if not claude_link.connected_in(conn, user_id):
-                continue
-            conn.execute("UPDATE agent_runs SET status = 'running', started_at = ? WHERE id = ?", (now, run["id"]))
             task = conn.execute("SELECT * FROM agent_tasks WHERE id = ?", (run["task_id"],)).fetchone()
+            if run["role"] == "chef" and not task["merged"]:
+                continue                                   # the runner merges the approved branch first
+            provider, model, effort = run["provider"], run["model"], run["effort"]
+            if not aichoice.connected_in(conn, user_id, provider):
+                order = aichoice.order_in(conn, user_id)
+                if not aichoice.connected_in(conn, user_id, order[0]):
+                    continue                               # none of his AIs: the run waits
+                provider = order[0]
+                model, effort = _choice(conn, user_id, run["role"], provider)
+            conn.execute("UPDATE agent_runs SET status = 'running', started_at = ?, provider = ?, model = ?, effort = ?"
+                         " WHERE id = ?", (now, provider, model, effort, run["id"]))
             reports = [(r["role"], r["report"]) for r in conn.execute(
                 "SELECT role, report FROM agent_runs WHERE task_id = ? AND status = 'done' AND report != ''"
                 " ORDER BY id", (task["id"],))]
-            return Job(run["id"], user_id, task["project_id"], task["id"], run["role"], run["model"],
-                       branch_name(task["id"]), task["title"], task["kind"], task["round"],
-                       task["note"], reports, net_in(conn, user_id, run["role"]), run["effort"])
+            job = Job(run["id"], user_id, task["project_id"], task["id"], run["role"], model,
+                      branch_name(task["id"]), task["title"], task["kind"], task["round"],
+                      task["note"], reports, net_in(conn, user_id, run["role"]), effort, provider)
+            job.prompt = runtask.build_input(conn, job)
+            return job
     return None
 
 
@@ -474,6 +511,15 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
         if workflow.STAGE_ROLE.get(task["status"]) != run["role"]:
             return False
         user_id = _owner(conn, task["id"])
+        if run["role"] == "chef" and result == "done":    # the manager keeps the memory files up after the work
+            parsed = memory.parse_answer(report)
+            report = parsed.text
+            notes = dict(parsed.files or {})
+            if parsed.memory:
+                notes[memory.MEMORY_NAME] = parsed.memory
+            pending_notes = (user_id, task["project_id"], notes)
+        else:
+            pending_notes = None
         step = workflow.advance(task["status"], task["round"], bool(task["manual_check"]), result,
                                 _enabled(conn, user_id))
         conn.execute(
@@ -483,4 +529,85 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
              max(0, int(seconds)), now, run_id),
         )
         _enter(conn, user_id, task["id"], step, now)
+    if pending_notes:                                     # after the transaction: files.py opens its own connection
+        owner, project_id, notes = pending_notes
+        for name, body in notes.items():
+            memory.save_memory(owner, project_id, body, name)
     return True
+
+
+# --- merging approved work and cleaning up (the runner does the git side: runner/workspace.py)
+CLEAN_DAYS = 7            # finished tasks whose folders the runner may still have to delete
+
+
+def pending_merges() -> list[dict]:
+    """Runner: approved tasks (documenting or done) whose branch is not merged into the project's main yet."""
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT t.id, t.project_id, p.user_id FROM agent_tasks t JOIN projects p ON p.id = t.project_id"
+            " WHERE t.status IN ('documenting', 'done') AND t.merged = 0 ORDER BY t.id").fetchall()
+    return [{"task_id": r["id"], "project_id": r["project_id"], "user_id": r["user_id"],
+             "branch": branch_name(r["id"])} for r in rows]
+
+
+def merge_done(task_id: int, ok: bool, now: int | None = None) -> bool:
+    """Runner: the merge went through (the chef's run may start), or not (a conflict: the task goes to the user)."""
+    now = int(now if now is not None else time.time())
+    with db.connect() as conn:
+        task = conn.execute("SELECT * FROM agent_tasks WHERE id = ? AND status IN ('documenting', 'done')"
+                            " AND merged = 0", (task_id,)).fetchone()
+        if task is None:
+            return False
+        if ok:
+            conn.execute("UPDATE agent_tasks SET merged = 1 WHERE id = ?", (task_id,))
+        else:
+            conn.execute("UPDATE agent_tasks SET merged = -1 WHERE id = ?", (task_id,))
+            _enter(conn, _owner(conn, task_id), task_id,
+                   workflow.Step("escalated", task["round"], bool(task["manual_check"])), now,
+                   "merge conflict with main: send it back for another round")
+    return True
+
+
+def finished_tasks(now: int | None = None) -> list[int]:
+    """Runner: tasks of the last CLEAN_DAYS that are over (done and merged, or cancelled): their folders can go."""
+    now = int(now if now is not None else time.time())
+    with db.connect() as conn:
+        return [r["id"] for r in conn.execute(
+            "SELECT id FROM agent_tasks WHERE finished_at > ? AND (status = 'cancelled' OR (status = 'done' AND merged = 1))"
+            " ORDER BY id", (now - CLEAN_DAYS * 86400,))]
+
+
+# --- the board's view of tasks (Janis, 15.11.2026: an agreed item goes to the agents from its card)
+
+def tasks_by_item(user_id: int, project_id: int) -> dict[int, Task]:
+    """The newest task of every board item of the project (only the user's own)."""
+    found: dict[int, Task] = {}
+    for task in list_tasks(user_id, project_id):           # newest first
+        if task.item_id is not None and task.item_id not in found:
+            found[task.item_id] = task
+    return found
+
+
+def last_report(user_id: int, task_id: int) -> str:
+    """The newest report of the task (for the card's tip); "" if none or not the user's."""
+    runs = [r for r in task_runs(user_id, task_id) if r.report]
+    return runs[-1].report if runs else ""
+
+
+def item_task(user_id: int, item_id: int) -> Task | None:
+    """The newest task of one board item, if the item is the user's."""
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT t.* FROM agent_tasks t JOIN projects p ON p.id = t.project_id"
+            " WHERE t.item_id = ? AND p.user_id = ? ORDER BY t.id DESC LIMIT 1", (item_id, user_id)).fetchone()
+    return None if row is None else _task(row)
+
+
+def start_item(user_id: int, item_id: int, now: int | None = None) -> Task:
+    """Give a board item of the user to the agents (its project comes from the item). ValueError if not possible."""
+    with db.connect() as conn:
+        row = conn.execute("SELECT b.project_id FROM board_items b JOIN projects p ON p.id = b.project_id"
+                           " WHERE b.id = ? AND p.user_id = ?", (item_id, user_id)).fetchone()
+    if row is None:
+        raise ValueError("Unbekannter Punkt")
+    return start_task(user_id, row["project_id"], item_id, now=now)
