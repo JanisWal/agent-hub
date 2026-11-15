@@ -8,7 +8,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-from . import db, files
+from . import agents, db, files
 
 MAX_NAME = 60
 MAX_DESCRIPTION = 2000
@@ -121,6 +121,8 @@ def create_project(user_id: int, name: str) -> Project:
 def delete_project(user_id: int, project_id: int) -> bool:
     """Delete for good. False if the project does not exist or is not the user's."""
     with db.connect() as conn:
+        if conn.execute("SELECT 1 FROM projects WHERE id = ? AND user_id = ?", (project_id, user_id)).fetchone():
+            agents.queue_wipes(conn, project_id)   # its code and work folders, which only the runner can delete
         cur = conn.execute(
             "DELETE FROM projects WHERE id = ? AND user_id = ?", (project_id, user_id)
         )

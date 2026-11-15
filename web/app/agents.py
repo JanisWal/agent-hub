@@ -579,6 +579,31 @@ def merge_done(task_id: int, ok: bool, now: int | None = None) -> bool:
     return True
 
 
+def queue_wipes(conn: sqlite3.Connection, project_id: int) -> None:
+    """A project is being deleted (projects.delete_project, users.purge_deleted; same transaction, before the rows
+    go): the runner has to delete its code repository and the work folders of its tasks."""
+    now = int(time.time())
+    conn.execute("INSERT OR IGNORE INTO work_wipes (kind, ref, created_at) VALUES ('project', ?, ?)", (project_id, now))
+    conn.execute("INSERT OR IGNORE INTO work_wipes (kind, ref, created_at)"
+                 " SELECT 'task', id, ? FROM agent_tasks WHERE project_id = ?", (now, project_id))
+
+
+WIPE_KINDS = ("project", "task")
+
+
+def pending_wipes() -> list[dict]:
+    """Runner: the folders of deleted projects that are still to be deleted, as {"kind", "ref"}."""
+    with db.connect() as conn:
+        return [{"kind": r["kind"], "ref": r["ref"]} for r in conn.execute(
+            "SELECT kind, ref FROM work_wipes ORDER BY created_at, kind, ref LIMIT 200")]
+
+
+def wipe_done(kind: str, ref: int) -> bool:
+    """Runner: the folder is gone; the note about it goes too."""
+    with db.connect() as conn:
+        return conn.execute("DELETE FROM work_wipes WHERE kind = ? AND ref = ?", (kind, ref)).rowcount == 1
+
+
 def finished_tasks(now: int | None = None) -> list[int]:
     """Runner: tasks of the last CLEAN_DAYS that are over (done and merged, or cancelled): their folders can go."""
     now = int(now if now is not None else time.time())

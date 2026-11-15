@@ -373,10 +373,27 @@ class IsolationTest(unittest.TestCase):
 
     def test_deleting_an_account_leaves_the_others_alone(self):
         owner = users.create_user("owner@example.com", "Own3r!pass", role="owner")
-        users.delete_user(owner, self.b.id)
+        users.delete_user(owner, self.b.id, now=1000)
+        users.purge_deleted(now=1000 + (users.DELETED_DAYS + 1) * 86400)
         self.assertEqual(len(board.list_items(self.a.id, self.project.id)), 3)
         self.assertEqual(len(projects.layout(self.a.id)[0]), 2)
         self.assertEqual(board.list_items(self.b.id, self.mine.id), [])
+
+    def test_bringing_an_account_back_gives_only_its_own_data(self):
+        """Inviting the address of a deleted account restores that account, never anything of somebody else."""
+        owner = users.create_user("owner@example.com", "Own3r!pass", role="owner")
+        users.delete_user(owner, self.b.id)
+        back = users.add_user(owner, self.b.email, "Neustart1")
+        self.assertEqual(back.id, self.b.id)
+        self.assertEqual({p.id for page in projects.layout(back.id) for p in page}, {self.mine.id})
+        self.assertEqual(board.list_items(back.id, self.project.id), [])       # A's project stays A's
+
+    def test_the_folders_of_a_deleted_project_are_queued_for_its_owner_only(self):
+        from app import agents
+        self.assertFalse(projects.delete_project(self.b.id, self.project.id))  # not his: nothing is queued
+        self.assertEqual(agents.pending_wipes(), [])
+        self.assertTrue(projects.delete_project(self.b.id, self.mine.id))
+        self.assertEqual(agents.pending_wipes(), [{"kind": "project", "ref": self.mine.id}])
 
 
 class PasswordResetRequestsAreLimitedTest(unittest.TestCase):

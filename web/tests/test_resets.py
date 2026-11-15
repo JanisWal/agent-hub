@@ -89,11 +89,13 @@ class ResetsTest(unittest.TestCase):
         self.assertFalse(resets.consume("nope", "Neu!Pass12"))
 
     def test_deleting_the_user_removes_the_tokens(self):
-        resets.create_token("me@example.com")
+        _, token = resets.create_token("me@example.com")
         owner = users.create_user("owner@example.com", "Own3r!pass", role="owner")
         users.delete_user(owner, self.user.id)
         with db.connect() as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM password_resets").fetchone()[0], 0)
+        self.assertIsNone(resets.user_for_token(token))
+        self.assertIsNone(resets.create_token("me@example.com", ))            # a deleted account gets no reset link
 
 
 class MailTest(unittest.TestCase):

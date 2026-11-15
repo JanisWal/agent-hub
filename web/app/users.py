@@ -6,6 +6,12 @@ Only the owner makes or removes admins, and only he can hand the ownership to so
 (`transfer_owner`, he becomes an admin then). Nobody is the owner for good: the role moves, but
 there is never more than one owner (checked in `create_user` and `transfer_owner`, and the
 database refuses a second one too). Accounts are never created by the visitor himself.
+
+Deleting (Janis, 15.11.2026): a deleted account is only locked at first (`deleted_at`): nobody can log in, it is in
+no list, its AI credentials go at once, but its projects, files and settings stay as they are. Inviting the same
+address again within DELETED_DAYS brings it back exactly as it was (`add_user`), as a normal user. After that time
+`purge_deleted` removes the account and everything of it for good: no row, no file, no folder, no note that it
+ever existed.
 """
 import hashlib
 import hmac
@@ -14,13 +20,14 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-from . import ai_link, db, files
+from . import agents, ai_link, claude_link, db, files
 
 SESSION_SECONDS = 14 * 24 * 3600
 MIN_PASSWORD_LENGTH = 6      # floor for every password, also a start password given by an admin
 MIN_DIGITS = 2               # extra rule for passwords people choose themselves (password_problem)
 MAX_DISPLAY_NAME = 40
 MAX_EMAIL_LENGTH = 254       # the longest address that exists (RFC 5321)
+DELETED_DAYS = 30            # a deleted account can be brought back this long, then it is gone for good
 ROLES = ("owner", "admin", "user")
 
 # scrypt cost parameters (about 16 MiB RAM per hash, fine for a Pi 4)
@@ -138,8 +145,9 @@ def owner_exists() -> bool:
 def check_login(email: str, password: str) -> User | None:
     """Return the user if e-mail and password match, else None."""
     with db.connect() as conn:
-        row = conn.execute("SELECT * FROM users WHERE email = ?", (_normalize(email),)).fetchone()
-    if row is None:
+        row = conn.execute("SELECT * FROM users WHERE email = ? AND deleted_at IS NULL",
+                           (_normalize(email),)).fetchone()
+    if row is None:   # also a deleted account: it answers like an address nobody has
         _verify_password(password, _DUMMY_HASH)
         return None
     return _to_user(row) if _verify_password(password, row["password_hash"]) else None
@@ -184,8 +192,9 @@ def set_theme(user_id: int, theme: str) -> None:
 # ----- managing users -----
 
 def get_by_id(user_id: int) -> User | None:
+    """The account with this number; None also for a deleted one (it can not be managed, reset or logged in to)."""
     with db.connect() as conn:
-        row = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+        row = conn.execute("SELECT * FROM users WHERE id = ? AND deleted_at IS NULL", (user_id,)).fetchone()
     return _to_user(row) if row else None
 
 
@@ -202,15 +211,28 @@ def list_users(actor: User) -> list[User]:
         raise PermissionError
     with db.connect() as conn:
         rows = conn.execute(
-            "SELECT * FROM users ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, id"
+            "SELECT * FROM users WHERE deleted_at IS NULL ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, id"
         ).fetchall()
     return [_to_user(row) for row in rows]
 
 
 def add_user(actor: User, email: str, start_password: str) -> User:
-    """Owner or admin creates a normal user with a start password that must be changed at once."""
+    """Owner or admin creates a normal user with a start password that must be changed at once. If an account with
+    this address was deleted less than DELETED_DAYS ago, that account comes back instead, with everything it had
+    (projects, files, settings), as a normal user and with the new start password."""
     if not actor.is_admin:
         raise PermissionError
+    purge_deleted()   # an account past its time is gone first: it must not come back
+    if len(start_password) >= MIN_PASSWORD_LENGTH:
+        with db.connect() as conn:
+            row = conn.execute("SELECT id FROM users WHERE email = ? AND deleted_at IS NOT NULL",
+                               (_normalize(email),)).fetchone()
+            if row is not None:
+                conn.execute(
+                    "UPDATE users SET deleted_at = NULL, role = 'user', password_hash = ?, must_change_password = 1"
+                    " WHERE id = ?", (_hash_password(start_password), row["id"]))
+        if row is not None:
+            return get_by_id(row["id"])
     return create_user(email, start_password, role="user", must_change=True)
 
 
@@ -247,17 +269,41 @@ def reset_password(actor: User, user_id: int, start_password: str) -> None:
     set_password(target.id, start_password, must_change=True)
 
 
-def delete_user(actor: User, user_id: int) -> None:
-    """Delete an account with its projects, board items and sessions (cascade)."""
+def delete_user(actor: User, user_id: int, now: int | None = None) -> None:
+    """Delete an account: it is locked now and gone for good after DELETED_DAYS (`purge_deleted`). Its sessions and
+    reset links end, its saved AI credentials are deleted at once (a removed person's token does not stay on the
+    server); its projects, files and settings stay untouched, so `add_user` can bring it back as it was. It comes
+    back as a normal user: admin rights are given anew by the owner."""
     target = _managed(actor, user_id)
     with db.connect() as conn:
-        # The cascade removes his rows, but not his saved Claude login on the runner's disk: queue the
-        # deletion of that folder (claude_link.pending_wipes), in the same transaction as the deletion.
-        conn.execute("INSERT OR IGNORE INTO claude_wipes (user_id, created_at) VALUES (?, strftime('%s','now'))",
-                     (target.id,))
-        ai_link.wipe_user(conn, target.id)   # and his saved API keys (Mistral)
-        conn.execute("DELETE FROM users WHERE id = ?", (target.id,))
-    files.remove_orphans()   # the stored files of his projects
+        conn.execute("UPDATE users SET deleted_at = ?, role = 'user' WHERE id = ?",
+                     (int(now if now is not None else time.time()), target.id))
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (target.id,))
+        conn.execute("DELETE FROM password_resets WHERE user_id = ?", (target.id,))
+        claude_link.wipe_user(conn, target.id)   # the runner deletes the saved Claude token ...
+        ai_link.wipe_user(conn, target.id)       # ... and the saved API keys
+
+
+def purge_deleted(now: int | None = None) -> int:
+    """Remove for good every account that was deleted more than DELETED_DAYS ago: the row with its projects, board,
+    chats and settings (cascade), the stored files, and through the runner the code and work folders of its projects
+    and whatever is left of its AI credentials. Nothing stays that says the account ever existed. Returns how many."""
+    limit = int(now if now is not None else time.time()) - DELETED_DAYS * 86400
+    with db.connect() as conn:
+        gone = [r["id"] for r in conn.execute(
+            "SELECT id FROM users WHERE deleted_at IS NOT NULL AND deleted_at < ?", (limit,))]
+        for user_id in gone:
+            for project in conn.execute("SELECT id FROM projects WHERE user_id = ?", (user_id,)).fetchall():
+                agents.queue_wipes(conn, project["id"])
+            # The cascade removes the rows, not what the runner keeps on its disk: queue those deletions in the same
+            # transaction (the queues hold a number only and empty themselves when the runner is done).
+            conn.execute("INSERT OR IGNORE INTO claude_wipes (user_id, created_at) VALUES (?, strftime('%s','now'))",
+                         (user_id,))
+            ai_link.wipe_user(conn, user_id)
+            conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    if gone:
+        files.remove_orphans()   # the stored files of their projects
+    return len(gone)
 
 
 def set_admin(actor: User, user_id: int, make_admin: bool) -> None:
@@ -344,7 +390,7 @@ def get_user(token: str | None) -> User | None:
     with db.connect() as conn:
         row = conn.execute(
             "SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id"
-            " WHERE s.token_hash = ? AND s.expires_at > ?",
+            " WHERE s.token_hash = ? AND s.expires_at > ? AND u.deleted_at IS NULL",
             (hash_token(token), int(time.time())),
         ).fetchone()
     return _to_user(row) if row else None

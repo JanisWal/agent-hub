@@ -135,5 +135,43 @@ class CodeChannelTest(unittest.TestCase):
         self.assertNotIn("super-secret-code", dump)
 
 
+class CleanupTest(unittest.TestCase):
+    """Deleted projects and accounts: the runner gets their folders to delete, and the note goes when it is done."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        db.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        self.owner = users.create_user("o@example.com", "Oooo!pass12", role="owner")
+        self.a = users.create_user("a@example.com", "Aaaa!pass12")
+        self.project = projects.create_project(self.a.id, "P")
+        item = board.create_item(self.a.id, self.project.id, "bug", "x")
+        self.task = agents.start_task(self.a.id, self.project.id, item.id)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_a_deleted_project_queues_its_code_and_task_folders(self):
+        self.assertEqual(runner.cleanups()["wipes"], [])
+        projects.delete_project(self.a.id, self.project.id)
+        wipes = runner.cleanups()["wipes"]
+        self.assertCountEqual(wipes, [{"kind": "project", "ref": self.project.id}, {"kind": "task", "ref": self.task.id}])
+        self.assertEqual(runner.cleanup_done("folder", 1).status_code, 400)
+        self.assertTrue(runner.cleanup_done("project", self.project.id)["ok"])
+        self.assertEqual(runner.cleanup_done("project", self.project.id).status_code, 409)   # reported already
+        self.assertTrue(runner.cleanup_done("task", self.task.id)["ok"])
+        self.assertEqual(runner.cleanups()["wipes"], [])
+
+    def test_an_account_deleted_long_ago_goes_when_the_runner_asks(self):
+        users.delete_user(self.owner, self.a.id)
+        self.assertEqual(runner.cleanups()["wipes"], [])                       # still inside its time
+        with db.connect() as conn:
+            conn.execute("UPDATE users SET deleted_at = 1000 WHERE id = ?", (self.a.id,))
+        kinds = sorted(w["kind"] for w in runner.cleanups()["wipes"])
+        self.assertEqual(kinds, ["project", "task"])
+        with db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM users WHERE id = ?", (self.a.id,)).fetchone()[0], 0)
+        self.assertIn(self.a.id, claude_link.pending_wipes())                  # whatever is left of his Claude folder
+
+
 if __name__ == "__main__":
     unittest.main()

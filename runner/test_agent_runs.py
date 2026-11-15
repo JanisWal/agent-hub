@@ -176,8 +176,9 @@ class FakeTickets:
 
 
 class FakeHub:
-    def __init__(self, job=None, merges=(), cleanups=()):
+    def __init__(self, job=None, merges=(), cleanups=(), wipes=()):
         self.job, self.merges, self.cleanups, self.calls = job, list(merges), list(cleanups), []
+        self.wipes = list(wipes)
 
     def call(self, method, path, **form):
         self.calls.append((path, form))
@@ -187,7 +188,7 @@ class FakeHub:
         if path == "/runner/merges":
             return {"ok": True, "merges": self.merges}
         if path == "/runner/cleanups":
-            return {"ok": True, "task_ids": self.cleanups}
+            return {"ok": True, "task_ids": self.cleanups, "wipes": self.wipes}
         return {"ok": True}
 
     def posted(self, suffix):
@@ -248,6 +249,19 @@ class RunTest(unittest.TestCase):
         self.assertEqual(hub.posted("/runner/merges/7/done"), [{"success": "1"}])
         r.handle_cleanups()
         self.assertFalse(tree.exists())
+
+    def test_the_folders_of_a_deleted_project_go_and_are_reported(self):
+        tree = self.work.prepare(7, 1, "agent/task-7")
+        other = self.work.prepare(8, 2, "agent/task-8")
+        hub = FakeHub(wipes=[{"kind": "task", "ref": 7}, {"kind": "project", "ref": 1}, {"kind": "disk", "ref": 1},
+                             {"kind": "project", "ref": 0}])
+        self.runner(hub).handle_cleanups()
+        self.assertFalse(tree.exists())
+        self.assertFalse(self.work.gitdir(7).exists())
+        self.assertFalse(self.work.repo(1).exists())
+        self.assertTrue(other.exists() and self.work.repo(2).exists())         # another project is not touched
+        self.assertEqual(hub.posted("/runner/cleanups/done"),
+                         [{"kind": "task", "ref": 7}, {"kind": "project", "ref": 1}])   # unknown kinds: nothing
 
 
 if __name__ == "__main__":
