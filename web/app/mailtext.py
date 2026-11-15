@@ -17,7 +17,9 @@ flat mail. Outlook for Windows gets no pictures (no round corners there) but a f
 Robust against recolouring: every cell carries its colours explicitly, no pure white or black, and `[data-ogsc]`
 and `[data-ogsb]` (set by Outlook.com and its apps when they recolour) bring our colours back. Yahoo's dark mode (Janis' screenshots, 15.11.2026) recolours a
 cell only by its `bgcolor` attribute and leaves cells with a background picture light: so every cell that must follow the
-card carries `bgcolor` and no picture (the halo of the button is a shadow, not a picture). Programs that
+card carries `bgcolor` and no picture (the halo of the button is a shadow, not a picture). Some programs lighten the colour of links and of CSS borders in their dark mode (Janis' screenshot, 15.11.2026: the button text
+turned pale on orange, the side lines turned cream): the button text sits in a `span` inside the link, and the side
+lines of the card are narrow cells with `bgcolor`, not CSS borders. Programs that
 recolour on their own (Gmail app) we cannot stop, so the colours are chosen to stay readable when inverted.
 Texts live in i18n.py (`mail_<kind>_subject|body|button|note`), so they exist in both languages.
 """
@@ -86,7 +88,9 @@ HTML = """<!doctype html>
 <!--[if mso]>
     <tr><td bgcolor="%CARD%" height="24" style="background-color:%CARD%;border-top:1px solid %BORDER%;border-left:1px solid %BORDER%;border-right:1px solid %BORDER%;font-size:0;line-height:0;">&nbsp;</td></tr>
 <![endif]-->
-    <tr><td class="card" bgcolor="%CARD%" style="background-color:%CARD%;border-left:1px solid %BORDER%;border-right:1px solid %BORDER%;padding:0 32px;font-family:%FONT%;color:%TEXT%;">
+    <tr><td style="padding:0;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;"><tr>
+    <td width="1" bgcolor="%BORDER%" style="width:1px;background-color:%BORDER%;font-size:0;line-height:0;">&nbsp;</td>
+    <td class="card" bgcolor="%CARD%" style="background-color:%CARD%;padding:0 32px;font-family:%FONT%;color:%TEXT%;">
       <h1 class="t" style="margin:0 0 16px;font-family:%FONT%;font-size:30px;line-height:1.15;mso-line-height-rule:exactly;font-weight:700;letter-spacing:-0.03em;color:%TEXT%;">%GREETING%</h1>
       <p class="t" style="margin:0 0 28px;font-family:%FONT%;font-size:17px;line-height:1.55;color:%TEXT%;">%BODY%</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:320px;margin:0 auto;"><tr>
@@ -97,7 +101,7 @@ HTML = """<!doctype html>
 <!--[if !mso]><!-->
           <table role="presentation" width="260" cellpadding="0" cellspacing="0" border="0" align="center" style="width:260px;margin:0 auto;"><tr>
             <td class="btn" align="center" bgcolor="%ACCENT%"%SHEEN_PIC% style="width:260px;height:54px;border-radius:16px;background-color:%ACCENT%;box-shadow:0 0 18px 2px rgba(%ACCENT_RGB%,0.45);%SHEEN_CSS%">
-              <a class="bt" href="%LINK%" style="display:block;height:54px;line-height:54px;white-space:nowrap;font-family:%FONT%;font-size:17px;font-weight:700;color:%ON_ACCENT%;text-decoration:none;border-radius:16px;">%BUTTON%</a>
+              <a class="bt" href="%LINK%" style="display:block;height:54px;line-height:54px;white-space:nowrap;font-family:%FONT%;font-size:17px;font-weight:700;color:%ON_ACCENT%;text-decoration:none;border-radius:16px;"><span class="bt" style="color:%ON_ACCENT%;">%BUTTON%</span></a>
             </td>
           </tr></table>
 <!--<![endif]-->
@@ -106,7 +110,9 @@ HTML = """<!doctype html>
       <p class="m" style="margin:20px 0 4px;font-size:13px;line-height:1.4;color:%MUTED%;">%LINK_HELP%</p>
       <p class="m" style="margin:0;font-size:13px;line-height:1.4;word-break:break-all;"><a href="%LINK%" style="color:%MUTED%;">%LINK_TEXT%</a></p>
       <p class="m" style="margin:28px 0 0;font-size:13px;line-height:1.55;color:%MUTED%;">%NOTE%</p>
-    </td></tr>
+    </td>
+    <td width="1" bgcolor="%BORDER%" style="width:1px;background-color:%BORDER%;font-size:0;line-height:0;">&nbsp;</td>
+    </tr></table></td></tr>
 <!--[if !mso]><!-->
     <tr><td class="card" bgcolor="%CARD%" style="padding:0;font-size:0;line-height:0;background-color:%CARD%;border-radius:0 0 28px 28px;">%CAP_BOTTOM%</td></tr>
 <!--<![endif]-->
