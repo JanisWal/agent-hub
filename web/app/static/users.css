@@ -17,6 +17,8 @@
 .user-main { display: flex; flex-direction: column; min-width: 0; }
 .user-email { font-weight: 600; overflow-wrap: anywhere; }
 .user-role { font-size: 0.78rem; color: var(--muted); }
+.user-note { font-size: 0.78rem; color: var(--success); }
+.user-note.is-error { color: var(--error); }
 .user-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
 .user-actions .icon-button { background: none; border: 0; box-shadow: none; color: var(--muted); }
 .user-actions .icon-button:hover { color: var(--text); transform: none; }

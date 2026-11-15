@@ -33,6 +33,27 @@ def add_user(email: str = Form(""), user: users.User = Depends(api_user)):
     return ok()
 
 
+@router.post("/users/{user_id}/invite")
+def resend_invitation(user_id: int, user: users.User = Depends(api_user)):
+    """Send the invitation mail again to an account that has not chosen its password yet. The new link replaces
+    the old one (`resets.create_token`), and one mail per account and minute at most (the same cooldown as "forgot
+    password"). Nothing is removed if the mail fails: the account stays, only the answer says so."""
+    if not user.is_admin:
+        return fail(403)
+    try:
+        account = users.pending_invitation(user, user_id)
+    except PermissionError:
+        return error(user.language, "err_forbidden", 403)
+    except users.UserError as problem:
+        return error(user.language, "err_not_found" if problem.code == "not_found" else "err_not_pending", 400)
+    created = resets.create_token(account.email, resets.INVITE_SECONDS)
+    if created is None:
+        return error(user.language, "err_invite_wait", 429)
+    if not mailtext.send_link_mail("invite", account, created[1], resets.INVITE_SECONDS):
+        return error(user.language, "err_mail_resend", 502)
+    return ok(message=i18n.t(user.language, "invite_sent"))
+
+
 @router.post("/users/{user_id}/reset")
 def reset_password(
     request: Request, user_id: int, password: str = Form(""), confirm: str = Form(""),

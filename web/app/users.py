@@ -295,6 +295,16 @@ def is_deleted(email: str) -> bool:
                             (_normalize(email),)).fetchone() is not None
 
 
+def pending_invitation(actor: User, user_id: int) -> User:
+    """The account an invitation can be sent to again: one the actor manages that still has its start password
+    (`must_change`). PermissionError for a foreign rank, UserError "not_found", or "not_pending" for somebody
+    who already chose a password (a new link would let anybody with the mailbox reset it: that is "forgot password")."""
+    target = _managed(actor, user_id)
+    if not target.must_change:
+        raise UserError("not_pending")
+    return target
+
+
 def cancel_invitation(actor: User, user_id: int, restored: bool) -> None:
     """The invitation mail could not be sent. An account that was brought back is deleted again (it keeps its
     data); a new one has nothing yet and goes at once, so no account is left that nobody can reach."""
