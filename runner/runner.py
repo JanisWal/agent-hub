@@ -318,8 +318,20 @@ class Runner:
             self.api.call("POST", f"/runner/merges/{task_id}/done", success="1" if ok else "0")
 
     def handle_cleanups(self) -> None:
-        for task_id in self.api.call("GET", "/runner/cleanups").get("task_ids", []):
+        """Folders of finished tasks, and everything of deleted projects (their code and their tasks' folders): the
+        hub forgets a deleted project only when its folders are really gone."""
+        data = self.api.call("GET", "/runner/cleanups")
+        for task_id in data.get("task_ids", []):
             self.work.remove(int(task_id))
+        for item in data.get("wipes", []):
+            kind, ref = item.get("kind"), int(item.get("ref", 0))
+            remove = {"task": self.work.remove, "project": self.work.remove_project}.get(kind)
+            if remove is None or ref < 1:
+                continue
+            if not remove(ref):   # not everything could be deleted: it stays queued, try again next round
+                print(f"runner: could not delete the folders of {kind} {ref}", file=sys.stderr, flush=True)
+                continue
+            self.api.call("POST", "/runner/cleanups/done", kind=kind, ref=ref)
 
     # --- restart, shutdown or backup of the Pi, asked for by the owner (web/app/power.py)
     def _run_power(self, command: list[str]):

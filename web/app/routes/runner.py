@@ -16,7 +16,7 @@ import os
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 
-from .. import agents, ai_link, chat, claude_link, power, throttle
+from .. import agents, ai_link, chat, claude_link, power, throttle, users
 from ..deps import fail, ok
 
 TOKEN_HASH_ENV = "HUB_RUNNER_TOKEN_HASH"
@@ -69,8 +69,17 @@ def merge_done(task_id: int, success: str = Form("0")):
 
 @router.get("/cleanups")
 def cleanups():
-    """Finished tasks: the runner deletes their work folders."""
-    return ok(task_ids=agents.finished_tasks())
+    """Finished tasks: the runner deletes their work folders. `wipes`: the code and work folders of deleted projects.
+    The runner asks all the time, so this is also where accounts deleted long ago go for good (users.purge_deleted)."""
+    users.purge_deleted()
+    return ok(task_ids=agents.finished_tasks(), wipes=agents.pending_wipes())
+
+
+@router.post("/cleanups/done")
+def cleanup_done(kind: str = Form(""), ref: int = Form(0)):
+    if kind not in agents.WIPE_KINDS:
+        return fail(400)
+    return ok() if agents.wipe_done(kind, ref) else fail(409)
 
 
 @router.post("/chat/claim")

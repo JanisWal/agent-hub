@@ -197,6 +197,12 @@ def disconnect(user_id: int, now: int | None = None) -> bool:
     return True
 
 
+def wipe_user(conn: sqlite3.Connection, user_id: int) -> None:
+    """The account is being deleted (users.delete_user, same transaction): like `disconnect`, the saved token goes."""
+    conn.execute("UPDATE claude_connections SET status = 'wipe', login_url = NULL WHERE user_id = ?", (user_id,))
+    _codes.pop(user_id, None)
+
+
 def expired_users(now: int | None = None) -> list[int]:
     """Runner: users whose token has run out or was refused (Janis, 14.11.2026: expired tokens are deleted on their
     own). The runner deletes their saved token; the state stays "expired", so the menu still offers "renew"."""

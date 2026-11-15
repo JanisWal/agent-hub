@@ -329,10 +329,12 @@ def start_task(user_id: int, project_id: int, item_id: int, needs: str = "any",
             raise ValueError("Unbekannter Punkt")
         if _taken(conn, item_id):
             raise ValueError("Punkt ist schon in Arbeit")
+        # never the number of a deleted task whose work folder the runner has not deleted yet
+        new_id = db.fresh_id(conn, "agent_tasks", "SELECT MAX(ref) FROM work_wipes WHERE kind = 'task'")
         cur = conn.execute(
-            "INSERT INTO agent_tasks (project_id, item_id, title, kind, needs, status, round,"
-            " created_at, deadline) VALUES (?, ?, ?, ?, ?, 'coding', 1, ?, ?)",
-            (project_id, item_id, item["title"], item["kind"], needs, now, now + TASK_SECONDS),
+            "INSERT INTO agent_tasks (id, project_id, item_id, title, kind, needs, status, round,"
+            " created_at, deadline) VALUES (?, ?, ?, ?, ?, ?, 'coding', 1, ?, ?)",
+            (new_id, project_id, item_id, item["title"], item["kind"], needs, now, now + TASK_SECONDS),
         )
         _queue(conn, user_id, cur.lastrowid, "coding", now)
         row = conn.execute("SELECT * FROM agent_tasks WHERE id = ?", (cur.lastrowid,)).fetchone()
@@ -577,6 +579,31 @@ def merge_done(task_id: int, ok: bool, now: int | None = None) -> bool:
                    workflow.Step("escalated", task["round"], bool(task["manual_check"])), now,
                    "merge conflict with main: send it back for another round")
     return True
+
+
+def queue_wipes(conn: sqlite3.Connection, project_id: int) -> None:
+    """A project is being deleted (projects.delete_project, users.purge_deleted; same transaction, before the rows
+    go): the runner has to delete its code repository and the work folders of its tasks."""
+    now = int(time.time())
+    conn.execute("INSERT OR IGNORE INTO work_wipes (kind, ref, created_at) VALUES ('project', ?, ?)", (project_id, now))
+    conn.execute("INSERT OR IGNORE INTO work_wipes (kind, ref, created_at)"
+                 " SELECT 'task', id, ? FROM agent_tasks WHERE project_id = ?", (now, project_id))
+
+
+WIPE_KINDS = ("project", "task")
+
+
+def pending_wipes() -> list[dict]:
+    """Runner: the folders of deleted projects that are still to be deleted, as {"kind", "ref"}."""
+    with db.connect() as conn:
+        return [{"kind": r["kind"], "ref": r["ref"]} for r in conn.execute(
+            "SELECT kind, ref FROM work_wipes ORDER BY created_at, kind, ref LIMIT 200")]
+
+
+def wipe_done(kind: str, ref: int) -> bool:
+    """Runner: the folder is gone; the note about it goes too."""
+    with db.connect() as conn:
+        return conn.execute("DELETE FROM work_wipes WHERE kind = ? AND ref = ?", (kind, ref)).rowcount == 1
 
 
 def finished_tasks(now: int | None = None) -> list[int]:

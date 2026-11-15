@@ -98,15 +98,76 @@ class AccountsTest(unittest.TestCase):
         self.assertTrue(again.must_change)
         self.assertIsNone(users.check_login("user@example.com", "Start1234"))
 
-    def test_delete_user_removes_projects_and_sessions(self):
+    def _count(self, sql, *args):
+        with db.connect() as conn:
+            return conn.execute(sql, args).fetchone()[0]
+
+    def test_a_deleted_account_is_locked_but_keeps_its_data(self):
         project = projects.create_project(self.user.id, "Mine")
         board.create_item(self.user.id, project.id, "bug", "x")
         token = users.create_session(self.user.id)
         users.delete_user(self.admin, self.user.id)
-        self.assertIsNone(users.get_by_id(self.user.id))
-        self.assertIsNone(users.get_user(token))
+        self.assertIsNone(users.get_by_id(self.user.id))                       # can not be managed any more
+        self.assertIsNone(users.get_user(token))                               # the session ended
+        self.assertIsNone(users.check_login("user@example.com", "Start1234"))  # no login
+        self.assertNotIn(self.user.id, [u.id for u in users.list_users(self.owner)])
+        self.assertEqual(self._count("SELECT COUNT(*) FROM sessions WHERE user_id = ?", self.user.id), 0)
+        self.assertEqual(self._count("SELECT COUNT(*) FROM projects WHERE user_id = ?", self.user.id), 1)
+        self.assertEqual(len(board.list_items(self.user.id, project.id)), 1)   # nothing of it was touched
+
+    def test_inviting_the_address_again_brings_the_account_back_as_it_was(self):
+        project = projects.create_project(self.user.id, "Mine")
+        users.set_profile(self.user.id, "Uwe", "en")
+        users.delete_user(self.admin, self.user.id)
+        back = users.add_user(self.owner, " User@Example.com ", "Neustart1")
+        self.assertEqual(back.id, self.user.id)                                # the same account, not a new one
+        self.assertEqual((back.display_name, back.language, back.role), ("Uwe", "en", "user"))
+        self.assertTrue(back.must_change)
+        self.assertIsNone(users.check_login("user@example.com", "Start1234"))  # the old password is gone
+        self.assertIsNotNone(users.check_login("user@example.com", "Neustart1"))
+        self.assertEqual([p.id for page in projects.layout(back.id) for p in page], [project.id])
+        self.assertEqual(users.purge_deleted(now=10**10), 0)                   # it is not deleted any more
+
+    def test_a_deleted_admin_comes_back_as_a_normal_user(self):
+        users.delete_user(self.owner, self.admin.id)
+        back = users.add_user(self.owner, "admin@example.com", "Neustart1")
+        self.assertEqual((back.id, back.role, back.is_admin), (self.admin.id, "user", False))
+
+    def test_after_the_time_nothing_of_the_account_is_left(self):
+        project = projects.create_project(self.user.id, "Mine")
+        board.create_item(self.user.id, project.id, "bug", "x")
+        users.delete_user(self.admin, self.user.id, now=1000)
+        day = 86400
+        self.assertEqual(users.purge_deleted(now=1000 + users.DELETED_DAYS * day - 5), 0)    # not yet
+        self.assertEqual(self._count("SELECT COUNT(*) FROM users WHERE id = ?", self.user.id), 1)
+        self.assertEqual(users.purge_deleted(now=1000 + users.DELETED_DAYS * day + 5), 1)
+        for table, column in (("users", "id"), ("projects", "user_id"), ("sessions", "user_id"),
+                              ("agent_settings", "user_id"), ("chat_archive", "user_id")):
+            self.assertEqual(self._count(f"SELECT COUNT(*) FROM {table} WHERE {column} = ?", self.user.id), 0, table)
+        self.assertEqual(self._count("SELECT COUNT(*) FROM board_items WHERE project_id = ?", project.id), 0)
+        self.assertEqual(self._count("SELECT COUNT(*) FROM users WHERE email = 'user@example.com'"), 0)
+        new = users.add_user(self.owner, "user@example.com", "Neustart1")     # a later invitation is a new account
+        self.assertNotEqual(new.id, self.user.id)                              # its number is not given out again ...
+        self.assertEqual(projects.layout(new.id), [])
+        from app import claude_link
+        claude_link.wiped(self.user.id)                                        # ... until the runner deleted the folders
+        self.assertEqual(self._count("SELECT COUNT(*) FROM claude_wipes"), 0)
+
+    def test_a_number_waiting_for_its_folders_is_not_given_to_a_new_project(self):
+        from app import agents
+        project = projects.create_project(self.user.id, "Mine")               # the newest project
+        projects.delete_project(self.user.id, project.id)
+        again = projects.create_project(self.user.id, "Next")
+        self.assertNotEqual(again.id, project.id)                              # else it would inherit the old code
+        self.assertTrue(agents.wipe_done("project", project.id))
+        self.assertEqual(agents.pending_wipes(), [])
+
+    def test_the_time_to_bring_an_account_back_ends_before_an_invitation(self):
+        users.delete_user(self.admin, self.user.id)
         with db.connect() as conn:
-            self.assertEqual(conn.execute("SELECT COUNT(*) FROM projects WHERE user_id = ?", (self.user.id,)).fetchone()[0], 0)
+            conn.execute("UPDATE users SET deleted_at = 1000 WHERE id = ?", (self.user.id,))   # long ago
+        new = users.add_user(self.owner, "user@example.com", "Neustart1")
+        self.assertNotEqual(new.id, self.user.id)
 
     # --- own password
     def test_change_own_password(self):

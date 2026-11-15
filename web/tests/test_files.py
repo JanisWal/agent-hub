@@ -354,7 +354,9 @@ class FilesTest(unittest.TestCase):
     def test_deleting_an_account_removes_its_files_from_the_disk(self):
         owner = users.create_user("o@example.com", "Oooo!pass12", role="owner")
         item = self.upload("a.txt", b"x")
-        users.delete_user(owner, self.user.id)
+        users.delete_user(owner, self.user.id, now=1000)
+        self.assertTrue(files.path_of(self.project.id, item.id).exists())      # kept while the account can come back
+        users.purge_deleted(now=1000 + (users.DELETED_DAYS + 1) * 86400)
         self.assertFalse(files.path_of(self.project.id, item.id).exists())
 
     # --- links

@@ -24,7 +24,7 @@ def create_token(email: str, valid_seconds: int = TOKEN_SECONDS) -> tuple[users.
     now = int(time.time())
     with db.connect() as conn:
         conn.execute("DELETE FROM password_resets WHERE expires_at <= ?", (now,))
-        row = conn.execute("SELECT id FROM users WHERE email = ?", (email.strip().lower(),)).fetchone()
+        row = conn.execute("SELECT id FROM users WHERE email = ? AND deleted_at IS NULL", (email.strip().lower(),)).fetchone()
         if row is None:
             return None
         recent = conn.execute(

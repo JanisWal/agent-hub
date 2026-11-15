@@ -95,8 +95,18 @@ class Workspace:
         self._git("update-ref", "refs/heads/main", f"refs/heads/{branch}", git_dir=repo)
         return True
 
-    def remove(self, task_id: int) -> None:
-        """The task is over: its folder and its git side go (the branch stays in the project's repository)."""
-        for path in (self.tree(task_id), self.gitdir(task_id)):
+    def remove(self, task_id: int) -> bool:
+        """The task is over: its folder and its git side go (the branch stays in the project's repository). True
+        if nothing of them is left."""
+        return self._delete(self.tree(task_id), self.gitdir(task_id))
+
+    def remove_project(self, project_id: int) -> bool:
+        """The project was deleted: its code repository goes for good. True if nothing of it is left."""
+        return self._delete(self.repo(project_id))
+
+    @staticmethod
+    def _delete(*paths: Path) -> bool:
+        for path in paths:
             if path.exists():
                 shutil.rmtree(path, ignore_errors=True)
+        return not any(path.exists() for path in paths)

@@ -174,6 +174,15 @@ CREATE TABLE IF NOT EXISTS ai_connections (
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (user_id, provider)
 );
+-- Folders the runner still has to delete (agents.py): the code repository of a deleted project ('project') and the
+-- work folder of one of its tasks ('task'). No foreign key: the rows they belonged to are gone. A row leaves when the
+-- runner reports the folder gone, so nothing of a deleted project or account stays behind, here or on the disk.
+CREATE TABLE IF NOT EXISTS work_wipes (
+    kind       TEXT NOT NULL,
+    ref        INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (kind, ref)
+);
 -- Settings of the whole server, chosen by the owner (serversettings.py), e.g. how uploads are cut.
 CREATE TABLE IF NOT EXISTS server_settings (
     key   TEXT PRIMARY KEY,
@@ -191,6 +200,7 @@ NEW_COLUMNS = {
         "must_change_password": "INTEGER NOT NULL DEFAULT 0",
         "theme": "TEXT NOT NULL DEFAULT 'light'",
         "files_confirm": "INTEGER NOT NULL DEFAULT 1",    # does deleting a file ask first? (the trash circle of the file tile)
+        "deleted_at": "INTEGER",                          # when the account was deleted; gone for good DELETED_DAYS later (users.py)
     },
     "projects": {"page": "INTEGER NOT NULL DEFAULT 0", "description": "TEXT NOT NULL DEFAULT ''",
                  "memory_seeded": "INTEGER NOT NULL DEFAULT 0"},   # the fixed memory files were made (memory.py)
@@ -277,6 +287,15 @@ def _prepare(conn: sqlite3.Connection) -> None:
     # Safety net: the database itself refuses a second owner (it does not say who the owner is).
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_one_owner ON users (role) WHERE role = 'owner'")
     conn.commit()
+
+
+def fresh_id(conn: sqlite3.Connection, table: str, waiting: str) -> int:
+    """The id for a new row of `table`: above every row it has AND above every number in `waiting` (a SELECT that
+    gives one number: the highest id whose folders the runner still has to delete). SQLite gives the number of a
+    deleted last row out again; a new project or account with that number would inherit the old folders (code, a
+    saved token) or lose its own when the runner gets to the deletion. Call it inside the inserting transaction."""
+    return 1 + max(conn.execute(f"SELECT COALESCE(MAX(id), 0) FROM {table}").fetchone()[0],
+                   conn.execute(waiting).fetchone()[0] or 0)
 
 
 @contextmanager
