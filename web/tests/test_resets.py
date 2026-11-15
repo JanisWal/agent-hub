@@ -197,7 +197,7 @@ class LinkMailTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {"HUB_BASE_URL": "https://hub.example.com/"}):
             for theme in ("light", "dark"):
                 html = mailtext.build("reset", self.user, "https://x/reset/T", 3600, theme)[2]
-                for name in ("backdrop", "button", "card-top", "card-bottom"):
+                for name in ("backdrop", "button"):
                     self.assertRegex(html, rf"https://hub.example.com/static/mail/{name}-{theme}\.png\?v=[0-9a-f]{{8}}")
                 self.assertNotIn("-light.png" if theme == "dark" else "-dark.png", html)
                 self.assertIsNone(re.search(r"%[A-Z_]+%", html))
@@ -205,7 +205,7 @@ class LinkMailTest(unittest.TestCase):
     def test_pictures_exist_and_are_png(self):
         folder = os.path.join(os.path.dirname(mailtext.__file__), "static", "mail")
         for theme in mailtext.PALETTES:
-            for name in ("backdrop", "button", "card-top", "card-bottom"):
+            for name in ("backdrop", "button"):
                 with open(os.path.join(folder, f"{name}-{theme}.png"), "rb") as handle:
                     self.assertEqual(handle.read(8), b"\x89PNG\r\n\x1a\n")
 

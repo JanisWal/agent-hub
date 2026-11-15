@@ -80,31 +80,6 @@ def coverage(distance):
     return min(1.0, max(0.0, 0.5 - distance))  # one pixel soft edge
 
 
-def card_cap(name, palette, top, size=(1040, 80)):
-    """Top or bottom end of the card as an overlay: the border ring, the light edge and the sheen. There is no
-    fill: the fill is the colour of the cell below (clipped round by the program), so a program that recolours the
-    card for its dark mode recolours the ends with it (Yahoo did; a filled picture stayed light)."""
-    width, height = size
-    radius, line = 56, 2
-    border, edge, sheen = palette["BORDER"], palette["EDGE"], palette["SHEEN"]
-
-    def shade(x, y):
-        yy = y if top else height - y
-        distance = box_distance(x, yy, 0, 0, width, height * 4, radius)
-        if coverage(distance) == 0:
-            return (0, 0, 0, 0)
-        ring = coverage(distance) - coverage(distance + line)
-        inside = coverage(distance + line)
-        colour = (*border, max(0.0, ring))
-        if top:
-            colour = over(colour, (255, 255, 255, sheen * max(0.0, 1 - yy / height) ** 1.5 * inside))
-            glint = max(0.0, coverage(distance + line + 1) - coverage(distance + line + 3))  # light edge inside the ring
-            colour = over(colour, (edge[0], edge[1], edge[2], edge[3] * glint * (1 - min(1.0, yy / (height * 0.9)))))
-        return colour
-
-    return name, width, height, render(width, height, shade)
-
-
 def button_sheen(name, palette, size=(520, 108)):
     """Gloss over the button's solid colour: light top, soft shade at the bottom, a hairline edge."""
     width, height = size
@@ -148,8 +123,6 @@ def main(out):
     os.makedirs(out, exist_ok=True)
     for theme, palette in PALETTES.items():
         for name, width, height, rows in (
-            card_cap(f"card-top-{theme}", palette, True),
-            card_cap(f"card-bottom-{theme}", palette, False, (1040, 56)),
             button_sheen(f"button-{theme}", palette),
             backdrop(f"backdrop-{theme}", palette),
         ):
