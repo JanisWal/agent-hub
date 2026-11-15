@@ -250,7 +250,7 @@ Grenzen (Vorschlag, beim Bau festzulegen): höchstens 3 `<ask>`, 5 `<task>`, 1 `
 
 ### 9.9 Reihenfolge der Umsetzung (Stand 15.11.2026)
 
-1. Antwortformat und strenges Lesen im Manager-Chat: `<ask>`, `<status>`, `<task>` (Parser wie `memory.parse_answer`, Tests mit Fremdprojekten in `test_isolation.py`). **Offen.**
+1. Antwortformat und strenges Lesen im Manager-Chat: `<ask>`, `<status>`, `<task>` (Parser wie `memory.parse_answer`, Tests mit Fremdprojekten in `test_isolation.py`). **Teilweise (15.11.2026, `reply-format`):** der strenge Leser steht (`web/app/reply.py`, reine Funktion, Grenzen wie in 9.3); offen: Speichern, Anschluss an Chat und Manager-Runde, Fremdprojekt-Tests.
 2. Kachel „Wartet auf dich“ mit Antworten (Knöpfe, freies Feld, groß bei großen Fragen) und der Regeltext der Selbstständigkeit. **Offen.**
 3. Status-Kachel und Projektkachel. **Offen.**
 4. Schleife der Agentenläufe samt Verteilen der Aufgaben (Board → Kette), Arbeitsordner je Aufgabe. **Gebaut 15.11.2026** (`ai-default`): Start auf der Board-Karte, Freigabe auf der Karte, Merge durch den Runner, Manager dokumentiert. Noch nicht: der Manager verteilt Aufgaben selbst (`<task>`, Punkt 1).
