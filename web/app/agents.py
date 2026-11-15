@@ -15,7 +15,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-from . import aichoice, board, catalog, db, memory, runtask, workflow
+from . import aichoice, board, catalog, db, memory, runtask, serversettings, workflow
 
 # Models and effort levels are not fixed here: they come from catalog.py (Janis, 14.11.2026). A role without a
 # choice gets the provider's default model and that model's default level. Since 15.11.2026 the choice is kept per
@@ -32,7 +32,8 @@ DEFAULT_NET = "together"
 KIND_ORDER = ("bug", "minor", "major")   # the programmer works in this order
 TASK_SECONDS = 2 * 3600                  # time limit per task, then it goes to the user
 RUN_SECONDS = 20 * 60                    # a run that reports nothing for so long is dead
-MAX_RUNNING = 1                          # the Pi has 1 GB: one Claude Code at a time
+# How many AI containers run at once (chat answers and agent runs together) is a setting of the owner
+# (serversettings.ai_parallel, Janis 15.11.2026): 1 on a small server, more or no limit on a big one.
 MAX_REPORT = 20000                       # characters of a report that are kept
 ACTIVE = workflow.STAGES                 # stages in which a task is still moving
 OPEN_STATUSES = ACTIVE + ("escalated",)  # a board item with such a task is "taken"
@@ -454,8 +455,18 @@ def _skip_waiting_tests(conn: sqlite3.Connection, can_mac: bool, now: int) -> No
             _enter(conn, user_id, run["task_id"], step, now)
 
 
+def slot_free(conn: sqlite3.Connection) -> bool:
+    """May one more AI container start now? Counts the running agent runs and chat answers of all users."""
+    limit = serversettings.ai_parallel()
+    if not limit:
+        return True
+    running = (conn.execute("SELECT COUNT(*) FROM agent_runs WHERE status = 'running'").fetchone()[0]
+               + conn.execute("SELECT COUNT(*) FROM chat_messages WHERE status = 'running'").fetchone()[0])
+    return running < limit
+
+
 def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
-    """Runner: take the oldest run that may start now, or None. Only MAX_RUNNING runs at a time.
+    """Runner: take the oldest run that may start now, or None. Only as many AI containers as the owner allows.
 
     A run is skipped (it keeps waiting) when none of its user's AIs is connected or it needs the Mac and `can_mac` is
     False. If the AI of the run is not connected any more, the user's next AI takes it (aichoice.order_in); nobody
@@ -465,7 +476,7 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
     with db.connect() as conn:
         _escalate_late(conn, now)
         _skip_waiting_tests(conn, can_mac, now)
-        if conn.execute("SELECT COUNT(*) FROM agent_runs WHERE status = 'running'").fetchone()[0] >= MAX_RUNNING:
+        if not slot_free(conn):
             return None
         for run in conn.execute(
             "SELECT r.*, t.needs FROM agent_runs r JOIN agent_tasks t ON t.id = r.task_id"

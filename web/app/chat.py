@@ -59,7 +59,9 @@ MEMORY_RULES = (
     "complete new text of each file that changed, one block each: <memory file=\"NAME.md\">...</memory> (at most "
     "3 files per answer, Markdown, short, keep the headings, keep what is still true and drop what is done, MEMORY.md "
     "at most 12000 characters). You may add a new Markdown file there the same way when a topic needs its own. "
-    "Leave the blocks out when nothing changed. ARCHIVE.md is different: what you put in <memory file=\"ARCHIVE.md\">"
+    "Leave the blocks out when nothing changed. The project's design (look, colours, components, wording, also "
+    "what a user brings in from elsewhere) is kept in REGELN.md or RULES.md under the heading Design (add the "
+    "heading if it is missing), not in a file of its own. ARCHIVE.md is different: what you put in <memory file=\"ARCHIVE.md\">"
     "...</memory> is ADDED at its end under today's date and nothing there is ever replaced, so write only the new "
     "entries, one line each: what was dropped, removed or changed, and why (e.g. security, structure, modularity, "
     "cost). Add one whenever you take something out of the other files or a decision changes. Files: the block <files> lists the project's other files "
@@ -205,9 +207,9 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
 
 
 def _drop_stale(conn: sqlite3.Connection, now: int) -> None:
-    """A question that got no answer in time fails. While an agent run is going (one container at a time on the Pi),
-    a waiting question keeps waiting instead: only one that is being answered can run out."""
-    busy = conn.execute("SELECT 1 FROM agent_runs WHERE status = 'running'").fetchone() is not None
+    """A question that got no answer in time fails. While all AI slots are taken (serversettings.ai_parallel), a
+    waiting question keeps waiting instead: only one that is being answered can run out."""
+    busy = not agents.slot_free(conn)
     statuses = "'running'" if busy else "'queued', 'running'"
     conn.execute(f"UPDATE chat_messages SET status = 'failed', answer = 'timeout'"
                  f" WHERE status IN ({statuses}) AND created_at < ?", (now - RUN_SECONDS,))
@@ -298,8 +300,8 @@ def claim_next(now: int | None = None) -> ChatJob | None:
     now = int(now if now is not None else time.time())
     with db.connect() as conn:
         _drop_stale(conn, now)
-        if conn.execute("SELECT 1 FROM chat_messages WHERE status = 'running'").fetchone():
-            return None   # the Pi answers one at a time
+        if not agents.slot_free(conn):
+            return None   # as many AI containers at once as the owner allows (agent runs included)
         for row in conn.execute("SELECT * FROM chat_messages WHERE status = 'queued' ORDER BY id").fetchall():
             if not aichoice.connected_in(conn, row["user_id"], row["provider"]):
                 other = _next_ai(conn, row, row["provider"])

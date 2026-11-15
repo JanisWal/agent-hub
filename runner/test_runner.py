@@ -107,7 +107,7 @@ class RunnerTest(unittest.TestCase):
             return self.made[user_id]
 
         self.runner = runner.Runner(self.api, str(self.base), vault=self.vault, tickets=FakeTickets(),
-                                    start_session=start, clock=lambda: self.now[0])
+                                    start_session=start, clock=lambda: self.now[0], background=False)
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -314,7 +314,7 @@ class ChatRunTest(unittest.TestCase):
             return self.answer
 
         self.runner = runner.Runner(self.api, "/data/claude", vault=self.vault, tickets=self.tickets,
-                                    run_chat=run_chat)
+                                    run_chat=run_chat, background=False)
 
     def test_answer_goes_back_with_tokens(self):
         self.runner.handle_chat()

@@ -8,8 +8,11 @@ numbers, so nothing can be set that breaks uploads. Standard library only.
 from . import db
 
 PARALLEL = (1, 2, 4, 6, 8, 12)            # requests on their way at the same time
+# AI runs (chat answers and agent runs) at the same time (Janis, 15.11.2026): each is a container that needs a lot of
+# memory, so a small server stays at one; 0 = no limit, for a server with plenty of memory.
+AI_PARALLEL = (1, 2, 3, 4, 0)
 REQUEST_MB = (16, 32, 64, 90, 190, 490)   # largest request in MB
-DEFAULTS = {"upload_parallel": 6, "upload_request_mb": 32}
+DEFAULTS = {"upload_parallel": 6, "upload_request_mb": 32, "ai_parallel": 1}
 
 
 def _get(key: str) -> int:
@@ -23,6 +26,21 @@ def upload() -> tuple[int, int]:
     parallel, request_mb = _get("upload_parallel"), _get("upload_request_mb")
     return (parallel if parallel in PARALLEL else DEFAULTS["upload_parallel"],
             request_mb if request_mb in REQUEST_MB else DEFAULTS["upload_request_mb"])
+
+
+def ai_parallel() -> int:
+    """How many AI runs may go at the same time (0 = no limit); 1 until the owner chose something."""
+    value = _get("ai_parallel")
+    return value if value in AI_PARALLEL else DEFAULTS["ai_parallel"]
+
+
+def set_ai_parallel(value: int) -> None:
+    """Keep the owner's choice. Raises ValueError for a value that is not one of the choices."""
+    if value not in AI_PARALLEL:
+        raise ValueError("not a choice")
+    with db.connect() as conn:
+        conn.execute("INSERT INTO server_settings (key, value) VALUES ('ai_parallel', ?)"
+                     " ON CONFLICT(key) DO UPDATE SET value = excluded.value", (str(value),))
 
 
 def set_upload(parallel: int, request_mb: int) -> None:

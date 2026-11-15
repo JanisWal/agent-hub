@@ -40,6 +40,18 @@ def upload_settings(parallel: int = Form(0), request_mb: int = Form(0), user: us
     return ok()
 
 
+@router.post("/system/ai")
+def ai_settings(value: int = Form(-1), user: users.User = Depends(api_user)):
+    """How many AI runs may go at the same time, for the whole server (serversettings.ai_parallel)."""
+    if user.role != "owner":
+        return fail(403)
+    try:
+        serversettings.set_ai_parallel(value)
+    except ValueError:
+        return fail(400)
+    return ok()
+
+
 @router.get("/system/backup")
 def backup_status(user: users.User = Depends(api_user)):
     """How the latest manual backup is doing: none, running, ok or failed (the page asks until it is over)."""
