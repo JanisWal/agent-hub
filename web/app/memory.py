@@ -75,6 +75,7 @@ SKELETON = {
 SKELETON_VERSION = 2
 SINCE = {"ARCHIVE.md": 2}
 _READ_TAG = re.compile(r"<read>(.*?)</read>", re.DOTALL)
+_LEADING_DATE = re.compile(r"\A(?:\s*#{1,6}[ \t]*\d{4}-\d{2}-\d{2}[ \t]*(?:\n|\Z))+")   # date headings at the start
 
 
 @dataclass
@@ -162,6 +163,9 @@ def save_memory(user_id: int, project_id: int, text: str, name: str = MEMORY_NAM
 def _append_archive(user_id: int, project_id: int, text: str, today: str | None = None) -> bool:
     """Add an entry at the end of ARCHIVE.md under today's date (make the file if there is none). Nothing in it is
     replaced. False if not saved: not the user's project, the file would grow beyond MAX_ARCHIVE, disk nearly full."""
+    text = _LEADING_DATE.sub("", text)   # the AI dated it itself (first real run, 15.11.2026): the hub's date counts
+    if not text.strip():
+        return False
     if len(text) > MAX_ARCHIVE_ENTRY:
         text = text[:MAX_ARCHIVE_ENTRY].rsplit("\n", 1)[0]
     entry = f"## {today or time.strftime('%Y-%m-%d')}\n{text}\n"
