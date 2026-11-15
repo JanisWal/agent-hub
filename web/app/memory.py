@@ -18,16 +18,26 @@ Markdown files of that area with every question (`folder`, within MAX_FOLDER), s
 memory is files, not something of one provider. The manager updates any of them, or adds a new one, with
 <memory file="NAME.md">...</memory>; a plain <memory> is MEMORY.md. A file the user deleted is not made again.
 
+Archive (Janis, 15.11.2026): ARCHIVE.md is the history of the project: what once existed, what was dropped or changed,
+and why (security, structure, modularity, ...), so a later "why did we change that?" has an answer. It is the one
+file that only grows: what the manager writes into <memory file="ARCHIVE.md"> is added at its end under today's date
+(`_append_archive`), nothing in it is ever replaced by the manager (the user can still edit it in the tile). It comes
+last in the memory folder and, when it does not fit, its newest part is given.
+
 Everything here belongs to one user and one project: each function gets the user and the project must be his,
 and a name is only looked up among the files of that project. Standard library only.
 """
 import re
 import sqlite3
+import time
 from dataclasses import dataclass
 
 from . import db, files
 
 MEMORY_NAME = "MEMORY.md"
+ARCHIVE_NAME = "ARCHIVE.md"   # the history of the project; only ever added to (see above)
+MAX_ARCHIVE = 100_000       # characters ARCHIVE.md may grow to; beyond that new entries are refused
+MAX_ARCHIVE_ENTRY = 4000    # characters of what one answer adds to it
 MAX_MEMORY = 16000          # characters of the memory file that are read and kept
 MAX_FILE_CHARS = 20000      # characters of one requested file that go to the manager
 MAX_READ_BYTES = 400_000    # a larger file is not opened (it would only be cut)
@@ -48,14 +58,22 @@ SKELETON = {
         ("PROJEKT.md", "# Ziel\n\n# Umfang\n\n# Aufbau\n\n## Hardware\n\n## Software\n\n# Entscheidungen und Gründe\n\n# Begriffe\n"),
         ("ROADMAP.md", "# Als Nächstes\n\n# Später\n\n# Ideen\n\n# Erledigt\n"),
         ("REGELN.md", "# Arbeitsweise\n\n# Vorgaben\n\n# Nie tun\n"),
+        ("ARCHIVE.md", "# Archiv\n\nWas es einmal gab, was verworfen oder geändert wurde, und warum. Neue Einträge kommen "
+                       "unten dazu.\n"),
     ),
     "en": (
         ("MEMORY.md", "# Status\n\n# Decisions\n\n# Open questions\n\n# Notes\n"),
         ("PROJECT.md", "# Goal\n\n# Scope\n\n# Structure\n\n## Hardware\n\n## Software\n\n# Decisions and reasons\n\n# Terms\n"),
         ("ROADMAP.md", "# Next\n\n# Later\n\n# Ideas\n\n# Done\n"),
         ("RULES.md", "# How we work\n\n# Requirements\n\n# Never do\n"),
+        ("ARCHIVE.md", "# Archive\n\nWhat once existed, what was dropped or changed, and why. New entries are added at "
+                       "the bottom.\n"),
     ),
 }
+# projects.memory_seeded holds the version of the skeleton a project got. A file added to the skeleton later names the
+# version it came with, so older projects get just that file, once (and not again if the user deletes it).
+SKELETON_VERSION = 2
+SINCE = {"ARCHIVE.md": 2}
 _READ_TAG = re.compile(r"<read>(.*?)</read>", re.DOTALL)
 
 
@@ -100,15 +118,18 @@ def _find(conn: sqlite3.Connection, user_id: int, project_id: int, name: str) ->
     ).fetchone()
 
 
-def _text_of(row: sqlite3.Row, limit: int) -> str | None:
-    """The text of a stored file, cut to `limit` characters; None if it is not a readable text file."""
+def _text_of(row: sqlite3.Row, limit: int, tail: bool = False) -> str | None:
+    """The text of a stored file, cut to `limit` characters (its end with tail=True); None if it is not a readable
+    text file."""
     if _extension(row["name"]) not in READABLE or row["size"] > MAX_READ_BYTES:
         return None
     path = files.path_of(row["project_id"], row["id"])
     if not path.is_file():
         return None
     text = path.read_text(encoding="utf-8", errors="replace")
-    return text if len(text) <= limit else text[:limit].rstrip() + " …"
+    if len(text) <= limit:
+        return text
+    return "… " + text[-limit:].lstrip() if tail else text[:limit].rstrip() + " …"
 
 
 def read_memory(conn: sqlite3.Connection, user_id: int, project_id: int) -> str | None:
@@ -124,6 +145,8 @@ def save_memory(user_id: int, project_id: int, text: str, name: str = MEMORY_NAM
     text = text.strip()
     if not text or not _MEMORY_NAME.fullmatch(name):
         return False
+    if name.lower() == ARCHIVE_NAME.lower():
+        return _append_archive(user_id, project_id, text)
     if len(text) > MAX_MEMORY:
         text = text[:MAX_MEMORY].rsplit("\n", 1)[0]
     with db.connect() as conn:
@@ -140,13 +163,38 @@ def save_memory(user_id: int, project_id: int, text: str, name: str = MEMORY_NAM
         return False
 
 
+def _append_archive(user_id: int, project_id: int, text: str, today: str | None = None) -> bool:
+    """Add an entry at the end of ARCHIVE.md under today's date (make the file if there is none). Nothing in it is
+    replaced. False if not saved: not the user's project, the file would grow beyond MAX_ARCHIVE, disk nearly full."""
+    if len(text) > MAX_ARCHIVE_ENTRY:
+        text = text[:MAX_ARCHIVE_ENTRY].rsplit("\n", 1)[0]
+    entry = f"## {today or time.strftime('%Y-%m-%d')}\n{text}\n"
+    with db.connect() as conn:
+        row = _find(conn, user_id, project_id, ARCHIVE_NAME)
+    try:
+        if row is not None:
+            old = files.read_text(user_id, row["id"])
+            if old is not None:
+                new = old.rstrip() + "\n\n" + entry
+                return len(new) <= MAX_ARCHIVE and files.write_text(user_id, row["id"], new)
+            files.delete(user_id, row["id"])              # a row whose file is gone: make it anew
+            files.purge(user_id, row["id"])
+        files.create_text_file(user_id, project_id, ARCHIVE_NAME, entry)
+        return True
+    except files.FileError:
+        return False
+
+
 def _folder_rows(conn: sqlite3.Connection, user_id: int, project_id: int) -> list[sqlite3.Row]:
-    """The Markdown files of the area Memory: MEMORY.md first, then by name."""
+    """The Markdown files of the area Memory: MEMORY.md first, ARCHIVE.md last, the others by name between."""
     rows = conn.execute(
         "SELECT f.* FROM files f JOIN projects p ON p.id = f.project_id WHERE f.project_id = ? AND p.user_id = ?"
         " AND f.status = 'ready' AND f.url IS NULL AND f.category = 'memory' AND lower(f.name) LIKE '%.md'",
         (project_id, user_id)).fetchall()
-    return sorted(rows, key=lambda r: (r["name"].lower() != MEMORY_NAME.lower(), r["name"].lower()))
+    def order(r) -> tuple:
+        name = r["name"].lower()
+        return (0 if name == MEMORY_NAME.lower() else 2 if name == ARCHIVE_NAME.lower() else 1, name)
+    return sorted(rows, key=order)
 
 
 def folder(conn: sqlite3.Connection, user_id: int, project_id: int) -> str:
@@ -155,7 +203,8 @@ def folder(conn: sqlite3.Connection, user_id: int, project_id: int) -> str:
     blocks, used = [], 0
     for row in _folder_rows(conn, user_id, project_id):
         shown = row["name"].replace('"', "'")
-        text = _text_of(row, min(MAX_MEMORY, max(0, MAX_FOLDER - used)))
+        archive = row["name"].lower() == ARCHIVE_NAME.lower()       # its newest part matters most
+        text = _text_of(row, min(MAX_MEMORY, max(0, MAX_FOLDER - used)), tail=archive)
         if text is None or (used >= MAX_FOLDER):
             blocks.append(f'<file name="{shown}">(too long to give here: ask for it with <read>)</file>')
             continue
@@ -165,18 +214,20 @@ def folder(conn: sqlite3.Connection, user_id: int, project_id: int) -> str:
 
 
 def ensure_skeleton(user_id: int, project_id: int, lang: str = "de") -> int:
-    """Make the fixed memory files of a project, once (projects.memory_seeded): a file that exists stays as it is, and
-    one the user deletes later is not made again. Returns how many were made; 0 if not his project or done before."""
+    """Make the fixed memory files of a project, once per version of the skeleton (projects.memory_seeded): a new
+    project gets all of them, an older one only those added since (SINCE). A file that exists stays as it is, and one
+    the user deletes later is not made again. Returns how many were made; 0 if not his project or up to date."""
     with db.connect() as conn:
         row = conn.execute("SELECT memory_seeded FROM projects WHERE id = ? AND user_id = ?",
                            (project_id, user_id)).fetchone()
-        if row is None or row["memory_seeded"]:
+        if row is None or row["memory_seeded"] >= SKELETON_VERSION:
             return 0
-        conn.execute("UPDATE projects SET memory_seeded = 1 WHERE id = ?", (project_id,))
+        seeded = row["memory_seeded"]
+        conn.execute("UPDATE projects SET memory_seeded = ? WHERE id = ?", (SKELETON_VERSION, project_id))
         have = {r["name"].lower() for r in _folder_rows(conn, user_id, project_id)}
     made = 0
     for name, text in SKELETON.get(lang, SKELETON["de"]):
-        if name.lower() in have:
+        if SINCE.get(name, 1) <= seeded or name.lower() in have:
             continue
         try:
             files.create_text_file(user_id, project_id, name, text)
