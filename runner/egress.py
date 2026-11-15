@@ -267,9 +267,12 @@ async def gateway(client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter
         token = (tokens.lookup(tickets_dir, auth[7:].strip(), provider=provider)
                  if auth.lower().startswith("bearer ") else None)
         upstream = GATEWAYS[provider][0]
-        if token is None:   # 403, not 401: an unknown ticket is the hub's matter, not a lost sign-in of the user
-            log(f"gateway: refused {method} {path} (no valid ticket)")
-            await _gateway_reply(client_w, "403 Forbidden", "no valid ticket")
+        if token is None:   # 403, not 401: an unknown ticket is the hub's matter, not a lost sign-in of the user.
+            # Mistral Vibe reads a 403 as "invalid API key" (the runner would delete the user's key), so the Mistral
+            # gateway says 502: a fault of the hub, the saved key stays (15.11.2026).
+            log(f"gateway {provider}: refused {method} {path} (no valid ticket)")
+            await _gateway_reply(client_w, "403 Forbidden" if provider == "claude" else "502 Bad Gateway",
+                                 "no valid ticket")
             return
         body = await asyncio.wait_for(client_r.readexactly(length), GATEWAY_IDLE) if length else b""
         try:
