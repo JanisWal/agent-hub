@@ -148,6 +148,8 @@ Rückweg: `docker compose stop runner`, die Verknüpfung ist dann „nicht errei
 
 ## 8. Reihenfolge der nächsten Module
 
+> Historisch (Stand 07.11.2026): Punkte 1 bis 4 sind gebaut; maßgeblich sind 9.9 und der Fahrplan in PROJEKT.md Abschnitt 11a.
+
 1. ~~Runner-Schnittstelle (HTTP, Runner-Token) und Launcher (ein Container je Lauf)~~ gebaut. Als Nächstes die **Schleife des Runners** (`runner/runner.py`, Prompt je Rolle, Anmeldekanal, Aufräumen), der Arbeitsordner je Aufgabe (eigener Klon) und der Isolationstest mit zwei echten Nutzern; Ausrollen mit Netz `agent-hub-agents`, Runner-Token und Compose-Dienst (Janis’ Ja nötig).
 2. Anmeldung in der Oberfläche („Claude verbinden“ in der Schublade statt des Platzhalters, Zustand „abgelaufen“).
 3. Worktrees und Merge.
