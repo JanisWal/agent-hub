@@ -72,7 +72,7 @@ HTML = """<!doctype html>
 <body class="page" bgcolor="%BG%" style="margin:0;padding:0;width:100%;background-color:%BG%;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
 <table class="page" role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="%BG%" style="width:100%;background-color:%BG%;border-collapse:collapse;">
 <tr><td class="page" align="center" bgcolor="%BG%"%BACKDROP% style="padding:32px 16px;%BACKDROP_CSS%">
-  <table role="presentation" width="520" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:520px;border-collapse:collapse;">
+  <table role="presentation" width="520" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:520px;border-collapse:separate;border-spacing:0;">
     <tr><td class="t" style="padding:0 8px 16px;font-family:%FONT%;font-size:18px;font-weight:700;letter-spacing:-0.01em;color:%TEXT%;">Agent-Hub</td></tr>
 <!--[if !mso]><!-->
     <tr><td class="card" style="padding:0;font-size:0;line-height:0;background-color:%CARD%;border:1px solid %BORDER%;border-bottom:0;border-radius:28px 28px 0 0;">%CAP_TOP%</td></tr>

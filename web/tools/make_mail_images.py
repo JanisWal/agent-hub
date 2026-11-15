@@ -151,7 +151,9 @@ def backdrop(name, palette, size=(1200, 720)):
             if d < 1:
                 colour = over(colour, (r, g, b, a * (1 - d) ** 2 * (3 - 2 * (1 - d)) ))
         fade = min(1.0, max(0.0, (height - y) / (height * 0.35)))
-        return (*colour[:3], colour[3] * fade)
+        side = min(1.0, x / (width * 0.2), (width - x) / (width * 0.2))  # no hard edge left and right
+        side = side * side * (3 - 2 * side)
+        return (*colour[:3], colour[3] * fade * side)
 
     return name, width, height, render(width, height, shade, samples=1)
 

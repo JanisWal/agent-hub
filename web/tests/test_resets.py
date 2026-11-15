@@ -193,6 +193,39 @@ class LinkMailTest(unittest.TestCase):
                 self.assertIn(colour, html)
                 self.assertIn(f'content="{theme}"', html)
 
+    def test_glass_pictures_come_from_the_hub_and_each_style_has_its_own(self):
+        with mock.patch.dict(os.environ, {"HUB_BASE_URL": "https://hub.example.com/"}):
+            for theme in ("light", "dark"):
+                html = mailtext.build("reset", self.user, "https://x/reset/T", 3600, theme)[2]
+                for name in ("backdrop", "glow", "button", "card-top", "card-bottom"):
+                    self.assertIn(f"https://hub.example.com/static/mail/{name}-{theme}.png", html)
+                self.assertNotIn("-light.png" if theme == "dark" else "-dark.png", html)
+                self.assertIsNone(re.search(r"%[A-Z_]+%", html))
+
+    def test_pictures_exist_and_are_png(self):
+        folder = os.path.join(os.path.dirname(mailtext.__file__), "static", "mail")
+        for theme in mailtext.PALETTES:
+            for name in ("backdrop", "glow", "button", "card-top", "card-bottom"):
+                with open(os.path.join(folder, f"{name}-{theme}.png"), "rb") as handle:
+                    self.assertEqual(handle.read(8), b"\x89PNG\r\n\x1a\n")
+
+    def test_mail_without_base_url_is_flat_but_complete(self):
+        with mock.patch.dict(os.environ, {"HUB_BASE_URL": ""}):
+            html = mailtext.build("reset", self.user, "https://x/reset/T", 3600, "dark")[2]
+        self.assertNotIn("<img", html)
+        self.assertNotIn("background-image", html)
+        self.assertIn("https://x/reset/T", html)
+        self.assertIn("#33241C", html)
+
+    def test_outlook_gets_a_vml_button_and_recolouring_is_answered(self):
+        html = mailtext.build("invite", self.user, "https://x/reset/T", 3600, "light")[2]
+        self.assertIn("<v:roundrect", html)
+        self.assertIn('href="https://x/reset/T"', html.split("<v:roundrect", 1)[1].split(">", 1)[0])
+        for rule in ("[data-ogsc] .t", "[data-ogsb] .card"):
+            self.assertIn(rule, html)
+        self.assertNotIn("#FFFFFF", html.upper())  # no pure white or black, they recolour worst
+        self.assertNotIn("#000000", html)
+
     def test_unknown_kind_and_theme(self):
         with self.assertRaises(ValueError):
             mailtext.build("nope", self.user, "x", 3600)
