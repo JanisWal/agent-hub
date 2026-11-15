@@ -28,9 +28,9 @@ class TicketTest(unittest.TestCase):
             claude = tickets.issue(CLAUDE)
             self.assertEqual(tokens.lookup(folder, claude), CLAUDE)
             self.assertIsNone(tokens.lookup(folder, claude, provider="mistral"))
-            old = "hubrun-" + "o" * 43                                        # a file from before 15.11.2026
-            (Path(folder) / tokens.ticket_name(old)).write_text(CLAUDE)
-            self.assertEqual(tokens.lookup(folder, old), CLAUDE)
+            bare = "hubrun-" + "o" * 43                                       # a file that does not name its AI
+            (Path(folder) / tokens.ticket_name(bare)).write_text(CLAUDE)
+            self.assertIsNone(tokens.lookup(folder, bare))
             with self.assertRaises(ValueError):
                 tickets.issue("not a key!", "mistral")                         # not a Mistral key
             with self.assertRaises(ValueError):
