@@ -3,7 +3,8 @@
 The HTML uses tables and inline styles only, because mail programs ignore most CSS. It is built for the weakest of
 them (Janis, 15.11.2026: Outlook for Windows draws with Word, Yahoo drops much): colours also as `bgcolor`
 attributes, the width as an attribute, standard font weights, and a button whose coloured cell carries the padding
-(`mso-padding-alt`), so it is a real button there too. Round corners and the gloss are extras that may be missing. Colours
+(`mso-padding-alt`), so it is a real button there too. Outlook takes only the first font of a list and falls back
+to Times when it lacks it, so a block only Outlook reads sets Arial; it also gets 96 dpi, or it scales the mail. Round corners and the gloss are extras that may be missing. Colours
 follow DESIGN.md; the two palettes are the light and the dark style of the site. The mail
 shows one fixed palette: the style the user saw last on the site (`users.theme`, reported by
 the theme switch). A mail program cannot be asked which one the reader likes.
@@ -33,22 +34,28 @@ FONT = "system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
 # Rounded card, headline, text, bulletproof button (solid colour first, the gloss is an extra for
 # programs that understand gradients), the link as text for programs that block buttons, a note.
 HTML = """<!doctype html>
-<html lang="%LANG%">
+<html lang="%LANG%" xmlns="http://www.w3.org/1999/xhtml" xmlns:o="urn:schemas-microsoft-com:office:office">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="x-apple-disable-message-reformatting">
+<!--[if mso]>
+<xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
+<style>body,table,td,p,a,h1{font-family:Arial,Helvetica,sans-serif !important;}</style>
+<![endif]-->
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="%SCHEME%">
 <meta name="supported-color-schemes" content="%SCHEME%">
 <title>%TITLE%</title>
 </head>
-<body bgcolor="%BG%" style="margin:0;padding:0;background-color:%BG%;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="%BG%" style="background-color:%BG%;">
+<body bgcolor="%BG%" style="margin:0;padding:0;width:100%;background-color:%BG%;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="%BG%" style="width:100%;background-color:%BG%;border-collapse:collapse;">
 <tr><td align="center" style="padding:32px 16px;">
   <table role="presentation" width="520" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:520px;">
     <tr><td style="padding:0 8px 16px;font-family:%FONT%;font-size:18px;font-weight:700;letter-spacing:-0.01em;color:%TEXT%;">Agent-Hub</td></tr>
     <tr><td bgcolor="%CARD%" style="background-color:%CARD%;border:1px solid %BORDER%;border-radius:28px;padding:40px 32px;font-family:%FONT%;color:%TEXT%;">
-      <h1 style="margin:0 0 16px;font-size:30px;line-height:1.15;font-weight:700;letter-spacing:-0.03em;color:%TEXT%;">%GREETING%</h1>
-      <p style="margin:0 0 32px;font-size:17px;line-height:1.55;color:%TEXT%;">%BODY%</p>
+      <h1 style="margin:0 0 16px;font-family:%FONT%;font-size:30px;line-height:1.15;mso-line-height-rule:exactly;font-weight:700;letter-spacing:-0.03em;color:%TEXT%;">%GREETING%</h1>
+      <p style="margin:0 0 32px;font-family:%FONT%;font-size:17px;line-height:1.55;color:%TEXT%;">%BODY%</p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
         <td align="center" bgcolor="%ACCENT%" style="border-radius:16px;background-color:%ACCENT%;background-image:linear-gradient(180deg,rgba(255,255,255,0.38),rgba(255,255,255,0) 55%);mso-padding-alt:17px 24px;">
           <a href="%LINK%" style="display:block;padding:17px 24px;font-family:%FONT%;font-size:17px;line-height:1.3;font-weight:700;color:%ON_ACCENT%;text-decoration:none;border-radius:16px;">%BUTTON%</a>
