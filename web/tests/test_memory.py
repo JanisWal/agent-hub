@@ -121,6 +121,11 @@ class ArchiveTest(MemoryBase):
         self.assertRegex(text, r"\n## \d{4}-\d{2}-\d{2}\n- Verworfen")
         self.assertTrue(text.rstrip().endswith("(alles weg)"))                         # a "rewrite" is only added
 
+    def test_a_date_the_ai_wrote_itself_is_not_doubled(self):
+        self.assertTrue(memory._append_archive(self.a.id, self.pa.id, "## 2026-11-14\n\n## 2026-11-15\n## Task\n- x",
+                                               today="2026-11-15"))
+        self.assertEqual(self.text(), "## 2026-11-15\n## Task\n- x\n")
+
     def test_without_a_file_it_is_made_and_it_stops_at_its_size(self):
         self.assertTrue(memory._append_archive(self.a.id, self.pa.id, "- first", today="2026-11-15"))
         self.assertEqual(self.text(), "## 2026-11-15\n- first\n")
