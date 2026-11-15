@@ -64,6 +64,10 @@ a.station:not(.active):hover { color: var(--text); }
 /* Suggestions of Claude (small and major updates): take over = strong green, reject = the red of the delete buttons. */
 .card.proposed { align-items: center; cursor: default; }
 .card-actions { display: flex; flex: none; gap: 10px; }
+/* An item with the agents (15.11.2026): its stage under the title, the report behind the "i" (ui.info_dot). */
+.card-task { display: flex; align-items: center; gap: 4px; margin-top: 3px; font-size: 0.8rem; font-weight: 500; color: var(--muted); }
+.card-task[data-status="awaiting_approval"], .card-task[data-status="escalated"] { color: var(--text); }
+.card-btn.quiet.start:hover { color: var(--go); }
 .card-btn.go, .card-btn.stop { width: 34px; height: 34px; min-width: 34px; min-height: 34px; border-color: rgba(255, 255, 255, 0.35); }
 .card-btn.go svg, .card-btn.stop svg { width: 18px; height: 18px; stroke-width: 2.4; }
 .card-btn.go { color: var(--on-go); background: linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0) 55%), var(--go); box-shadow: 0 6px 16px color-mix(in srgb, var(--go) 45%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.45); }

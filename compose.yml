@@ -35,8 +35,10 @@ services:
       HUB_CLAUDE_DIR: "${HUB_CLAUDE_HOST_DIR:-/opt/agent-hub/claude}"   # same path inside and outside: the Docker daemon mounts host paths
       HUB_TOKEN_KEY: "${HUB_TOKEN_KEY:-}"
       HUB_TICKETS_DIR: /tickets
+      HUB_WORK_DIR: "${HUB_WORK_HOST_DIR:-/opt/agent-hub/work}"   # the projects' code and the tasks' folders (runner/workspace.py)
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - "${HUB_WORK_HOST_DIR:-/opt/agent-hub/work}:${HUB_WORK_HOST_DIR:-/opt/agent-hub/work}"
       - "${HUB_CLAUDE_HOST_DIR:-/opt/agent-hub/claude}:${HUB_CLAUDE_HOST_DIR:-/opt/agent-hub/claude}"
       - tickets:/tickets
     networks:

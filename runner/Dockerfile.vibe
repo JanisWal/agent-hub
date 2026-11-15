@@ -1,0 +1,11 @@
+# Image of a Mistral run (Mistral Vibe, the coding agent of Mistral; started by launcher.build_vibe_command as user
+# 10000+id, read-only, like the Claude image). Vibe never sees the user's API key: it gets a ticket and talks to the
+# egress gateway (runner/egress.py, port 3131). vibe_entry.py writes Vibe's settings into the run's memory folder.
+FROM python:3.13-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git ripgrep ca-certificates curl \
+ && rm -rf /var/lib/apt/lists/*
+# Pinned: a new Vibe version is tried on a branch first (its settings and output format may change).
+RUN pip install --no-cache-dir --root-user-action=ignore mistral-vibe==3.1.2
+COPY vibe_entry.py /opt/hub/vibe_entry.py
+WORKDIR /work

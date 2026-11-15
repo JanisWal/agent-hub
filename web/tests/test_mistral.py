@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from app import agents, ai_link, catalog, chat, claude_link, db, i18n, managerpage, projects, ui, users
+from app import agents, ai_link, aichoice, catalog, chat, claude_link, db, i18n, managerpage, projects, ui, users
 from app.routes import ai as ai_routes
 from app.routes import runner as runner_routes
 
@@ -60,13 +60,14 @@ class CatalogTest(Base):
             catalog.store("mistral", data)
         self.assertEqual(catalog.provider_of("sonnet"), "claude")
 
-    def test_only_the_manager_may_use_another_ai(self):
-        agents.configure(self.a.id, "chef", model="mistral-large-4", effort="medium")
-        role = agents.settings(self.a.id)["roles"]["chef"]
-        self.assertEqual((role["model"], role["effort"]), ("mistral-large-4", "medium"))
-        with self.assertRaises(ValueError):
-            agents.configure(self.a.id, "programmer", model="mistral-large-4")   # the runs start Claude Code
-        self.assertEqual(agents.settings(self.a.id)["roles"]["programmer"]["model"], "sonnet")
+    def test_every_role_keeps_a_choice_per_ai(self):
+        agents.configure(self.a.id, "programmer", model="mistral-large-4", effort="medium")   # 15.11.2026: any role
+        agents.configure(self.a.id, "programmer", model="opus")
+        self.assertEqual(agents.settings(self.a.id)["roles"]["programmer"]["model"], "opus")   # Claude is the standard
+        self.connect(self.a)
+        aichoice.set_default(self.a.id, "mistral")
+        role = agents.settings(self.a.id)["roles"]["programmer"]
+        self.assertEqual((role["model"], role["effort"]), ("mistral-large-4", "medium"))    # found again
 
 
 class ConnectionTest(Base):
@@ -127,15 +128,13 @@ class ConnectionTest(Base):
 
 class ChatTest(Base):
     def test_a_question_to_mistral_needs_mistral_and_carries_the_provider(self):
-        agents.configure(self.a.id, "chef", model="mistral-small-2603")
-        with self.assertRaisesRegex(ValueError, "mistral"):
-            chat.send(self.a.id, self.pa.id, "Hello")
+        with self.assertRaisesRegex(ValueError, "none"):
+            chat.send(self.a.id, self.pa.id, "Hello")                # no AI at all
         self.connect(self.a)
-        chat.send(self.a.id, self.pa.id, "Hello")                    # Claude is not connected: not needed
+        chat.send(self.a.id, self.pa.id, "Hello")                    # the only AI is the standard: Claude not needed
         job = chat.claim_next()
         self.assertEqual((job.provider, job.model, job.effort), ("mistral", "mistral-small-2603", "none"))
-        self.assertIn("You have no tools here", job.prompt)          # the rules say what this AI can not do
-        self.assertNotIn("web search, can read web pages", job.prompt)
+        self.assertIn("web search", job.prompt)                      # Mistral Vibe has the tools (15.11.2026)
         self.assertIn("<memory-folder>", job.prompt)                 # the same package as for Claude
         self.assertTrue(chat.finish(job.chat_id, True, "Hi <memory file=\"MEMORY.md\"># Status\nok</memory>"))
         message = chat.list_messages(self.a.id, self.pa.id)[-1]

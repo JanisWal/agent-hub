@@ -46,7 +46,8 @@ MANAGER = """<section class="manager" id="manager-view" aria-label="%t.station_m
 CHAT = """<section class="mtile glass m-chat" id="chat" data-you="%t.chat_you%" data-claude="%t.station_manager%"
              data-waiting="%WAITING%" data-ai="%AI%" data-failed="%t.chat_failed%" data-memory="%t.chat_memory_saved%"
              data-fail-auth="%t.chat_fail_auth%" data-fail-timeout="%t.chat_fail_timeout%"
-             data-fail-steps="%t.chat_fail_steps%" data-fail-other="%t.chat_fail_other%">
+             data-fail-steps="%t.chat_fail_steps%" data-fail-limit="%t.chat_fail_limit%" data-fail-other="%t.chat_fail_other%"
+             data-fallback="%FALLBACK%">
       <header><h2>%t.manager_chat%</h2>%INFO%<span class="m-chat-tools">%NET%%MODEL%</span></header>
       <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
       <p class="error" id="chat-error" role="alert" hidden></p>
@@ -408,7 +409,7 @@ MVAULT = """<section class="vault glass m-vault" id="mvault" hidden>
       <ul class="trash-list" id="chat-archive" data-questions="%QUESTIONS%" data-question="%t.chat_archive_one%"
           data-delete="%t.chat_archive_delete%" data-you="%t.chat_you%" data-claude="%t.station_manager%"
           data-failed="%t.chat_failed%" data-fail-auth="%t.chat_fail_auth%" data-fail-timeout="%t.chat_fail_timeout%"
-          data-fail-steps="%t.chat_fail_steps%" data-fail-other="%t.chat_fail_other%"></ul>
+          data-fail-steps="%t.chat_fail_steps%" data-fail-limit="%t.chat_fail_limit%" data-fail-other="%t.chat_fail_other%"></ul>
     </div>
   </section>"""
 
@@ -448,7 +449,7 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
         # "Claude answers": the name of the AI in use comes from its provider (catalog.py), never from the code; chat.js
         # puts in the AI of the chosen model (data-ai of the option), so "{name}" stays in the text here
         CHAT=fill(CHAT, lang, MODEL=model, SEND=icon("arrow_up"),
-                  WAITING=esc(i18n.t(lang, "chat_waiting", name="{name}")), AI=esc(catalog.provider(catalog.provider_of(chef["model"])).name), NET=_net_switch(lang, settings["roles"]["chef"]["net"]),
+                  WAITING=esc(i18n.t(lang, "chat_waiting", name="{name}")), FALLBACK=esc(i18n.t(lang, "chat_fallback", name="{name}", other="{other}")), AI=esc(catalog.provider(catalog.provider_of(chef["model"])).name), NET=_net_switch(lang, settings["roles"]["chef"]["net"]),
                   INFO=ui.info_dot(i18n.t(lang, "manager_chat"), i18n.t(lang, "manager_chat_hint"))),
         AUTONOMY=autonomy,
         MVAULT=fill(MVAULT, lang, TRASH_LIST=_trash_list(lang, trashed_files or []),

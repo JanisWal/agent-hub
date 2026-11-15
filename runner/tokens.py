@@ -99,22 +99,31 @@ class Vault:
                 item.unlink(missing_ok=True)
 
 
+def _secret_ok(provider: str, secret: str) -> bool:
+    """Does this look like a credential of this provider (Claude's token, or an API key of KEY_PATTERNS)?"""
+    if provider == "claude":
+        return bool(TOKEN.fullmatch(secret))
+    pattern = KEY_PATTERNS.get(provider)
+    return bool(pattern and pattern.fullmatch(secret))
+
+
 class Tickets:
-    """Tickets of running runs: a file per ticket in a folder in memory that only the runner and the proxy see."""
+    """Tickets of running runs: a file per ticket in a folder in memory that only the runner and the proxy see. Since
+    15.11.2026 a ticket names its AI (first line of the file): the gateway of another AI does not take it."""
 
     def __init__(self, folder: str | Path, owner: int = TICKET_OWNER):
         self.folder = Path(folder)
         self.owner = owner
 
-    def issue(self, token: str) -> str:
-        """A new ticket for this token; the proxy accepts it until `revoke` (or TICKET_AGE)."""
-        if not TOKEN.fullmatch(token):
-            raise ValueError("not a Claude token")
+    def issue(self, token: str, provider: str = "claude") -> str:
+        """A new ticket for this credential of this provider; its gateway accepts it until `revoke` (or TICKET_AGE)."""
+        if not isinstance(token, str) or not _secret_ok(provider, token):
+            raise ValueError("not a credential of this provider")
         ticket = "hubrun-" + secrets.token_urlsafe(32)
         path = self.folder / ticket_name(ticket)
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
         try:
-            os.write(fd, token.encode())
+            os.write(fd, f"{provider}\n{token}".encode())
             if os.geteuid() == 0:
                 os.fchown(fd, self.owner, self.owner)
         finally:
@@ -136,18 +145,22 @@ class Tickets:
                 pass
 
 
-def lookup(folder: str | Path, ticket: str, now: float | None = None, max_age: int = TICKET_AGE) -> str | None:
-    """For the proxy: the token behind a ticket, or None (unknown, malformed or too old)."""
+def lookup(folder: str | Path, ticket: str, now: float | None = None, max_age: int = TICKET_AGE,
+           provider: str = "claude") -> str | None:
+    """For the proxy: the credential behind a ticket of this provider, or None (unknown, malformed, too old, or a
+    ticket of another AI)."""
     if not isinstance(ticket, str) or not TICKET.fullmatch(ticket):
         return None
     path = Path(folder) / ticket_name(ticket)
     try:
         if (time.time() if now is None else now) - path.stat().st_mtime > max_age:
             return None
-        token = path.read_text().strip()
+        owner, _, token = path.read_text().strip().partition("\n")
     except (OSError, UnicodeDecodeError):
         return None
-    return token if TOKEN.fullmatch(token) else None
+    if not token:                       # a ticket file from before 15.11.2026 held only a Claude token
+        owner, token = "claude", owner
+    return token if owner == provider and _secret_ok(provider, token) else None
 
 
 # --- API keys of other AIs (Mistral since 14.11.2026; web/app/ai_link.py). Same encryption and key as the Claude

@@ -1,18 +1,39 @@
 """The kanban board of a project: items, suggestions and the trash."""
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 
-from .. import board, users
+from .. import agents, board, users
 from ..deps import api_user, fail, ok, page_user, redirect
 
 router = APIRouter()
 
 # POST /items/{id}/{action}: what the card and trash buttons call.
+def _agent_start(user_id: int, item_id: int) -> bool:
+    try:
+        agents.start_item(user_id, item_id)
+    except ValueError:
+        return False
+    return True
+
+
+def _agent_decide(decision: str):
+    """The user's decision on the newest task of an item (agents.decide checks that it fits the task's state)."""
+    def run(user_id: int, item_id: int) -> bool:
+        task = agents.item_task(user_id, item_id)
+        return task is not None and agents.decide(user_id, task.id, decision)
+    return run
+
+
 ITEM_ACTIONS = {
     "accept": board.accept,
     "reject": board.reject,
     "discard": board.discard,
     "restore": board.restore,
     "delete": board.delete_item,
+    # the agents (Janis, 15.11.2026): an agreed item goes to the chain from its card, the user approves at the end
+    "agent-start": _agent_start,
+    "agent-approve": _agent_decide("approve"),
+    "agent-reject": _agent_decide("reject"),
+    "agent-cancel": _agent_decide("cancel"),
 }
 
 

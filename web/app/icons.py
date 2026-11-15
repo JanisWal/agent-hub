@@ -40,6 +40,7 @@ ICONS = {
     "plus": '<path d="M12 5v14M5 12h14"/>',
     "pencil": '<path d="M4 20l1-4L16.5 4.5a2 2 0 0 1 3 3L8 19z"/><path d="M14 7l3 3"/>',
     "check": '<path d="M5 12.5l5 5 9-10"/>',
+    "play": '<path d="M8 5.5v13l10-6.5z"/>',
     "cross": '<path d="M6 6l12 12M18 6L6 18"/>',
     "undo": '<path d="M9 14L4 9l5-5"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>',
     "triangle_left": '<path d="M15 6l-8 6 8 6z"/>',

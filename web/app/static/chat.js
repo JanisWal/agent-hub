@@ -97,11 +97,13 @@
         log.appendChild(line("claude wait", box.dataset.claude, waitingText()));
       } else if (m.status === "failed") {
         // Only a short text per kind of failure (chat.FAILURES), never what Claude Code said.
-        var kind = { auth: "failAuth", timeout: "failTimeout", steps: "failSteps" }[m.failure] || "failOther";
+        var kind = { auth: "failAuth", timeout: "failTimeout", steps: "failSteps", limit: "failLimit" }[m.failure] || "failOther";
         log.appendChild(line("claude failed", box.dataset.claude, box.dataset.failed + ": " + box.dataset[kind]));
       } else {
         log.appendChild(line("claude", box.dataset.claude, m.answer, true));
         if (m.memory) log.appendChild(line("note", "", box.dataset.memory));   // the answer updated MEMORY.md
+        // Another AI of the user answered because the first could not (aichoice.py): say which and why.
+        if (m.via) log.appendChild(line("note", "", box.dataset.fallback.replace("{name}", m.via).replace("{other}", m.instead)));
       }
     });
     send.disabled = open;

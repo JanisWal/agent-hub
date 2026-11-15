@@ -353,10 +353,23 @@ class IsolationTest(unittest.TestCase):
         self.assertEqual(ai_link.take_keys(), [(self.a.id, "mistral", key)])         # the user comes from the hub
         ai_link.complete(self.a.id, "mistral", True)
         agents.configure(self.b.id, "chef", model="mistral-small-2603")
-        with self.assertRaisesRegex(ValueError, "mistral"):
+        with self.assertRaisesRegex(ValueError, "none"):
             chat.send(self.b.id, self.mine.id, "Use the Mistral of A")               # no fallback to A's key
+        from app import aichoice
+        self.assertFalse(aichoice.set_default(self.b.id, "mistral"))                 # nor as his standard
         self.assertEqual(ai_link.connected_providers(self.b.id), ())
         self.assertEqual(ai_link.status(self.a.id, "mistral"), "connected")
+
+    def test_b_can_not_start_or_decide_tasks_of_a(self):
+        from app import agents
+        from app.routes import board as board_routes
+        item = board.list_items(self.a.id, self.project.id)[0]
+        for action in ("agent-start", "agent-approve", "agent-reject", "agent-cancel"):
+            self.assertEqual(board_routes.item_action(item.id, action, user=self.b).status_code, 404)
+        with self.assertRaises(ValueError):
+            agents.start_item(self.b.id, item.id)
+        self.assertEqual(agents.list_tasks(self.a.id, self.project.id), [])
+        self.assertIsNone(agents.item_task(self.b.id, item.id))
 
     def test_deleting_an_account_leaves_the_others_alone(self):
         owner = users.create_user("owner@example.com", "Own3r!pass", role="owner")

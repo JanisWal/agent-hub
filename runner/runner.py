@@ -2,9 +2,11 @@
 
 Now: sign-ins of Claude (link and code between the hub and `claude setup-token`; the token is kept encrypted,
 tokens.py), API keys of other AIs (Mistral: checked with the provider and kept encrypted, tokens.ProviderKeys), the
-manager chat (Claude: one container per question, with a ticket instead of the token; Mistral: the runner asks the
-API itself, mistral.py), restart, shutdown and backup of the Pi, and deleting the saved token of users who
-disconnected. The runner always asks, the hub never
+manager chat and the agent runs (one container per question or run, Claude Code or Mistral Vibe, always with a
+ticket instead of the credential: adapters.py), the work folders of the tasks and merging approved work
+(workspace.py), restart, shutdown and backup of the Pi, and deleting the saved credentials of users who
+disconnected. An agent run takes minutes, so it runs in a thread of its own; meanwhile the loop goes on with sign-ins
+and keys, but starts no chat (the Pi has room for one big container at a time; the hub lets the question wait). The runner always asks, the hub never
 calls it.
 
 Environment: HUB_URL (e.g. http://web:8000), RUNNER_TOKEN (the token whose SHA-256 the hub knows),
@@ -22,11 +24,14 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from . import launcher, login, mistral, tokens
+import threading
+
+from . import adapters, launcher, login, mistral, tokens, workspace
 
 LOGIN_TIMEOUT_AFTER_CODE = 90   # seconds Claude Code gets to accept the code
 LINK_TIMEOUT = 30               # seconds until the sign-in prints its link
 CHAT_TIMEOUT = 200              # seconds a chat answer may take (a web search takes several steps)
+RUN_TIMEOUT = 1100              # seconds an agent run may take (the hub gives up after 20 minutes)
 POWER_TIMEOUT = 240             # seconds a manual backup may take (the nightly one needs a few seconds)
 
 
@@ -52,7 +57,8 @@ class Api:
 
 class Runner:
     def __init__(self, api, claude_base: str, vault=None, tickets=None, start_session=None,
-                 clock=time.time, run_chat=None, run_power=None, keys=None, adapters=None):
+                 clock=time.time, run_chat=None, run_power=None, keys=None, verifiers=None, work=None,
+                 run_agent=None, background: bool = True):
         self.api = api
         self.claude_base = Path(claude_base)
         self.vault = vault or tokens.Vault(claude_base, os.environ.get("HUB_TOKEN_KEY"))
@@ -62,7 +68,11 @@ class Runner:
         self.run_chat = run_chat or self._run_chat
         self.run_power = run_power or self._run_power
         self.keys = keys or tokens.ProviderKeys(claude_base, os.environ.get("HUB_TOKEN_KEY"))
-        self.adapters = adapters or {"mistral": mistral}   # AIs the runner asks over their API: verify(), ask()
+        self.verifiers = verifiers or {"mistral": mistral}   # check a pasted API key with its provider: verify()
+        self.work = work or workspace.Workspace(os.environ.get("HUB_WORK_DIR", "/opt/agent-hub/work"))
+        self.run_agent = run_agent or self._run_agent
+        self.background = background
+        self.agent_thread: threading.Thread | None = None
         self.sessions: dict[int, login.LoginSession] = {}
 
     def folder(self, user_id: int) -> str:
@@ -152,7 +162,7 @@ class Runner:
     def handle_keys(self) -> None:
         for item in self.api.call("POST", "/runner/keys/claim").get("keys", []):
             user_id, provider, api_key = int(item["user_id"]), item["provider"], item["key"]
-            adapter = self.adapters.get(provider)
+            adapter = self.verifiers.get(provider)
             success = False
             if adapter is not None and tokens.KEY_PATTERNS.get(provider) and tokens.KEY_PATTERNS[provider].fullmatch(api_key):
                 result = adapter.verify(api_key)
@@ -179,58 +189,121 @@ class Runner:
                 continue
             self.api.call("POST", f"/runner/keys/{user_id}/{provider}/wiped")
 
-    def _api_chat(self, job: dict, provider: str) -> None:
-        """A question for an AI the runner asks over its API (Mistral): no container, the key stays in this process."""
-        user_id, chat_id = int(job["user_id"]), int(job["chat_id"])
-        adapter = self.adapters.get(provider)
-        api_key = self.keys.load(user_id, provider) if adapter is not None else None
-        if api_key is None:
-            self.api.call("POST", f"/runner/keys/{user_id}/{provider}/expired")
-            self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="0",
-                          answer=f"Not logged in: no saved {provider} key", tokens_in=0, tokens_out=0)
-            return
-        ok, text, tokens_in, tokens_out, login_problem = adapter.ask(api_key, job["model"], job.get("effort") or "",
-                                                                     job["prompt"])
-        api_key = None
-        if login_problem:   # the key was refused: it goes (Janis, 14.11.2026) and the menu says "key refused"
-            self.keys.forget(user_id, provider)
-            self.api.call("POST", f"/runner/keys/{user_id}/{provider}/expired")
-        self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="1" if ok else "0", answer=text,
-                      tokens_in=tokens_in, tokens_out=tokens_out)
+    def _expired(self, user_id: int, provider: str) -> None:
+        """The AI refused the credential (or there is none): the menu shows it, a refused API key is deleted."""
+        if provider == "claude":
+            self.api.call("POST", f"/runner/logins/{int(user_id)}/expired")
+        else:
+            self.keys.forget(int(user_id), provider)
+            self.api.call("POST", f"/runner/keys/{int(user_id)}/{provider}/expired")
 
     def handle_chat(self) -> None:
         job = self.api.call("POST", "/runner/chat/claim").get("job")
         if not job:
             return
+        user_id, chat_id = int(job["user_id"]), int(job["chat_id"])
         provider = job.get("provider") or "claude"
-        if provider != "claude":
-            return self._api_chat(job, provider)
-        user_id, chat_id = job["user_id"], job["chat_id"]
-        token = self.vault.load(user_id)
-        if token is None:   # no token of the new kind (or the key changed): the user links Claude again
-            self.api.call("POST", f"/runner/logins/{user_id}/expired")
+        adapter = adapters.ADAPTERS.get(provider)
+        secret = adapter.secret(self, user_id) if adapter else None
+        if secret is None:   # no saved credential (or the key changed): the user links this AI again
+            self._expired(user_id, provider)
             self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="0",
                           answer="Not logged in: no saved token. Please run /login", tokens_in=0, tokens_out=0)
             return
-        ticket = self.tickets.issue(token)
-        token = None
+        ticket = self.tickets.issue(secret, provider)
+        secret = None
         try:
-            command = launcher.build_chat_command(chat_id=chat_id, user_id=user_id, model=job["model"],
-                                                  ticket=ticket, mode=job.get("mode", "all"),
-                                                  effort=job.get("effort") or "")
+            command = adapter.chat_command(chat_id=chat_id, user_id=user_id, model=job["model"], ticket=ticket,
+                                           mode=job.get("mode", "all"), effort=job.get("effort") or "")
             done = self.run_chat(command, job["prompt"])
-            ok, text, tokens_in, tokens_out, login_problem = launcher.parse_chat_output(done.stdout)
+            ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(done.stdout)
             if not ok and done.returncode:
                 text = f"{text} (exit code {done.returncode})".strip()
         except subprocess.TimeoutExpired:
-            subprocess.run(["docker", "rm", "-f", f"agent-chat-{int(chat_id)}"], capture_output=True)
+            subprocess.run(["docker", "rm", "-f", f"agent-chat-{chat_id}"], capture_output=True)
             ok, text, tokens_in, tokens_out, login_problem = False, "Timeout: no answer in time.", 0, 0, False
         finally:
             self.tickets.revoke(ticket)   # from here on the ticket is worth nothing
-        if login_problem:   # Claude says we are not signed in: show the connection as expired
-            self.api.call("POST", f"/runner/logins/{user_id}/expired")
+        if login_problem:   # the AI says we are not signed in: show the connection as expired
+            self._expired(user_id, provider)
         self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="1" if ok else "0", answer=text,
                       tokens_in=tokens_in, tokens_out=tokens_out)
+
+    # --- agent runs (web/app/agents.py, runtask.py): one container per run in the task's work folder
+    def _run_agent(self, command: list[str], prompt: str):
+        return subprocess.run(command, input=prompt, capture_output=True, text=True, timeout=RUN_TIMEOUT)
+
+    def agent_busy(self) -> bool:
+        return self.agent_thread is not None and self.agent_thread.is_alive()
+
+    def handle_runs(self) -> None:
+        job = self.api.call("POST", "/runner/claim", can_mac="0").get("job")
+        if not job:
+            return
+        if self.background:
+            self.agent_thread = threading.Thread(target=self.do_run, args=(job,), daemon=True)
+            self.agent_thread.start()
+        else:
+            self.do_run(job)
+
+    def _finish_run(self, run_id: int, result: str, report: str, tokens_in=0, tokens_out=0, seconds=0) -> None:
+        self.api.call("POST", f"/runner/runs/{run_id}/finish", result=result, report=report,
+                      tokens_in=tokens_in, tokens_out=tokens_out, seconds=seconds)
+
+    def do_run(self, job: dict) -> None:
+        run_id, user_id, task_id = int(job["run_id"]), int(job["user_id"]), int(job["task_id"])
+        role, provider = job["role"], job.get("provider") or "claude"
+        adapter = adapters.ADAPTERS.get(provider)
+        secret = adapter.secret(self, user_id) if adapter else None
+        if secret is None:
+            self._expired(user_id, provider)
+            return self._finish_run(run_id, "failed", "Not logged in: no saved credential.")
+        try:
+            folder = self.work.prepare(task_id, int(job["project_id"]), job["branch"])
+            launcher.prepare_folder(str(folder), user_id, recursive=True)
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            print(f"runner: work folder of task {task_id}: {type(error).__name__}", file=sys.stderr, flush=True)
+            return self._finish_run(run_id, "failed", "The work folder could not be prepared.")
+        ticket = self.tickets.issue(secret, provider)
+        secret = None
+        started = self.clock()
+        try:
+            command = adapter.run_command(run_id=run_id, user_id=user_id, model=job["model"], ticket=ticket,
+                                          net=job.get("net", "together"), effort=job.get("effort") or "",
+                                          work_dir=str(folder))
+            done = self.run_agent(command, job["prompt"])
+            ok, text, tokens_in, tokens_out, login_problem = adapter.parse_run(done.stdout)
+        except subprocess.TimeoutExpired:
+            subprocess.run(["docker", "rm", "-f", f"agent-run-{run_id}"], capture_output=True)
+            ok, text, tokens_in, tokens_out, login_problem = False, "Timeout: the run took too long.", 0, 0, False
+        finally:
+            self.tickets.revoke(ticket)
+        if login_problem:
+            self._expired(user_id, provider)
+        result, report = launcher.result_of(role, text, failed=not ok)
+        if role in ("programmer", "tester"):   # the runner commits from outside: the run never sees .git
+            try:
+                self.work.commit(task_id, job["branch"], f"Task {task_id}, round {job.get('round', 1)}: {role}")
+            except (OSError, subprocess.SubprocessError) as error:
+                print(f"runner: commit of task {task_id} failed: {type(error).__name__}", file=sys.stderr, flush=True)
+                report = (report + "\n\n(The hub could not save the changes.)").strip()
+                result = "failed"
+        self._finish_run(run_id, result, report, tokens_in, tokens_out, int(self.clock() - started))
+
+    def handle_merges(self) -> None:
+        """Approved tasks: merge their branch into the project's main, then the manager documents."""
+        for item in self.api.call("GET", "/runner/merges").get("merges", []):
+            task_id = int(item["task_id"])
+            try:
+                ok = self.work.merge(task_id, int(item["project_id"]), item["branch"])
+            except (OSError, subprocess.SubprocessError) as error:
+                print(f"runner: merge of task {task_id}: {type(error).__name__}", file=sys.stderr, flush=True)
+                ok = False
+            self.api.call("POST", f"/runner/merges/{task_id}/done", success="1" if ok else "0")
+
+    def handle_cleanups(self) -> None:
+        for task_id in self.api.call("GET", "/runner/cleanups").get("task_ids", []):
+            self.work.remove(int(task_id))
 
     # --- restart, shutdown or backup of the Pi, asked for by the owner (web/app/power.py)
     def _run_power(self, command: list[str]):
@@ -264,7 +337,12 @@ class Runner:
         self.handle_key_wipes()
         self.handle_keys()
         self.handle_logins()
+        if self.agent_busy():
+            return              # one big container at a time: chat and the next run wait for this run
         self.handle_chat()
+        self.handle_merges()
+        self.handle_cleanups()
+        self.handle_runs()
 
 
 def main() -> None:
@@ -273,6 +351,9 @@ def main() -> None:
     os.chmod(base, 0o700)   # nobody but root may even list whose folders exist
     if not os.environ.get("HUB_TOKEN_KEY"):
         print("runner: HUB_TOKEN_KEY is not set, Claude can not be linked or used", file=sys.stderr, flush=True)
+    work = os.environ.get("HUB_WORK_DIR", "/opt/agent-hub/work")
+    Path(work).mkdir(parents=True, exist_ok=True)
+    os.chmod(work, 0o700)   # the projects' code and the tasks' folders: only root (and the run of each task)
     runner = Runner(Api(os.environ["HUB_URL"], os.environ["RUNNER_TOKEN"]), base)
     runner.tickets.sweep(max_age=0)   # no run is going yet: tickets from before a restart are void
     while True:
