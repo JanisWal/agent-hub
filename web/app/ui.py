@@ -92,11 +92,11 @@ LOGIN = """<section class="glass">
 </section>"""
 
 
-def login_page(failed: bool = False, locked_minutes: int = 0) -> str:
-    """The login page (German until the user is known, see DESIGN.md)."""
-    text = i18n.t("de", "login_locked", minutes=locked_minutes) if locked_minutes else i18n.t("de", "login_failed")
+def login_page(failed: bool = False, locked_minutes: int = 0, lang: str = "de") -> str:
+    """The login page. The user is not known yet: `lang` is the browser's language (i18n.from_header)."""
+    text = i18n.t(lang, "login_locked", minutes=locked_minutes) if locked_minutes else i18n.t(lang, "login_failed")
     error = f'<p class="error" role="alert">{esc(text)}</p>' if failed or locked_minutes else ""
-    return page(i18n.t("de", "login"), fill(LOGIN, "de", ERROR=error), "de")
+    return page(i18n.t(lang, "login"), fill(LOGIN, lang, ERROR=error), lang)
 
 
 # Closed: only the gear and the arrow show at the top right. Open: the box slides out of

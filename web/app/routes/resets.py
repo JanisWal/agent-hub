@@ -2,15 +2,20 @@
 from fastapi import APIRouter, BackgroundTasks, Form, Request
 from fastapi.responses import HTMLResponse
 
-from .. import mailtext, resetpages, resets, throttle, users
+from .. import i18n, mailtext, resetpages, resets, throttle, users
 from ..deps import redirect
 
 router = APIRouter()
 
 
+def _lang(request: Request) -> str:
+    """Nobody is logged in: the pages speak the browser's language (the page of a valid link the user's own)."""
+    return i18n.from_header(request.headers.get("accept-language"))
+
+
 @router.get("/forgot", response_class=HTMLResponse)
-def forgot_form() -> str:
-    return resetpages.forgot_page()
+def forgot_form(request: Request) -> str:
+    return resetpages.forgot_page(lang=_lang(request))
 
 
 @router.post("/forgot", response_class=HTMLResponse)
@@ -22,35 +27,35 @@ def forgot(request: Request, background: BackgroundTasks, email: str = Form(""))
     key = "forgot:" + throttle.client_ip(request)
     wait = throttle.seconds_locked(key)
     if wait:
-        return HTMLResponse(resetpages.forgot_page("login_locked", minutes=throttle.minutes(wait)), status_code=429)
+        return HTMLResponse(resetpages.forgot_page("login_locked", lang=_lang(request), minutes=throttle.minutes(wait)), status_code=429)
     throttle.record_failure(key)
     if "@" not in email or len(email) > users.MAX_EMAIL_LENGTH:
-        return HTMLResponse(resetpages.forgot_page("msg_email"), status_code=400)
+        return HTMLResponse(resetpages.forgot_page("msg_email", lang=_lang(request)), status_code=400)
     created = resets.create_token(email)
     if created:
         user, token = created
         background.add_task(mailtext.send_link_mail, "reset", user, token, resets.TOKEN_SECONDS)
-    return resetpages.sent_page()
+    return resetpages.sent_page(_lang(request))
 
 
 @router.get("/reset/{token}", response_class=HTMLResponse)
-def reset_form(token: str):
+def reset_form(request: Request, token: str):
     user = resets.user_for_token(token)
     if user is None:
-        return HTMLResponse(resetpages.invalid_page(), status_code=400)
+        return HTMLResponse(resetpages.invalid_page(_lang(request)), status_code=400)
     return resetpages.reset_page(token, user.language)
 
 
 @router.post("/reset/{token}", response_class=HTMLResponse)
-def reset(token: str, new: str = Form(""), repeat: str = Form("")):
+def reset(request: Request, token: str, new: str = Form(""), repeat: str = Form("")):
     user = resets.user_for_token(token)
     if user is None:
-        return HTMLResponse(resetpages.invalid_page(), status_code=400)
+        return HTMLResponse(resetpages.invalid_page(_lang(request)), status_code=400)
     if new != repeat:
         return HTMLResponse(resetpages.reset_page(token, user.language, "err_pw_mismatch"), status_code=400)
     try:
         if not resets.consume(token, new):
-            return HTMLResponse(resetpages.invalid_page(), status_code=400)
+            return HTMLResponse(resetpages.invalid_page(user.language), status_code=400)
     except users.UserError:
         return HTMLResponse(resetpages.reset_page(token, user.language, "err_pw_rules"), status_code=400)
     return redirect("/login")

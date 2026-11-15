@@ -47,6 +47,19 @@ class PagesTest(unittest.TestCase):
         user = users.check_login("me@example.com", "correct horse")
         self.assertIn("Not connected", ui.settings_bar(user))
 
+    def test_pages_before_the_login_follow_the_browsers_language(self):
+        from app import i18n
+        for header, lang in (("en-US,en;q=0.9,de;q=0.8", "en"), ("de-DE,de;q=0.9,en;q=0.8", "de"), ("fr-FR,en;q=0.5", "en"),
+                             ("fr,it", "de"), ("", "de"), (None, "de"), ("EN", "en")):
+            self.assertEqual(i18n.from_header(header), lang, header)
+        self.assertIn("Welcome back.", ui.login_page(lang="en"))
+        self.assertIn('<html lang="en">', ui.login_page(lang="en"))
+        self.assertIn("Willkommen zurück.", ui.login_page())
+
+    def test_the_dashboard_has_no_quota_bar(self):
+        user = users.check_login("me@example.com", "correct horse")
+        self.assertNotIn("quota", dashboard.render(user, [], 1, True))
+
     def test_brand_links_to_the_repository(self):
         page = layout.page("Home", "", "de")
         self.assertIn('href="https://github.com/JanisWal/agent-hub"', page)

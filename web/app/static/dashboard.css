@@ -1,4 +1,4 @@
-/* Dashboard: greeting, pages of project tiles, pager, quota bar, fit-to-window layout. */
+/* Dashboard: greeting, pages of project tiles, pager, fit-to-window layout. */
 
 .dash {
   width: 100%;
@@ -77,11 +77,6 @@ a.pager-arrow:hover { color: var(--text); }
 .dot::after { content: ""; position: absolute; inset: -17px -7px; }
 .dot:hover { opacity: 0.7; }
 
-/* Quota bar. */
-.quota { width: 100%; max-width: 560px; margin: 0 auto; }
-.quota-label { display: flex; justify-content: space-between; gap: var(--space); margin-bottom: var(--space); font-size: 0.85rem; color: var(--muted); }
-.quota-bar { height: 10px; border-radius: 999px; background: var(--field); border: 1px solid var(--glass-border); overflow: hidden; box-shadow: inset 0 1px 3px rgba(80, 40, 10, 0.14); }
-.quota-bar i { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 80%, white), var(--accent)); }
 @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 560px) {
   .grid { grid-template-columns: 1fr; }
@@ -125,7 +120,7 @@ a.pager-arrow:active { scale: 0.75; }
 /* ===== Fits the window and follows its size ===== */
 /* ===== The dashboard fits the window and follows its size ===== */
 /* The two rows (or three, when narrow) of tiles share the height that is left after the
-   greeting, the page dots and the quota bar. A tile has the same size on every page, so it
+   greeting and the page dots. A tile has the same size on every page, so it
    never changes size when it is moved. At 16:9 nothing scrolls. */
 :root { --cols: 3; --rows: 2; --grid-gap: 24px; --row-min: clamp(84px, 15vh, 130px); --row-max: 250px; }
 @media (max-width: 699px) { :root { --cols: 2; --rows: 3; --grid-gap: 16px; } }
@@ -177,8 +172,6 @@ body.fit .plus-sign { width: clamp(36px, 6.5vh, 56px); height: clamp(36px, 6.5vh
   body.fit .dash { gap: 6px; }
   body.fit .greeting { font-size: 1.4rem; }
   body.fit .pager-arrow { height: 30px; }
-  body.fit .quota-label { margin-bottom: 2px; font-size: 0.7rem; }
-  body.fit .quota-bar { height: 8px; }
   body.fit .tile { padding: 12px 14px; }
   body.fit .tile-delete { top: 8px; right: 8px; }
 }
@@ -202,5 +195,4 @@ html.dragging-active .tile[data-id]:not(.drop-target):hover { translate: none; }
   .plus-sign { width: 44px; height: 44px; }
   .plus-hint { font-size: 0.85rem; line-height: 1.25; }
 
-  .quota-label { flex-wrap: wrap; row-gap: 2px; }
 }

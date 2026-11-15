@@ -36,3 +36,4 @@
 @media (max-width: 560px) {
   .sys-fields { flex-basis: 100%; }
 }
+@media (pointer: coarse) { .sys-field select { font-size: max(16px, 1rem); } }   /* no zoom while typing (app.css) */

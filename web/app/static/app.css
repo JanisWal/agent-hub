@@ -802,3 +802,9 @@ main { overflow: clip; } /* shadows may reach to the window edge, but their empt
 .loading-dots i:nth-child(3) { animation-delay: 0.4s; }
 @keyframes loading-dot { 0%, 80%, 100% { opacity: 0.25; transform: none; } 40% { opacity: 1; transform: translateY(-2px); } }
 @media (prefers-reduced-motion: reduce) { .loading-dots i { animation: none; opacity: 0.6; } }
+
+/* Typing on a phone (Janis, 15.11.2026): a browser zooms into a field whose text is smaller than 16 px. Where a
+   finger is the pointer, every field has at least that size. Page styles with smaller fields repeat this rule. */
+@media (pointer: coarse) {
+  input, textarea, select, .setting input, .setting select { font-size: max(16px, 1rem); }
+}

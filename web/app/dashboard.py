@@ -1,4 +1,4 @@
-"""HTML of the dashboard: project tiles on pages, page dots, quota bar and the project dialogs."""
+"""HTML of the dashboard: project tiles on pages, page dots and the project dialogs."""
 from . import i18n
 from .icons import icon
 from .layout import esc, fill
@@ -17,11 +17,6 @@ DASHBOARD = """<div class="dash">
     </div>
   </div>
   %PAGER%
-  <div class="quota">
-    <div class="quota-label"><span>%t.quota_title%</span><span>%t.quota_none%</span></div>
-    <div class="quota-bar" role="progressbar" aria-label="%t.quota_title%"
-         aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
-  </div>
 </div>
 <div class="edge edge-left" aria-hidden="true">%EDGE_LEFT%</div>
 <div class="edge edge-right" aria-hidden="true">%EDGE_RIGHT%</div>

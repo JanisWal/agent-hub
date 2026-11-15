@@ -156,8 +156,6 @@ STRINGS = {
         "page_next": "Nächste Seite",
         "page_n": "Seite {n}",
         "pages_nav": "Seiten",
-        "quota_title": "Geschätztes Token-Kontingent",
-        "quota_none": "Noch keine Messdaten",
         "msg_required": "Bitte ausfüllen.",
         "msg_email": "Bitte eine gültige E-Mail-Adresse eingeben.",
         "stations": "Stationen",
@@ -170,9 +168,9 @@ STRINGS = {
         "chat_clear_yes": "Chat leeren",
         "chat_model": "Modell des Managers",
         "chat_effort": "Stufe des Managers",
-        "net_together": "Web + Code zusammen",
+        "net_together": "Code mit Internet",
         "split_label": "Höhe der Kacheln ändern",
-        "net_together_tip": "Rot: Websuche, Seiten lesen und Code mit offenem Internet. Aus: Websuche, Code ohne Internet.",
+        "net_together_tip": "An: Code, den der Manager ausführt, darf ins Internet. Aus: Er sucht weiter im Web, sein Code bleibt aber offline, damit nichts nach außen gelangen kann.",
         "autonomy": "Selbstständigkeit des Managers",
         "autonomy_auto": "Entscheidet selbst",
         "autonomy_major": "Fragt bei Großem",
@@ -519,8 +517,6 @@ STRINGS = {
         "page_next": "Next page",
         "page_n": "Page {n}",
         "pages_nav": "Pages",
-        "quota_title": "Estimated token quota",
-        "quota_none": "No data yet",
         "msg_required": "Please fill this in.",
         "msg_email": "Please enter a valid e-mail address.",
         "stations": "Stations",
@@ -533,9 +529,9 @@ STRINGS = {
         "chat_clear_yes": "Clear chat",
         "chat_model": "Model of the manager",
         "chat_effort": "Effort of the manager",
-        "net_together": "Web + code together",
+        "net_together": "Code with internet",
         "split_label": "Change the height of the tiles",
-        "net_together_tip": "Red: web search, reading pages and code with the open internet. Off: web search, code without internet.",
+        "net_together_tip": "On: code the manager runs may use the internet. Off: it still searches the web, but its code stays offline, so nothing can be sent out.",
         "autonomy": "How freely the manager decides",
         "autonomy_auto": "Decides alone",
         "autonomy_major": "Asks for big things",
@@ -730,6 +726,16 @@ STRINGS = {
         "confirm_empty_trash": "Empty the trash for good? This cannot be undone.",
     },
 }
+
+
+def from_header(accept_language: str | None) -> str:
+    """The language for a visitor we do not know yet (login, forgotten password): the first language of the browser's
+    Accept-Language header that we have; German if there is none. Only the order counts, as browsers send it."""
+    for part in (accept_language or "").split(","):
+        tag = part.split(";")[0].strip().lower().split("-")[0]
+        if tag in LANGS:
+            return tag
+    return "de"
 
 
 def t(lang: str, key: str, **values) -> str:
