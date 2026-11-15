@@ -124,22 +124,6 @@ def button_sheen(name, palette, size=(520, 108)):
     return name, width, height, render(width, height, shade)
 
 
-def button_glow(name, palette, size=(600, 200), button=(520, 108)):
-    """Soft halo of the accent colour around the (centred) button; the button itself is covered by its own cell."""
-    width, height = size
-    bw, bh = button
-    left, top = (width - bw) / 2, (height - bh) / 2
-    accent = palette["ACCENT"]
-
-    def shade(x, y):
-        distance = box_distance(x, y, left, top, left + bw, top + bh, 32)
-        if distance <= 0:
-            return (*accent, 0.42)  # continuous with the halo, the rounded corners of the button show no box
-        return (*accent, 0.42 * math.exp(-(distance / 18) ** 2))
-
-    return name, width, height, render(width, height, shade, samples=1)
-
-
 def backdrop(name, palette, size=(1200, 720)):
     """The coloured fields behind the glass, like the orbs of the site, fading out to the page colour."""
     width, height = size
@@ -167,7 +151,6 @@ def main(out):
             card_cap(f"card-top-{theme}", palette, True),
             card_cap(f"card-bottom-{theme}", palette, False, (1040, 56)),
             button_sheen(f"button-{theme}", palette),
-            button_glow(f"glow-{theme}", palette),
             backdrop(f"backdrop-{theme}", palette),
         ):
             write_png(os.path.join(out, name + ".png"), width, height, rows)
