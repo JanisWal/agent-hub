@@ -296,7 +296,7 @@ class Runner:
         result, report = launcher.result_of(role, text, failed=not ok)
         if role in ("programmer", "tester"):   # the runner commits from outside: the run never sees .git
             try:
-                self.work.commit(task_id, job["branch"], f"Task {task_id}, round {job.get('round', 1)}: {role}")
+                self.work.commit(task_id, job["branch"], f"Task {task_id}, round {job.get('round', 1)}: {role} (run {run_id})")
             except (OSError, subprocess.SubprocessError) as error:
                 print(f"runner: commit of task {task_id} failed: {type(error).__name__}", file=sys.stderr, flush=True)
                 report = (report + "\n\n(The hub could not save the changes.)").strip()
