@@ -133,7 +133,7 @@ def render_role(lang: str, role: str, settings: dict, runs: list[agents.RoleRun]
         f'<section class="mtile glass"><header><h2>{esc(i18n.t(lang, "role_usage"))}</h2></header>'
         f'<div id="role-{role}-usage">{_usage(lang, usage)}</div></section>'
         f'</div><div class="mcol">'
-        f'<section class="mtile glass m-grow"><header><h2>{esc(i18n.t(lang, "role_runs"))}</h2>'
+        f'<section class="mtile glass"><header><h2>{esc(i18n.t(lang, "role_runs"))}</h2>'
         f'<span class="count" id="role-{role}-count">{len(runs)}</span></header>'
         f'<div class="r-scroll" id="role-{role}-runs">{runs_html}</div></section>'
         f'</div></section>'
@@ -155,7 +155,7 @@ def render_me(lang: str, waiting: list[tuple[agents.Task, str]]) -> str:
     return (
         f'<section class="manager role-view me-view" id="view-me" data-view-panel="me" '
         f'aria-label="{esc(i18n.t(lang, "station_me"))}" hidden>'
-        f'<div class="mcol"><section class="mtile glass m-grow"><header><h2>{esc(i18n.t(lang, "me_title"))}</h2>'
+        f'<div class="mcol"><section class="mtile glass"><header><h2>{esc(i18n.t(lang, "me_title"))}</h2>'
         f'{ui.info_dot(i18n.t(lang, "me_title"), i18n.t(lang, "me_hint"))}'
         f'<span class="count" id="me-count">{len(waiting)}</span>'
         f'<a class="link inline" href="#board" data-goto="board">{board}</a></header>'

@@ -42,6 +42,12 @@
       if (on) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current");
     });
     segment.place(!animate);
+    // Narrow windows: the stations are a row that scrolls sideways; the open one moves into the middle of it.
+    var open = nav.querySelector(".station.active");
+    if (open && nav.scrollWidth > nav.clientWidth) {
+      var still = !animate || matchMedia("(prefers-reduced-motion: reduce)").matches;
+      nav.scrollTo({ left: open.offsetLeft - (nav.clientWidth - open.offsetWidth) / 2, behavior: still ? "auto" : "smooth" });
+    }
     if (animate) {   // a short fade, restarted each time
       panels[name].classList.remove("appear");
       void panels[name].offsetWidth;
