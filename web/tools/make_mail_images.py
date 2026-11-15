@@ -132,7 +132,7 @@ def button_glow(name, palette, size=(600, 200), button=(520, 108)):
     accent = palette["ACCENT"]
 
     def shade(x, y):
-        distance = box_distance(x, y, left, top + 10, left + bw, top + bh + 10, 32)
+        distance = box_distance(x, y, left, top, left + bw, top + bh, 32)
         if distance <= 0:
             return (*accent, 0.42)  # continuous with the halo, the rounded corners of the button show no box
         return (*accent, 0.42 * math.exp(-(distance / 18) ** 2))

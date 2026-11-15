@@ -19,6 +19,10 @@ and `[data-ogsb]` (set by Outlook.com and its apps when they recolour) bring our
 recolour on their own (Gmail app) we cannot stop, so the colours are chosen to stay readable when inverted.
 Texts live in i18n.py (`mail_<kind>_subject|body|button|note`), so they exist in both languages.
 """
+import functools
+import hashlib
+import os
+
 from . import i18n, mail
 from .layout import esc, fill
 from .users import User
@@ -119,6 +123,14 @@ PICTURES = {"backdrop": (600, 360), "glow": (300, 100), "button": (260, 54)}
 CAPS = {"card-top": (520, 40), "card-bottom": (520, 28)}
 
 
+@functools.lru_cache(maxsize=None)
+def _version(name: str) -> str:
+    """Short hash of a picture file for `?v=`: mail proxies (Apple Mail, Gmail) keep a picture by its address for
+    a long time, so a changed picture needs a new address (an old halo showed as a strip under the button)."""
+    with open(os.path.join(os.path.dirname(__file__), "static", "mail", name + ".png"), "rb") as handle:
+        return hashlib.sha256(handle.read()).hexdigest()[:8]
+
+
 def _lighter(colour: str, share: float = 0.28) -> str:
     """`#RRGGBB` mixed with white, for the gradient of the Outlook button."""
     red, green, blue = (int(colour[i:i + 2], 16) for i in (1, 3, 5))
@@ -134,7 +146,7 @@ def _pictures(theme: str) -> dict[str, str]:
         return {name: "" for name in names}
 
     def url(name: str) -> str:
-        return esc(f"{base}/static/mail/{name}-{theme}.png")
+        return esc(f"{base}/static/mail/{name}-{theme}.png?v={_version(f'{name}-{theme}')}")
 
     def css(name: str, picture: str, position: str) -> str:
         width, height = PICTURES[picture]

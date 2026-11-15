@@ -198,7 +198,7 @@ class LinkMailTest(unittest.TestCase):
             for theme in ("light", "dark"):
                 html = mailtext.build("reset", self.user, "https://x/reset/T", 3600, theme)[2]
                 for name in ("backdrop", "glow", "button", "card-top", "card-bottom"):
-                    self.assertIn(f"https://hub.example.com/static/mail/{name}-{theme}.png", html)
+                    self.assertRegex(html, rf"https://hub.example.com/static/mail/{name}-{theme}\.png\?v=[0-9a-f]{{8}}")
                 self.assertNotIn("-light.png" if theme == "dark" else "-dark.png", html)
                 self.assertIsNone(re.search(r"%[A-Z_]+%", html))
 
