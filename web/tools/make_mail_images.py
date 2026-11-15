@@ -15,9 +15,9 @@ import zlib
 
 PALETTES = {
     "light": {"CARD": (247, 230, 211), "BORDER": (226, 199, 168), "ACCENT": (232, 132, 90), "EDGE": (255, 255, 255, 0.55),
-              "SHEEN": 0.34, "ORBS": ((240, 168, 120, 0.50), (230, 191, 140, 0.55), (232, 132, 90, 0.40))},
+              "SHEEN": 0.20, "ORBS": ((240, 168, 120, 0.50), (230, 191, 140, 0.55), (232, 132, 90, 0.40))},
     "dark": {"CARD": (51, 36, 28), "BORDER": (74, 52, 40), "ACCENT": (242, 154, 114), "EDGE": (255, 220, 190, 0.30),
-             "SHEEN": 0.10, "ORBS": ((138, 79, 46, 0.55), (107, 58, 34, 0.60), (200, 104, 63, 0.42))},
+             "SHEEN": 0.07, "ORBS": ((138, 79, 46, 0.55), (107, 58, 34, 0.60), (200, 104, 63, 0.42))},
 }
 
 
@@ -81,24 +81,26 @@ def coverage(distance):
 
 
 def card_cap(name, palette, top, size=(1040, 80)):
-    """Top or bottom end of the card: round corners (28 px, doubled), border, light edge and sheen."""
+    """Top or bottom end of the card as an overlay: the border ring, the light edge and the sheen. There is no
+    fill: the fill is the colour of the cell below (clipped round by the program), so a program that recolours the
+    card for its dark mode recolours the ends with it (Yahoo did; a filled picture stayed light)."""
     width, height = size
     radius, line = 56, 2
-    card, border, edge, sheen = palette["CARD"], palette["BORDER"], palette["EDGE"], palette["SHEEN"]
+    border, edge, sheen = palette["BORDER"], palette["EDGE"], palette["SHEEN"]
 
     def shade(x, y):
-        # The shape is a tall card; we draw only its top (or, mirrored, its bottom) end.
         yy = y if top else height - y
         distance = box_distance(x, yy, 0, 0, width, height * 4, radius)
-        outer = coverage(distance)
-        if outer == 0:
+        if coverage(distance) == 0:
             return (0, 0, 0, 0)
-        colour = over((*border, 1.0), (*card, coverage(distance + line)))
+        ring = coverage(distance) - coverage(distance + line)
+        inside = coverage(distance + line)
+        colour = (*border, max(0.0, ring))
         if top:
-            colour = over(colour, (255, 255, 255, sheen * max(0.0, 1 - yy / height) ** 1.5 * coverage(distance + line)))
-            ring = coverage(distance + line + 1) - coverage(distance + line + 3)  # light edge just inside the border
-            colour = over(colour, (edge[0], edge[1], edge[2], edge[3] * max(0.0, ring) * (1 - min(1.0, yy / (height * 0.9)))))
-        return (*colour[:3], colour[3] * outer)
+            colour = over(colour, (255, 255, 255, sheen * max(0.0, 1 - yy / height) ** 1.5 * inside))
+            glint = max(0.0, coverage(distance + line + 1) - coverage(distance + line + 3))  # light edge inside the ring
+            colour = over(colour, (edge[0], edge[1], edge[2], edge[3] * glint * (1 - min(1.0, yy / (height * 0.9)))))
+        return colour
 
     return name, width, height, render(width, height, shade)
 
@@ -122,7 +124,7 @@ def button_sheen(name, palette, size=(520, 108)):
     return name, width, height, render(width, height, shade)
 
 
-def button_glow(name, palette, size=(600, 160), button=(520, 108)):
+def button_glow(name, palette, size=(600, 200), button=(520, 108)):
     """Soft halo of the accent colour around the (centred) button; the button itself is covered by its own cell."""
     width, height = size
     bw, bh = button
@@ -133,7 +135,7 @@ def button_glow(name, palette, size=(600, 160), button=(520, 108)):
         distance = box_distance(x, y, left, top + 10, left + bw, top + bh + 10, 32)
         if distance <= 0:
             return (*accent, 0.0)
-        return (*accent, 0.42 * math.exp(-(distance / 22) ** 2))
+        return (*accent, 0.42 * math.exp(-(distance / 18) ** 2))
 
     return name, width, height, render(width, height, shade, samples=1)
 
