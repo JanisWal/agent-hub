@@ -114,8 +114,9 @@ fi
 
 # --- 4. the data
 install -d -m 755 "$CLONE/data"
-install -m 600 "$P/hub.db" "$CLONE/data/hub.db"                         # root: the web container writes it as root
+install -m 600 "$P/hub.db" "$CLONE/data/hub.db"
 cp -a "$P/data/." "$CLONE/data/"
+own -R 9000:9000 "$CLONE/data"                                        # the web container runs as 9000 (compose.yml)
 install -m 600 "$P/hub.env" "$CLONE/.env"
 own "$ADMIN_USER": "$CLONE/.env"
 
