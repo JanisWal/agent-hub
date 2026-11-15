@@ -19,7 +19,6 @@ class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         db.DB_PATH = os.path.join(self.tmp.name, "test.db")
-        claude_link.BASE_DIR = Path(self.tmp.name) / "claude"
         ai_link._keys.clear()
         self.a = users.create_user("a@example.com", "Aaaa!pass12")
         self.b = users.create_user("b@example.com", "Bbbb!pass12")
@@ -80,7 +79,7 @@ class ConnectionTest(Base):
         self.assertEqual(ai_link.take_keys(), [])                                         # handed over once
         ai_link.complete(self.a.id, "mistral", True)
         self.assertEqual(ai_routes.status("mistral", user=self.a)["status"], "connected")
-        self.assertEqual(ai_link.connected_providers(self.a.id), ("mistral",))
+        self.assertEqual(aichoice.connected(self.a.id), ["mistral"])
         self.assertEqual(ai_routes.disconnect("mistral", user=self.a), {"ok": True})
         self.assertEqual(ai_routes.status("mistral", user=self.a)["status"], "none")
         self.assertEqual(ai_link.pending_wipes(), [(self.a.id, "mistral")])

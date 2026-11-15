@@ -1,7 +1,7 @@
 """The Claude connection of a user: one per user, never shared. Standard library only.
 
 This module only knows the *state* of the connection. The credential itself (since 14.11.2026 the one-year token of
-`claude setup-token`) is kept by the runner, encrypted, in the user's own folder (`config_dir`, runner/tokens.py); it
+`claude setup-token`) is kept by the runner, encrypted, in the user's own folder (runner/tokens.py); it
 is never stored in the database, never passed through the web container and never shown to anybody (not even the
 owner). Runs only get a ticket for it.
 
@@ -12,10 +12,8 @@ The runner does the real login (Claude Code prints a link, the user confirms it 
 gets a code); it reports back with `set_login_url`, `complete` and `mark_expired`. The user is
 always taken from the database, never from a parameter a browser could send.
 """
-import os
 import sqlite3
 import time
-from pathlib import Path
 from urllib.parse import urlparse
 
 from . import db
@@ -24,13 +22,7 @@ STATUSES = ("none", "connecting", "connected", "expiring", "expired")
 TOKEN_DAYS = 365       # claude setup-token makes a token for one year
 RENEW_DAYS = 30        # from this many days before the end the menu offers "renew"
 CONNECT_TIMEOUT = 600  # seconds the user has to confirm the login before it is given up
-BASE_DIR = Path(os.environ.get("HUB_CLAUDE_DIR", "/data/claude"))
 LOGIN_HOSTS = ("claude.ai", "claude.com", "anthropic.com")  # the login link must lead there
-
-
-def config_dir(user_id: int) -> Path:
-    """The private Claude folder of one user (`CLAUDE_CONFIG_DIR` of his runs). Never shared."""
-    return BASE_DIR / str(int(user_id))
 
 
 def _row(conn: sqlite3.Connection, user_id: int) -> sqlite3.Row | None:
@@ -186,7 +178,7 @@ def mark_expired(user_id: int) -> bool:
 
 def disconnect(user_id: int, now: int | None = None) -> bool:
     """The user removes his connection (or cancels a login). For the user it is `none` at once; the
-    row stays as "wipe" until the runner has deleted `config_dir(user_id)` (`wiped`). The web
+    row stays as "wipe" until the runner has deleted the user's folder (`wiped`). The web
     container cannot reach that folder itself, and the saved login must not be left behind."""
     now = int(now if now is not None else time.time())
     with db.connect() as conn:

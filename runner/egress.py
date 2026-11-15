@@ -34,7 +34,6 @@ CONNECT_TIMEOUT = 10
 IDLE_TIMEOUT = 120
 TOTAL_TIMEOUT = 300
 MAX_CLIENTS = 32
-UPSTREAM = "api.anthropic.com"
 # The gateways: AI -> (upstream host, port). A ticket only works at the gateway of its own AI.
 GATEWAYS = {"claude": ("api.anthropic.com", 3130), "mistral": ("api.mistral.ai", 3131)}
 GATEWAY_HEAD_LIMIT = 65536
@@ -206,7 +205,7 @@ def parse_request(head: bytes) -> tuple[str, str, list[tuple[str, str]]] | None:
 
 
 def rewrite(method: str, path: str, headers: list[tuple[str, str]], token: str, length: int,
-            upstream: str = UPSTREAM) -> bytes:
+            upstream: str) -> bytes:
     """The request as it goes to the AI: the real token instead of the ticket, one request per connection."""
     keep = [(n, v) for n, v in headers if n.lower() not in _DROP]
     out = [f"{method} {path} HTTP/1.1", f"Host: {upstream}", f"Authorization: Bearer {token}",
@@ -224,7 +223,7 @@ async def _gateway_reply(writer: asyncio.StreamWriter, status: str, message: str
         pass
 
 
-async def _open_upstream(upstream: str = UPSTREAM):
+async def _open_upstream(upstream: str):
     addresses = await asyncio.wait_for(_resolve(upstream, 443), CONNECT_TIMEOUT)
     context = ssl.create_default_context()
     for address in addresses:   # connect to an address we checked, with the certificate checked for the name
@@ -240,7 +239,8 @@ async def _open_upstream(upstream: str = UPSTREAM):
 
 async def gateway(client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter, tickets_dir: str,
                   open_upstream=_open_upstream, log=print, provider: str = "claude") -> None:
-    """One request of a run: check it, swap ticket for token, pass it to Anthropic, stream the answer back.
+    """One request of a run: check it, swap ticket for token, pass it to the AI of this gateway (`provider`), stream
+    the answer back. `open_upstream(host)` opens the connection there (tests pass their own).
 
     Exactly one request per connection: the body is read by its length and nothing after it is passed on, so a
     second request on the same connection can never reach Anthropic with the ticket in it. The log names the path
@@ -280,8 +280,7 @@ async def gateway(client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter
             return
         body = await asyncio.wait_for(client_r.readexactly(length), GATEWAY_IDLE) if length else b""
         try:
-            upstream_r, upstream_w = await (open_upstream(upstream) if open_upstream is _open_upstream
-                                            else open_upstream())
+            upstream_r, upstream_w = await open_upstream(upstream)
         except (asyncio.TimeoutError, OSError):
             await _gateway_reply(client_w, "502 Bad Gateway", f"{provider} not reachable")
             return

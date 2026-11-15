@@ -64,6 +64,11 @@ MEDIA_OTHER = set("mkv avi wmv flv 3gp opus".split()) | PHOTO
 EDITABLE = {"md", "txt"}          # the pencil opens an editor for these
 
 
+def extension(name: str) -> str:
+    """The ending of a file name in lower case, without the dot ("" if it has none)."""
+    return name.rsplit(".", 1)[-1].lower() if "." in name else ""
+
+
 class FileError(ValueError):
     """The reason is the `code`: bad_name, bad_url, bad_category, disk_full, not_found, too_big, bad_offset, incomplete,
     bad_type, name_taken."""
@@ -86,7 +91,7 @@ class StoredFile:
 
     @property
     def ext(self) -> str:
-        return self.name.rsplit(".", 1)[-1].lower() if "." in self.name else ""
+        return extension(self.name)
 
     @property
     def kind(self) -> str:
@@ -114,7 +119,7 @@ class StoredFile:
 
 def category_for(name: str) -> str:
     """The area a new file goes into, by its ending."""
-    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    ext = extension(name)
     if ext == "md":
         return "memory"
     if ext in CODE:
@@ -127,7 +132,7 @@ def category_for(name: str) -> str:
 def content_type(name: str) -> tuple[str, bool]:
     """(Content-Type, inline). Only images, video and audio are shown in the browser; the type comes from a fixed
     table, never from the upload. Everything else is a download with a neutral type."""
-    ext = name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    ext = extension(name)
     for table in (IMAGE, VIDEO, AUDIO):
         if ext in table:
             return table[ext], True
@@ -458,6 +463,12 @@ def open_thumb(user_id: int, file_id: int, large: bool = False) -> Path | None:
     return path if path.is_file() else None
 
 
+def _remove_stored(project_id: int, file_id: int) -> None:
+    """Delete what a file has on the disk: the file itself and its two preview pictures."""
+    for path in (path_of(project_id, file_id), thumb_path(project_id, file_id), thumb_path(project_id, file_id, True)):
+        path.unlink(missing_ok=True)
+
+
 def delete(user_id: int, file_id: int, now: int | None = None) -> bool:
     """Put a file or link into the trash (Janis, 14.11.2026): it leaves every list and the manager's view, and it is
     gone for good after TRASH_DAYS unless it is restored. An unfinished upload goes at once. False if not the user's."""
@@ -479,9 +490,7 @@ def purge(user_id: int, file_id: int) -> bool:
         if row is None or row["status"] == "ready":
             return False
         conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
-    path_of(row["project_id"], file_id).unlink(missing_ok=True)
-    thumb_path(row["project_id"], file_id).unlink(missing_ok=True)
-    thumb_path(row["project_id"], file_id, True).unlink(missing_ok=True)
+    _remove_stored(row["project_id"], file_id)
     return True
 
 
@@ -535,9 +544,7 @@ def purge_old_trash(now: int | None = None) -> int:
         for row in rows:
             conn.execute("DELETE FROM files WHERE id = ?", (row["id"],))
     for row in rows:
-        path_of(row["project_id"], row["id"]).unlink(missing_ok=True)
-        thumb_path(row["project_id"], row["id"]).unlink(missing_ok=True)
-        thumb_path(row["project_id"], row["id"], True).unlink(missing_ok=True)
+        _remove_stored(row["project_id"], row["id"])
     return len(rows)
 
 
@@ -639,7 +646,7 @@ def _drop_stale(conn: sqlite3.Connection, now: int) -> None:
     """Throw away uploads that were never finished (the browser was closed)."""
     for row in conn.execute("SELECT id, project_id FROM files WHERE status = 'uploading' AND created_at < ?",
                             (now - STALE,)).fetchall():
-        path_of(row["project_id"], row["id"]).unlink(missing_ok=True)
+        _remove_stored(row["project_id"], row["id"])
         conn.execute("DELETE FROM files WHERE id = ?", (row["id"],))
 
 

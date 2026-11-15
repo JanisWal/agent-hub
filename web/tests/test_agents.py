@@ -11,7 +11,6 @@ class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         db.DB_PATH = os.path.join(self.tmp.name, "test.db")
-        claude_link.BASE_DIR = Path(self.tmp.name) / "claude"
         self.a = users.create_user("a@example.com", "Aaaa!pass12")
         self.b = users.create_user("b@example.com", "Bbbb!pass12")
         self.project = projects.create_project(self.a.id, "Project of A")
@@ -98,10 +97,6 @@ class ClaudeLinkTest(Base):
                     "javascript:alert(1)", ""):
             with self.assertRaises(ValueError, msg=bad):
                 claude_link.set_login_url(self.a.id, bad)
-
-    def test_config_dirs_are_per_user(self):
-        self.assertNotEqual(claude_link.config_dir(self.a.id), claude_link.config_dir(self.b.id))
-        self.assertEqual(claude_link.config_dir(self.a.id).parent, claude_link.config_dir(self.b.id).parent)
 
     def test_disconnect_wipes_before_the_row_is_forgotten(self):
         self.connect(self.a)

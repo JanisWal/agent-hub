@@ -59,12 +59,6 @@ def status(user_id: int, provider: str, now: int | None = None) -> str:
         return status_in(conn, user_id, provider, now)
 
 
-def connected_providers(user_id: int) -> tuple[str, ...]:
-    """The key providers this user can use now (for the model picker)."""
-    with db.connect() as conn:
-        return tuple(p for p in PROVIDERS if connected_in(conn, user_id, p))
-
-
 def _save(conn: sqlite3.Connection, user_id: int, provider: str, new_status: str, now: int,
           previous: str = "") -> None:
     """Write the state. `previous` is the state before a check began (connected or expired: a saved key exists)."""

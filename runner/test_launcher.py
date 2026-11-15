@@ -226,8 +226,15 @@ class ChatOutputTest(unittest.TestCase):
 
 
 class OutputTest(unittest.TestCase):
+    """An agent run: adapters.Claude.parse_run reads Claude Code's JSON, result_of the answer's last line."""
+
+    def result(self, role, out):
+        from runner import adapters
+        ok, text, tokens_in, tokens_out, _ = adapters.Claude().parse_run(out)
+        return (*L.result_of(role, text, failed=not ok), tokens_in, tokens_out)
+
     def test_result_marker_report_and_tokens(self):
-        result = L.parse_output("tester", answer("All good.\nChecked 3 things.\nRESULT: pass"))
+        result = self.result("tester", answer("All good.\nChecked 3 things.\nRESULT: pass"))
         self.assertEqual(result, ("pass", "All good.\nChecked 3 things.", 15, 3))
 
     def test_everything_unclear_is_failed(self):
@@ -241,15 +248,15 @@ class OutputTest(unittest.TestCase):
             ("reviewer", json.dumps(["list"])),
         ]
         for role, out in cases:
-            self.assertEqual(L.parse_output(role, out)[0], "failed", (role, out))
+            self.assertEqual(self.result(role, out)[0], "failed", (role, out))
 
     def test_marker_must_be_the_last_line(self):
-        self.assertEqual(L.parse_output("programmer", answer("RESULT: done\nand then more text"))[0], "failed")
+        self.assertEqual(self.result("programmer", answer("RESULT: done\nand then more text"))[0], "failed")
 
     def test_report_is_capped_and_role_checked(self):
-        self.assertEqual(len(L.parse_output("chef", answer("x" * 50000 + "\nRESULT: done"))[1]), L.MAX_REPORT)
+        self.assertEqual(len(self.result("chef", answer("x" * 50000 + "\nRESULT: done"))[1]), L.MAX_REPORT)
         with self.assertRaises(ValueError):
-            L.parse_output("janitor", answer("x"))
+            self.result("janitor", answer("x"))
 
 
 class ConsistencyTest(unittest.TestCase):

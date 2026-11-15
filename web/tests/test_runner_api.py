@@ -28,7 +28,6 @@ class RunnerApiTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         db.DB_PATH = os.path.join(self.tmp.name, "test.db")
-        claude_link.BASE_DIR = Path(self.tmp.name) / "claude"
         claude_link._codes.clear()
         patcher = mock.patch.dict(os.environ, {runner.TOKEN_HASH_ENV: hashlib.sha256(TOKEN.encode()).hexdigest()})
         patcher.start()

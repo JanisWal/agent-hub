@@ -18,7 +18,6 @@ class Base(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         db.DB_PATH = os.path.join(self.tmp.name, "test.db")
-        claude_link.BASE_DIR = Path(self.tmp.name) / "claude"
         self.files_dir = files.FILES_DIR
         files.FILES_DIR = Path(self.tmp.name) / "files"
         ai_link._keys.clear()

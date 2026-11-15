@@ -39,13 +39,7 @@ TOOLS_TEXT = {
     "all": "You have a web search, can read web pages and have a shell with internet access in an empty scratch "
            "folder (public internet only, no home network).",
     "apart": "You have a web search and a shell in an empty scratch folder; the shell has no internet.",
-    # an AI the hub asks over its plain API (Mistral): no tools at all, whatever the switch says (KONZEPT-AGENTEN 9.2)
-    "none": "You have no tools here: no web search, no web pages, no shell. Answer from what you know and from the "
-            "blocks below; say so when something should be checked on the web.",
 }
-# Which tools a provider's answers can use: Claude Code and Mistral Vibe have them (switch "web and code"); an AI
-# asked over its plain API would have none (TOOLS_TEXT["none"]).
-PROVIDER_TOOLS = {"claude": True, "mistral": True}
 
 
 # Memory and files (memory.py): the hub gives the memory file and a list of the other files with every question.
@@ -72,9 +66,9 @@ MEMORY_RULES = (
 )
 
 
-def role_for(mode: str, provider: str = "claude") -> str:
-    tools = TOOLS_TEXT.get(mode, TOOLS_TEXT["apart"]) if PROVIDER_TOOLS.get(provider) else TOOLS_TEXT["none"]
-    return ROLE.replace("%TOOLS%", tools) + " " + MEMORY_RULES
+def role_for(mode: str) -> str:
+    """The rules of the manager, the same for every AI: each one answers through a program with tools (adapters)."""
+    return ROLE.replace("%TOOLS%", TOOLS_TEXT.get(mode, TOOLS_TEXT["apart"])) + " " + MEMORY_RULES
 # The user's setting of how freely the manager decides (agents.AUTONOMY), as the manager reads it.
 AUTONOMY_TEXT = {
     "auto": "Decide everything yourself with the best option; do not ask the user.",
@@ -160,7 +154,7 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
     project = conn.execute("SELECT name, description FROM projects WHERE id = ? AND user_id = ?",
                            (project_id, user_id)).fetchone()
     if project is None:
-        return f"{role_for(row['mode'], row['provider'])}\n\n{row['prompt']}"
+        return f"{role_for(row['mode'])}\n\n{row['prompt']}"
     items = conn.execute(
         "SELECT kind, title FROM board_items WHERE project_id = ? AND status IN ('open', 'proposed')"
         " ORDER BY kind, position, id LIMIT ?", (project_id, ITEMS),
@@ -202,7 +196,7 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
     notes = f'<memory-folder>\n{saved or "(empty: make MEMORY.md as soon as there is something worth keeping)"}\n</memory-folder>'
     others = f"<files>\n{memory.listing(conn, user_id, project_id) or '(no other files yet)'}\n</files>"
     asked = f"\n\n<requested-files>\n{row['extra']}\n</requested-files>" if row["extra"] else ""
-    return (f"{role_for(row['mode'], row['provider'])}\n\n<project>\n{text}\n</project>\n\n{notes}\n\n{others}{asked}"
+    return (f"{role_for(row['mode'])}\n\n<project>\n{text}\n</project>\n\n{notes}\n\n{others}{asked}"
             f"\n\nQuestion of the user:\n{row['prompt']}")
 
 

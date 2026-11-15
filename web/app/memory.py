@@ -103,10 +103,6 @@ def parse_answer(answer: str) -> Parsed:
     return Parsed(text, memory or None, reads[:MAX_READS], others)
 
 
-def _extension(name: str) -> str:
-    return name.rsplit(".", 1)[-1].lower() if "." in name else ""
-
-
 def _find(conn: sqlite3.Connection, user_id: int, project_id: int, name: str) -> sqlite3.Row | None:
     """A finished file (not a link) of this project, by its name (capital letters do not matter); the oldest if
     there are several. Only the user's own projects are searched."""
@@ -121,7 +117,7 @@ def _find(conn: sqlite3.Connection, user_id: int, project_id: int, name: str) ->
 def _text_of(row: sqlite3.Row, limit: int, tail: bool = False) -> str | None:
     """The text of a stored file, cut to `limit` characters (its end with tail=True); None if it is not a readable
     text file."""
-    if _extension(row["name"]) not in READABLE or row["size"] > MAX_READ_BYTES:
+    if files.extension(row["name"]) not in READABLE or row["size"] > MAX_READ_BYTES:
         return None
     path = files.path_of(row["project_id"], row["id"])
     if not path.is_file():
@@ -251,7 +247,7 @@ def listing(conn: sqlite3.Connection, user_id: int, project_id: int) -> str:
         if row["url"] is not None:
             lines.append(f"- {row['name']}: {row['url']} (link, a source)")
         else:
-            readable = _extension(row["name"]) in READABLE and row["size"] <= MAX_READ_BYTES
+            readable = files.extension(row["name"]) in READABLE and row["size"] <= MAX_READ_BYTES
             lines.append(f"- {row['name']} ({row['category']}, {row['size']} bytes"
                          f"{'' if readable else ', not text: you can not open it'})")
     return "\n".join(lines)

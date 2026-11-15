@@ -63,7 +63,7 @@ def redacted_tail(raw: str, size: int = 700) -> str:
 
 
 class LoginSession:
-    """A running `docker run ... claude auth login` with its terminal."""
+    """A running `docker run ... claude setup-token` with its terminal."""
 
     def __init__(self, command: list[str], container: str, docker: str = "docker"):
         self.container = container
