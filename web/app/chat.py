@@ -53,9 +53,13 @@ MEMORY_RULES = (
     "or RULES.md) and the history (ARCHIVE.md: what once existed, was dropped or changed, and why), plus any the user "
     "or you added. When your answer finishes a piece of work, or you learned "
     "something that should last (state, decision, open question, hardware fact, a new step), end it with the "
-    "complete new text of each file that changed, one block each: <memory file=\"NAME.md\">...</memory> (at most "
-    "3 files per answer, Markdown, short, keep the headings, keep what is still true and drop what is done, MEMORY.md "
-    "at most 12000 characters). You may add a new Markdown file there the same way when a topic needs its own. "
+    "changes. Change only what is needed, with <memory-edit file=\"NAME.md\"><find>exact old text</find>"
+    "<replace>new text</replace></memory-edit> (several pairs in one block are fine, an empty <replace> removes, "
+    "<append>text</append> adds at the end; each <find> must be copied exactly and occur once in the file, or nothing "
+    "of that block is changed; at most 3 blocks per answer). Write a file's complete text with <memory file=\"NAME.md\">"
+    "...</memory> only for a new file or when almost all of it changes (Markdown, short, keep the headings, keep "
+    "what is still true and drop what is done, MEMORY.md at most 12000 characters). You may add a new Markdown file "
+    "there that way when a topic needs its own. "
     "Leave the blocks out when nothing changed. The project's design (look, colours, components, wording, also "
     "what a user brings in from elsewhere) is kept in REGELN.md or RULES.md under the heading Design (add the "
     "heading if it is missing), not in a file of its own. ARCHIVE.md is different: what you put in <memory file=\"ARCHIVE.md\">"
@@ -346,9 +350,14 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
                              (tokens_in, tokens_out, int(time.time()), chat_id))
                 return True
         parsed = memory.parse_answer(answer) if ok else None
-        if parsed is not None and parsed.reads and row["rounds"] < memory.READ_ROUNDS:
-            extra = (row["extra"] + "\n\n" if row["extra"] else "") + memory.contents(
-                conn, row["user_id"], row["project_id"], parsed.reads)
+        failed = (memory.edit_failures(memory.check_edits(row["user_id"], row["project_id"], parsed.edits))
+                  if parsed is not None and parsed.edits else "")
+        if parsed is not None and (parsed.reads or failed) and row["rounds"] < memory.READ_ROUNDS:
+            # files it asked for, or edits that did not fit: the same question again, nothing of this answer is kept
+            asked = memory.contents(conn, row["user_id"], row["project_id"], parsed.reads) if parsed.reads else ""
+            note = (f"<edit-failed-note>Nothing of your last answer was saved; these memory edits did not fit, "
+                    f"answer again with them fixed:\n{failed}</edit-failed-note>") if failed else ""
+            extra = (row["extra"] + "\n\n" if row["extra"] else "") + "\n\n".join(x for x in (asked, note) if x)
             conn.execute(
                 "UPDATE chat_messages SET status = 'queued', extra = ?, rounds = rounds + 1,"
                 " tokens_in = tokens_in + ?, tokens_out = tokens_out + ?, created_at = ? WHERE id = ?",
@@ -363,6 +372,8 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
             saved = memory.save_memory(row["user_id"], row["project_id"], parsed.memory)
         for name, body in (parsed.files or {}).items():   # the other memory files it wrote (memory folder)
             saved = memory.save_memory(row["user_id"], row["project_id"], body, name) or saved
+        if parsed.edits:                                     # targeted changes; what does not fit is left out
+            saved = any(r.ok for r in memory.apply_edits(row["user_id"], row["project_id"], parsed.edits)) or saved
     with db.connect() as conn:
         cur = conn.execute(
             "UPDATE chat_messages SET status = ?, answer = ?, tokens_in = tokens_in + ?, tokens_out = tokens_out + ?,"

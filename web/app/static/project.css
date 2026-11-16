@@ -296,6 +296,11 @@ body:not(.manager-open) .drawer-extra.m-extra { display: none; }
 .m-vault { grid-column: 1 / -1; }
 .m-vault[hidden] { display: none; }
 .m-vault h2 { display: flex; align-items: center; gap: 4px; }
+/* Earlier versions of the memory files (memory.py, 16.11.2026): the run cards of the role views, a restore arrow in the head */
+.m-vault .versions-head { margin-top: calc(var(--space) * 2); }
+.version-row { list-style: none; }
+.version-row .r-run > summary .card-btn { justify-self: end; }
+.version-text:empty { display: none; }
 .archive-open { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 0; text-align: left;
   font: inherit; font-weight: 600; color: var(--text); background: none; border: 0; box-shadow: none; cursor: pointer; }
 .archive-open:hover { transform: none; color: var(--accent); }

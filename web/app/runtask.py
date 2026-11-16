@@ -32,9 +32,13 @@ ROLE_TEXT = {
                 "whether it fits the project's rules. Change no code. RESULT: ok, objections (list them, most "
                 "important first), or failed when you could not review.",
     "chef": "You are the manager. The user approved this task and the hub merged it. Update the project's memory "
-            "files for it: end your report with the complete new text of each memory file that changed, one block "
-            "each, <memory file=\"NAME.md\">...</memory> (MEMORY.md for the state, ROADMAP.md for what is next). For "
-            "ARCHIVE.md write only new entries: what was dropped or changed during this task, and why. RESULT: done.",
+            "files for it (MEMORY.md for the state, ROADMAP.md for what is next): change only what is needed, with "
+            "<memory-edit file=\"NAME.md\"><find>exact old text</find><replace>new text</replace></memory-edit> "
+            "(several pairs per block, <append>text</append> adds at the end; each <find> copied exactly and once in "
+            "the file, or that block changes nothing). Write a file's complete text with <memory file=\"NAME.md\">"
+            "...</memory> only for a new file or when almost all of it changes. For ARCHIVE.md write only new "
+            "entries with <memory file=\"ARCHIVE.md\">: what was dropped or changed during this task, and why. "
+            "RESULT: done.",
 }
 
 

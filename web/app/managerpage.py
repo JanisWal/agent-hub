@@ -408,8 +408,30 @@ MVAULT = """<section class="vault glass m-vault" id="mvault" hidden>
           data-delete="%t.chat_archive_delete%" data-you="%t.chat_you%" data-claude="%t.station_manager%"
           data-failed="%t.chat_failed%" data-fail-auth="%t.chat_fail_auth%" data-fail-timeout="%t.chat_fail_timeout%"
           data-fail-steps="%t.chat_fail_steps%" data-fail-limit="%t.chat_fail_limit%" data-fail-other="%t.chat_fail_other%"></ul>
+      <h2 class="versions-head">%t.versions_title%%VERSIONS_INFO%</h2>
+      <div id="mvault-versions">%VERSIONS%</div>
     </div>
   </section>"""
+
+
+def _versions_list(lang: str, versions: list) -> str:
+    """Earlier versions of the memory files (memory.versions), newest first: name, when, who replaced it. A click opens
+    the text (mvault.js fetches it); the round arrow puts it back (the current text becomes a version itself)."""
+    if not versions:
+        return f'<p class="muted">{esc(i18n.t(lang, "versions_empty"))}</p>'
+    restore = esc(i18n.t(lang, "versions_restore"))
+    form = "%d.%m.%Y %H:%M" if lang == "de" else "%Y-%m-%d %H:%M"
+    rows = "".join(
+        f'<li class="version-row" data-id="{v.id}"><details class="r-run"><summary>'
+        f'<span class="r-title">{esc(v.name)}</span>'
+        f'<button class="icon-button card-btn" type="button" data-mversion="restore" aria-label="{restore}" '
+        f'title="{restore}">{icon("undo")}</button>'
+        f'<small class="r-facts">{esc(time.strftime(form, time.localtime(v.created_at)))} · '
+        f'{esc(i18n.t(lang, "versions_by_" + v.author))}</small></summary>'
+        f'<div class="r-report version-text"></div></details></li>'
+        for v in versions
+    )
+    return f'<ol class="r-runs">{rows}</ol>'
 
 
 def _trash_list(lang: str, trashed: list) -> str:
@@ -453,7 +475,7 @@ def _waiting_tile(lang: str, autonomy: str, waiting: list[tuple[agents.Task, str
 
 def render(lang: str, settings: dict, regular_checks: list | None = None, now: int | None = None,
            stored_files: list | None = None, files_confirm: bool = True, trashed_files: list | None = None,
-           ais: tuple[str, ...] = ("claude",), waiting: list | None = None) -> str:
+           ais: tuple[str, ...] = ("claude",), waiting: list | None = None, versions: list | None = None) -> str:
     """`settings` is agents.settings(user_id): the manager is the role "chef". `regular_checks` are the
     project's checks (checks.list_checks). `ais`: the providers the user has connected (their models are offered).
     `waiting`: (task, last report) of agents.waiting_tasks, the decisions of "waiting for you"."""
@@ -476,5 +498,7 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
         MVAULT=fill(MVAULT, lang, TRASH_LIST=_trash_list(lang, trashed_files or []),
                     TRASH_INFO=ui.info_dot(i18n.t(lang, "trash"), i18n.t(lang, "files_trash_hint", n=filestore.TRASH_DAYS)),
                     ARCHIVE_INFO=ui.info_dot(i18n.t(lang, "chat_archive"), i18n.t(lang, "chat_archive_hint")),
-                    QUESTIONS=esc(i18n.t(lang, "chat_archive_many", n="{n}"))),
+                    QUESTIONS=esc(i18n.t(lang, "chat_archive_many", n="{n}")),
+                    VERSIONS=_versions_list(lang, versions or []),
+                    VERSIONS_INFO=ui.info_dot(i18n.t(lang, "versions_title"), i18n.t(lang, "versions_hint"))),
     )

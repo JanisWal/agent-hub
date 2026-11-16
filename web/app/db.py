@@ -137,6 +137,18 @@ CREATE TABLE IF NOT EXISTS todos (
     done_at    INTEGER
 );
 CREATE INDEX IF NOT EXISTS todos_by_project ON todos (project_id, id);
+-- Earlier versions of the memory files (memory.py, Janis 16.11.2026): before a memory file is replaced, its old text is
+-- kept here (at most memory.MAX_VERSIONS per file); the user sees and restores them in the archive of the Manager view.
+-- The AIs never read them. `author`: who replaced it ('manager' or 'user').
+CREATE TABLE IF NOT EXISTS memory_versions (
+    id         INTEGER PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    text       TEXT NOT NULL,
+    author     TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS memory_versions_by_file ON memory_versions (project_id, name, id);
 -- Files and links of a project (files.py): the file itself lives in FILES_DIR/<project id>/<id>, a link has a url.
 CREATE TABLE IF NOT EXISTS files (
     id         INTEGER PRIMARY KEY,

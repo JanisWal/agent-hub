@@ -1,5 +1,5 @@
 """HTML of the project page: stations on the left, kanban board and trash on the right."""
-from . import agents, aichoice, i18n, managerpage, rolepage, todos, ui
+from . import agents, aichoice, i18n, managerpage, memory, rolepage, todos, ui
 from .board import KINDS, Item
 from .icons import icon
 from .layout import esc, fill
@@ -259,7 +259,7 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
         STATIONS=_stations(lang, sum(1 for t in entries if not t.done)),
         MANAGER=managerpage.render(lang, settings, regular_checks or [], stored_files=stored_files or [],
                                     files_confirm=user.files_confirm, trashed_files=trashed_files or [],
-                                    ais=ais, waiting=waiting),
+                                    ais=ais, waiting=waiting, versions=memory.versions(user.id, project.id)),
         ROLES=roles + rolepage.render_me(lang, entries),
         MANAGER_DIALOGS=managerpage.dialogs(lang) + "\n" + rolepage.dialogs(lang),
         TRASH=_trash(trashed, lang),

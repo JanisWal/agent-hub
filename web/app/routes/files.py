@@ -11,7 +11,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.requests import ClientDisconnect
 
-from .. import files, i18n, users
+from .. import files, i18n, memory, users
 from ..deps import api_user, error, fail, ok
 
 router = APIRouter()
@@ -155,7 +155,7 @@ def read_text(file_id: int, user: users.User = Depends(api_user)):
 @router.post("/files/{file_id}/text")
 def write_text(file_id: int, text: str = Form(""), user: users.User = Depends(api_user)):
     try:
-        return ok() if files.write_text(user.id, file_id, text) else fail(404)
+        return ok() if memory.write_by_user(user.id, file_id, text) else fail(404)   # a memory file keeps a version
     except files.FileError as problem:
         return _fail(user, problem)
 

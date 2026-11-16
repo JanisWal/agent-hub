@@ -193,6 +193,29 @@ class IsolationTest(unittest.TestCase):
         self.assertNotIn("secret.md", page)
         self.assertNotIn("Secret link", page)
 
+    def test_b_cannot_read_restore_or_edit_the_memory_versions_of_a(self):
+        from pathlib import Path
+        from app.routes import memory as memory_routes
+        files.FILES_DIR = Path(self.tmp.name) / "files"
+        files.free_bytes = lambda: 10 * 1024 ** 3
+        memory.save_memory(self.a.id, self.project.id, "# Status\nSECRET ONE")
+        memory.save_memory(self.a.id, self.project.id, "# Status\nSECRET TWO")
+        [version] = memory.versions(self.a.id, self.project.id)
+        before = snapshot()
+        self.assertEqual(memory.versions(self.b.id, self.project.id), [])
+        self.assertIsNone(memory.version_text(self.b.id, version.id))
+        self.assertIsNone(memory.restore(self.b.id, version.id))
+        self.assertEqual(memory_routes.version_text(version.id, self.b).status_code, 404)
+        self.assertEqual(memory_routes.version_restore(version.id, self.b).status_code, 404)
+        edit = memory.Edit("MEMORY.md", [("SECRET TWO", "planted")])
+        self.assertFalse(memory.apply_edits(self.b.id, self.project.id, [edit])[0].ok)
+        memo = next(f for f in files.list_files(self.a.id, self.project.id) if f.name == "MEMORY.md")
+        self.assertFalse(memory.write_by_user(self.b.id, memo.id, "planted"))
+        self.assertEqual(snapshot(), before)
+        self.assertEqual(len(memory.versions(self.a.id, self.project.id)), 1)
+        page = projectpage.render(self.b, self.mine, [])
+        self.assertNotIn("MEMORY.md", page[page.index('id="mvault-versions"'):page.index('id="mvault-versions"') + 400])
+
     def test_the_manager_of_b_never_sees_the_memory_or_files_of_a(self):
         from pathlib import Path
         from app import chat, claude_link
