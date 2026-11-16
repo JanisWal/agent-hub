@@ -77,6 +77,12 @@ todos.create(user.id, project.id, "Sicherung 10 A im Motorraum nachrüsten")
 todos.create(user.id, project.id, "Temperaturfühler an der Heizung festkleben", source="tester")
 done = todos.create(user.id, project.id, "Kabel zur Heizung verlegen")
 todos.finish(user.id, done, "Entlang des Rahmens verlegt, mit Kabelbindern alle 20 cm.\nStecker noch offen.")
+from app import memory  # noqa: E402
+memory.save_memory(user.id, project.id, "# Stand\n- Heizung: verkabelt\n- Relais: offen")
+memory.save_memory(user.id, project.id, "# Stand\n- Heizung: verkabelt\n- Relais: 30 A bestellt")
+memory.save_memory(user.id, project.id, "# Als Nächstes\n- Relais einbauen", "ROADMAP.md")
+memory.save_memory(user.id, project.id, "# Als Nächstes\n- Relais einbauen\n- Sicherung prüfen", "ROADMAP.md")
+
 (out / "index.html").write_text(project_routes.project_view(project.id, user), encoding="utf-8")
 shutil.copytree("/app/app/static", out / "static", dirs_exist_ok=True)
 os.system(f"chmod -R a+rwX {out}")
