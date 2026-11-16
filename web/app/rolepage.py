@@ -3,17 +3,17 @@ version to work with; what exactly belongs there is decided later, PROJEKT.md 11
 
 A role view has two columns. Left: "Right now" (what the role is doing in this project, with its settings in the head:
 on or off, code with internet, model and level) and its usage. Right: its runs, newest first, each with its report.
-"For you" lists the tasks that wait for the user (approval, or they need him) with their last report; the buttons to
-decide stay on the board card (DESIGN.md section 1: one control, one area), the view only leads there.
+"For you" (Janis, 16.11.2026) is the user's own work list (todos.py): what he does himself, physically or technically,
+and what he did. Decisions wait in the Manager view ("waiting for you", managerpage.py), not here.
 
-Only data of the page's user is shown: the lists come from agents.role_runs / agents.waiting_tasks, which check the
+Only data of the page's user is shown: the lists come from agents.role_runs and todos.list_todos, which check the
 project. Parts that change during a run carry ids, so static/roles.js can swap them (AgentHub.swap) without a reload.
 """
 import time
 
-from . import agents, catalog, i18n, ui
+from . import agents, catalog, i18n, todos, ui
 from .icons import icon
-from .layout import esc
+from .layout import esc, fill
 
 ROLES = ("programmer", "tester", "reviewer")
 VIEWS = ROLES + ("me",)
@@ -31,7 +31,9 @@ def _duration(lang: str, seconds: int) -> str:
 
 
 def _ago(lang: str, then: int | None, now: int) -> str:
-    return "" if not then else i18n.t(lang, "ago", time=_duration(lang, now - then))
+    if not then:
+        return ""
+    return i18n.t(lang, "just_now") if now - then < 60 else i18n.t(lang, "ago", time=_duration(lang, now - then))
 
 
 def _tokens(n: int) -> str:
@@ -140,24 +142,91 @@ def render_role(lang: str, role: str, settings: dict, runs: list[agents.RoleRun]
     )
 
 
-def render_me(lang: str, waiting: list[tuple[agents.Task, str]]) -> str:
-    """ "For you": the tasks that wait for the user, each with its state and last report, and the way to the board."""
-    rows = "".join(
-        f'<li><details class="r-run"><summary><span class="r-title">{esc(task.title)}</span>'
-        f'<span class="r-result {"go" if task.status == "awaiting_approval" else "stop"}">'
-        f'{esc(i18n.t(lang, f"task_{task.status}"))}</span></summary>'
-        f'<div class="r-report">{esc(report[:MAX_REPORT_SHOWN].strip() or i18n.t(lang, "role_no_report"))}</div>'
-        f'</details></li>'
-        for task, report in waiting
+def _todo_button(lang: str, action: str, key: str, name: str, css: str = "") -> str:
+    label = esc(i18n.t(lang, key))
+    return (f'<button class="icon-button card-btn{css}" type="button" data-todo="{action}" aria-label="{label}" '
+            f'title="{label}">{icon(name)}</button>')
+
+
+def _todo_row(lang: str, todo: todos.Todo, now: int) -> str:
+    """One entry. Open: done (with a note), change, delete. Done: its note, open again, change the note, delete."""
+    if todo.done:
+        when = i18n.t(lang, "todo_done_when", time=_ago(lang, todo.done_at, now))
+        note = f'<span class="todo-note">{esc(todo.note)}</span>' if todo.note else ""
+        buttons = (_todo_button(lang, "reopen", "todo_reopen", "undo")
+                   + _todo_button(lang, "note", "todo_note_edit", "pencil"))
+    else:
+        when = _ago(lang, todo.created_at, now)
+        note = ""
+        buttons = (_todo_button(lang, "done", "todo_finish", "check", " yes")
+                   + _todo_button(lang, "edit", "todo_edit", "pencil"))
+    source = "" if todo.source == "user" else i18n.t(lang, f"todo_from_{todo.source}") + " · "
+    return (
+        f'<li class="check-row todo-row{" done" if todo.done else ""}" data-id="{todo.id}">'
+        f'<span class="check-text"><span class="check-title">{esc(todo.text)}</span>'
+        f'<small>{esc(source + when)}</small>{note}</span>'
+        f'{buttons}{_todo_button(lang, "delete", "todo_delete", "trash", " no")}'
+        f'<textarea class="todo-raw" hidden>{esc(todo.note)}</textarea></li>'
     )
-    body = (f'<ol class="r-runs">{rows}</ol>' if rows else f'<p class="muted">{esc(i18n.t(lang, "me_empty"))}</p>')
-    board = esc(i18n.t(lang, "me_to_board"))
+
+
+def render_me(lang: str, entries: list[todos.Todo], now: int | None = None) -> str:
+    """ "For you" (Janis, 16.11.2026): the work the user does himself. Open entries first, below them the done ones
+    with what he did. Decisions are not here: they wait in the Manager view ("waiting for you")."""
+    now = int(now if now is not None else time.time())
+    open_ = [t for t in entries if not t.done]
+    done = [t for t in entries if t.done]
+    parts = []
+    if open_:
+        parts.append(f'<ul class="check-list todo-list">{"".join(_todo_row(lang, t, now) for t in open_)}</ul>')
+    else:
+        parts.append(f'<p class="muted">{esc(i18n.t(lang, "me_empty"))}</p>')
+    if done:
+        parts.append(f'<h3 class="todo-head">{esc(i18n.t(lang, "todo_done_title"))}</h3>'
+                     f'<ul class="check-list todo-list">{"".join(_todo_row(lang, t, now) for t in done)}</ul>')
+    title, add = i18n.t(lang, "me_title"), esc(i18n.t(lang, "todo_add"))
     return (
         f'<section class="manager role-view me-view" id="view-me" data-view-panel="me" '
         f'aria-label="{esc(i18n.t(lang, "station_me"))}" hidden>'
-        f'<div class="mcol"><section class="mtile glass"><header><h2>{esc(i18n.t(lang, "me_title"))}</h2>'
-        f'{ui.info_dot(i18n.t(lang, "me_title"), i18n.t(lang, "me_hint"))}'
-        f'<span class="count" id="me-count">{len(waiting)}</span>'
-        f'<a class="link inline" href="#board" data-goto="board">{board}</a></header>'
-        f'<div class="r-scroll" id="me-list">{body}</div></section></div></section>'
+        f'<div class="mcol"><section class="mtile glass" id="todos"><header><h2>{esc(title)}</h2>'
+        f'{ui.info_dot(title, i18n.t(lang, "me_hint"))}'
+        f'<span class="count" id="me-count">{len(open_)}</span>'
+        f'<button class="icon-button m-add" id="todo-add" type="button" aria-label="{add}" title="{add}">'
+        f'{icon("plus")}</button></header>'
+        f'<div class="r-scroll" id="me-list">{"".join(parts)}</div></section></div></section>'
     )
+
+
+DIALOGS = """<dialog class="dialog" id="todo-dialog" data-title-new="%t.todo_new%" data-title-edit="%t.todo_edit%"
+        data-btn-new="%t.create%" data-btn-edit="%t.save%">
+  <form method="post" action="" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
+    <h2 id="todo-dialog-title">%t.todo_new%</h2>
+    <label>%t.todo_text%<input name="text" required maxlength="%MAX_TEXT%" autocomplete="off" placeholder="%t.todo_placeholder%"></label>
+    <div class="actions">
+      <button type="button" data-close>%t.cancel%</button>
+      <button class="primary" type="submit" id="todo-dialog-button">%t.create%</button>
+    </div>
+  </form>
+</dialog>
+<dialog class="dialog" id="todo-done-dialog">
+  <form method="post" action="" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
+    <h2>%t.todo_note_title%</h2>
+    <label>%t.todo_note%<textarea name="note" rows="5" maxlength="%MAX_NOTE%" placeholder="%t.todo_note_placeholder%"></textarea></label>
+    <div class="actions">
+      <button type="button" data-close>%t.cancel%</button>
+      <button class="primary" type="submit">%t.save%</button>
+    </div>
+  </form>
+</dialog>
+<dialog class="dialog danger" id="todo-confirm">
+  <h2>%t.todo_confirm_delete%</h2>
+  <div class="actions">
+    <button type="button" data-close autofocus>%t.cancel%</button>
+    <button class="danger-btn" type="button" id="todo-confirm-yes">%t.yes%</button>
+  </div>
+</dialog>"""
+
+
+def dialogs(lang: str) -> str:
+    """The dialogs of "For you"; outside the view, like the manager's (a modal inside a hidden element would not show)."""
+    return fill(DIALOGS, lang, MAX_TEXT=str(todos.MAX_TEXT), MAX_NOTE=str(todos.MAX_NOTE))

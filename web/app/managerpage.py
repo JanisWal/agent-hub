@@ -5,13 +5,14 @@ window shows the manager's things. Layout from his sketch, three columns. Left: 
 devices (tall). Middle: the regular checks and the files (they take the free space). Right, where the
 old chat window used to sit: the manager chat (big) above "waiting for you". The project name and
 description are not here but in the drop-down at the pencil next to the title (projectpage.title_html).
-The manager chat works (chat.py); status and "waiting for you" are empty, devices, checks and files announced.
+The manager chat works (chat.py); "waiting for you" lists the decisions (approvals, tasks that need the user; Janis
+16.11.2026), the status is empty, devices announced.
 """
 import time
 
 from urllib.parse import urlsplit
 
-from . import catalog, checks, files as filestore, i18n, serversettings, ui
+from . import agents, catalog, checks, files as filestore, i18n, serversettings, ui
 from .icons import icon
 from .layout import esc, fill
 
@@ -32,10 +33,7 @@ MANAGER = """<section class="manager" id="manager-view" data-view-panel="manager
   <div class="mcol">
     %CHAT%
     <div class="m-split" data-split="chat-waiting" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="%t.split_label%"></div>
-    <section class="mtile glass m-waiting">
-      <header><h2>%t.manager_waiting%</h2>%AUTONOMY%<span class="count">0</span></header>
-      <p class="muted">%t.manager_waiting_empty%</p>
-    </section>
+    %WAITING_TILE%
   </div>
 </section>"""
 
@@ -431,11 +429,34 @@ def _trash_list(lang: str, trashed: list) -> str:
             f'<button class="link inline" type="button" data-ftrash="empty">{esc(i18n.t(lang, "trash_empty"))}</button>')
 
 
+MAX_REPORT_SHOWN = 8000   # characters of the last report shown on a waiting card
+
+
+def _waiting_tile(lang: str, autonomy: str, waiting: list[tuple[agents.Task, str]]) -> str:
+    """ "Waiting for you" (Janis, 16.11.2026: decisions, not work): the tasks that wait for the user's approval or
+    need him, each with its last report. Deciding stays on the board card (one control, one area), the tile leads there."""
+    rows = "".join(
+        f'<li><details class="r-run"><summary><span class="r-title">{esc(task.title)}</span>'
+        f'<span class="r-result {"go" if task.status == "awaiting_approval" else "stop"}">'
+        f'{esc(i18n.t(lang, f"task_{task.status}"))}</span></summary>'
+        f'<div class="r-report">{esc(report[:MAX_REPORT_SHOWN].strip() or i18n.t(lang, "role_no_report"))}</div>'
+        f'</details></li>'
+        for task, report in waiting
+    )
+    body = (f'<div class="r-scroll"><ol class="r-runs">{rows}</ol></div>' if rows
+            else f'<p class="muted">{esc(i18n.t(lang, "manager_waiting_empty"))}</p>')
+    board = (f'<a class="link inline m-waiting-board" href="#board" data-goto="board">{esc(i18n.t(lang, "me_to_board"))}</a>'
+             if rows else "")    # below the list: the head holds the title, the autonomy and the count
+    return (f'<section class="mtile glass m-waiting" id="waiting"><header><h2>{esc(i18n.t(lang, "manager_waiting"))}</h2>'
+            f'{autonomy}<span class="count">{len(waiting)}</span></header>{body}{board}</section>')
+
+
 def render(lang: str, settings: dict, regular_checks: list | None = None, now: int | None = None,
            stored_files: list | None = None, files_confirm: bool = True, trashed_files: list | None = None,
-           ais: tuple[str, ...] = ("claude",)) -> str:
+           ais: tuple[str, ...] = ("claude",), waiting: list | None = None) -> str:
     """`settings` is agents.settings(user_id): the manager is the role "chef". `regular_checks` are the
-    project's checks (checks.list_checks). `ais`: the providers the user has connected (their models are offered)."""
+    project's checks (checks.list_checks). `ais`: the providers the user has connected (their models are offered).
+    `waiting`: (task, last report) of agents.waiting_tasks, the decisions of "waiting for you"."""
     chef = settings["roles"]["chef"]
     model = ui.model_picker(lang, "manager", chef["model"], chef.get("effort", ""),
                             label_model="chat_model", label_effort="chat_effort", providers=ais)
@@ -451,7 +472,7 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
         CHAT=fill(CHAT, lang, MODEL=model, SEND=icon("arrow_up"),
                   WAITING=esc(i18n.t(lang, "chat_waiting", name="{name}")), FALLBACK=esc(i18n.t(lang, "chat_fallback", name="{name}", other="{other}")), AI=esc(catalog.provider(catalog.provider_of(chef["model"])).name), NET=_net_switch(lang, settings["roles"]["chef"]["net"]),
                   INFO=ui.info_dot(i18n.t(lang, "manager_chat"), i18n.t(lang, "manager_chat_hint"))),
-        AUTONOMY=autonomy,
+        WAITING_TILE=_waiting_tile(lang, autonomy, waiting or []),
         MVAULT=fill(MVAULT, lang, TRASH_LIST=_trash_list(lang, trashed_files or []),
                     TRASH_INFO=ui.info_dot(i18n.t(lang, "trash"), i18n.t(lang, "files_trash_hint", n=filestore.TRASH_DAYS)),
                     ARCHIVE_INFO=ui.info_dot(i18n.t(lang, "chat_archive"), i18n.t(lang, "chat_archive_hint")),

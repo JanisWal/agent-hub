@@ -10,8 +10,8 @@ import unittest
 
 from fastapi import HTTPException
 
-from app import board, checks, dashboard, db, files, memory, power, projectpage, projects, resets, throttle, ui, users
-from app.routes import board as board_routes, checks as check_routes, files as file_routes, projects as project_routes, resets as reset_routes
+from app import board, checks, dashboard, db, files, memory, power, projectpage, projects, resets, throttle, todos, ui, users
+from app.routes import board as board_routes, checks as check_routes, todos as todo_routes, files as file_routes, projects as project_routes, resets as reset_routes
 
 
 def snapshot() -> dict:
@@ -22,6 +22,7 @@ def snapshot() -> dict:
             "items": [tuple(r) for r in conn.execute("SELECT * FROM board_items ORDER BY id")],
             "checks": [tuple(r) for r in conn.execute("SELECT * FROM checks ORDER BY id")],
             "files": [tuple(r) for r in conn.execute("SELECT * FROM files ORDER BY id")],
+            "todos": [tuple(r) for r in conn.execute("SELECT * FROM todos ORDER BY id")],
         }
 
 
@@ -99,6 +100,30 @@ class IsolationTest(unittest.TestCase):
         self.assertEqual(chat.delete_all(self.b.id), 0)                        # B's "delete all" never reaches A
         self.assertEqual([m.prompt for m in chat.list_messages(self.a.id, self.project.id)],
                          ["private question of A"])
+
+    def test_b_cannot_touch_the_jobs_for_a(self):
+        todo = todos.create(self.a.id, self.project.id, "Secret job of A")
+        todos.finish(self.a.id, todos.create(self.a.id, self.project.id, "Done job of A"), "Secret note of A")
+        mine = todos.create(self.b.id, self.mine.id, "Job of B")
+        before = snapshot()
+        self.assertEqual(todos.list_todos(self.b.id, self.project.id), [])
+        self.assertEqual(todos.open_count(self.b.id, self.project.id), 0)
+        self.assertIsNone(todos.create(self.b.id, self.project.id, "planted"))
+        self.assertIsNone(todos.create(self.b.id, self.mine.id, "linked", task_id=1))   # no task of B's project
+        self.assertFalse(todos.update(self.b.id, todo, "hacked"))
+        self.assertFalse(todos.finish(self.b.id, todo, "hacked"))
+        self.assertFalse(todos.reopen(self.b.id, todo))
+        self.assertFalse(todos.delete(self.b.id, todo))
+        self.assertEqual(todo_routes.create_todo(self.project.id, "planted", self.b).status_code, 404)
+        for route in (todo_routes.edit_todo, todo_routes.finish_todo):
+            self.assertEqual(route(todo, "hacked", self.b).status_code, 404)
+        for route in (todo_routes.reopen_todo, todo_routes.delete_todo):
+            self.assertEqual(route(todo, self.b).status_code, 404)
+        self.assertEqual(snapshot(), before)
+        page = projectpage.render(self.b, self.mine, [])
+        self.assertIn("Job of B", page)
+        self.assertNotIn("of A", page[page.index('id="view-me"'):])
+        self.assertTrue(todos.delete(self.b.id, mine))
 
     def test_b_cannot_touch_the_regular_checks_of_a(self):
         before = snapshot()

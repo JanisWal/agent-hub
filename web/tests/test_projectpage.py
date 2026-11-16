@@ -444,21 +444,41 @@ class RoleViewsTest(unittest.TestCase):
         self.assertIn('class="r-now queued"', reviewer)                       # the reviewer's run waits
         self.assertIn("Gerade nichts zu tun.", prog)
         self.assertIn("roles.js", page)
-        self.assertIn("Approvals and interventions", self.html("en"))
+        self.assertIn("Your jobs", self.html("en"))
 
-    def test_for_you_lists_what_waits_and_counts_it_at_the_station(self):
+    def test_decisions_wait_in_the_manager_tile_not_in_for_you(self):
         page = self.html()
-        self.assertIn("Gerade wartet nichts auf dich.", page)
-        self.assertNotIn("station-count", page[page.index('<nav class="stations"'):page.index("</nav>")])
+        self.assertIn("Nichts wartet auf dich.", page)
         self.run_task([("done", "Built"), ("pass", "Green"), ("ok", "Fine by me")])
         page = self.html()
+        waiting = page[page.index('id="waiting"'):page.index("</section>", page.index('id="waiting"'))]
+        self.assertIn("A bug", waiting)
+        self.assertIn("Wartet auf deine Freigabe", waiting)
+        self.assertIn("Fine by me", waiting)
+        self.assertIn('data-goto="board"', waiting)
+        self.assertIn('<span class="count">1</span>', waiting)
+        self.assertNotIn("agent-approve", waiting)                            # deciding stays on the board card
         me = page[page.index('id="view-me"'):]
-        self.assertIn("A bug", me)
-        self.assertIn("Wartet auf deine Freigabe", me)
-        self.assertIn("Fine by me", me)
-        self.assertIn('data-goto="board"', me)
-        self.assertNotIn("agent-approve", me)                                 # deciding stays on the board card
-        self.assertIn('<span class="station-count">1</span>', page)
+        self.assertNotIn("A bug", me)
+
+    def test_for_you_lists_own_jobs_with_notes_and_counts_open_ones_at_the_station(self):
+        from app import todos
+        page = self.html()
+        self.assertIn("Gerade steht nichts für dich an.", page)
+        self.assertIn('<span class="station-count" id="me-badge" hidden>0</span>', page)
+        self.assertIn('id="todo-dialog"', page)                               # dialogs outside the hidden view
+        self.assertIn("todos.js", page)
+        first = todos.create(self.user.id, self.project.id, "Lay <cable>")
+        second = todos.create(self.user.id, self.project.id, "Fit relay")
+        todos.finish(self.user.id, second, "Fitted, screws M4")
+        page = self.html()
+        me = page[page.index('id="view-me"'):]
+        self.assertIn("Lay &lt;cable&gt;", me)
+        self.assertIn('class="todo-note">Fitted, screws M4', me)
+        self.assertLess(me.index("Lay &lt;cable&gt;"), me.index("Fit relay"))  # open ones first
+        self.assertIn('<span class="count" id="me-count">1</span>', me)
+        self.assertIn('<span class="station-count" id="me-badge">1</span>', page)
+        self.assertIn(f'data-id="{first}"', me)
 
 
     def test_the_settings_route_takes_only_the_three_roles(self):
