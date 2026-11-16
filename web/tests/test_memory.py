@@ -64,6 +64,18 @@ class MemoryFolderTest(MemoryBase):
         self.assertEqual(memory.ensure_skeleton(self.a.id, self.pa.id, "de"), 0)       # a deleted one stays gone
         self.assertEqual(memory.ensure_skeleton(self.b.id, self.pa.id, "de"), 0)       # never in someone else's project
 
+    def test_a_file_of_the_same_name_in_another_area_is_never_written(self):
+        """Janis, 16.11.2026: the manager writes only to the area Memory; a manual elsewhere stays as it is."""
+        manual = self.put(self.a, self.pa, "anleitung.md", b"# Relais\nOriginal")
+        files.update(self.a.id, manual.id, "anleitung.md", category="documents")
+        self.assertTrue(memory.save_memory(self.a.id, self.pa.id, "# Neu", "anleitung.md"))
+        stored = {(f.name, f.category): f for f in files.list_files(self.a.id, self.pa.id)}
+        self.assertEqual(files.read_text(self.a.id, stored[("anleitung.md", "documents")].id), "# Relais\nOriginal")
+        self.assertEqual(files.read_text(self.a.id, stored[("anleitung.md", "memory")].id), "# Neu\n")
+        with db.connect() as conn:   # asked for with <read>, the manual itself still comes
+            self.assertIn("Original", memory.contents(conn, self.a.id, self.pa.id, ["anleitung.md"]))
+            self.assertNotIn("Original", memory.folder(conn, self.a.id, self.pa.id))   # but never by itself
+
     def test_english_names_and_an_existing_memory_stays(self):
         self.put(self.a, self.pa, "MEMORY.md", b"# Status\nmine")
         self.assertEqual(memory.ensure_skeleton(self.a.id, self.pa.id, "en"), 4)

@@ -104,13 +104,17 @@ def parse_answer(answer: str) -> Parsed:
     return Parsed(text, memory or None, reads[:MAX_READS], others)
 
 
-def _find(conn: sqlite3.Connection, user_id: int, project_id: int, name: str) -> sqlite3.Row | None:
+def _find(conn: sqlite3.Connection, user_id: int, project_id: int, name: str,
+          memory_only: bool = True) -> sqlite3.Row | None:
     """A finished file (not a link) of this project, by its name (capital letters do not matter); the oldest if
-    there are several. Only the user's own projects are searched."""
+    there are several. Only the user's own projects are searched. `memory_only`: only the area Memory, the one the
+    manager may write to (Janis, 16.11.2026: a manual of the same name in another area stays untouched); a file the
+    manager asked for with <read> may come from any area."""
+    area = " AND f.category = 'memory'" if memory_only else ""
     return conn.execute(
         "SELECT f.* FROM files f JOIN projects p ON p.id = f.project_id"
         " WHERE f.project_id = ? AND p.user_id = ? AND f.status = 'ready' AND f.url IS NULL"
-        " AND f.name = ? COLLATE NOCASE ORDER BY f.id LIMIT 1",
+        f" AND f.name = ? COLLATE NOCASE{area} ORDER BY f.id LIMIT 1",
         (project_id, user_id, name),
     ).fetchone()
 
@@ -262,7 +266,7 @@ def contents(conn: sqlite3.Connection, user_id: int, project_id: int, names: lis
     (or not readable text) says so. Together at most MAX_REQUESTED characters."""
     blocks, used = [], 0
     for name in names[:MAX_READS]:
-        row = _find(conn, user_id, project_id, name)
+        row = _find(conn, user_id, project_id, name, memory_only=False)
         text = None if row is None else _text_of(row, min(MAX_FILE_CHARS, MAX_REQUESTED - used))
         if row is None:
             body = "(there is no such file in this project)"
