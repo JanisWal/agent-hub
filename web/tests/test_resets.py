@@ -239,7 +239,7 @@ class LinkMailTest(unittest.TestCase):
         """Rule 7, and rule 5: gradients only behind `[class~=...]`, which Yahoo does not match."""
         html = self.html()
         styles = re.findall(r"<style>(.*?)</style>", html, re.S)
-        self.assertGreaterEqual(len(styles), 4)
+        self.assertGreaterEqual(len(styles), 6)
         for style in styles:
             self.assertNotIn("/*", style)
             self.assertLess(len(style.encode()), 16 * 1024)
@@ -250,6 +250,9 @@ class LinkMailTest(unittest.TestCase):
                 if "gradient(" in rules:
                     self.assertTrue(selector.strip().startswith('[class~="'), selector)
         self.assertLess(len(html.encode()), 102 * 1024)
+        # The colour rules of light and dark stand without attribute selectors or gradients (strict programs)
+        self.assertNotIn("[", mailtext.STYLE_SCHEMES)
+        self.assertNotIn("gradient", mailtext.STYLE_SCHEMES)
 
     def test_button_text_in_a_span_preview_text_and_outlook_parts(self):
         html = self.html("invite")
