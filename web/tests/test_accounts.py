@@ -157,7 +157,7 @@ class AccountsTest(unittest.TestCase):
         user_row = [r for r in owner_html.split('<div class="user-row"') if "user@example.com" in r][0]
         self.assertIn("is-off", user_row.split("data-superadmin")[0].rsplit("<button", 1)[1])
         cells = lambda html: html.split('class="user-actions"')[1].count("<button") + html.split('class="user-actions"')[1].count('class="slot')
-        self.assertEqual(len({cells(r) for r in owner_html.split('<div class="user-row"')[1:]}), 1)
+        self.assertEqual(len({cells(r) for r in owner_html.split('<dialog')[0].split('<div class="user-row"')[1:]}), 1)
         self.assertNotIn("%t.", owner_html)
 
     def test_reset_password_forces_change_and_ends_sessions(self):
