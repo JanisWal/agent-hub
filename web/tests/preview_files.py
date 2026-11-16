@@ -72,6 +72,11 @@ agents.finish_run(job.run_id, "done", "Flackern behoben: Puffer wird vor dem ers
                   tokens_out=900, seconds=19)
 agents.claim_next(can_mac=True)   # the tester's run is going
 
+from app import todos  # noqa: E402
+todos.create(user.id, project.id, "Sicherung 10 A im Motorraum nachrüsten")
+todos.create(user.id, project.id, "Temperaturfühler an der Heizung festkleben", source="tester")
+done = todos.create(user.id, project.id, "Kabel zur Heizung verlegen")
+todos.finish(user.id, done, "Entlang des Rahmens verlegt, mit Kabelbindern alle 20 cm.\nStecker noch offen.")
 (out / "index.html").write_text(project_routes.project_view(project.id, user), encoding="utf-8")
 shutil.copytree("/app/app/static", out / "static", dirs_exist_ok=True)
 os.system(f"chmod -R a+rwX {out}")
