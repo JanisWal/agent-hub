@@ -58,6 +58,7 @@ Ziel, Entscheidungen, Reihenfolge, Codeaufbau, Betrieb, Tests und offene Punkte:
 - **Übergangscode mit Datum (15.11.2026):** Ein Rückfall für alte Daten oder alte Formate trägt im Kommentar das Datum und wird entfernt, sobald es die alten Daten nicht mehr geben kann. Code, den nur noch Tests benutzen, wird samt dieser Tests gelöscht. Was doppelt steht, wird eine Funktion.
 - **Feste Versionen in Images (15.11.2026):** Jedes Programm in einem Image hat eine feste Version (wie `mistral-vibe` in `runner/Dockerfile.vibe`); eine neue Version wird zuerst auf einem Branch probiert.
 - **Eingabefelder am Handy (15.11.2026):** Auf Geräten mit Fingerbedienung haben Eingabefelder mindestens 16 px Schrift, sonst zoomt der Browser beim Tippen hinein.
+- **Mails (16.11.2026):** Vor jeder Änderung an Mails `MAILS.md` lesen. Keine Bilder, alles Nötige inline, Hell als Grundlage und Dunkel über `prefers-color-scheme`, Farben, die fremdes Umfärben überstehen, Zugaben nur per CSS mit fester Farbe darunter; neue Erkenntnisse aus echten Mailprogrammen kommen dort hinein.
 - **Mail-Einrichtung (15.11.2026):** SPF, DKIM und DMARC der Absender-Domain gehören zur Einrichtung einer Instanz und in die Checkliste vor dem Livegang (PROJEKT.md Abschnitt 11).
 - Nur ein Thema pro Commit, kurze englische Commit-Nachrichten, ein Branch pro Aufgabe.
 - Backups und Rückrollen sind Teil jeder Änderung, die Daten betrifft.
