@@ -124,6 +124,19 @@ CREATE TABLE IF NOT EXISTS checks (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS checks_by_project ON checks (project_id, id);
+-- "For you" (todos.py, Janis 16.11.2026): work the user does himself (hardware, fitting, errands), done once,
+-- with a note of what he did. Decisions are not here but in "waiting for you" (Manager view).
+CREATE TABLE IF NOT EXISTS todos (
+    id         INTEGER PRIMARY KEY,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    text       TEXT NOT NULL,
+    note       TEXT NOT NULL DEFAULT '',
+    source     TEXT NOT NULL DEFAULT 'user',
+    task_id    INTEGER REFERENCES agent_tasks(id) ON DELETE SET NULL,
+    created_at INTEGER NOT NULL,
+    done_at    INTEGER
+);
+CREATE INDEX IF NOT EXISTS todos_by_project ON todos (project_id, id);
 -- Files and links of a project (files.py): the file itself lives in FILES_DIR/<project id>/<id>, a link has a url.
 CREATE TABLE IF NOT EXISTS files (
     id         INTEGER PRIMARY KEY,

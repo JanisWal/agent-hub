@@ -1,6 +1,6 @@
 /* The role views of the project page (rolepage.py): while one is open and its role has a run going or waiting, its
    changing parts are swapped every few seconds (AgentHub.swap: no reload, the settings in the head stay as they are).
-   "For you" is refreshed the same way while it is open. A run list with an opened report is left alone, so the report
+   "For you" is refreshed the same way while it is open (no dialog of it open: todos.js swaps after its own changes). A run list with an opened report is left alone, so the report
    does not close under the reader. Nothing is fetched while the page is hidden. */
 (function () {
   "use strict";
@@ -8,7 +8,7 @@
   var timer = null;
 
   function parts(view) {
-    if (view === "me") return ["me-list", "me-count"];
+    if (view === "me") return ["me-list", "me-count", "me-badge"];
     var ids = ["role-" + view + "-now", "role-" + view + "-usage", "role-" + view + "-count"];
     var runs = document.getElementById("role-" + view + "-runs");
     if (runs && !runs.querySelector("details[open]")) ids.push("role-" + view + "-runs");

@@ -1,12 +1,12 @@
 """HTML of the project page: stations on the left, kanban board and trash on the right."""
-from . import agents, aichoice, i18n, managerpage, rolepage, ui
+from . import agents, aichoice, i18n, managerpage, rolepage, todos, ui
 from .board import KINDS, Item
 from .icons import icon
 from .layout import esc, fill
 from .projects import MAX_DESCRIPTION, MAX_NAME, Project
 from .users import User
 
-SCRIPTS = ("motion.js", "segment.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "picker.js", "manager.js", "splitter.js", "checks.js", "upload.js", "tiffthumb.js", "files.js", "mvault.js", "roles.js")
+SCRIPTS = ("motion.js", "segment.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "picker.js", "manager.js", "splitter.js", "checks.js", "upload.js", "tiffthumb.js", "files.js", "mvault.js", "roles.js", "todos.js")
 STYLES = ("project.css",)
 
 COLUMN_LABEL = {"bug": "col_bug", "minor": "col_minor", "major": "col_major"}
@@ -158,7 +158,9 @@ def _stations(lang: str, waiting: int = 0) -> str:
     def view(name: str, key: str) -> str:
         current = ' aria-current="page"' if name == "board" else ""
         active = " active" if name == "board" else ""
-        badge = f'<span class="station-count">{waiting}</span>' if name == "me" and waiting else ""
+        # the open entries of "For you"; always there (hidden at 0), so todos.js can swap it
+        badge = (f'<span class="station-count" id="me-badge"{"" if waiting else " hidden"}>{waiting}</span>'
+                 if name == "me" else "")
         return (
             f'<a class="station{active}" href="#{name}" data-seg data-station="{name}"{current}>'
             f'<span class="station-label">{esc(i18n.t(lang, key))}</span>{badge}</a>'
@@ -249,16 +251,17 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
     roles = "".join(rolepage.render_role(lang, role, settings, agents.role_runs(user.id, project.id, role),
                                          agents.usage(user.id, project.id, role), ais) for role in rolepage.ROLES)
     waiting = [(t, agents.last_report(user.id, t.id)) for t in agents.waiting_tasks(user.id, project.id)]
+    entries = todos.list_todos(user.id, project.id)
     return fill(
         PROJECT,
         lang,
         PID=str(project.id),
-        STATIONS=_stations(lang, len(waiting)),
+        STATIONS=_stations(lang, sum(1 for t in entries if not t.done)),
         MANAGER=managerpage.render(lang, settings, regular_checks or [], stored_files=stored_files or [],
                                     files_confirm=user.files_confirm, trashed_files=trashed_files or [],
-                                    ais=ais),
-        ROLES=roles + rolepage.render_me(lang, waiting),
-        MANAGER_DIALOGS=managerpage.dialogs(lang),
+                                    ais=ais, waiting=waiting),
+        ROLES=roles + rolepage.render_me(lang, entries),
+        MANAGER_DIALOGS=managerpage.dialogs(lang) + "\n" + rolepage.dialogs(lang),
         TRASH=_trash(trashed, lang),
         ARCHIVE=_archive(archived, lang),
         COLUMNS="\n      ".join(_column(kind, live, lang, tasks) for kind in KINDS),
