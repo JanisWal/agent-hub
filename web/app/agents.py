@@ -569,7 +569,7 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
             notes = dict(parsed.files or {})
             if parsed.memory:
                 notes[memory.MEMORY_NAME] = parsed.memory
-            pending_notes = (user_id, task["project_id"], notes)
+            pending_notes = (user_id, task["project_id"], notes, parsed.edits or [])
         else:
             pending_notes = None
         step = workflow.advance(task["status"], task["round"], bool(task["manual_check"]), result,
@@ -582,9 +582,14 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
         )
         _enter(conn, user_id, task["id"], step, now)
     if pending_notes:                                     # after the transaction: files.py opens its own connection
-        owner, project_id, notes = pending_notes
+        owner, project_id, notes, edits = pending_notes
         for name, body in notes.items():
             memory.save_memory(owner, project_id, body, name)
+        failed = memory.edit_failures(memory.apply_edits(owner, project_id, edits)) if edits else ""
+        if failed:                                        # the user sees in the report what was not changed
+            with db.connect() as conn:
+                conn.execute("UPDATE agent_runs SET report = substr(report || ?, 1, ?) WHERE id = ?",
+                             (f"\n\n{failed}", MAX_REPORT, run_id))
     return True
 
 

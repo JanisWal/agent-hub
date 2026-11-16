@@ -28,7 +28,7 @@
       button.setAttribute("aria-pressed", String(button.dataset.mview === view));
     });
     if (view) { vault.classList.remove("appear"); void vault.offsetWidth; vault.classList.add("appear"); }
-    if (view === "archive") loadArchive();
+    if (view === "archive") { loadArchive(); refreshVersions(); }
   }
   Array.prototype.forEach.call(toggles, function (button) {
     button.addEventListener("click", function () { setView(current === button.dataset.mview ? "" : button.dataset.mview); });
@@ -159,5 +159,30 @@
     } else if (event.target.closest(".archive-open")) {
       openDay(day);
     }
+  });
+
+  // --- earlier versions of the memory files (memory.py): the list comes from the server, a text is fetched when its
+  // row is opened, the round arrow puts it back (the current text becomes a version itself, so nothing is lost)
+  function refreshVersions() { return AgentHub.swap(["mvault-versions"]).catch(function () {}); }
+  vault.addEventListener("toggle", function (event) {
+    var details = event.target;
+    var row = details.closest && details.closest(".version-row");
+    if (!row || !details.open) return;
+    var box = details.querySelector(".version-text");
+    if (box.dataset.loaded) return;
+    fetch("/memory/versions/" + row.dataset.id, { credentials: "same-origin" })
+      .then(function (response) { return response.ok ? response.json() : null; })
+      .then(function (data) { if (data && data.ok) { box.textContent = data.text; box.dataset.loaded = "1"; } })
+      .catch(function () {});
+  }, true);   // toggle does not bubble
+  vault.addEventListener("click", function (event) {
+    var button = event.target.closest('[data-mversion="restore"]');
+    if (!button) return;
+    event.preventDefault();   // the button sits in the summary: it must not open the row
+    var row = button.closest(".version-row");
+    post("/memory/versions/" + row.dataset.id + "/restore").then(function () {
+      refreshVersions();
+      AgentHub.swap(["files"]).catch(function () {});
+    });
   });
 })();

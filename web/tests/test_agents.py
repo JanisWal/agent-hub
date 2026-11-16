@@ -135,6 +135,29 @@ class ClaudeLinkTest(Base):
 
 
 class ChainTest(Base):
+    def test_the_manager_run_edits_the_memory_and_reports_what_did_not_fit(self):
+        from app import files, memory
+        files.FILES_DIR, old = Path(self.tmp.name) / "files", (files.FILES_DIR, files.free_bytes)
+        files.free_bytes = lambda: 10 * 1024 ** 3
+        self.addCleanup(lambda: setattr(files, "FILES_DIR", old[0]) or setattr(files, "free_bytes", old[1]))
+        memory.save_memory(self.a.id, self.project.id, "# Stand\n- Relais: offen")
+        self.connect(self.a)
+        task = agents.start_task(self.a.id, self.project.id, self.item.id)
+        for result in ("done", "pass", "ok"):
+            self.run_stage(result)
+        agents.decide(self.a.id, task.id, "approve")
+        agents.merge_done(task.id, True)
+        report = ('Doku nachgeführt.\n<memory-edit file="MEMORY.md"><find>- Relais: offen</find>'
+                  '<replace>- Relais: eingebaut</replace></memory-edit>'
+                  '<memory-edit file="ROADMAP.md"><find>gibt es nicht</find><replace>x</replace></memory-edit>')
+        self.assertEqual(self.run_stage("done", report).role, "chef")
+        memo = next(f for f in files.list_files(self.a.id, self.project.id) if f.name == "MEMORY.md")
+        self.assertEqual(files.read_text(self.a.id, memo.id), "# Stand\n- Relais: eingebaut\n")
+        with db.connect() as conn:
+            stored = conn.execute("SELECT report FROM agent_runs WHERE role = 'chef'").fetchone()["report"]
+        self.assertTrue(stored.startswith("Doku nachgeführt."))
+        self.assertIn('<edit-failed file="ROADMAP.md">', stored)
+
     def run_stage(self, result, report="", **kw):
         job = agents.claim_next(can_mac=True, **kw)
         self.assertIsNotNone(job)

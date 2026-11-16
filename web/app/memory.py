@@ -24,6 +24,16 @@ file that only grows: what the manager writes into <memory file="ARCHIVE.md"> is
 (`_append_archive`), nothing in it is ever replaced by the manager (the user can still edit it in the tile). It comes
 last in the memory folder and, when it does not fit, its newest part is given.
 
+Targeted edits (Janis, 16.11.2026): instead of the whole new text the manager may change a memory file with
+<memory-edit file="NAME.md"><find>exact old text</find><replace>new text</replace>...<append>text</append></memory-edit>.
+Each <find> must occur exactly once; a block is applied whole or not at all; only a file the AI saw whole in the
+memory folder may be edited (`shown_whole`), so it never changes what it saw only in part. ARCHIVE.md is not edited
+(it only grows). `check_edits` says what would fail, `apply_edits` does it.
+
+Versions (Janis, 16.11.2026): before a memory file is replaced (by the manager or by the user in the tile), its old
+text goes into `memory_versions` (at most MAX_VERSIONS per file). The user sees and restores them in the archive of
+the Manager view; the AIs never read them.
+
 Everything here belongs to one user and one project: each function gets the user and the project must be his,
 and a name is only looked up among the files of that project. Standard library only.
 """
@@ -51,6 +61,12 @@ _MEMORY_TAG = re.compile(r"<memory(?:\s+file=\"([^\"<>]{1,80})\")?>(.*?)</memory
 _MEMORY_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _.\-]{0,60}\.md")   # what the manager may name a memory file
 MAX_FOLDER = 40000          # characters of the memory folder given with every question
 MAX_NEW_FILES = 3           # memory files the manager may write in one answer
+MAX_EDIT_BLOCKS = 3         # <memory-edit> blocks taken from one answer
+MAX_EDIT_CHANGES = 10       # <find>/<replace> pairs and <append> parts in one block
+MAX_VERSIONS = 20           # earlier versions kept per memory file
+VERSIONS_SHOWN = 200        # versions the archive lists at most (newest)
+_EDIT_TAG = re.compile(r"<memory-edit\s+file=\"([^\"<>]{1,80})\">(.*?)</memory-edit>", re.DOTALL)
+_CHANGE_TAG = re.compile(r"<find>(.*?)</find>\s*<replace>(.*?)</replace>|<append>(.*?)</append>", re.DOTALL)
 # The fixed memory files of a project, by language: name and the start of its text (headings to fill).
 SKELETON = {
     "de": (
@@ -84,6 +100,29 @@ class Parsed:
     memory: str | None       # the new MEMORY.md, if the manager wrote one
     reads: list[str]         # names of the files it asks for
     files: dict | None = None   # other memory files it wrote: name -> text (memory folder)
+    edits: list | None = None   # targeted changes: list of Edit
+
+
+@dataclass
+class Edit:
+    file: str
+    changes: list            # (find, replace) pairs; find None = append replace at the end
+
+
+@dataclass
+class EditResult:
+    file: str
+    ok: bool
+    reason: str = ""         # not_found, not_unique, not_shown, too_long, bad_name, archive, empty
+
+
+@dataclass
+class Version:
+    id: int
+    name: str
+    author: str              # who replaced it: manager or user
+    size: int
+    created_at: int
 
 
 def parse_answer(answer: str) -> Parsed:
@@ -100,8 +139,18 @@ def parse_answer(answer: str) -> Parsed:
         name = name.strip()
         if name and name.lower() not in [r.lower() for r in reads]:
             reads.append(name)
-    text = _READ_TAG.sub("", _MEMORY_TAG.sub("", answer)).strip()
-    return Parsed(text, memory or None, reads[:MAX_READS], others)
+    edits = []
+    for name, body in _EDIT_TAG.findall(answer)[:MAX_EDIT_BLOCKS]:
+        changes = [(None, _edge(add)) if find == "" and replace == "" and add else (_edge(find), _edge(replace))
+                   for find, replace, add in _CHANGE_TAG.findall(body)]
+        edits.append(Edit(name.strip(), changes))
+    text = _READ_TAG.sub("", _MEMORY_TAG.sub("", _EDIT_TAG.sub("", answer))).strip()
+    return Parsed(text, memory or None, reads[:MAX_READS], others, edits)
+
+
+def _edge(text: str) -> str:
+    """The text between two tags without the line breaks right inside them (<find>\nold\n</find> means "old")."""
+    return text.strip("\r\n")
 
 
 def _find(conn: sqlite3.Connection, user_id: int, project_id: int, name: str,
@@ -150,18 +199,150 @@ def save_memory(user_id: int, project_id: int, text: str, name: str = MEMORY_NAM
         return _append_archive(user_id, project_id, text)
     if len(text) > MAX_MEMORY:
         text = text[:MAX_MEMORY].rsplit("\n", 1)[0]
+    return _write(user_id, project_id, name, text + "\n", "manager")
+
+
+def _write(user_id: int, project_id: int, name: str, text: str, author: str) -> bool:
+    """Replace a memory file (keeping its old text as a version) or make it in the area Memory."""
     with db.connect() as conn:
         row = _find(conn, user_id, project_id, name)
     try:
         if row is not None:
-            if files.write_text(user_id, row["id"], text + "\n"):
-                return True
+            old = files.read_text(user_id, row["id"])
+            if old is not None:
+                if old != text:
+                    _keep_version(project_id, row["name"], old, author)
+                return files.write_text(user_id, row["id"], text)
             files.delete(user_id, row["id"])          # a row whose file is gone: make the memory file anew
             files.purge(user_id, row["id"])
-        files.create_text_file(user_id, project_id, name, text + "\n")
+        files.create_text_file(user_id, project_id, name, text)
         return True
     except files.FileError:
         return False
+
+
+def _keep_version(project_id: int, name: str, text: str, author: str, now: int | None = None) -> None:
+    """Keep an old text; only the newest MAX_VERSIONS of a file stay. The caller checked the project."""
+    if not text.strip():
+        return
+    with db.connect() as conn:
+        conn.execute("INSERT INTO memory_versions (project_id, name, text, author, created_at) VALUES (?, ?, ?, ?, ?)",
+                     (project_id, name, text, author, int(now if now is not None else time.time())))
+        conn.execute(
+            "DELETE FROM memory_versions WHERE project_id = ? AND name = ? COLLATE NOCASE AND id NOT IN (SELECT id FROM"
+            " memory_versions WHERE project_id = ? AND name = ? COLLATE NOCASE ORDER BY id DESC LIMIT ?)",
+            (project_id, name, project_id, name, MAX_VERSIONS))
+
+
+def _edited(old: str, changes: list) -> tuple[str | None, str]:
+    """(new text, "") or (None, reason) for one block: every <find> exactly once, applied in order."""
+    if not changes or len(changes) > MAX_EDIT_CHANGES:
+        return None, "empty" if not changes else "too_long"
+    text = old
+    for find, replace in changes:
+        if find is None:
+            text = text.rstrip("\n") + "\n\n" + replace.strip("\n") + "\n"
+            continue
+        if not find.strip():
+            return None, "empty"
+        count = text.count(find)
+        if count != 1:
+            return None, "not_found" if count == 0 else "not_unique"
+        text = text.replace(find, replace, 1)
+    return (text, "") if len(text) <= MAX_MEMORY else (None, "too_long")
+
+
+def _plan(user_id: int, project_id: int, edits: list) -> list[tuple[EditResult, str | None, str]]:
+    """For each block: its result, the new text (or None) and the file's real name."""
+    with db.connect() as conn:
+        whole = shown_whole(conn, user_id, project_id)
+        plans = []
+        for edit in edits:
+            name = edit.file
+            if not _MEMORY_NAME.fullmatch(name):
+                plans.append((EditResult(name, False, "bad_name"), None, name))
+                continue
+            if name.lower() == ARCHIVE_NAME.lower():
+                plans.append((EditResult(name, False, "archive"), None, name))
+                continue
+            row = _find(conn, user_id, project_id, name)
+            if row is None:
+                plans.append((EditResult(name, False, "not_found"), None, name))
+                continue
+            if name.lower() not in whole:
+                plans.append((EditResult(name, False, "not_shown"), None, row["name"]))
+                continue
+            old = files.read_text(user_id, row["id"]) or ""
+            new, reason = _edited(old, edit.changes)
+            plans.append((EditResult(name, new is not None, reason), new, row["name"]))
+    return plans
+
+
+def check_edits(user_id: int, project_id: int, edits: list) -> list[EditResult]:
+    """What applying the edits would give, without changing anything."""
+    return [result for result, _, _ in _plan(user_id, project_id, edits)]
+
+
+def apply_edits(user_id: int, project_id: int, edits: list, author: str = "manager") -> list[EditResult]:
+    """Apply each block that fits (whole or not at all); the old text of a changed file becomes a version."""
+    results = []
+    for result, new, name in _plan(user_id, project_id, edits):
+        if result.ok and not _write(user_id, project_id, name, new, author):
+            result = EditResult(result.file, False, "not_saved")
+        results.append(result)
+    return results
+
+
+def edit_failures(results: list[EditResult]) -> str:
+    """The failed edits for the AI (another round in the chat, or the run's report), in English."""
+    why = {"not_found": "a <find> text is not in the file (copy it exactly)", "not_unique": "a <find> text occurs more"
+           " than once (take a longer piece)", "not_shown": "the file was not given whole: ask for it with <read> or"
+           " write its complete text", "too_long": "the file would get too long, or too many changes",
+           "archive": "ARCHIVE.md only grows: use <memory file=\"ARCHIVE.md\">", "bad_name": "not a memory file name",
+           "empty": "no <find>/<replace> pair", "not_saved": "the file could not be saved"}
+    return "\n".join(f'<edit-failed file="{r.file.replace(chr(34), chr(39))}">{why.get(r.reason, r.reason)}'
+                     f'</edit-failed>' for r in results if not r.ok)
+
+
+def write_by_user(user_id: int, file_id: int, text: str) -> bool:
+    """The user saves a file in the tile: a memory file keeps its old text as a version first. Raises FileError."""
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT f.* FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ? AND p.user_id = ?"
+            " AND f.status = 'ready' AND f.category = 'memory'", (file_id, user_id)).fetchone()
+    if row is not None and _MEMORY_NAME.fullmatch(row["name"]):
+        old = files.read_text(user_id, file_id)
+        if old is not None and old != text:
+            _keep_version(row["project_id"], row["name"], old, "user")
+    return files.write_text(user_id, file_id, text)
+
+
+def versions(user_id: int, project_id: int) -> list[Version]:
+    """The earlier versions of the project's memory files, newest first; empty for a foreign project."""
+    with db.connect() as conn:
+        rows = conn.execute(
+            "SELECT v.id, v.name, v.author, length(v.text) AS size, v.created_at FROM memory_versions v"
+            " JOIN projects p ON p.id = v.project_id WHERE v.project_id = ? AND p.user_id = ?"
+            " ORDER BY v.id DESC LIMIT ?", (project_id, user_id, VERSIONS_SHOWN)).fetchall()
+    return [Version(r["id"], r["name"], r["author"], r["size"], r["created_at"]) for r in rows]
+
+
+def version_text(user_id: int, version_id: int) -> str | None:
+    with db.connect() as conn:
+        row = conn.execute("SELECT v.text FROM memory_versions v JOIN projects p ON p.id = v.project_id"
+                           " WHERE v.id = ? AND p.user_id = ?", (version_id, user_id)).fetchone()
+    return None if row is None else row["text"]
+
+
+def restore(user_id: int, version_id: int) -> int | None:
+    """Put an earlier version back; the current text becomes a version itself (nothing is lost). The project id, or
+    None if the version is not the user's or could not be saved."""
+    with db.connect() as conn:
+        row = conn.execute("SELECT v.* FROM memory_versions v JOIN projects p ON p.id = v.project_id"
+                           " WHERE v.id = ? AND p.user_id = ?", (version_id, user_id)).fetchone()
+    if row is None or not _write(user_id, row["project_id"], row["name"], row["text"], "user"):
+        return None
+    return row["project_id"]
 
 
 def _append_archive(user_id: int, project_id: int, text: str, today: str | None = None) -> bool:
@@ -201,20 +382,38 @@ def _folder_rows(conn: sqlite3.Connection, user_id: int, project_id: int) -> lis
     return sorted(rows, key=order)
 
 
-def folder(conn: sqlite3.Connection, user_id: int, project_id: int) -> str:
-    """The memory folder for the manager: every Markdown file of the area Memory as a <file> block, MEMORY.md first,
-    together at most MAX_FOLDER characters (what does not fit is named, to be asked for with <read>)."""
-    blocks, used = [], 0
+def _folder(conn: sqlite3.Connection, user_id: int, project_id: int) -> tuple[str, set[str]]:
+    """(memory folder, lower-case names of the files in it that were given whole)."""
+    blocks, whole, used = [], set(), 0
     for row in _folder_rows(conn, user_id, project_id):
         shown = row["name"].replace('"', "'")
         archive = row["name"].lower() == ARCHIVE_NAME.lower()       # its newest part matters most
-        text = _text_of(row, min(MAX_MEMORY, max(0, MAX_FOLDER - used)), tail=archive)
+        limit = min(MAX_MEMORY, max(0, MAX_FOLDER - used))
+        text = _text_of(row, limit, tail=archive)
         if text is None or (used >= MAX_FOLDER):
             blocks.append(f'<file name="{shown}">(too long to give here: ask for it with <read>)</file>')
             continue
+        if _full_length(row) <= limit:
+            whole.add(row["name"].lower())
         used += len(text)
         blocks.append(f'<file name="{shown}">\n{text.strip() or "(empty)"}\n</file>')
-    return "\n\n".join(blocks)
+    return "\n\n".join(blocks), whole
+
+
+def folder(conn: sqlite3.Connection, user_id: int, project_id: int) -> str:
+    """The memory folder for the manager: every Markdown file of the area Memory as a <file> block, MEMORY.md first,
+    together at most MAX_FOLDER characters (what does not fit is named, to be asked for with <read>)."""
+    return _folder(conn, user_id, project_id)[0]
+
+
+def shown_whole(conn: sqlite3.Connection, user_id: int, project_id: int) -> set[str]:
+    """Lower-case names of the memory files the folder gives whole: only these may be changed with <memory-edit>."""
+    return _folder(conn, user_id, project_id)[1]
+
+
+def _full_length(row: sqlite3.Row) -> int:
+    path = files.path_of(row["project_id"], row["id"])
+    return len(path.read_text(encoding="utf-8", errors="replace")) if path.is_file() else 0
 
 
 def ensure_skeleton(user_id: int, project_id: int, lang: str = "de") -> int:

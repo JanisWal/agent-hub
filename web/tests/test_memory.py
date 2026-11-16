@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from app import chat, db, files, i18n, memory
+from app import chat, db, files, i18n, memory, projects
 from app.routes import chat as chat_routes
 from tests.test_chat import Base
 
@@ -288,3 +288,100 @@ class MemoryTest(MemoryBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EditParseTest(unittest.TestCase):
+    """Janis, 16.11.2026: targeted changes instead of the whole text, like a find-and-replace tool."""
+
+    def test_pairs_appends_and_line_breaks_inside_the_tags(self):
+        parsed = memory.parse_answer(
+            'Done.\n<memory-edit file="MEMORY.md">\n<find>\n- a\n</find>\n<replace>- b</replace>'
+            '<append>- c</append></memory-edit>')
+        self.assertEqual(parsed.text, "Done.")
+        self.assertEqual(parsed.edits, [memory.Edit("MEMORY.md", [("- a", "- b"), (None, "- c")])])
+
+    def test_at_most_three_blocks(self):
+        answer = "".join(f'<memory-edit file="F{n}.md"><find>x</find><replace>y</replace></memory-edit>' for n in range(5))
+        parsed = memory.parse_answer(answer)
+        self.assertEqual([e.file for e in parsed.edits], ["F0.md", "F1.md", "F2.md"])
+        self.assertEqual(parsed.text, "")
+
+
+class EditTest(MemoryBase):
+    def setUp(self):
+        super().setUp()
+        memory.ensure_skeleton(self.a.id, self.pa.id, "de")
+        self.memo = self.file("MEMORY.md")
+        files.write_text(self.a.id, self.memo.id, "# Stand\n- Heizung: offen\n- Licht: offen\n")
+
+    def file(self, name):
+        return next(f for f in files.list_files(self.a.id, self.pa.id) if f.name == name)
+
+    def text(self, name="MEMORY.md"):
+        return files.read_text(self.a.id, self.file(name).id)
+
+    def edit(self, *changes, name="MEMORY.md", user=None):
+        return memory.apply_edits((user or self.a).id, self.pa.id, [memory.Edit(name, list(changes))])
+
+    def test_a_change_replaces_only_its_place_and_keeps_the_old_text_as_a_version(self):
+        [result] = self.edit(("- Heizung: offen", "- Heizung: 30-A-Relais"), (None, "- Neu"))
+        self.assertTrue(result.ok)
+        self.assertEqual(self.text(), "# Stand\n- Heizung: 30-A-Relais\n- Licht: offen\n\n- Neu\n")
+        [version] = memory.versions(self.a.id, self.pa.id)
+        self.assertEqual((version.name, version.author), ("MEMORY.md", "manager"))
+        self.assertIn("- Heizung: offen", memory.version_text(self.a.id, version.id))
+
+    def test_a_block_that_does_not_fit_changes_nothing_at_all(self):
+        before = self.text()
+        self.assertEqual(self.edit(("- Heizung: offen", "x"), ("gibt es nicht", "y"))[0].reason, "not_found")
+        self.assertEqual(self.edit((": offen", "x"))[0].reason, "not_unique")
+        self.assertEqual(self.edit(("", "x"))[0].reason, "empty")
+        self.assertEqual(self.text(), before)                              # all or nothing
+        self.assertEqual(memory.versions(self.a.id, self.pa.id), [])
+
+    def test_the_archive_unknown_and_foreign_files_are_never_edited(self):
+        self.assertEqual(self.edit(("Archiv", "x"), name="ARCHIVE.md")[0].reason, "archive")
+        self.assertEqual(self.edit(("a", "b"), name="FEHLT.md")[0].reason, "not_found")
+        self.assertEqual(self.edit(("a", "b"), name="../x.md")[0].reason, "bad_name")
+        self.assertFalse(self.edit(("- Heizung: offen", "x"), user=self.b)[0].ok)   # B: not his project
+        self.assertIn("- Heizung: offen", self.text())
+
+    def test_a_file_that_was_not_given_whole_is_not_edited(self):
+        files.write_text(self.a.id, self.memo.id, "# Stand\n- Heizung: offen\n" + "x" * memory.MAX_MEMORY)
+        self.assertEqual(self.edit(("- Heizung: offen", "y"))[0].reason, "not_shown")
+        self.assertIn("not given whole", memory.edit_failures(self.edit(("- Heizung: offen", "y"))))
+
+    def test_only_the_newest_versions_stay_and_restoring_loses_nothing(self):
+        for n in range(memory.MAX_VERSIONS + 3):
+            memory.save_memory(self.a.id, self.pa.id, f"# Stand {n}")
+        listed = memory.versions(self.a.id, self.pa.id)
+        self.assertEqual(len(listed), memory.MAX_VERSIONS)
+        oldest = listed[-1]
+        self.assertEqual(memory.version_text(self.a.id, oldest.id), "# Stand 2\n")   # the start text and Stand 0, 1 fell out
+        self.assertIsNone(memory.version_text(self.b.id, oldest.id))          # never someone else's
+        self.assertIsNone(memory.restore(self.b.id, oldest.id))
+        self.assertEqual(memory.restore(self.a.id, oldest.id), self.pa.id)
+        self.assertEqual(self.text(), "# Stand 2\n")
+        newest = memory.versions(self.a.id, self.pa.id)[0]
+        self.assertEqual((memory.version_text(self.a.id, newest.id), newest.author), (f"# Stand {memory.MAX_VERSIONS + 2}\n", "user"))
+
+    def test_the_users_own_save_keeps_a_version_and_deleting_the_project_removes_them(self):
+        self.assertTrue(memory.write_by_user(self.a.id, self.memo.id, "# Von Hand\n"))
+        self.assertEqual(memory.versions(self.a.id, self.pa.id)[0].author, "user")
+        self.assertTrue(projects.delete_project(self.a.id, self.pa.id))
+        with db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM memory_versions").fetchone()[0], 0)
+
+    def test_the_chat_asks_again_when_an_edit_does_not_fit_and_then_saves_it(self):
+        job = self.ask()
+        self.assertIn("<memory-edit", job.prompt)                               # the rules explain the format
+        bad = 'Ok.<memory-edit file="MEMORY.md"><find>- Heizung: zu</find><replace>x</replace></memory-edit>'
+        self.assertTrue(chat.finish(job.chat_id, True, bad))
+        second = chat.claim_next()
+        self.assertEqual(second.chat_id, job.chat_id)
+        self.assertIn('<edit-failed file="MEMORY.md">a <find> text is not in the file', second.prompt)
+        good = 'Erledigt.<memory-edit file="MEMORY.md"><find>- Heizung: offen</find><replace>- Heizung: fertig</replace></memory-edit>'
+        self.assertTrue(chat.finish(second.chat_id, True, good))
+        shown = chat.list_messages(self.a.id, self.pa.id)[-1]
+        self.assertEqual((shown.answer, shown.memory_saved), ("Erledigt.", True))
+        self.assertIn("- Heizung: fertig", self.text())
