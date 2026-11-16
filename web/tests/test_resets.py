@@ -264,6 +264,19 @@ class LinkMailTest(unittest.TestCase):
         preview = html.split('mso-hide:all;">', 1)[1].split("&#8199;", 1)[0]
         self.assertEqual(preview, i18n.t("en", "mail_invite_body"))
 
+    def test_long_link_and_name_can_wrap_without_css(self):
+        """Yahoo knows no word-break: break chances are in the text itself, the link still copies as it is."""
+        link = "https://hub.example.com/reset/0uxw6J5nrRbqd0R8noQmBgqhabd0HyMs0WJiYQBuYt8"
+        users.set_profile(self.user.id, "janis.walczyk15_with_a_rather_long_name", "de")
+        html = mailtext.build("reset", users.get_by_id(self.user.id), link, 3600)[2]
+        shown = html.split('<span class="m" style="color:', 1)[1].split(">", 1)[1].split("</span>", 1)[0]
+        self.assertEqual(shown.replace("<wbr>", ""), link)
+        self.assertTrue(all(len(piece) <= 12 for piece in shown.split("<wbr>")))
+        self.assertIn(f'href="{link}"', html)
+        greeting = html.split('class="t h1"', 1)[1].split(">", 1)[1].split("</h1>", 1)[0]
+        self.assertTrue(all(len(piece) <= 13 for word in greeting.split() for piece in word.split("<wbr>")))
+        self.assertNotIn("<wbr>", html.split("<title>", 1)[1].split("</title>", 1)[0])
+
     def test_unknown_kind(self):
         with self.assertRaises(ValueError):
             mailtext.build("nope", self.user, "x", 3600)

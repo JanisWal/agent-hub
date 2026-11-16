@@ -25,7 +25,7 @@ caniemail.com. The rules, each one learned the hard way or taken from those tabl
    commas, no CSS comments inside `<style>` (a rule after a comment is lost in some programs), each kind of extra in
    its own `<style>` block (a program that rejects one block keeps the others; the colour rules use class selectors
    only, attribute selectors and gradients sit in blocks of their own), the button text in a `span` inside
-   the link (some programs recolour links), a hidden preview text, and the whole mail far below Gmail's 102 KB.
+   the link (some programs recolour links), `<wbr>` in the shown link and the greeting (Yahoo knows no `word-break`), a hidden preview text, and the whole mail far below Gmail's 102 KB.
 
 Texts live in i18n.py (`mail_<kind>_subject|body|button|note`), so they exist in both languages.
 """
@@ -171,6 +171,23 @@ HTML = """<!doctype html>
 </html>"""
 
 
+def _breakable(text: str, run: int = 12) -> str:
+    """`text` escaped, with `<wbr>` after `/ . - _ @ ? & =` and inside every longer run of characters. Yahoo knows
+    neither `word-break` nor `overflow-wrap`: the long link did not wrap and made the card wider than Yahoo's reading
+    pane (scrolling in all directions, Janis 16.11.2026). `<wbr>` is no character, so a copied link stays intact."""
+    out, count = [], 0
+    for char in text:
+        out.append(esc(char))
+        if char.isspace():
+            count = 0
+            continue
+        count += 1
+        if char in "/.-_@?&=" or count >= run:
+            out.append("<wbr>")
+            count = 0
+    return "".join(out)
+
+
 def _duration(lang: str, seconds: int) -> str:
     """"one hour" or "7 days": the only lengths we use are one hour and whole days."""
     if seconds >= 24 * 3600:
@@ -192,8 +209,8 @@ def build(kind: str, user: User, link: str, seconds: int) -> tuple[str, str, str
     html = fill(
         HTML, lang,
         LANG=lang, TITLE=esc(subject), FONT=esc(FONT), PREVIEW=esc(body),
-        GREETING=esc(greeting), BODY=esc(body), BUTTON=esc(button), NOTE=esc(note),
-        LINK=esc(link), LINK_TEXT=esc(link), LINK_HELP=esc(i18n.t(lang, "mail_link_help")),
+        GREETING=_breakable(greeting), BODY=esc(body), BUTTON=esc(button), NOTE=esc(note),
+        LINK=esc(link), LINK_TEXT=_breakable(link), LINK_HELP=esc(i18n.t(lang, "mail_link_help")),
         FOOTER=esc(i18n.t(lang, "mail_footer")),
         STYLE_GLASS=STYLE_GLASS, STYLE_GRADIENTS=STYLE_GRADIENTS, STYLE_SCHEMES=STYLE_SCHEMES,
         STYLE_DARK_FIELDS=STYLE_DARK_FIELDS, STYLE_OUTLOOK_DARK=STYLE_OUTLOOK_DARK,
