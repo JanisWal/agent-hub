@@ -89,27 +89,43 @@ CANCEL_LINK = '<a class="link" href="/">%t.cancel%</a>'
 CANCEL_LOGOUT = '<form method="post" action="/logout"><button class="link" type="submit">%t.cancel%</button></form>'
 
 
-def _switch(attr: str, label: str, text: str, on: bool, lang: str) -> str:
-    return (f'<button class="chip" type="button" role="switch" {attr} aria-checked="{str(on).lower()}" '
-            f'aria-label="{esc(i18n.t(lang, label))}" title="{esc(i18n.t(lang, label))}">'
-            f'{esc(i18n.t(lang, text))}</button>')
+def _switch(attr: str, label: str, text: str, on: bool, lang: str, off: bool = False) -> str:
+    """A round switch. `off` keeps its place in the column but hides it (static/users.js shows it when it fits)."""
+    return (f'<button class="chip{" is-off" if off else ""}" type="button" role="switch" {attr} aria-checked="{str(on).lower()}" '
+            f'aria-label="{esc(i18n.t(lang, label))}" data-tip="{esc(i18n.t(lang, label))}"'
+            f'{" tabindex=-1 aria-hidden=true" if off else ""}>{esc(i18n.t(lang, text))}</button>')
 
 
 def _row(actor: User, account: User, lang: str) -> str:
+    """One account. Every action has a fixed place, so the columns line up from row to row (Janis, 16.11.2026):
+    Admin, Superadmin (owner only), then crown or invitation link (never both: the crown needs a chosen password,
+    the link a start password), key, trash. A place that does not apply stays empty."""
     you = f' <span class="you">({esc(i18n.t(lang, "you"))})</span>' if account.id == actor.id else ""
     buttons = []
-    if actor.is_system_admin and account.rank < actor.rank:   # a superadmin keeps the Admin switch lit (static/users.js)
-        buttons.append(_switch("data-admin", "admin_switch", "role_admin", account.role in ("admin", "superadmin"), lang))
-    if actor.role == "owner" and account.role != "owner":   # only the owner makes or removes superadmins
-        buttons.append(_switch("data-superadmin", "superadmin_switch", "role_superadmin", account.role == "superadmin", lang))
-    actions = []
-    if actor.role == "owner" and account.role != "owner" and not account.must_change:
-        actions.append(("data-owner", "crown", "owner_transfer"))  # only to somebody who can log in
-    if can_manage(actor, account):
-        if account.must_change:   # still on the start password: the invitation can be sent again
-            actions.append(("data-invite", "link", "invite_resend"))
-        actions += [("data-reset", "key", "reset_password"), ("data-delete", "trash", "delete_user")]
-    for attr, icon_name, label in actions:
+    if actor.is_system_admin:
+        free = account.rank < actor.rank
+        if free:   # a superadmin keeps the Admin switch lit (static/users.js)
+            buttons.append(_switch("data-admin", "admin_switch", "role_admin", account.role in ("admin", "superadmin"), lang))
+        else:
+            buttons.append('<span class="slot slot-admin"></span>')
+        if actor.role == "owner":   # only the owner makes or removes superadmins, and only of an admin
+            if free:
+                buttons.append(_switch("data-superadmin", "superadmin_switch", "role_superadmin",
+                                       account.role == "superadmin", lang, off=account.role == "user"))
+            else:
+                buttons.append('<span class="slot slot-super"></span>')
+    manage = can_manage(actor, account)
+    slots = [
+        ("data-owner", "crown", "owner_transfer") if actor.role == "owner" and account.role != "owner" and not account.must_change
+        else ("data-invite", "link", "invite_resend") if manage and account.must_change else None,
+        ("data-reset", "key", "reset_password") if manage else None,
+        ("data-delete", "trash", "delete_user") if manage else None,
+    ]
+    for slot in slots:
+        if slot is None:
+            buttons.append('<span class="slot slot-icon"></span>')
+            continue
+        attr, icon_name, label = slot
         text = esc(i18n.t(lang, label))
         buttons.append(
             f'<button class="icon-button" type="button" {attr} aria-label="{text}" title="{text}">{icon(icon_name)}</button>'
