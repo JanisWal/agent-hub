@@ -7,7 +7,7 @@ from .users import User, can_manage
 
 ROLE_LABEL = {"owner": "role_owner", "superadmin": "role_superadmin", "admin": "role_admin", "user": "role_user"}
 
-USERS = """<section class="users-wrap" data-network="%t.err_network%">
+USERS = """<section class="users-wrap" data-network="%t.err_network%" data-label-owner="%t.role_owner%" data-label-superadmin="%t.role_superadmin%" data-label-admin="%t.role_admin%" data-label-user="%t.role_user%">
   <header class="users-head">
     <h2>%t.users_title%</h2>
     <button class="primary" id="add-user" type="button">%t.add_user%</button>
@@ -98,8 +98,8 @@ def _switch(attr: str, label: str, text: str, on: bool, lang: str) -> str:
 def _row(actor: User, account: User, lang: str) -> str:
     you = f' <span class="you">({esc(i18n.t(lang, "you"))})</span>' if account.id == actor.id else ""
     buttons = []
-    if actor.is_system_admin and account.rank < actor.rank and account.role != "superadmin":
-        buttons.append(_switch("data-admin", "admin_switch", "role_admin", account.role == "admin", lang))
+    if actor.is_system_admin and account.rank < actor.rank:   # a superadmin keeps the Admin switch lit (static/users.js)
+        buttons.append(_switch("data-admin", "admin_switch", "role_admin", account.role in ("admin", "superadmin"), lang))
     if actor.role == "owner" and account.role != "owner":   # only the owner makes or removes superadmins
         buttons.append(_switch("data-superadmin", "superadmin_switch", "role_superadmin", account.role == "superadmin", lang))
     actions = []
@@ -115,9 +115,9 @@ def _row(actor: User, account: User, lang: str) -> str:
             f'<button class="icon-button" type="button" {attr} aria-label="{text}" title="{text}">{icon(icon_name)}</button>'
         )
     return (
-        f'<div class="user-row" data-id="{account.id}" data-email="{esc(account.email)}">'
+        f'<div class="user-row" data-id="{account.id}" data-email="{esc(account.email)}" data-role="{account.role}" data-rank="{account.rank}">'
         f'<div class="user-main"><span class="user-email">{esc(account.email)}</span>'
-        f'<span class="user-role">{esc(i18n.t(lang, ROLE_LABEL[account.role]))}{you}</span>'
+        f'<span class="user-role"><span data-role-label>{esc(i18n.t(lang, ROLE_LABEL[account.role]))}</span>{you}</span>'
         f'<span class="user-note" data-note role="status" hidden></span></div>'
         f'<div class="user-actions">{"".join(buttons)}</div></div>'
     )
