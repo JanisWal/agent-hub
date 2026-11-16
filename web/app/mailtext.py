@@ -23,7 +23,8 @@ caniemail.com. The rules, each one learned the hard way or taken from those tabl
    (`mso-padding-alt`); its corners stay square.
 7. Small things that break mails elsewhere: `!important` always with a space and in lower case, `rgba` only with
    commas, no CSS comments inside `<style>` (a rule after a comment is lost in some programs), each kind of extra in
-   its own `<style>` block (a program that rejects one block keeps the others), the button text in a `span` inside
+   its own `<style>` block (a program that rejects one block keeps the others; the colour rules use class selectors
+   only, attribute selectors and gradients sit in blocks of their own), the button text in a `span` inside
    the link (some programs recolour links), a hidden preview text, and the whole mail far below Gmail's 102 KB.
 
 Texts live in i18n.py (`mail_<kind>_subject|body|button|note`), so they exist in both languages.
@@ -86,19 +87,25 @@ def _palette_rules(colours: dict[str, str]) -> str:
     )
 
 
-# Light and dark for programs that follow the reader's setting (rule 3); Outlook.com marks what it recoloured with
-# `data-ogsc` (text) and `data-ogsb` (backgrounds), there our dark colours win.
+# Light and dark for programs that follow the reader's setting (rule 3). Class selectors only, so a program that is
+# strict about selectors keeps this block (the Outlook app on the iPhone showed its own recolouring, not ours, while
+# these rules shared a block with attribute selectors and gradients; 16.11.2026).
 STYLE_SCHEMES = (
-    "@media (prefers-color-scheme:light){"
+    "@media (prefers-color-scheme: light){"
     f".btn{{background-color:{SITE_BUTTON['accent']} !important;box-shadow:0 8px 22px rgba(232,132,90,0.35),inset 0 1px 0 rgba(255,255,255,0.35) !important;}}"
     f".bt{{color:{SITE_BUTTON['on_accent']} !important;}}"
     "}"
-    "@media (prefers-color-scheme:dark){"
+    "@media (prefers-color-scheme: dark){"
     + _palette_rules(DARK)
     + ".card{border-color:rgba(255,220,190,0.14) !important;box-shadow:inset 0 1px 0 rgba(255,220,190,0.18),0 18px 40px rgba(0,0,0,0.35) !important;}"
     ".btn{box-shadow:0 8px 22px rgba(242,154,114,0.3),inset 0 1px 0 rgba(255,255,255,0.3) !important;}"
-    f'[class~="fields"]{{background-image:{_FIELDS_DARK} !important;}}'
     "}"
+)
+# The dark coloured fields, behind the attribute selector like the light ones (rule 5), in a block of their own.
+STYLE_DARK_FIELDS = f'@media (prefers-color-scheme: dark){{[class~="fields"]{{background-image:{_FIELDS_DARK} !important;}}}}'
+# Outlook.com and the Outlook apps mark what they recoloured with `data-ogsc` (text) and `data-ogsb` (backgrounds) on the
+# element they changed; our wrappers carry colours, so their descendants can be reached. There our dark colours win.
+STYLE_OUTLOOK_DARK = (
     f"[data-ogsb] .page{{background-color:{DARK['page']} !important;}}"
     f"[data-ogsb] .card{{background-color:{DARK['card']} !important;}}"
     f"[data-ogsb] .btn{{background-color:{DARK['accent']} !important;}}"
@@ -132,6 +139,8 @@ HTML = """<!doctype html>
 <style>%STYLE_GLASS%</style>
 <style>%STYLE_GRADIENTS%</style>
 <style>%STYLE_SCHEMES%</style>
+<style>%STYLE_DARK_FIELDS%</style>
+<style>%STYLE_OUTLOOK_DARK%</style>
 <!--<![endif]-->
 </head>
 <body class="page" bgcolor="%PAGE%" style="margin:0;padding:0;width:100%;background-color:%PAGE%;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
@@ -187,6 +196,7 @@ def build(kind: str, user: User, link: str, seconds: int) -> tuple[str, str, str
         LINK=esc(link), LINK_TEXT=esc(link), LINK_HELP=esc(i18n.t(lang, "mail_link_help")),
         FOOTER=esc(i18n.t(lang, "mail_footer")),
         STYLE_GLASS=STYLE_GLASS, STYLE_GRADIENTS=STYLE_GRADIENTS, STYLE_SCHEMES=STYLE_SCHEMES,
+        STYLE_DARK_FIELDS=STYLE_DARK_FIELDS, STYLE_OUTLOOK_DARK=STYLE_OUTLOOK_DARK,
         STYLE_OUTLOOK=STYLE_OUTLOOK,
         **{key.upper(): value for key, value in LIGHT.items()},
     )
