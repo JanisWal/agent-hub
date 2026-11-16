@@ -13,9 +13,9 @@ connected (no fallback to somebody else), and the runner gets nothing but the jo
 """
 import sqlite3
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from . import aichoice, board, catalog, db, memory, runtask, serversettings, workflow
+from . import aichoice, board, catalog, db, files, memory, runtask, serversettings, workflow
 
 # Models and effort levels are not fixed here: they come from catalog.py (Janis, 14.11.2026). A role without a
 # choice gets the provider's default model and that model's default level. Since 15.11.2026 the choice is kept per
@@ -89,6 +89,8 @@ class Job:
     effort: str = ""                # effort level of the model (catalog.py); empty = the program's own default
     provider: str = "claude"        # which AI does the run (aichoice.py); the runner picks the adapter by it
     prompt: str = ""                # the package for the AI (runtask.build_input): rules, memory, project, task
+    files: list = field(default_factory=list)   # the user's files for /files (files.for_agents): id, name, area, size
+    links: list = field(default_factory=list)   # and the links: name, address
 
 
 def _task(row: sqlite3.Row) -> Task:
@@ -545,6 +547,7 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
                       branch_name(task["id"]), task["title"], task["kind"], task["round"],
                       task["note"], reports, net_in(conn, user_id, run["role"]), effort, provider)
             job.prompt = runtask.build_input(conn, job)
+            job.files, job.links = files.for_agents(conn, user_id, task["project_id"])
             return job
     return None
 

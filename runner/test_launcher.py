@@ -176,6 +176,31 @@ class ChatCommandTest(unittest.TestCase):
                                         "ticket": TICKET, **change})
 
 
+class ReadOnlyFolderTest(unittest.TestCase):
+    """Janis, 16.11.2026: the user's files at /files and the code at /code, never writable."""
+
+    def test_runs_and_chats_mount_them_read_only(self):
+        run = L.build_command(**GOOD, files_dir="/opt/agent-hub/work/views/run-7/files")
+        self.assertIn("type=bind,src=/opt/agent-hub/work/views/run-7/files,dst=/files,readonly", run)
+        chat = L.build_chat_command(chat_id=5, user_id=2, model="haiku", ticket=TICKET,
+                                    files_dir="/v/chat-5/files", code_dir="/v/chat-5/code")
+        self.assertIn("type=bind,src=/v/chat-5/files,dst=/files,readonly", chat)
+        self.assertIn("type=bind,src=/v/chat-5/code,dst=/code,readonly", chat)
+        tools = chat[chat.index("--tools") + 1]
+        self.assertTrue({"Read", "Glob", "Grep"} <= set(tools.split(",")))      # to open them
+        vibe = L.build_vibe_command(name="agent-run-7", user_id=2, model="mistral-small-2603", ticket=TICKET,
+                                    job="run", work_dir="/w/7", files_dir="/v/run-7/files")
+        self.assertIn("type=bind,src=/v/run-7/files,dst=/files,readonly", vibe)
+
+    def test_without_them_nothing_is_mounted_and_bad_paths_are_refused(self):
+        chat = L.build_chat_command(chat_id=5, user_id=2, model="haiku", ticket=TICKET)
+        self.assertFalse(any("dst=/files" in part or "dst=/code" in part for part in chat))
+        self.assertNotIn("Read", chat[chat.index("--tools") + 1].split(","))
+        for bad in ("relative/files", "/v/a,dst=/etc", "/v/../etc", "/v/a b"):
+            with self.assertRaises(ValueError):
+                L.build_command(**GOOD, files_dir=bad)
+
+
 class TokenTest(unittest.TestCase):
     """Since 14.11.2026 no run holds the user's Claude token: only a ticket, and every request goes to the gateway."""
 

@@ -385,3 +385,22 @@ class EditTest(MemoryBase):
         shown = chat.list_messages(self.a.id, self.pa.id)[-1]
         self.assertEqual((shown.answer, shown.memory_saved), ("Erledigt.", True))
         self.assertIn("- Heizung: fertig", self.text())
+
+
+class AgentFilesTest(MemoryBase):
+    """Janis, 16.11.2026: the user's files go to every chat and run as a list; the runner mounts them read-only."""
+
+    def test_the_chat_job_names_the_files_and_links_of_its_project_only(self):
+        manual = self.put(self.a, self.pa, "Anleitung.pdf", b"%PDF")
+        files.add_link(self.a.id, self.pa.id, "https://example.com/guide", "Guide")
+        gone = self.put(self.a, self.pa, "alt.png", b"x")
+        files.delete(self.a.id, gone.id)                                          # in the trash: not given
+        self.put(self.b, self.pb, "secret-of-b.pdf", b"SECRET")
+        job = self.ask()
+        self.assertEqual(job.project_id, self.pa.id)
+        self.assertEqual(job.files, [{"id": manual.id, "name": "Anleitung.pdf", "area": "documents", "size": 4}])
+        self.assertEqual(job.links, [{"name": "Guide", "url": "https://example.com/guide"}])
+        self.assertIn("/files", job.prompt)
+        self.assertIn("/code", job.prompt)
+        with db.connect() as conn:
+            self.assertEqual(files.for_agents(conn, self.b.id, self.pa.id), ([], []))   # never someone else's
