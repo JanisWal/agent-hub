@@ -25,6 +25,10 @@
 .user-actions .icon-button[data-delete]:hover { color: var(--danger); }
 .chip { min-height: 36px; padding: 0 14px; border-radius: 999px; font-size: 0.85rem; font-weight: 600; color: var(--muted); }
 .chip[aria-checked="true"] { color: var(--on-accent); background: var(--accent); border-color: transparent; }
+/* Superadmin is something special: a white glow instead of the accent (a skin may change --super-*). */
+:root { --super-bg: linear-gradient(135deg, #ffffff, #fff1e2); --super-text: #6b4128; --super-glow: 0 0 0 1px rgba(255, 255, 255, 0.95), 0 0 14px rgba(255, 255, 255, 0.9), 0 2px 10px rgba(232, 132, 90, 0.3); }
+.chip[data-superadmin][aria-checked="true"] { color: var(--super-text); background: var(--super-bg); border-color: transparent; box-shadow: var(--super-glow); }
+.user-row[data-role="superadmin"] .user-role { color: var(--text); }
 @media (max-width: 560px) {
   .users-head { flex-wrap: wrap; }
   .user-row { flex-wrap: wrap; }

@@ -148,6 +148,11 @@ class AccountsTest(unittest.TestCase):
         self.assertIn("data-superadmin", owner_html)
         self.assertNotIn("data-superadmin", sup_html)
         self.assertIn("data-admin", sup_html)
+        # the owner sees both switches on a superadmin's row, the Admin one still lit (Janis, 16.11.2026)
+        row = [r for r in owner_html.split('<div class="user-row"') if "super@example.com" in r][0]
+        self.assertIn("data-admin", row)
+        self.assertIn("data-superadmin", row)
+        self.assertEqual(row.count('aria-checked="true"'), 2)
         self.assertNotIn("%t.", owner_html)
 
     def test_reset_password_forces_change_and_ends_sessions(self):
