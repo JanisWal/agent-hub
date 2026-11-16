@@ -326,6 +326,7 @@ class IsolationTest(unittest.TestCase):
             lambda: users.reset_password(self.b, self.a.id, "Start1234"),
             lambda: users.delete_user(self.b, self.a.id),
             lambda: users.set_admin(self.b, self.a.id, True),
+            lambda: users.set_superadmin(self.b, self.a.id, True),
             lambda: users.transfer_owner(self.b, self.a.id),
         ):
             with self.assertRaises(PermissionError):

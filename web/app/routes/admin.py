@@ -29,6 +29,6 @@ def users_old_address(user: users.User = Depends(page_user)):
 
 @router.get("/system")
 def system_old_address(user: users.User = Depends(page_user)):
-    if user.role != "owner":
+    if not user.is_system_admin:
         raise HTTPException(404)
     return redirect("/admin")

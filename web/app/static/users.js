@@ -75,10 +75,11 @@
     else if (button.hasAttribute("data-invite")) resendInvite(button);
     else if (button.hasAttribute("data-owner")) openFor(button, "owner-dialog");
     else if (button.hasAttribute("data-delete")) openFor(button, "delete-user-dialog");
-    else if (button.hasAttribute("data-admin")) {
+    else if (button.hasAttribute("data-admin") || button.hasAttribute("data-superadmin")) {
       var body = new FormData();
       body.append("value", button.getAttribute("aria-checked") === "true" ? "0" : "1");
-      fetch("/users/" + button.closest(".user-row").dataset.id + "/admin", { method: "POST", body: body })
+      var kind = button.hasAttribute("data-superadmin") ? "/superadmin" : "/admin";
+      fetch("/users/" + button.closest(".user-row").dataset.id + kind, { method: "POST", body: body })
         .then(function () { AgentHub.reload(); });
     }
   });

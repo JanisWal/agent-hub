@@ -1,4 +1,4 @@
-"""Actions on the Pi itself: restart, shut down, and a manual backup. Only the owner may ask; the runner does it.
+"""Actions on the Pi itself: restart, shut down, and a manual backup. Only the owner or a superadmin may ask; the runner does it.
 
 The web container cannot touch the host. So the owner's request is only written down here; the runner (which
 already holds the Docker socket) fetches it once through /runner/power/claim and runs a fixed command
@@ -18,9 +18,9 @@ BACKUP_SECONDS = 300   # a started backup that has not reported after this long 
 
 def request_action(user: User, action: str) -> bool:
     """Write down a request. False if one is already waiting. PermissionError unless `user` is the
-    owner, ValueError for an unknown action."""
-    if user.role != "owner":
-        raise PermissionError("only the owner may restart, shut down or back up")
+    owner or a superadmin, ValueError for an unknown action."""
+    if not user.is_system_admin:
+        raise PermissionError("only the owner or a superadmin may restart, shut down or back up")
     if action not in ACTIONS:
         raise ValueError("unknown action")
     now = int(time.time())
