@@ -68,8 +68,8 @@
   }
 
   // The Admin and Superadmin switches (Janis, 16.11.2026): both stay on every row. The new role is shown at once, the
-  // row glides to its place in the order (Motion.flip, owner > superadmin > admin > user), the server follows, then the
-  // page comes again quietly. Admin: user <-> admin, a superadmin goes down to user; Superadmin: superadmin <-> admin.
+  // row glides to its place in the order (Motion.flip, owner > superadmin > admin > user), the server follows.
+  // Admin: user <-> admin, a superadmin goes down to user; Superadmin: superadmin <-> admin.
   var RANK = { owner: 4, superadmin: 3, admin: 2, user: 1 };
   function switchRole(button) {
     var row = button.closest(".user-row");
@@ -90,14 +90,19 @@
       row.querySelector("[data-role-label]").textContent = root.dataset["label" + next.charAt(0).toUpperCase() + next.slice(1)];
       var admin = row.querySelector("[data-admin]"), sup = row.querySelector("[data-superadmin]");
       if (admin) admin.setAttribute("aria-checked", String(next === "admin" || next === "superadmin"));
-      if (sup) sup.setAttribute("aria-checked", String(next === "superadmin"));
+      if (sup) {   // only an admin can become a superadmin: for a normal user the switch keeps its place but is hidden
+        sup.setAttribute("aria-checked", String(next === "superadmin"));
+        sup.classList.toggle("is-off", next === "user");
+        if (next === "user") { sup.setAttribute("tabindex", "-1"); sup.setAttribute("aria-hidden", "true"); }
+        else { sup.removeAttribute("tabindex"); sup.removeAttribute("aria-hidden"); }
+      }
       order();
     };
     var sent = fetch("/users/" + row.dataset.id + (isSuper ? "/superadmin" : "/admin"), { method: "POST", body: body });
     if (window.Motion && !window.Motion.reduced()) window.Motion.flip(rows, move, row); else move();
-    sent.then(function (response) {
-      setTimeout(function () { AgentHub.reload(); }, response.ok ? 500 : 0);   // after a refusal the page shows the truth at once
-    }, function () { AgentHub.reload(); });
+    // The screen already shows the new state, so nothing reloads when the server agrees (a reload would cut the glide
+    // and flicker); only a refusal brings the real state back.
+    sent.then(function (response) { if (!response.ok) AgentHub.reload(); }, function () { AgentHub.reload(); });
   }
 
   document.addEventListener("click", function (event) {

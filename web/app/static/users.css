@@ -23,6 +23,12 @@
 .user-actions .icon-button { background: none; border: 0; box-shadow: none; color: var(--muted); }
 .user-actions .icon-button:hover { color: var(--text); transform: none; }
 .user-actions .icon-button[data-delete]:hover { color: var(--danger); }
+.user-actions .chip { justify-content: center; text-align: center; padding: 0; transition: opacity 0.25s; }
+.chip[data-admin], .slot-admin { width: 80px; }
+.chip[data-superadmin], .slot-super { width: 112px; }
+.slot { flex: none; height: 1px; }
+.slot-icon { width: 44px; }
+.chip.is-off { opacity: 0; pointer-events: none; }
 .chip { min-height: 36px; padding: 0 14px; border-radius: 999px; font-size: 0.85rem; font-weight: 600; color: var(--muted); }
 .chip[aria-checked="true"] { color: var(--on-accent); background: var(--accent); border-color: transparent; }
 /* Superadmin is something special: a white glow instead of the accent (a skin may change --super-*). */
