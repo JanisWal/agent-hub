@@ -68,7 +68,7 @@
   }
 
   // The Admin and Superadmin switches (Janis, 16.11.2026): both stay on every row. The new role is shown at once, the
-  // row glides to its place in the order (Motion.flip, owner > superadmin > admin > user), the server follows, then the
+  // row glides to its place in the order (Motion.flip, owner > superadmin > admin > user), the server follows.
   // Admin: user <-> admin, a superadmin goes down to user; Superadmin: superadmin <-> admin.
   var RANK = { owner: 4, superadmin: 3, admin: 2, user: 1 };
   function switchRole(button) {
