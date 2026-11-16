@@ -495,7 +495,8 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 .r-now.running .r-dot { background: var(--go); box-shadow: 0 0 0 4px color-mix(in srgb, var(--go) 25%, transparent); animation: r-pulse 1.6s ease-in-out infinite; }
 @keyframes r-pulse { 50% { opacity: 0.45; } }
 .station-count { margin-left: 8px; min-width: 20px; padding: 0 6px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; line-height: 20px; text-align: center; color: var(--on-accent); background: var(--accent); }
-.me-view header .link.inline, .m-waiting header .link.inline { margin-left: 4px; }
+.me-view header .link.inline { margin-left: 4px; }
+.m-waiting-board { align-self: flex-start; }
 .station-count[hidden] { display: none; }
 .m-waiting .r-scroll { flex: 1 1 auto; max-height: none; }
 /* "For you" (todos.py, Janis 16.11.2026): the rows of the regular checks; done ones are quiet, with the note below. */

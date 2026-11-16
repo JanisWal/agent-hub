@@ -31,7 +31,9 @@ def _duration(lang: str, seconds: int) -> str:
 
 
 def _ago(lang: str, then: int | None, now: int) -> str:
-    return "" if not then else i18n.t(lang, "ago", time=_duration(lang, now - then))
+    if not then:
+        return ""
+    return i18n.t(lang, "just_now") if now - then < 60 else i18n.t(lang, "ago", time=_duration(lang, now - then))
 
 
 def _tokens(n: int) -> str:

@@ -445,10 +445,10 @@ def _waiting_tile(lang: str, autonomy: str, waiting: list[tuple[agents.Task, str
     )
     body = (f'<div class="r-scroll"><ol class="r-runs">{rows}</ol></div>' if rows
             else f'<p class="muted">{esc(i18n.t(lang, "manager_waiting_empty"))}</p>')
-    board = (f'<a class="link inline" href="#board" data-goto="board">{esc(i18n.t(lang, "me_to_board"))}</a>'
-             if rows else "")
+    board = (f'<a class="link inline m-waiting-board" href="#board" data-goto="board">{esc(i18n.t(lang, "me_to_board"))}</a>'
+             if rows else "")    # below the list: the head holds the title, the autonomy and the count
     return (f'<section class="mtile glass m-waiting" id="waiting"><header><h2>{esc(i18n.t(lang, "manager_waiting"))}</h2>'
-            f'{board}{autonomy}<span class="count">{len(waiting)}</span></header>{body}</section>')
+            f'{autonomy}<span class="count">{len(waiting)}</span></header>{body}{board}</section>')
 
 
 def render(lang: str, settings: dict, regular_checks: list | None = None, now: int | None = None,
