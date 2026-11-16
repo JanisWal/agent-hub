@@ -357,7 +357,7 @@ class EditTest(MemoryBase):
         listed = memory.versions(self.a.id, self.pa.id)
         self.assertEqual(len(listed), memory.MAX_VERSIONS)
         oldest = listed[-1]
-        self.assertEqual(memory.version_text(self.a.id, oldest.id), "# Stand 1\n")
+        self.assertEqual(memory.version_text(self.a.id, oldest.id), "# Stand 2\n")   # the start text and Stand 0, 1 fell out
         self.assertIsNone(memory.version_text(self.b.id, oldest.id))          # never someone else's
         self.assertIsNone(memory.restore(self.b.id, oldest.id))
         self.assertEqual(memory.restore(self.a.id, oldest.id), self.pa.id)
