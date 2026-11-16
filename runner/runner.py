@@ -18,6 +18,7 @@ import json
 import os
 import shutil
 import subprocess
+import tarfile
 import sys
 import time
 import urllib.error
@@ -27,7 +28,7 @@ from pathlib import Path
 
 import threading
 
-from . import adapters, launcher, login, mistral, tokens, workspace
+from . import adapters, launcher, login, mistral, tokens, view, workspace
 
 LOGIN_TIMEOUT_AFTER_CODE = 90   # seconds Claude Code gets to accept the code
 LINK_TIMEOUT = 30               # seconds until the sign-in prints its link
@@ -59,7 +60,7 @@ class Api:
 class Runner:
     def __init__(self, api, claude_base: str, vault=None, tickets=None, start_session=None,
                  clock=time.time, run_chat=None, run_power=None, keys=None, verifiers=None, work=None,
-                 run_agent=None, background: bool = True):
+                 run_agent=None, background: bool = True, views=None):
         self.api = api
         self.claude_base = Path(claude_base)
         self.vault = vault or tokens.Vault(claude_base, os.environ.get("HUB_TOKEN_KEY"))
@@ -72,6 +73,8 @@ class Runner:
         self.verifiers = verifiers or {"mistral": mistral}   # check a pasted API key with its provider: verify()
         self.work = work or workspace.Workspace(os.environ.get("HUB_WORK_DIR", "/opt/agent-hub/work"))
         self.run_agent = run_agent or self._run_agent
+        # The user's files (and for the manager chat the code) as read-only folders of each job (view.py)
+        self.views = views or view.Views(self.work.base, os.environ.get("HUB_FILES_SOURCE"))
         self.background = background
         self.workers: list[threading.Thread] = []
         self.sessions: dict[int, login.LoginSession] = {}
@@ -195,6 +198,18 @@ class Runner:
             self.keys.forget(int(user_id), provider)
             self.api.call("POST", f"/runner/keys/{int(user_id)}/{provider}/expired")
 
+    def _view(self, name: str, job: dict, code: bool = False):
+        """(files folder, code folder) of a job, or (None, None) when the view could not be made: the job then runs
+        without them (the package says what the files are; nothing hangs on it)."""
+        try:
+            repo = self.work.repo(int(job["project_id"])) if code else None
+            root = self.views.build(name, int(job["project_id"]), job.get("files") or [], job.get("links") or [], repo)
+            return str(root / "files"), (str(root / "code") if code else None)
+        except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, tarfile.TarError) as error:
+            print(f"runner: view {name}: {type(error).__name__}", file=sys.stderr, flush=True)
+            self.views.remove(name)
+            return None, None
+
     MAX_WORKERS = 16        # a safety net only: the hub's setting is the real limit
 
     def _start(self, target, job: dict) -> None:
@@ -229,11 +244,13 @@ class Runner:
             self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="0",
                           answer="Not logged in: no saved token. Please run /login", tokens_in=0, tokens_out=0)
             return
+        files_dir, code_dir = self._view(f"chat-{chat_id}", job, code=True) if job.get("project_id") else (None, None)
         ticket = self.tickets.issue(secret, provider)
         secret = None
         try:
             command = adapter.chat_command(chat_id=chat_id, user_id=user_id, model=job["model"], ticket=ticket,
-                                           mode=job.get("mode", "all"), effort=job.get("effort") or "")
+                                           mode=job.get("mode", "all"), effort=job.get("effort") or "",
+                                           files_dir=files_dir, code_dir=code_dir)
             done = self.run_chat(command, job["prompt"])
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(done.stdout)
             if not ok and done.returncode:
@@ -243,6 +260,7 @@ class Runner:
             ok, text, tokens_in, tokens_out, login_problem = False, "Timeout: no answer in time.", 0, 0, False
         finally:
             self.tickets.revoke(ticket)   # from here on the ticket is worth nothing
+            self.views.remove(f"chat-{chat_id}")
         if login_problem:   # the AI says we are not signed in: show the connection as expired
             self._expired(user_id, provider)
         self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="1" if ok else "0", answer=text,
@@ -277,13 +295,14 @@ class Runner:
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             print(f"runner: work folder of task {task_id}: {type(error).__name__}", file=sys.stderr, flush=True)
             return self._finish_run(run_id, "failed", "The work folder could not be prepared.")
+        files_dir, _ = self._view(f"run-{run_id}", job)
         ticket = self.tickets.issue(secret, provider)
         secret = None
         started = self.clock()
         try:
             command = adapter.run_command(run_id=run_id, user_id=user_id, model=job["model"], ticket=ticket,
                                           net=job.get("net", "together"), effort=job.get("effort") or "",
-                                          work_dir=str(folder))
+                                          work_dir=str(folder), files_dir=files_dir)
             done = self.run_agent(command, job["prompt"])
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_run(done.stdout)
         except subprocess.TimeoutExpired:
@@ -291,6 +310,7 @@ class Runner:
             ok, text, tokens_in, tokens_out, login_problem = False, "Timeout: the run took too long.", 0, 0, False
         finally:
             self.tickets.revoke(ticket)
+            self.views.remove(f"run-{run_id}")
         if login_problem:
             self._expired(user_id, provider)
         result, report = launcher.result_of(role, text, failed=not ok)
@@ -380,6 +400,7 @@ def main() -> None:
     Path(work).mkdir(parents=True, exist_ok=True)
     os.chmod(work, 0o700)   # the projects' code and the tasks' folders: only root (and the run of each task)
     runner = Runner(Api(os.environ["HUB_URL"], os.environ["RUNNER_TOKEN"]), base)
+    runner.views.clear()   # views of jobs that were going when the runner stopped
     runner.tickets.sweep(max_age=0)   # no run is going yet: tickets from before a restart are void
     while True:
         try:

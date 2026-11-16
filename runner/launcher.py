@@ -96,6 +96,19 @@ def _folder(value, name: str) -> str:
     return text
 
 
+READ_TOOLS = ("Read", "Glob", "Grep")   # to open the read-only /files and /code in the manager chat (16.11.2026)
+
+
+def _read_only(files_dir: str | None, code_dir: str | None = None) -> list[str]:
+    """The user's files of the project at /files and the project's code at /code, both mounted read-only
+    (runner/view.py makes the folders; nothing written there could reach the hub)."""
+    mounts = []
+    for value, name, target in ((files_dir, "files_dir", "/files"), (code_dir, "code_dir", "/code")):
+        if value is not None:
+            mounts += ["--mount", f"type=bind,src={_folder(value, name)},dst={target},readonly"]
+    return mounts
+
+
 def _check_container(memory: str, image: str, network: str) -> None:
     """The fixed values of a `docker run`: a memory size and plain names. ValueError for anything else."""
     if not re.fullmatch(r"[0-9]+[mg]", memory) or not re.fullmatch(r"[a-z0-9][a-z0-9_.-]*", image + network):
@@ -133,7 +146,8 @@ def _model_args(model: str, effort: str) -> list[str]:
 
 
 def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, ticket: str, net: str = "together",
-                  effort: str = "", image: str = IMAGE, network: str = NETWORK, memory: str = "480m") -> list[str]:
+                  effort: str = "", image: str = IMAGE, network: str = NETWORK, memory: str = "480m",
+                  files_dir: str | None = None) -> list[str]:
     """The `docker run` command for one run. Raises ValueError for anything unexpected. `net` is the role's
     switch: "together" = open internet (public hosts only), "apart" = only Anthropic (code without internet).
     `effort` is the model's level (empty = Claude Code's own default)."""
@@ -151,7 +165,7 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, ticke
         "--read-only", "--tmpfs", "/tmp:rw,size=64m,mode=1777",
         "--memory", memory, "--memory-swap", memory, "--pids-limit", "256", "--cpus", "2",
         "--network", network,
-        "--mount", f"type=bind,src={work},dst=/work", "--workdir", "/work",
+        "--mount", f"type=bind,src={work},dst=/work", "--workdir", "/work", *_read_only(files_dir),
         # Agents may use the internet (Janis, 08.11.2026): public hosts only, never the home network; per role switch.
         *_claude_env(ticket), *_proxy_env(RUN_PROXY[net]),
         image,
@@ -161,7 +175,8 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, ticke
 
 
 def build_chat_command(*, chat_id: int, user_id: int, model: str, ticket: str, mode: str = "all",
-                       effort: str = "", image: str = IMAGE, network: str = NETWORK, memory: str = "480m") -> list[str]:
+                       effort: str = "", image: str = IMAGE, network: str = NETWORK, memory: str = "480m",
+                       files_dir: str | None = None, code_dir: str | None = None) -> list[str]:
     """The manager chat (see web/app/chat.py): one question to Claude, in a container like a run but with no
     work folder at all (nothing of any project is mounted; the project context comes on stdin). `mode` (see
     CHAT_MODES) decides the tools and the way out; "all" = web search and a shell, only Anthropic reachable.
@@ -173,7 +188,7 @@ def build_chat_command(*, chat_id: int, user_id: int, model: str, ticket: str, m
         raise ValueError("unknown mode")
     _check_container(memory, image, network)
     spec = CHAT_MODES[mode]
-    tools = spec["tools"]
+    tools = spec["tools"] + (READ_TOOLS if files_dir or code_dir else ())   # reading the user's files and the code
     # Nothing of the run is kept: no saved login, no settings, so a changed configuration (a hook, say) can not
     # reach a later run either.
     runs_code = "Bash" in tools
@@ -183,7 +198,7 @@ def build_chat_command(*, chat_id: int, user_id: int, model: str, ticket: str, m
         "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
         "--read-only", "--tmpfs", f"/tmp:rw,size={'128m' if runs_code else '64m'},mode=1777", "--workdir", "/tmp",
         "--memory", memory, "--memory-swap", memory, "--pids-limit", "256", "--cpus", "2",
-        "--network", network,
+        "--network", network, *_read_only(files_dir, code_dir),
         *_claude_env(ticket), "-e", "PYTHONDONTWRITEBYTECODE=1",
         *_proxy_env(spec["proxy"]),
         image,
@@ -263,7 +278,8 @@ def prepare_folder(path: str, user_id: int, recursive: bool = False) -> None:
 
 def build_vibe_command(*, name: str, user_id: int, model: str, ticket: str, job: str, effort: str = "",
                        net: str = "together", work_dir: str | None = None, image: str = VIBE_IMAGE,
-                       network: str = NETWORK, memory: str = "480m") -> list[str]:
+                       network: str = NETWORK, memory: str = "480m", files_dir: str | None = None,
+                       code_dir: str | None = None) -> list[str]:
     """The `docker run` command of a Mistral run (Mistral Vibe, runner/vibe_entry.py): the chat ("chat-all",
     "chat-apart": no folder of any project) or an agent run ("run": the task's work folder at /work). Like Claude:
     run user, read-only, nothing but a home in memory, the ticket instead of the key, every request to the gateway,
@@ -287,7 +303,7 @@ def build_vibe_command(*, name: str, user_id: int, model: str, ticket: str, job:
         "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
         "--read-only", "--tmpfs", "/tmp:rw,size=64m,mode=1777", "--tmpfs", "/home/vibe:rw,size=128m,mode=1777",
         "--memory", memory, "--memory-swap", memory, "--pids-limit", "256", "--cpus", "2",
-        "--network", network, *mount,
+        "--network", network, *mount, *_read_only(files_dir, code_dir),
         "-e", "HOME=/home/vibe", "-e", f"MISTRAL_API_KEY={ticket}", "-e", f"HUB_GATEWAY={MISTRAL_GATEWAY}",
         "-e", f"HUB_MODEL={model}", "-e", f"HUB_EFFORT={effort}", "-e", f"HUB_JOB={job}",
         "-e", f"HUB_TURNS={turns}", "-e", f"HUB_SECONDS={seconds}",

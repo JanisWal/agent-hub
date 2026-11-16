@@ -198,6 +198,22 @@ def list_files(user_id: int, project_id: int) -> list[StoredFile]:
     return [_to_file(r) for r in rows]
 
 
+AGENT_FILES = 300   # files named in the list for a run or chat at most
+
+
+def for_agents(conn: sqlite3.Connection, user_id: int, project_id: int) -> tuple[list[dict], list[dict]]:
+    """(files, links) of a project for the read-only /files of a run or chat (runner/view.py, Janis 16.11.2026):
+    files as id, name, area and size (the runner copies them; never a path), links as name and address. Only
+    finished files of the user's own project; nothing in the trash."""
+    rows = conn.execute(
+        "SELECT f.* FROM files f JOIN projects p ON p.id = f.project_id"
+        " WHERE f.project_id = ? AND p.user_id = ? AND f.status = 'ready' ORDER BY f.id LIMIT ?",
+        (project_id, user_id, AGENT_FILES)).fetchall()
+    stored = [{"id": r["id"], "name": r["name"], "area": r["category"], "size": r["size"]} for r in rows if not r["url"]]
+    links = [{"name": r["name"], "url": r["url"]} for r in rows if r["url"]]
+    return stored, links
+
+
 def start_upload(user_id: int, project_id: int, name: str, size: int, now: int | None = None) -> StoredFile:
     """Make the file for an upload that follows in runs of blocks. It exists at its full size from the start (the rest
     is filled in), so the runs may come in any order. Raises FileError: bad_name, not_found (not his project),

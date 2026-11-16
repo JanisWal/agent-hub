@@ -18,13 +18,13 @@ class Claude:
     def secret(self, runner, user_id: int):
         return runner.vault.load(user_id)
 
-    def chat_command(self, *, chat_id, user_id, model, ticket, mode, effort):
+    def chat_command(self, *, chat_id, user_id, model, ticket, mode, effort, files_dir=None, code_dir=None):
         return launcher.build_chat_command(chat_id=chat_id, user_id=user_id, model=model, ticket=ticket, mode=mode,
-                                           effort=effort)
+                                           effort=effort, files_dir=files_dir, code_dir=code_dir)
 
-    def run_command(self, *, run_id, user_id, model, ticket, net, effort, work_dir):
+    def run_command(self, *, run_id, user_id, model, ticket, net, effort, work_dir, files_dir=None):
         return launcher.build_command(run_id=run_id, user_id=user_id, model=model, work_dir=work_dir, ticket=ticket,
-                                      net=net, effort=effort)
+                                      net=net, effort=effort, files_dir=files_dir)
 
     def parse_chat(self, stdout: str):
         return launcher.parse_chat_output(stdout)
@@ -46,14 +46,15 @@ class Mistral:
     def secret(self, runner, user_id: int):
         return runner.keys.load(user_id, "mistral")
 
-    def chat_command(self, *, chat_id, user_id, model, ticket, mode, effort):
+    def chat_command(self, *, chat_id, user_id, model, ticket, mode, effort, files_dir=None, code_dir=None):
         return launcher.build_vibe_command(name=f"agent-chat-{int(chat_id)}", user_id=user_id, model=model,
                                            ticket=ticket, job="chat-apart" if mode == "apart" else "chat-all",
-                                           effort=effort)
+                                           effort=effort, files_dir=files_dir, code_dir=code_dir)
 
-    def run_command(self, *, run_id, user_id, model, ticket, net, effort, work_dir):
+    def run_command(self, *, run_id, user_id, model, ticket, net, effort, work_dir, files_dir=None):
         return launcher.build_vibe_command(name=f"agent-run-{int(run_id)}", user_id=user_id, model=model,
-                                           ticket=ticket, job="run", effort=effort, net=net, work_dir=work_dir)
+                                           ticket=ticket, job="run", effort=effort, net=net, work_dir=work_dir,
+                                           files_dir=files_dir)
 
     def parse_chat(self, stdout: str):
         return launcher.parse_vibe(stdout)

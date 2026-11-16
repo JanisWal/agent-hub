@@ -11,7 +11,7 @@ import types
 import unittest
 from pathlib import Path
 
-from runner import egress, launcher, runner, tokens, vibe_entry, workspace
+from runner import view, egress, launcher, runner, tokens, vibe_entry, workspace
 
 KEY = "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6"
 CLAUDE = "sk-ant-oat01-" + "t" * 80
@@ -241,6 +241,31 @@ class RunTest(unittest.TestCase):
         return {"run_id": 3, "user_id": 5, "project_id": 1, "task_id": 7, "role": role, "model": "mistral-small-2603",
                 "branch": "agent/task-7", "round": 1, "net": "together", "effort": "none", "provider": "mistral",
                 "prompt": "The package"}
+
+    def test_a_run_sees_the_users_files_read_only_and_they_are_gone_afterwards(self):
+        source = Path(self.tmp.name) / "storage" / "1"
+        source.mkdir(parents=True)
+        (source / "40").write_bytes(b"%PDF wiring")
+        job = {**self.job(), "files": [{"id": 40, "name": "Schaltplan.pdf", "area": "documents", "size": 11}],
+               "links": [{"name": "Guide", "url": "https://example.com"}]}
+        hub, seen = FakeHub(job=job), []
+        r = self.runner(hub)
+        r.views = view.Views(self.work.base, source.parent)
+
+        def fake_run(command, prompt):
+            mount = next(part for part in command if "dst=/files" in part)
+            folder = Path(mount.split("src=")[1].split(",")[0])
+            seen.append((mount, (folder / "documents" / "Schaltplan.pdf").read_bytes()))
+            return types.SimpleNamespace(stdout=json.dumps({"ok": True, "text": "Read it.\nRESULT: done",
+                                                            "tokens_in": 5, "tokens_out": 2}), returncode=0)
+        r.run_agent = fake_run
+        if os.geteuid() != 0:
+            self.skipTest("needs root (the folder is handed to the run user)")
+        r.handle_runs()
+        mount, data = seen[0]
+        self.assertTrue(mount.endswith(",dst=/files,readonly"))
+        self.assertEqual(data, b"%PDF wiring")
+        self.assertFalse((self.work.base / "views" / "run-3").exists())        # deleted with the end of the run
 
     def test_a_programmer_run_of_mistral_is_committed_and_reported(self):
         hub, seen = FakeHub(job=self.job()), []
