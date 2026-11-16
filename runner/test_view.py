@@ -74,7 +74,9 @@ class ViewTest(unittest.TestCase):
         self.assertFalse(self.views.base.exists())
 
     def test_names_never_leave_their_folder(self):
-        self.assertEqual(view.safe_name("../../etc/passwd"), "_.._etc_passwd")
+        self.assertEqual(view.safe_name("../../etc/passwd"), "passwd")
+        self.assertEqual(view.safe_name("a\\..\\b.txt"), "b.txt")
+        self.assertEqual(view.safe_name(".."), "file")
         self.assertEqual(view.safe_name(".hidden"), "hidden")
         self.assertEqual(view.safe_name("a\x00b\nc"), "a_b_c")
         with self.assertRaises(ValueError):

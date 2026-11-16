@@ -31,8 +31,9 @@ _UNSAFE = set('/\\\x00')
 
 
 def safe_name(name: str) -> str:
-    """A file name that stays inside its folder: no path parts, no control characters, no leading dot."""
-    text = "".join("_" if ch in _UNSAFE or ord(ch) < 32 else ch for ch in str(name)).strip()
+    """A file name that stays inside its folder: only its last part, no control characters, no leading dot."""
+    last = str(name).replace("\\", "/").rsplit("/", 1)[-1]
+    text = "".join("_" if ch in _UNSAFE or ord(ch) < 32 else ch for ch in last).strip()
     text = text.lstrip(".") or "file"
     return text[:120]
 
