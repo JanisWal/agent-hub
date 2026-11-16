@@ -15,7 +15,7 @@ def admin_page(user: users.User = Depends(page_user)):
     users.purge_deleted()   # accounts deleted long ago go for good, also while no runner is asking
     return ui.logged_in_page(
         user, i18n.t(user.language, "admin_title"), adminpage.render(user, users.list_users(user)),
-        scripts=("users.js", "system.js"), styles=("users.css", "system.css", "admin.css"),
+        scripts=("motion.js", "users.js", "system.js"), styles=("users.css", "system.css", "admin.css"),
     )
 
 
