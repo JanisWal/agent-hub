@@ -352,7 +352,8 @@ class ChatRoutesTest(Base):
         self.connect(self.a)
         chat.send(self.a.id, self.pa.id, "Hi")
         job = runner_routes.chat_claim()["job"]
-        self.assertEqual(sorted(job), ["chat_id", "effort", "mode", "model", "prompt", "provider", "user_id"])
+        self.assertEqual(sorted(job), ["chat_id", "effort", "files", "links", "mode", "model", "project_id", "prompt",
+                                       "provider", "user_id"])
         self.assertEqual(runner_routes.chat_finish(job["chat_id"], "1", "Hello back", 3, 4), {"ok": True})
         self.assertEqual(runner_routes.chat_finish(job["chat_id"], "1", "again", 0, 0).status_code, 409)
         self.assertEqual(chat.list_messages(self.a.id, self.pa.id)[0].answer, "Hello back")
