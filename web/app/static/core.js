@@ -10,25 +10,11 @@
     return window.matchMedia("(prefers-color-scheme: dark)").matches;
   }
 
-  // On logged-in pages (they have the settings drawer) the server keeps a copy of the style we
-  // show, so mails can use it. The drawer carries the copy the server has (data-theme-saved).
-  var drawerBox = document.getElementById("settings");
-  function reportTheme(theme) {
-    if (!drawerBox) return;
-    var body = new FormData();
-    body.append("value", theme);
-    fetch("/theme", { method: "POST", body: body }).catch(function () {});
-  }
-  if (drawerBox && drawerBox.dataset.themeSaved !== (isDark() ? "dark" : "light")) {
-    reportTheme(isDark() ? "dark" : "light");
-  }
-
   document.addEventListener("click", function (event) {
     if (!event.target.closest("#theme-toggle")) return;
     var next = isDark() ? "light" : "dark";
     root.dataset.theme = next;
     try { localStorage.setItem("theme", next); } catch (e) {}
-    reportTheme(next);
   });
 
   // Reload after our own change: no entrance animation again, and stay where you were (lists scroll).

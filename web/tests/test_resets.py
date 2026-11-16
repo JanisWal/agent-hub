@@ -6,9 +6,8 @@ import unittest
 import urllib.error
 from unittest import mock
 
-from app import adminpage, db, i18n, mail, mailtext, resetpages, resets, ui, userspage, users
+from app import adminpage, db, i18n, mail, mailtext, resetpages, resets, userspage, users
 from app.routes import accounts
-from app.routes import auth as auth_routes
 
 
 class FakeResponse:
@@ -179,57 +178,92 @@ class LinkMailTest(unittest.TestCase):
         self.assertIn("Hallo me,", text)
         self.assertIn("7 Tage", text)
 
-    def test_html_is_filled_escaped_and_has_the_palette(self):
+    def test_html_is_filled_and_escaped(self):
         hostile = users.create_user("x@example.com", "Start1234")
         users.set_profile(hostile.id, "<b>Jan</b>", "de")
         hostile = users.get_by_id(hostile.id)
         for kind in mailtext.KINDS:
-            for theme, colour in (("light", "#EFDCC6"), ("dark", "#1F1713")):
-                html = mailtext.build(kind, hostile, "https://x/reset/T?a=1&b=2", 3600, theme)[2]
-                self.assertIsNone(re.search(r"%[A-Z_]+%", html))
-                self.assertNotIn("<b>Jan</b>", html)
-                self.assertIn("&lt;b&gt;Jan", html)
-                self.assertIn("a=1&amp;b=2", html)
-                self.assertIn(colour, html)
-                self.assertIn(f'content="{theme}"', html)
+            html = mailtext.build(kind, hostile, "https://x/reset/T?a=1&b=2", 3600)[2]
+            self.assertIsNone(re.search(r"%[A-Z_]+%", html))
+            self.assertNotIn("<b>Jan</b>", html)
+            self.assertIn("&lt;b&gt;Jan", html)
+            self.assertIn("a=1&amp;b=2", html)
 
-    def test_glass_pictures_come_from_the_hub_and_each_style_has_its_own(self):
-        with mock.patch.dict(os.environ, {"HUB_BASE_URL": "https://hub.example.com/"}):
-            for theme in ("light", "dark"):
-                html = mailtext.build("reset", self.user, "https://x/reset/T", 3600, theme)[2]
-                for name in ("backdrop", "button"):
-                    self.assertRegex(html, rf"https://hub.example.com/static/mail/{name}-{theme}\.png\?v=[0-9a-f]{{8}}")
-                self.assertNotIn("-light.png" if theme == "dark" else "-dark.png", html)
-                self.assertIsNone(re.search(r"%[A-Z_]+%", html))
+    def html(self, kind="reset"):
+        return mailtext.build(kind, self.user, "https://x/reset/T", 3600)[2]
 
-    def test_pictures_exist_and_are_png(self):
-        folder = os.path.join(os.path.dirname(mailtext.__file__), "static", "mail")
-        for theme in mailtext.PALETTES:
-            for name in ("backdrop", "button"):
-                with open(os.path.join(folder, f"{name}-{theme}.png"), "rb") as handle:
-                    self.assertEqual(handle.read(8), b"\x89PNG\r\n\x1a\n")
+    def test_no_pictures_at_all(self):
+        """Rule 1: Yahoo's dark mode leaves cells with (background) pictures light, programs block pictures."""
+        for kind in mailtext.KINDS:
+            html = self.html(kind)
+            self.assertNotIn("<img", html)
+            self.assertNotIn("url(", html)
+            self.assertNotIn(" background=", html)
 
-    def test_mail_without_base_url_is_flat_but_complete(self):
-        with mock.patch.dict(os.environ, {"HUB_BASE_URL": ""}):
-            html = mailtext.build("reset", self.user, "https://x/reset/T", 3600, "dark")[2]
-        self.assertNotIn("<img", html)
-        self.assertNotIn("background-image", html)
-        self.assertIn("https://x/reset/T", html)
-        self.assertIn("#33241C", html)
+    def test_light_is_inline_and_dark_comes_only_through_the_schemes(self):
+        """Rule 3: the reader's mail program decides between light and dark, not the style saved on the site."""
+        html = self.html()
+        body = html.split("<body", 1)[1]
+        for key in ("page", "card", "text", "muted", "accent", "on_accent"):
+            self.assertIn(mailtext.LIGHT[key], body)
+        for key in ("page", "card", "text", "muted"):
+            self.assertNotIn(mailtext.DARK[key], body)
+            self.assertIn(mailtext.DARK[key], mailtext.STYLE_SCHEMES)
+        self.assertIn('name="color-scheme" content="light dark"', html)
+        self.assertIn("color-scheme:light dark", html)
 
-    def test_outlook_gets_a_vml_button_and_recolouring_is_answered(self):
-        html = mailtext.build("invite", self.user, "https://x/reset/T", 3600, "light")[2]
-        self.assertIn("<v:roundrect", html)
-        self.assertIn('href="https://x/reset/T"', html.split("<v:roundrect", 1)[1].split(">", 1)[0])
+    @staticmethod
+    def contrast(first, second):
+        def luminance(colour):
+            channels = [int(colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+            linear = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels]
+            return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+        high, low = sorted((luminance(first), luminance(second)), reverse=True)
+        return (high + 0.05) / (low + 0.05)
+
+    def test_colours_are_readable_in_every_style(self):
+        """Rule 4: also the button, which keeps light text on a darker orange where programs recolour by themselves."""
+        for colours in (mailtext.LIGHT, mailtext.DARK):
+            for text, ground in (("text", "card"), ("muted", "card"), ("muted", "page"), ("on_accent", "accent")):
+                self.assertGreaterEqual(self.contrast(colours[text], colours[ground]), 4.5, (colours, text, ground))
+        site = mailtext.SITE_BUTTON
+        self.assertGreaterEqual(self.contrast(site["on_accent"], site["accent"]), 4.5)
+        self.assertGreater(self.contrast(mailtext.LIGHT["on_accent"], "#3A2A20"), 4.5)   # light text, not dark
+
+    def test_no_pure_white_or_black(self):
+        html = self.html().upper()
+        for colour in ("#FFFFFF", "#FFF;", "#000000", "#000;", ":WHITE", ":BLACK"):
+            self.assertNotIn(colour, html)
+
+    def test_css_follows_the_rules_of_the_weakest_programs(self):
+        """Rule 7, and rule 5: gradients only behind `[class~=...]`, which Yahoo does not match."""
+        html = self.html()
+        styles = re.findall(r"<style>(.*?)</style>", html, re.S)
+        self.assertGreaterEqual(len(styles), 4)
+        for style in styles:
+            self.assertNotIn("/*", style)
+            self.assertLess(len(style.encode()), 16 * 1024)
+            self.assertIsNone(re.search(r"\S!important", style))
+            self.assertEqual(style.count("!important"), style.lower().count("!important"))   # lower case only
+            self.assertIsNone(re.search(r"rgba?\([^)]*/", style))
+            for selector, rules in re.findall(r"([^{}]+)\{([^{}]*)\}", style):
+                if "gradient(" in rules:
+                    self.assertTrue(selector.strip().startswith('[class~="'), selector)
+        self.assertLess(len(html.encode()), 102 * 1024)
+
+    def test_button_text_in_a_span_preview_text_and_outlook_parts(self):
+        html = self.html("invite")
+        self.assertIn('<span class="bt"', html)
+        self.assertIn("mso-padding-alt", html)
+        self.assertIn("<!--[if mso]>", html)
         for rule in ("[data-ogsc] .t", "[data-ogsb] .card"):
             self.assertIn(rule, html)
-        self.assertNotIn("#FFFFFF", html.upper())  # no pure white or black, they recolour worst
-        self.assertNotIn("#000000", html)
+        preview = html.split('mso-hide:all;">', 1)[1].split("&#8199;", 1)[0]
+        self.assertEqual(preview, i18n.t("en", "mail_invite_body"))
 
-    def test_unknown_kind_and_theme(self):
+    def test_unknown_kind(self):
         with self.assertRaises(ValueError):
             mailtext.build("nope", self.user, "x", 3600)
-        self.assertIn("#EFDCC6", mailtext.build("reset", self.user, "x", 3600, "neon")[2])
 
     def test_both_languages_have_every_mail_text(self):
         for lang in ("de", "en"):
@@ -378,45 +412,6 @@ class ResetPagesTest(unittest.TestCase):
 
     def test_reset_page_can_be_cancelled(self):
         self.assertIn('<a class="link" href="/login">Abbrechen</a>', resetpages.reset_page("t", "de"))
-
-
-class ThemeTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        db.DB_PATH = os.path.join(self.tmp.name, "test.db")
-        self.user = users.create_user("me@example.com", "Start1234")
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def test_default_is_light_and_the_choice_is_stored(self):
-        self.assertEqual(self.user.theme, "light")
-        users.set_theme(self.user.id, "dark")
-        self.assertEqual(users.get_by_id(self.user.id).theme, "dark")
-        self.assertEqual(users.check_login("me@example.com", "Start1234").theme, "dark")
-
-    def test_only_light_and_dark(self):
-        with self.assertRaises(ValueError):
-            users.set_theme(self.user.id, "neon")
-        self.assertEqual(users.get_by_id(self.user.id).theme, "light")
-
-    def test_route(self):
-        self.assertEqual(auth_routes.save_theme("dark", self.user), {"ok": True})
-        self.assertEqual(users.get_by_id(self.user.id).theme, "dark")
-        self.assertEqual(auth_routes.save_theme("neon", self.user).status_code, 400)
-
-    def test_mail_follows_the_saved_theme(self):
-        users.set_theme(self.user.id, "dark")
-        dark = users.get_by_id(self.user.id)
-        html = mailtext.build("reset", dark, "https://x/reset/T", 3600)[2]
-        self.assertIn("#1F1713", html)
-        self.assertNotIn("#EFDCC6", html)
-        users.set_theme(self.user.id, "light")
-        self.assertIn("#EFDCC6", mailtext.build("reset", users.get_by_id(self.user.id), "https://x/reset/T", 3600)[2])
-
-    def test_pages_carry_the_saved_theme_for_the_script(self):
-        users.set_theme(self.user.id, "dark")
-        self.assertIn('data-theme-saved="dark"', ui.settings_bar(users.get_by_id(self.user.id)))
 
 
 class PasswordPageTest(unittest.TestCase):

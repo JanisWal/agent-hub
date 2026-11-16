@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 
 from .. import i18n, throttle, ui, users
-from ..deps import COOKIE_NAME, COOKIE_SECURE, api_user, fail, ok, page_user, redirect
+from ..deps import COOKIE_NAME, COOKIE_SECURE, page_user, redirect
 
 router = APIRouter()
 
@@ -51,17 +51,6 @@ def logout(request: Request):
     response = redirect("/login")
     response.delete_cookie(COOKIE_NAME)
     return response
-
-
-@router.post("/theme")
-def save_theme(value: str = Form(""), user: users.User = Depends(api_user)):
-    """The page tells us which style (light or dark) it shows, so mails can use the same one.
-    The browser still keeps its own choice in localStorage; this is only a copy for the server."""
-    try:
-        users.set_theme(user.id, value)
-    except ValueError:
-        return fail(400)
-    return ok()
 
 
 @router.post("/settings")
