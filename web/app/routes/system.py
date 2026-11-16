@@ -1,4 +1,4 @@
-"""The owner's system actions (restart, shut down, manual backup) and server settings (upload); the page itself is
+"""The system actions of owner and superadmin (restart, shut down, manual backup) and server settings (upload); the page itself is
 /admin, routes/admin.py."""
 from fastapi import APIRouter, Depends, Form, Request
 
@@ -12,8 +12,8 @@ router = APIRouter()
 def power_action(
     request: Request, action: str = Form(""), confirm: str = Form(""), user: users.User = Depends(api_user)
 ):
-    """Restart or shut down (needs the owner's password), or start a backup (harmless: no password)."""
-    if user.role != "owner":
+    """Restart or shut down (needs the password of the one who asks), or start a backup (harmless: no password)."""
+    if not user.is_system_admin:
         return fail(403)
     if action not in power.ACTIONS:
         return fail(400)
@@ -31,7 +31,7 @@ def power_action(
 @router.post("/system/upload")
 def upload_settings(parallel: int = Form(0), request_mb: int = Form(0), user: users.User = Depends(api_user)):
     """How uploads are cut, for the whole server (serversettings.py); saved as soon as a choice changes."""
-    if user.role != "owner":
+    if not user.is_system_admin:
         return fail(403)
     try:
         serversettings.set_upload(parallel, request_mb)
@@ -43,7 +43,7 @@ def upload_settings(parallel: int = Form(0), request_mb: int = Form(0), user: us
 @router.post("/system/ai")
 def ai_settings(value: int = Form(-1), user: users.User = Depends(api_user)):
     """How many AI runs may go at the same time, for the whole server (serversettings.ai_parallel)."""
-    if user.role != "owner":
+    if not user.is_system_admin:
         return fail(403)
     try:
         serversettings.set_ai_parallel(value)
@@ -55,6 +55,6 @@ def ai_settings(value: int = Form(-1), user: users.User = Depends(api_user)):
 @router.get("/system/backup")
 def backup_status(user: users.User = Depends(api_user)):
     """How the latest manual backup is doing: none, running, ok or failed (the page asks until it is over)."""
-    if user.role != "owner":
+    if not user.is_system_admin:
         return fail(403)
     return ok(state=power.backup_state())

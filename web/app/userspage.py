@@ -5,7 +5,7 @@ from .icons import icon
 from .layout import esc, fill
 from .users import User, can_manage
 
-ROLE_LABEL = {"owner": "role_owner", "admin": "role_admin", "user": "role_user"}
+ROLE_LABEL = {"owner": "role_owner", "superadmin": "role_superadmin", "admin": "role_admin", "user": "role_user"}
 
 USERS = """<section class="users-wrap" data-network="%t.err_network%">
   <header class="users-head">
@@ -89,15 +89,19 @@ CANCEL_LINK = '<a class="link" href="/">%t.cancel%</a>'
 CANCEL_LOGOUT = '<form method="post" action="/logout"><button class="link" type="submit">%t.cancel%</button></form>'
 
 
+def _switch(attr: str, label: str, text: str, on: bool, lang: str) -> str:
+    return (f'<button class="chip" type="button" role="switch" {attr} aria-checked="{str(on).lower()}" '
+            f'aria-label="{esc(i18n.t(lang, label))}" title="{esc(i18n.t(lang, label))}">'
+            f'{esc(i18n.t(lang, text))}</button>')
+
+
 def _row(actor: User, account: User, lang: str) -> str:
     you = f' <span class="you">({esc(i18n.t(lang, "you"))})</span>' if account.id == actor.id else ""
     buttons = []
-    if actor.role == "owner" and account.role != "owner":
-        buttons.append(
-            f'<button class="chip" type="button" role="switch" data-admin aria-checked="{str(account.role == "admin").lower()}" '
-            f'aria-label="{esc(i18n.t(lang, "admin_switch"))}" title="{esc(i18n.t(lang, "admin_switch"))}">'
-            f'{esc(i18n.t(lang, "role_admin"))}</button>'
-        )
+    if actor.is_system_admin and account.rank < actor.rank and account.role != "superadmin":
+        buttons.append(_switch("data-admin", "admin_switch", "role_admin", account.role == "admin", lang))
+    if actor.role == "owner" and account.role != "owner":   # only the owner makes or removes superadmins
+        buttons.append(_switch("data-superadmin", "superadmin_switch", "role_superadmin", account.role == "superadmin", lang))
     actions = []
     if actor.role == "owner" and account.role != "owner" and not account.must_change:
         actions.append(("data-owner", "crown", "owner_transfer"))  # only to somebody who can log in

@@ -1,9 +1,10 @@
 """Users, roles and sessions, stored in SQLite. Standard library only.
 
-Roles: `owner` (exactly one), `admin`, `user`. Rules in short (see `can_manage`):
-the owner manages everybody except himself, an admin manages normal users only, a user nobody.
-Only the owner makes or removes admins, and only he can hand the ownership to somebody else
-(`transfer_owner`, he becomes an admin then). Nobody is the owner for good: the role moves, but
+Roles: `owner` (exactly one), `superadmin`, `admin`, `user`; the rank decides (RANK, PROJEKT.md 4a, 16.11.2026):
+one manages only accounts of a lower rank, a user nobody. The superadmin may do everything the owner may (system,
+backup, restart) except touch superadmins and the owner; only the owner makes or removes superadmins, and only he
+can hand the ownership to somebody else (`transfer_owner`, he becomes an admin then). Owner and superadmin make or
+remove admins. Nobody is the owner for good: the role moves, but
 there is never more than one owner (checked in `create_user` and `transfer_owner`, and the
 database refuses a second one too). Accounts are never created by the visitor himself.
 
@@ -28,7 +29,8 @@ MIN_DIGITS = 2               # extra rule for passwords people choose themselves
 MAX_DISPLAY_NAME = 40
 MAX_EMAIL_LENGTH = 254       # the longest address that exists (RFC 5321)
 DELETED_DAYS = 30            # a deleted account can be brought back this long, then it is gone for good
-ROLES = ("owner", "admin", "user")
+ROLES = ("owner", "superadmin", "admin", "user")
+RANK = {"user": 1, "admin": 2, "superadmin": 3, "owner": 4}   # one manages only a lower rank
 
 # scrypt cost parameters (about 16 MiB RAM per hash, fine for a Pi 4)
 SCRYPT_N, SCRYPT_R, SCRYPT_P = 2**14, 8, 1
@@ -47,7 +49,7 @@ class UserError(ValueError):
 class User:
     id: int
     email: str
-    is_admin: bool          # owner or admin
+    is_admin: bool          # owner, superadmin or admin
     created_at: int
     display_name: str | None = None
     language: str = "de"
@@ -55,6 +57,15 @@ class User:
     role: str = "user"
     must_change: bool = False   # logged in with a start password: has to choose an own one first
     files_confirm: bool = True  # does deleting a file ask first? (the trash circle of the file tile switches it off)
+
+    @property
+    def rank(self) -> int:
+        return RANK[self.role]
+
+    @property
+    def is_system_admin(self) -> bool:
+        """May use the owner's functions (system, backup, restart, server settings): owner or superadmin."""
+        return self.rank >= RANK["superadmin"]
 
     @property
     def name(self) -> str:
@@ -191,10 +202,8 @@ def get_by_id(user_id: int) -> User | None:
 
 
 def can_manage(actor: User, target: User) -> bool:
-    """May `actor` reset the password of or delete `target`? Nobody touches the owner."""
-    if target.role == "owner" or target.id == actor.id:
-        return False
-    return actor.role == "owner" or (actor.role == "admin" and target.role == "user")
+    """May `actor` reset the password of or delete `target`? Only accounts of a lower rank, never oneself."""
+    return actor.is_admin and target.id != actor.id and target.rank < actor.rank
 
 
 def list_users(actor: User) -> list[User]:
@@ -203,7 +212,7 @@ def list_users(actor: User) -> list[User]:
         raise PermissionError
     with db.connect() as conn:
         rows = conn.execute(
-            "SELECT * FROM users WHERE deleted_at IS NULL ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 ELSE 2 END, id"
+            "SELECT * FROM users WHERE deleted_at IS NULL ORDER BY CASE role WHEN 'owner' THEN 0 WHEN 'superadmin' THEN 1 WHEN 'admin' THEN 2 ELSE 3 END, id"
         ).fetchall()
     return [_to_user(row) for row in rows]
 
@@ -326,7 +335,22 @@ def purge_deleted(now: int | None = None) -> int:
 
 
 def set_admin(actor: User, user_id: int, make_admin: bool) -> None:
-    """Only the owner makes or removes admins; the owner himself cannot be changed."""
+    """Owner and superadmin make or remove admins, but only of an account below their own rank (a superadmin
+    can not touch another superadmin, nobody touches the owner)."""
+    if not actor.is_system_admin:
+        raise PermissionError
+    target = get_by_id(user_id)
+    if target is None:
+        raise UserError("not_found")
+    if target.rank >= actor.rank:
+        raise PermissionError
+    role = "admin" if make_admin else "user"
+    with db.connect() as conn:
+        conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, target.id))
+
+
+def set_superadmin(actor: User, user_id: int, make: bool) -> None:
+    """Only the owner makes or removes superadmins (removed: back to admin); the owner himself cannot be changed."""
     if actor.role != "owner":
         raise PermissionError
     target = get_by_id(user_id)
@@ -334,9 +358,8 @@ def set_admin(actor: User, user_id: int, make_admin: bool) -> None:
         raise UserError("not_found")
     if target.role == "owner":
         raise PermissionError
-    role = "admin" if make_admin else "user"
     with db.connect() as conn:
-        conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, target.id))
+        conn.execute("UPDATE users SET role = ? WHERE id = ?", ("superadmin" if make else "admin", target.id))
 
 
 def transfer_owner(actor: User, user_id: int) -> None:

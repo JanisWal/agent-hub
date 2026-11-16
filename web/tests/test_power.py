@@ -103,6 +103,17 @@ class PowerTest(unittest.TestCase):
         power.request_action(self.owner, "backup")
         self.assertEqual(power.backup_state(), "running")
 
+    def test_a_superadmin_may_ask_too(self):
+        sup = users.get_by_id(users.create_user("super@example.com", "Sup3r!pass", role="superadmin").id)
+        for action in power.ACTIONS:
+            self.assertTrue(power.request_action(sup, action) or power.claim_next())
+            power.claim_next()
+        self.assertEqual(system.power_action(self.request(), "backup", "", sup), {"ok": True})
+        self.assertEqual(system.backup_status(sup)["ok"], True)
+        self.assertEqual(system.power_action(self.request(), "reboot", "wrong", sup).status_code, 403)   # password still asked
+        self.assertIn("data-power", adminpage.render(sup, users.list_users(sup)))
+        self.assertEqual(admin_routes.system_old_address(sup).status_code, 303)
+
     # --- the routes
     def test_the_power_route(self):
         answer = system.power_action(self.request(), "reboot", "Own3r!pass", self.owner)

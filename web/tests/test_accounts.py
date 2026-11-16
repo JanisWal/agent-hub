@@ -90,6 +90,66 @@ class AccountsTest(unittest.TestCase):
         with self.assertRaises(PermissionError):
             users.set_admin(self.admin, self.user.id, True)
 
+    # --- superadmin (PROJEKT.md 4a: rank rule; owner's powers except superadmins and the owner)
+    def make_superadmin(self, email="super@example.com"):
+        account = users.create_user(email, "Sup3r!pass", role="superadmin")
+        return users.get_by_id(account.id)
+
+    def test_rank_rule_for_the_superadmin(self):
+        sup, other = self.make_superadmin(), self.make_superadmin("super2@example.com")
+        self.assertTrue(sup.is_admin and sup.is_system_admin and self.owner.is_system_admin)
+        self.assertFalse(self.admin.is_system_admin or self.user.is_system_admin)
+        self.assertTrue(users.can_manage(self.owner, sup))
+        self.assertTrue(users.can_manage(sup, self.admin) and users.can_manage(sup, self.user))
+        self.assertFalse(users.can_manage(sup, self.owner))
+        self.assertFalse(users.can_manage(sup, other))      # no other superadmin
+        self.assertFalse(users.can_manage(sup, sup))
+        self.assertFalse(users.can_manage(self.admin, sup))
+        self.assertEqual(users.list_users(self.owner)[1].role, "superadmin")   # owner, superadmin, admin, user
+
+    def test_superadmin_cannot_touch_superadmins_or_the_owner(self):
+        sup, other = self.make_superadmin(), self.make_superadmin("super2@example.com")
+        for target in (self.owner, other):
+            for call in (lambda: users.delete_user(sup, target.id),
+                         lambda: users.reset_password(sup, target.id, "Start1234"),
+                         lambda: users.set_admin(sup, target.id, False),
+                         lambda: users.set_superadmin(sup, target.id, False),
+                         lambda: users.transfer_owner(sup, target.id)):
+                with self.assertRaises(PermissionError):
+                    call()
+        self.assertEqual(users.get_by_id(other.id).role, "superadmin")
+        with self.assertRaises(PermissionError):
+            users.set_superadmin(sup, self.user.id, True)      # only the owner makes superadmins
+
+    def test_superadmin_manages_admins_and_users(self):
+        sup = self.make_superadmin()
+        users.set_admin(sup, self.user.id, True)
+        self.assertEqual(users.get_by_id(self.user.id).role, "admin")
+        users.set_admin(sup, self.admin.id, False)
+        self.assertEqual(users.get_by_id(self.admin.id).role, "user")
+        users.reset_password(sup, self.user.id, "Start1234")
+        users.delete_user(sup, self.user.id)
+        self.assertIsNone(users.get_by_id(self.user.id))
+
+    def test_owner_makes_and_removes_superadmins(self):
+        users.set_superadmin(self.owner, self.admin.id, True)
+        self.assertEqual(users.get_by_id(self.admin.id).role, "superadmin")
+        users.set_superadmin(self.owner, self.admin.id, False)
+        self.assertEqual(users.get_by_id(self.admin.id).role, "admin")
+        with self.assertRaises(PermissionError):
+            users.set_superadmin(self.owner, self.owner.id, True)
+        with self.assertRaises(PermissionError):
+            users.set_superadmin(self.admin, self.user.id, True)
+
+    def test_user_list_shows_the_superadmin_switch_to_the_owner_only(self):
+        sup = self.make_superadmin()
+        owner_html = userspage.render(self.owner, users.list_users(self.owner))
+        sup_html = userspage.render(sup, users.list_users(sup))
+        self.assertIn("data-superadmin", owner_html)
+        self.assertNotIn("data-superadmin", sup_html)
+        self.assertIn("data-admin", sup_html)
+        self.assertNotIn("%t.", owner_html)
+
     def test_reset_password_forces_change_and_ends_sessions(self):
         token = users.create_session(self.user.id)
         users.reset_password(self.admin, self.user.id, "Neu12345")

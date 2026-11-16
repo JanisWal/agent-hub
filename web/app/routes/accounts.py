@@ -114,9 +114,21 @@ def make_owner(
     return ok()
 
 
+@router.post("/users/{user_id}/superadmin")
+def toggle_superadmin(user_id: int, value: str = Form(""), user: users.User = Depends(api_user)):
+    """Only the owner makes or removes superadmins."""
+    try:
+        users.set_superadmin(user, user_id, value == "1")
+    except PermissionError:
+        return fail(403)
+    except users.UserError:
+        return fail(404)
+    return ok()
+
+
 @router.post("/users/{user_id}/admin")
 def toggle_admin(user_id: int, value: str = Form(""), user: users.User = Depends(api_user)):
-    """Only the owner makes or removes admins."""
+    """Owner and superadmin make or remove admins (below their own rank)."""
     try:
         users.set_admin(user, user_id, value == "1")
     except PermissionError:
