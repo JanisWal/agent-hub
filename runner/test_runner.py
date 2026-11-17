@@ -54,6 +54,8 @@ class FakeApi:
 
     def call(self, method, path, **form):
         self.calls.append((method, path, form))
+        if path == "/runner/wake/claim":
+            return {"ok": True, "mac": getattr(self, "wake", None)}
         if path == "/runner/power/claim":
             return {"ok": True, "id": 7 if self.power else None, "action": self.power}
         if path == "/runner/chat/claim":
@@ -120,6 +122,18 @@ class RunnerTest(unittest.TestCase):
         self.api.power = "reboot"
         self.runner.handle_power()
         self.assertEqual(ran, [launcher.build_power_command("reboot")])
+
+    def test_waking_sends_one_fixed_command_with_the_checked_mac(self):
+        ran = []
+        self.runner.run_power = lambda command: ran.append(command) or types.SimpleNamespace(returncode=0, stderr="")
+        self.runner.handle_wake()
+        self.assertEqual(ran, [])
+        self.api.wake = "dc:a6:32:01:02:03"
+        self.runner.handle_wake()
+        self.assertEqual(ran, [launcher.build_wake_command("dc:a6:32:01:02:03")])
+        self.api.wake = "dc:a6:32:01:02:03; rm -rf /"
+        self.runner.handle_wake()
+        self.assertEqual(len(ran), 1)                                          # a bad MAC is never sent
 
     def test_a_backup_reports_how_it_ended(self):
         for code, expected in ((0, "1"), (1, "0")):

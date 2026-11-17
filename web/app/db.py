@@ -152,6 +152,26 @@ CREATE TABLE IF NOT EXISTS device_log (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS device_log_by_device ON device_log (device_id, id);
+-- What the manager asks to do on a device (devices.request_action, Janis 17.11.2026): it never happens on its own,
+-- it waits in "waiting for you" until the user says yes or no. Goes with the device.
+CREATE TABLE IF NOT EXISTS device_requests (
+    id         INTEGER PRIMARY KEY,
+    device_id  INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    action     TEXT NOT NULL,
+    reason     TEXT NOT NULL DEFAULT '',
+    status     TEXT NOT NULL DEFAULT 'open',
+    created_at INTEGER NOT NULL,
+    decided_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS device_requests_open ON device_requests (status, device_id);
+-- Switching a device on (Wake-on-LAN): written by the web service, sent once by the runner from the server's own
+-- network (a broadcast does not leave the broker's Docker network). Only the address, nothing else.
+CREATE TABLE IF NOT EXISTS device_wakes (
+    id         INTEGER PRIMARY KEY,
+    mac        TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    taken_at   INTEGER
+);
 -- "For you" (todos.py, Janis 16.11.2026): work the user does himself (hardware, fitting, errands), done once,
 -- with a note of what he did. Decisions are not here but in "waiting for you" (Manager view).
 CREATE TABLE IF NOT EXISTS todos (
@@ -296,7 +316,10 @@ NEW_COLUMNS = {
                 "ai_actions": "TEXT NOT NULL DEFAULT ''", "ai_password": "INTEGER NOT NULL DEFAULT 0",
                 "updates_found": "INTEGER NOT NULL DEFAULT 0", "updates_at": "INTEGER",
                 "reboot_needed": "INTEGER NOT NULL DEFAULT 0", "checked_at": "INTEGER",
-                "ip_hint": "TEXT NOT NULL DEFAULT ''"},   # the address the broker found for the hostname (a suggestion)
+                "ip_hint": "TEXT NOT NULL DEFAULT ''",    # the address the broker found for the hostname (a suggestion)
+                "mac": "TEXT NOT NULL DEFAULT ''",        # for switching on (Wake-on-LAN), found by the connection test
+                "picture": "TEXT NOT NULL DEFAULT ''",    # a small picture the user dropped on the device (data URL)
+                "icon_ai": "TEXT NOT NULL DEFAULT ''"},   # the pictogram the AI chose from the fixed set (statusnote.py)
 }
 
 # The three statements below run once, when a database from before the feature is opened for the

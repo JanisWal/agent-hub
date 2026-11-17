@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from .. import board, checks, dashboard, files, i18n, memory, projectpage, projects, ui, users
+from .. import board, checks, dashboard, files, i18n, memory, projectpage, projects, statusnote, ui, users
 from ..deps import api_user, fail, ok, page_user, reauth, redirect
 
 router = APIRouter()
@@ -12,7 +12,8 @@ router = APIRouter()
 def index(page: str = "1", user: users.User = Depends(page_user)):
     pages = projects.layout(user.id)
     first_project = not user.had_project and not pages
-    body = dashboard.render(user, pages, int(page) if page.isdigit() else 1, first_project)
+    briefs = statusnote.for_dashboard(user.id, [p.id for page_ in pages for p in page_])
+    body = dashboard.render(user, pages, int(page) if page.isdigit() else 1, first_project, briefs)
     return ui.logged_in_page(
         user, i18n.t(user.language, "home"), body,
         scripts=dashboard.SCRIPTS, styles=dashboard.STYLES, body_class="fit",  # fits the window

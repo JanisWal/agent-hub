@@ -780,15 +780,15 @@ main { overflow: clip; } /* shadows may reach to the window edge, but their empt
    five slightly different circles. Now they share one glass: see-through fill with blur, glass rim, light edge on
    top, a soft shadow; on hover the rim turns accent, a press gives way (scale 0.94) and springs back. Their own
    states (pressed, armed, marked) keep their colours, those rules are more specific. */
-.drawer-extra, .drawer-handle, .topbar-back, .topbar .title-edit, .m-add, .add {
+.drawer-extra, .drawer-handle, .topbar-back, .topbar .title-edit, .m-add, .add, .dev-btn {
   background: color-mix(in srgb, var(--glass) 70%, transparent);
   -webkit-backdrop-filter: blur(14px) saturate(1.5);
   backdrop-filter: blur(14px) saturate(1.5);
   border: 1px solid var(--glass-border);
   box-shadow: inset 0 1px 0 var(--highlight), 0 4px 12px rgba(60, 30, 10, 0.12);
 }
-.drawer-extra:hover, .drawer-handle:hover, .topbar-back:hover, .topbar .title-edit:hover, .m-add:hover, .add:hover { border-color: var(--accent); }
-.drawer-extra:active, .drawer-handle:active, .topbar .title-edit:active, .m-add:active, .add:active { transform: scale(0.94); }
+.drawer-extra:hover, .drawer-handle:hover, .topbar-back:hover, .topbar .title-edit:hover, .m-add:hover, .add:hover, .dev-btn:not(:disabled):hover { border-color: var(--accent); }
+.drawer-extra:active, .drawer-handle:active, .topbar .title-edit:active, .m-add:active, .add:active, .dev-btn:not(:disabled):active { transform: scale(0.94); }
 .drawer-extra[aria-pressed="true"], .topbar .title-edit[aria-expanded="true"] { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 22%, transparent); }
 
 /* ===== Phone ===== */
@@ -814,3 +814,10 @@ main { overflow: clip; } /* shadows may reach to the window edge, but their empt
 @media (pointer: coarse) {
   input, textarea, select, .setting input, .setting select { font-size: max(16px, 1rem); }
 }
+
+/* The status lamp (Manager view and the project tiles of the dashboard): grey, green, orange (at rest), yellow, red. */
+.m-lamp { flex: none; width: 14px; height: 14px; border-radius: 50%; --lamp: var(--muted); background: var(--lamp); opacity: 0.55; box-shadow: 0 0 0 4px color-mix(in srgb, var(--lamp) 18%, transparent); }
+.m-lamp.lamp-green { --lamp: var(--go); opacity: 1; }
+.m-lamp.lamp-rest { --lamp: var(--rest); opacity: 1; }
+.m-lamp.lamp-yellow { --lamp: var(--warn); opacity: 1; }
+.m-lamp.lamp-red { --lamp: var(--danger); opacity: 1; }

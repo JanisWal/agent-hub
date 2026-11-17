@@ -52,11 +52,25 @@ DASHBOARD = """<div class="dash">
 </dialog>"""
 
 
-def _project_tile(project: Project, index: int, lang: str) -> str:
+def _state(brief, lang: str) -> str:
+    """The project's state under its name (statusnote.for_dashboard): lamp, headline and the AI's text."""
+    if brief is None:
+        return ""
+    lamp_label = esc(i18n.t(lang, "status_lamp_" + brief.lamp))
+    if brief.title:
+        head, text = esc(brief.title), esc(brief.text)
+    else:
+        head, text = (esc(i18n.t(lang, brief.text)) if brief.text else ""), ""
+    return (f'<span class="tile-state"><span class="m-lamp lamp-{brief.lamp}" role="img" aria-label="{lamp_label}"></span>'
+            f'<span class="tile-head">{head}</span></span>'
+            + (f'<span class="tile-note">{text}</span>' if text else ""))
+
+
+def _project_tile(project: Project, index: int, lang: str, brief=None) -> str:
     return (
         f'<article class="tile glass" data-id="{project.id}" style="--i:{index}">'
         f'<a class="tile-link" href="/projects/{project.id}" draggable="false">'
-        f'<span class="tile-name">{esc(project.name)}</span></a>'
+        f'<span class="tile-name">{esc(project.name)}</span>{_state(brief, lang)}</a>'
         f'<button class="icon-button tile-delete" type="button" data-id="{project.id}" '
         f'aria-label="{esc(i18n.t(lang, "delete_project"))}">{icon("trash")}</button>'
         "</article>"
@@ -72,7 +86,7 @@ def _plus_tile(index: int, lang: str, first_project: bool) -> str:
     )
 
 
-def _grids(pages: list[list[Project]], first_project: bool, lang: str) -> str:
+def _grids(pages: list[list[Project]], first_project: bool, lang: str, briefs: dict | None = None) -> str:
     """One grid of 6 slots per page. All pages are in the document; pages.js slides between them.
 
     The "+" tile sits on the first page with a free slot (`pages` already ends with an empty
@@ -81,7 +95,7 @@ def _grids(pages: list[list[Project]], first_project: bool, lang: str) -> str:
     plus_on = next(n for n, page in enumerate(pages) if len(page) < PAGE_SIZE)
     grids = []
     for n, page in enumerate(pages):
-        tiles = [_project_tile(p, i, lang) for i, p in enumerate(page)]
+        tiles = [_project_tile(p, i, lang, (briefs or {}).get(p.id)) for i, p in enumerate(page)]
         if n == plus_on:
             tiles.append(_plus_tile(len(tiles), lang, first_project))
         tiles += ['<div class="tile ghost" aria-hidden="true"></div>'] * (PAGE_SIZE - len(tiles))
@@ -116,7 +130,7 @@ def _pager(lang: str, page: int, pages: int) -> str:
     )
 
 
-def render(user: User, layout: list[list[Project]], page: int, first_project: bool) -> str:
+def render(user: User, layout: list[list[Project]], page: int, first_project: bool, briefs: dict | None = None) -> str:
     """Dashboard body. `layout` are the user's pages of projects (see projects.layout).
 
     When every page is full (or there are no projects) one more page is added for the
@@ -135,7 +149,7 @@ def render(user: User, layout: list[list[Project]], page: int, first_project: bo
         SIZE=str(PAGE_SIZE),
         CURRENT=str(page),
         PAGE_INDEX=str(page - 1),
-        GRIDS=_grids(pages, first_project, lang),
+        GRIDS=_grids(pages, first_project, lang, briefs),
         PAGER=_pager(lang, page, len(pages)),
         EDGE_LEFT=icon("triangle_left"),
         EDGE_RIGHT=icon("triangle_right"),

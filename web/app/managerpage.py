@@ -20,6 +20,7 @@ MANAGER = """<section class="manager" id="manager-view" data-view-panel="manager
   %MVAULT%
   <div class="mcol">
     %STATUS%
+    <div class="m-split" data-split="status-devices" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="%t.split_label%"></div>
     %DEVICES%
   </div>
   <div class="mcol">
@@ -113,16 +114,18 @@ def _status_tile(lang: str, a: statusmod.Assessment | None, now: int, note: stat
     else:
         headline = esc(i18n.t(lang, "status_activity_" + a.activity))
         when = esc(i18n.t(lang, "status_last", when=_when(lang, a.last_activity, now)))
-    written = f'<p class="status-note">{esc(note.text)}</p>' if note is not None and note.text else ""
+    # the longer text of the AI comes last and is folded away at first (Janis, 17.11.2026): the splitter below the
+    # tile shows it; at its highest point the tile shows everything but this text (splitter.js, class split-extra)
+    written = f'<p class="status-note split-extra">{esc(note.text)}</p>' if note is not None and note.text else ""
     return (
-        f'<section class="mtile glass m-status" id="status">{head}'
-        f'<p class="status-line"><strong>{headline}</strong><small>{when}</small></p>{written}'
+        f'<section class="mtile glass m-status{" has-extra" if written else ""}" id="status">{head}'
+        f'<p class="status-line"><strong>{headline}</strong><small>{when}</small></p>'
         f'<div class="status-progress"><progress max="100" value="{a.progress}" aria-label="{esc(i18n.t(lang, "status_progress", n=a.progress))}"></progress>'
         f'<span>{esc(i18n.t(lang, "status_progress", n=a.progress))}</span></div>'
         f'<dl class="status-facts">{facts}</dl>'
         + (f'<ul class="status-reasons">{reasons}</ul>' if reasons else "")
         + (f'<p class="muted status-extra">{esc(" · ".join(extra))}</p>' if extra else "")
-        + say + '</section>'
+        + say + written + '</section>'
     )
 
 
@@ -498,7 +501,20 @@ def _trash_list(lang: str, trashed: list) -> str:
 MAX_REPORT_SHOWN = 8000   # characters of the last report shown on a waiting card
 
 
-def _waiting_tile(lang: str, autonomy: str, waiting: list[tuple[agents.Task, str]]) -> str:
+def _device_asks(lang: str, asks: list) -> str:
+    """The manager's requests for device actions (devices.request_action): each waits for yes or no, here."""
+    return "".join(
+        f'<li class="dev-ask" data-request="{r.id}"><div class="dev-ask-text"><strong>'
+        f'{esc(i18n.t(lang, "dev_ask_title", action=i18n.t(lang, "dev_action_" + r.action), device=r.device))}</strong>'
+        + (f'<small>{esc(r.reason)}</small>' if r.reason else "") +
+        f'</div><span class="dev-ask-btns"><button type="button" class="icon-button card-btn yes" data-answer="yes" '
+        f'aria-label="{esc(i18n.t(lang, "yes"))}" data-tip="{esc(i18n.t(lang, "yes"))}">{icon("check")}</button>'
+        f'<button type="button" class="icon-button card-btn no" data-answer="no" aria-label="{esc(i18n.t(lang, "dev_ask_no"))}" '
+        f'data-tip="{esc(i18n.t(lang, "dev_ask_no"))}">{icon("cross")}</button></span></li>'
+        for r in asks)
+
+
+def _waiting_tile(lang: str, autonomy: str, waiting: list[tuple[agents.Task, str]], asks: list | None = None) -> str:
     """ "Waiting for you" (Janis, 16.11.2026: decisions, not work): the tasks that wait for the user's approval or
     need him, each with its last report. Deciding stays on the board card (one control, one area), the tile leads there."""
     rows = "".join(
@@ -509,19 +525,21 @@ def _waiting_tile(lang: str, autonomy: str, waiting: list[tuple[agents.Task, str
         f'</details></li>'
         for task, report in waiting
     )
-    body = (f'<div class="r-scroll"><ol class="r-runs">{rows}</ol></div>' if rows
-            else f'<p class="muted">{esc(i18n.t(lang, "manager_waiting_empty"))}</p>')
+    devices_html = _device_asks(lang, asks or [])
+    body = ((f'<ul class="dev-asks">{devices_html}</ul>' if devices_html else "")
+            + (f'<div class="r-scroll"><ol class="r-runs">{rows}</ol></div>' if rows else "")) \
+        or f'<p class="muted">{esc(i18n.t(lang, "manager_waiting_empty"))}</p>'
     board = (f'<a class="link inline m-waiting-board" href="#board" data-goto="board">{esc(i18n.t(lang, "me_to_board"))}</a>'
              if rows else "")    # below the list: the head holds the title, the autonomy and the count
     return (f'<section class="mtile glass m-waiting" id="waiting"><header><h2>{esc(i18n.t(lang, "manager_waiting"))}</h2>'
-            f'{autonomy}<span class="count">{len(waiting)}</span></header>{body}{board}</section>')
+            f'{autonomy}<span class="count">{len(waiting) + len(asks or [])}</span></header>{body}{board}</section>')
 
 
 def render(lang: str, settings: dict, regular_checks: list | None = None, now: int | None = None,
            stored_files: list | None = None, files_confirm: bool = True, trashed_files: list | None = None,
            ais: tuple[str, ...] = ("claude",), waiting: list | None = None, versions: list | None = None,
            assessment: statusmod.Assessment | None = None, device_list: list | None = None,
-           note: statusnote.Note | None = None) -> str:
+           note: statusnote.Note | None = None, asks: list | None = None) -> str:
     """`settings` is agents.settings(user_id): the manager is the role "chef". `regular_checks` are the
     project's checks (checks.list_checks). `ais`: the providers the user has connected (their models are offered).
     `waiting`: (task, last report) of agents.waiting_tasks, the decisions of "waiting for you"."""
@@ -541,7 +559,7 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
         CHAT=fill(CHAT, lang, MODEL=model, SEND=icon("arrow_up"),
                   WAITING=esc(i18n.t(lang, "chat_waiting", name="{name}")), FALLBACK=esc(i18n.t(lang, "chat_fallback", name="{name}", other="{other}")), AI=esc(catalog.provider(catalog.provider_of(chef["model"])).name), NET=_net_switch(lang, settings["roles"]["chef"]["net"]),
                   INFO=ui.info_dot(i18n.t(lang, "manager_chat"), i18n.t(lang, "manager_chat_hint"))),
-        WAITING_TILE=_waiting_tile(lang, autonomy, waiting or []),
+        WAITING_TILE=_waiting_tile(lang, autonomy, waiting or [], asks),
         MVAULT=fill(MVAULT, lang, TRASH_LIST=_trash_list(lang, trashed_files or []),
                     TRASH_INFO=ui.info_dot(i18n.t(lang, "trash"), i18n.t(lang, "files_trash_hint", n=filestore.TRASH_DAYS)),
                     ARCHIVE_INFO=ui.info_dot(i18n.t(lang, "chat_archive"), i18n.t(lang, "chat_archive_hint")),

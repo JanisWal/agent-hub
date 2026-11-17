@@ -30,7 +30,13 @@
 .tile[data-id] { transition: translate 0.3s cubic-bezier(0.3, 1.4, 0.5, 1), box-shadow 0.3s; cursor: grab; touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .tile[data-id]:hover { translate: 0 -3px; } /* translate is separate from the transform the springs write */
 
-.tile-link { color: inherit; text-decoration: none; display: flex; height: 100%; align-items: flex-end; }
+/* The project's name on top, its state below (Janis, 07.11.2026 and 17.11.2026): lamp, the AI's headline, its text. */
+.tile-link { color: inherit; text-decoration: none; display: flex; flex-direction: column; gap: 10px; height: 100%; padding-right: 40px; }
+.tile-state { display: flex; align-items: center; gap: 9px; margin-top: auto; font-weight: 650; font-size: 0.95rem; }
+.tile-state .m-lamp { width: 11px; height: 11px; }
+.tile-head { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tile-note { color: var(--muted); font-size: 0.85rem; line-height: 1.4; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .tile-link::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
 .tile-name {
   font-size: 1.5rem; font-weight: 650; letter-spacing: -0.02em; line-height: 1.2;

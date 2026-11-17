@@ -127,13 +127,13 @@ html.splitting, html.splitting * { cursor: row-resize !important; -webkit-user-s
   .mtile.m-folded { overflow: clip; }
   .mtile.m-folded > :not(header) { opacity: var(--fold, 1); }
   .mtile.m-shut > :not(header) { visibility: hidden; }
+  /* The status text of the AI (split-extra): folded away until the splitter below the tile brings it out; only it
+     fades, the rest of the tile stays (17.11.2026). */
+  .mcol:not(.split-set) .split-extra { display: none; }
+  .mtile.has-extra.m-folded > :not(header) { opacity: 1; }
+  .mtile.has-extra.m-folded > .split-extra { opacity: var(--fold, 1); }
+  .mtile.has-extra.m-shut > :not(header) { visibility: visible; }
 }
-/* The status lamp: grey until the manager reports (green, amber, red later). */
-.m-lamp { flex: none; width: 14px; height: 14px; border-radius: 50%; --lamp: var(--muted); background: var(--lamp); opacity: 0.55; box-shadow: 0 0 0 4px color-mix(in srgb, var(--lamp) 18%, transparent); }
-.m-lamp.lamp-green { --lamp: var(--go); opacity: 1; }
-.m-lamp.lamp-rest { --lamp: var(--rest); opacity: 1; }
-.m-lamp.lamp-yellow { --lamp: var(--warn); opacity: 1; }
-.m-lamp.lamp-red { --lamp: var(--danger); opacity: 1; }
 /* The drop-down at the pencil next to the title (name and description of the project). */
 .title-menu { position: absolute; top: calc(100% + 10px); left: 50%; translate: -50% 0; z-index: 25; width: min(520px, calc(100vw - 32px)); max-width: none; padding: 20px 22px 18px; border-radius: 28px; }
 .title-menu label { margin-bottom: calc(var(--space) * 1.5); }
@@ -533,150 +533,225 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 /* The written status of the AI (statusnote.py, 17.11.2026): headline in bold above, one or two sentences below. The
    round arrow asks for a new one; what the hub answers stands in the quiet line at the foot (fixed place, empty = no
    height). */
-.status-note { margin-top: 6px; font-size: 0.9rem; line-height: 1.45; overflow-wrap: anywhere; }
+.status-note { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--file-line); font-size: 0.9rem; line-height: 1.45; overflow-wrap: anywhere; }
 .status-line strong { overflow-wrap: anywhere; }
 .m-status header .status-again { flex: none; }
 .status-say { font-size: 0.8rem; margin-top: 8px; min-height: 0; }
 .status-say:empty { display: none; }
 
-/* ===== Devices tile: the check-row list, with the key lock and a description line ===== */
-.device-desc { overflow-wrap: anywhere; }
-.device-lock { flex: none; display: grid; place-items: center; width: 24px; height: 24px; color: var(--muted); }
-.device-lock svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.device-key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; min-height: 90px; resize: vertical; }
-@media (pointer: coarse) { .device-key { font-size: 16px; } }
-.check-line { display: flex; align-items: center; gap: 8px; margin-top: var(--space); }
-.check-line[hidden] { display: none; }
-.mtile.m-devices .check-list { max-height: none; }
-.device-tile { cursor: default; color: var(--accent); }   /* the picture of a device: its pictogram on the rounded square of the files */
-.device-tile svg { width: 22px; height: 22px; }
-
-/* ===== Devices, broker (17.11.2026, Janis): rows like the files, LED, three round glass buttons, the device window ===== */
-.device-list { overflow-y: auto; padding: 4px 6px; margin: 0 -6px; overscroll-behavior: contain; }
-.device-row { cursor: pointer; flex-shrink: 0; }   /* the list scrolls, rows keep their height */
-.device-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.device-row .check-text { flex: 1; min-width: 0; }
-.device-row .check-title { display: flex; align-items: center; gap: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.device-row small { display: block; color: var(--muted); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dev-hint { opacity: 0.6; }                         /* an address found in the network: a suggestion, not the user's */
-/* LED: green on, red off, white while it restarts, shuts down or installs; nothing while unknown. */
+/* ===== Devices (Janis, 17.11.2026, second round): one design with the files ===== */
+/* The tile: rows are the glass cards of the files (.file-row), with the same lines and soft shadow. The list keeps
+   room around the cards so lifting and the shadow are never cut off by the tile (Janis: they were). */
+.m-devices, .device-window { --file-line: color-mix(in srgb, var(--text) 16%, transparent); --file-line-hover: color-mix(in srgb, var(--text) 40%, transparent); --file-soft: 0 4px 14px color-mix(in srgb, var(--text) 9%, transparent), 0 1px 2px color-mix(in srgb, var(--text) 10%, transparent); }
+.mtile.m-devices { container-type: inline-size; }
+.device-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: -8px -14px -10px; padding: 10px 14px 18px; gap: 8px; }
+.device-row { flex-shrink: 0; cursor: pointer; display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; align-items: center; column-gap: 14px; padding: 8px 10px 8px 8px; min-height: 68px; }
+.device-row:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.device-row.hot { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent), var(--shadow); }
+.device-tile { width: 52px; height: 52px; border-radius: 10px; color: var(--accent); overflow: hidden; cursor: inherit; }
+.device-tile svg { width: 30px; height: 30px; stroke-width: 1.7; }
+.dev-picture { width: 100%; height: 100%; object-fit: cover; display: block; }
+.dev-text { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.dev-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 650; }
+.dev-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev-text small { color: var(--muted); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev-hint { opacity: 0.6; }   /* an address found in the network: a suggestion, not the user's */
+.dev-buttons { display: flex; gap: 8px; }
+/* A narrow tile (the left column): the picture spans two lines, name and kind on top, the three buttons spread
+   across the line below (Janis: the buttons may take more room). */
+@container (max-width: 420px) {
+  .device-row { grid-template-columns: 52px minmax(0, 1fr); grid-template-rows: auto auto; row-gap: 8px; }
+  .device-row .device-tile { grid-row: 1 / span 2; align-self: center; }
+  .device-row .dev-buttons { grid-column: 2; justify-content: space-between; max-width: 190px; }
+}
+/* LED: green on, red off, white while it restarts, shuts down or installs; no colour while unknown. */
 .dev-led { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--field); box-shadow: inset 0 0 0 1px var(--glass-border); }
 .dev-led.led-on { background: var(--go); box-shadow: 0 0 8px color-mix(in srgb, var(--go) 70%, transparent); }
 .dev-led.led-off { background: var(--danger); box-shadow: 0 0 8px color-mix(in srgb, var(--danger) 60%, transparent); }
-.dev-led.led-busy { background: var(--led-white); box-shadow: 0 0 10px color-mix(in srgb, var(--led-white) 85%, transparent), inset 0 0 0 1px rgba(0, 0, 0, 0.15); animation: dev-pulse 1.6s ease-in-out infinite; }
+.dev-led.led-busy { background: var(--led-white); box-shadow: 0 0 10px color-mix(in srgb, var(--led-white) 85%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--text) 15%, transparent); animation: dev-pulse 1.6s ease-in-out infinite; }
 @keyframes dev-pulse { 50% { opacity: 0.55; } }
-.dev-buttons { flex: none; display: flex; gap: 6px; }
-.icon-button.dev-btn { position: relative; width: 34px; height: 34px; min-width: 34px; min-height: 34px; color: var(--text); }
-.icon-button.dev-btn::after { content: ""; position: absolute; inset: -5px; border-radius: 50%; }   /* 44 px to touch */
-.icon-button.dev-btn svg { width: 17px; height: 17px; }
-.icon-button.dev-btn:disabled { opacity: 0.38; cursor: default; transform: none; }
+/* The three buttons share the glass of the small round controls (app.css, "one design"); 36 px like the plus. */
+.icon-button.dev-btn { position: relative; width: 36px; height: 36px; min-width: 36px; min-height: 36px; color: var(--text); }
+.icon-button.dev-btn::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; }   /* 44 px to touch */
+.icon-button.dev-btn svg { width: 18px; height: 18px; }
+.icon-button.dev-btn:disabled { opacity: 0.38; cursor: default; transform: none; border-color: var(--glass-border); }
 .icon-button.dev-btn.working svg { animation: dev-pulse 1.2s ease-in-out infinite; }
-.icon-button.dev-btn.flash-go { color: var(--on-go); background: var(--go); box-shadow: 0 0 0 2px color-mix(in srgb, var(--go) 55%, transparent), 0 0 18px color-mix(in srgb, var(--go) 55%, transparent); }
-.icon-button.dev-btn.flash-stop { color: var(--on-danger); background: var(--danger); box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 55%, transparent), 0 0 18px color-mix(in srgb, var(--danger) 45%, transparent); }
-.icon-button.dev-btn { transition: background-color 0.35s, box-shadow 0.35s, color 0.35s, transform 0.3s cubic-bezier(0.3, 1.4, 0.5, 1); }
-.dev-dot { position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--go); box-shadow: 0 0 0 2px var(--bg); display: none; }
-.device-row.has-updates .dev-dot { display: block; }   /* updates were found: the next press installs them */
-.dev-say:empty { display: none; }
+.icon-button.dev-btn.wake { color: var(--go); }
+.icon-button.dev-btn.flash-go { color: var(--on-go); background: var(--go); border-color: transparent; box-shadow: 0 0 0 2px color-mix(in srgb, var(--go) 55%, transparent), 0 0 18px color-mix(in srgb, var(--go) 55%, transparent); }
+.icon-button.dev-btn.flash-stop { color: var(--on-danger); background: var(--danger); border-color: transparent; box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 55%, transparent), 0 0 18px color-mix(in srgb, var(--danger) 45%, transparent); }
+.icon-button.dev-btn { transition: background-color 0.35s, box-shadow 0.35s, color 0.35s, border-color 0.2s, transform 0.3s cubic-bezier(0.3, 1.4, 0.5, 1); }
+.dev-dot { position: absolute; top: 2px; right: 2px; width: 8px; height: 8px; border-radius: 50%; background: var(--go); box-shadow: 0 0 0 2px var(--bg); display: none; }
+.has-updates .dev-btn[data-btn="update"] .dev-dot { display: block; }   /* found updates: the next press installs them */
+.dev-say.on, .dw-status.on { opacity: 1; }
 @media (prefers-reduced-motion: reduce) { .dev-led.led-busy, .icon-button.dev-btn.working svg { animation: none; } .icon-button.dev-btn { transition: none; } }
-@media (max-width: 520px) { .dev-buttons { gap: 2px; } .icon-button.dev-btn { width: 30px; height: 30px; min-width: 30px; min-height: 30px; } }
-
-/* The dialog of a new device: a notch wider on a wide screen (Janis, 17.11.2026); two fields side by side. */
-.dialog.device-dialog { max-width: 520px; }
+.device-key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; min-height: 90px; resize: vertical; }
+@media (pointer: coarse) { .device-key { font-size: 16px; } }
+.check-line { display: flex; align-items: center; gap: 10px; min-height: 36px; margin: 0; font-weight: 500; }
+.check-line[hidden] { display: none; }
+.check-line input[type="checkbox"] { flex: none; width: 20px; height: 20px; min-height: 0; margin: 0; padding: 0; accent-color: var(--accent); box-shadow: none; }
 .dev-pair { display: grid; grid-template-columns: 1.6fr 1fr; gap: 0 12px; }
-.dev-pair-small { grid-template-columns: 1.6fr 0.6fr; }
+.dev-pair-small { grid-template-columns: 1.6fr 0.7fr; }
 @media (max-width: 520px) { .dev-pair, .dev-pair-small { grid-template-columns: 1fr; } }
+.dialog.device-dialog { max-width: 520px; }
 
-/* The device window: the whole screen like the file viewer; settings left, the work on the device right. */
-.dialog.device-window { position: fixed; inset: 0; margin: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; border-radius: 0; padding: 14px 18px 18px; box-sizing: border-box; }
+/* "Waiting for you": what the manager asks to do on a device, answered right here (yes in green, no in red). */
+.dev-asks { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dev-ask { display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; border-radius: 8px; border: 1px solid var(--file-line, color-mix(in srgb, var(--text) 16%, transparent)); background: color-mix(in srgb, var(--glass) 55%, transparent); }
+.dev-ask-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.dev-ask-text small { color: var(--muted); font-size: 0.82rem; overflow-wrap: anywhere; }
+.dev-ask-btns { display: flex; gap: 4px; }
+.dev-ask .card-btn.yes:hover { color: var(--go); }
+.dev-ask .card-btn.no:hover { color: var(--danger); }
+
+/* ===== The device window: a sheet over the whole window like the file viewer ===== */
+.dialog.device-window { position: fixed; inset: 0; margin: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; border-radius: 0; padding: 16px 20px 20px; box-sizing: border-box; }
 .dialog.device-window[open] { display: flex; flex-direction: column; }
-.dw-sheet { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
-.dw-head { display: flex; align-items: center; gap: 12px; }
-.dw-head h2 { flex: 1; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dw-head .dev-led { width: 12px; height: 12px; }
-.dw-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 20px; }
-.dw-settings { overflow-y: auto; padding: 4px 10px 20px 2px; overscroll-behavior: contain; }
-.dw-settings h3, .dw-panel h3 { display: flex; align-items: center; gap: 6px; margin: 22px 0 8px; font-size: 1.02rem; }
-.dw-settings form h3:first-child { margin-top: 0; }
-.dw-line { margin: 6px 0; font-size: 0.9rem; overflow-wrap: anywhere; }
-.dw-line:empty { display: none; }
-.dw-small { font-size: 0.8rem; }
-.dw-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
-.dw-buttons > button { min-height: 40px; padding: 0 14px; }
-.dw-buttons[hidden], .dw-public[hidden], #dw-key-part[hidden], #dw-pass-part[hidden], .dw-line[hidden] { display: none; }
-.dw-save { align-items: center; }
-.dw-save .dw-said { flex: 2; margin: 0; font-size: 0.85rem; }
-.dw-public { position: relative; margin-top: 10px; padding: 10px 44px 10px 12px; border-radius: var(--radius-button); background: var(--field); border: 1px solid var(--glass-border); }
-.dw-public code, .dw-fp code, .setup-cmd code { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; user-select: all; }
-.dw-public .dw-copy, .setup-cmd .card-btn { position: absolute; top: 6px; right: 6px; }
+.dw-sheet { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 16px; }
+.dw-head { display: flex; align-items: center; gap: 14px; }
+.dw-pic { width: 60px; height: 60px; border-radius: 12px; }
+.dw-pic svg { width: 34px; height: 34px; }
+.dw-title-box { flex: 1; min-width: 0; }
+.dw-title-box h2 { margin: 0; font-size: 1.5rem; letter-spacing: -0.02em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; outline: none; }
+.dw-sub { display: flex; align-items: center; gap: 8px; margin: 4px 0 0; color: var(--muted); font-size: 0.88rem; font-weight: 600; }
+.dw-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 24px; }
+.dw-side { min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 14px; margin: -6px -10px; padding: 6px 10px 24px; }
+/* Cards of the left side: the quiet glass of the file rows, one card per topic. */
+.dw-card { position: relative; padding: 14px 16px; border-radius: 16px; border: 1px solid var(--file-line); background: color-mix(in srgb, var(--glass) 55%, transparent); box-shadow: var(--file-soft); }
+.dw-card-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.dw-card-head h3 { flex: 1; margin: 0; font-size: 1rem; }
+.dw-card-head .card-btn { margin-right: -6px; }
+/* The three actions large on top: the device is set up, so working with it comes first (Janis). */
+.dw-actions { display: grid; grid-template-columns: repeat(3, 1fr); justify-items: center; gap: 10px; padding: 18px 16px 12px; }
+.icon-button.dev-btn.big { width: 56px; height: 56px; min-width: 56px; min-height: 56px; }
+.icon-button.dev-btn.big svg { width: 24px; height: 24px; }
+.dw-actions .dev-cap { margin-top: -4px; font-size: 0.75rem; font-weight: 600; color: var(--muted); }
+.dw-actions { grid-auto-flow: row; }
+.dw-say { grid-column: 1 / -1; min-height: 1.35em; margin: 2px 0 0; font-size: 0.82rem; font-weight: 600; color: var(--muted); text-align: center; }
+.dw-setup-card { display: flex; flex-direction: column; gap: 10px; border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.dw-setup-card[hidden] { display: none; }
+.dw-setup-card p { margin: 0; font-weight: 600; }
+.dw-setup-card .primary { margin-top: 0; min-height: 46px; }
+.dw-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 7px 14px; margin: 0; font-size: 0.9rem; }
+.dw-facts[hidden] { display: none; }
+.dw-facts dt { color: var(--muted); }
+.dw-facts dd { margin: 0; overflow-wrap: anywhere; font-weight: 600; }
+.dw-facts dd.muted-value { color: var(--muted); font-weight: 500; }
+#dw-form label { margin-top: 10px; }
+#dw-form .actions { margin-top: 14px; }
+.dw-hint { margin: 6px 0 0; font-size: 0.85rem; color: var(--muted); }
+.dw-hint[hidden] { display: none; }
+.dw-public { position: relative; margin-top: 10px; padding: 10px 46px 10px 12px; border-radius: 10px; background: var(--field); border: 1px solid var(--glass-border); }
+.dw-public[hidden] { display: none; }
+.dw-public code, .setup-cmd code, .wiz-fp { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; user-select: all; }
+.dw-public .dw-copy, .setup-cmd .card-btn { position: absolute; top: 5px; right: 5px; }
 .dw-copy.copied, .setup-cmd .card-btn.copied { color: var(--go); }
-.dw-paste { margin-top: 12px; }
-.dw-paste summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
-.dw-link { min-height: 32px; margin-top: 10px; padding: 0; background: none; border: 0; box-shadow: none; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; font-weight: 600; }
-.dw-link:hover { color: var(--text); transform: none; }
-.dw-link[hidden] { display: none; }
-.danger-link { display: block; margin-top: 26px; color: var(--danger); }
-.dw-ai .check-line { margin-top: 6px; }
-input.dw-hinted::placeholder { color: var(--muted); opacity: 0.75; }
-.dw-work { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
-.dw-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
-.dw-tab { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 14px; border-radius: 999px; font-size: 0.9rem; }
-.dw-tab svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.dw-tab[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 30%, var(--glass)); }
-.dw-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
-.dw-panel[hidden], .dw-grant[hidden], .dw-editor[hidden], .dw-files[hidden] { display: none; }
-.dw-panel-head { display: flex; align-items: center; gap: 8px; }
-.dw-panel-head h3 { flex: 1; margin: 0; }
-.dw-panel-head > button:not(.icon-button) { min-height: 38px; padding: 0 14px; }
-.dw-grant { padding: 14px; border-radius: var(--radius-button); background: var(--field); border: 1px solid var(--glass-border); }
-.dw-grant p { margin: 0 0 10px; font-size: 0.9rem; }
-.dw-grant form { display: flex; gap: 8px; }
-.dw-grant input { flex: 1; margin: 0; }
+.dw-links { display: flex; flex-wrap: wrap; gap: 4px 16px; margin-top: 8px; }
+.dw-links .link, .dw-hint .link { min-height: 36px; margin: 0; }
+.dw-links [hidden] { display: none; }
+.dw-ai { display: flex; flex-direction: column; }
+.danger-link { align-self: flex-start; margin-top: 4px; color: var(--danger); }
+.danger-link:hover { color: var(--danger); }
+/* The right side: the segment slider of the file tile, then the work; the status line at the foot. */
+.dw-work { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+.dw-work-head { display: flex; align-items: center; gap: 8px; }
+.dw-tabs { flex: 1; max-width: 560px; }
+.dw-tabs .file-tab, .dw-sources .file-tab { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.dw-tabs .file-tab-label, .dw-sources .file-tab-label { display: inline; }
+.dw-tabs .file-tab svg { display: inline; width: 17px; height: 17px; }
+@media (max-width: 640px) { .dw-tabs .file-tab-label { display: none; } }
+.dw-connect { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px; border-radius: 16px; border: 1px dashed var(--file-line); }
+.dw-connect[hidden] { display: none; }
+.dw-connect-icon { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; color: var(--accent); background: color-mix(in srgb, var(--glass) 70%, transparent); border: 1px solid var(--glass-border); box-shadow: inset 0 1px 0 var(--highlight), 0 4px 12px rgba(60, 30, 10, 0.12); }
+.dw-connect-icon svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.dw-connect p { margin: 0; max-width: 420px; color: var(--muted); }
+.dw-connect form { display: flex; gap: 10px; width: min(420px, 100%); }
+.dw-connect input { flex: 1; margin: 0; }
+.dw-connect .primary { width: auto; margin: 0; min-height: 50px; padding: 0 22px; }
+.dw-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+.dw-panel[hidden], .dw-editor[hidden], .dw-files[hidden] { display: none; }
 /* The terminal: --term-bg and --term-fg are design variables (a later skin may change them). */
-:root { --term-bg: #1b1410; --term-fg: #f6e6d8; --led-white: #ffffff; }
-.dw-term { flex: 1; min-height: 240px; padding: 8px; border-radius: 10px; background: var(--term-bg); overflow: hidden; }
+:root { --term-bg: #1b1410; --term-fg: #f6e6d8; --led-white: #fff8f0; }
+.dw-term { flex: 1; min-height: 260px; padding: 10px; border-radius: 14px; background: var(--term-bg); overflow: hidden; box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3); }
 .dw-term .xterm { height: 100%; }
-.dw-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem; color: var(--muted); }
+/* Files: an explorer. Path of folders to click, columns, rows as quiet lines; drop zone glows like the file tile. */
+.dw-files-head { display: flex; align-items: center; gap: 8px; }
+.dw-crumbs { flex: 1; min-width: 0; display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; padding: 3px; border-radius: 12px; border: 1px solid var(--file-line); background: color-mix(in srgb, var(--field) 70%, transparent); box-shadow: inset 0 1px 3px rgba(80, 40, 10, 0.14); }
+.dw-crumbs::-webkit-scrollbar { display: none; }
+.dw-crumbs button { flex: none; min-height: 30px; padding: 0 10px; border-radius: 9px; background: none; border: 0; box-shadow: none; font-size: 0.85rem; font-weight: 600; color: var(--muted); }
+.dw-crumbs button:hover { color: var(--text); transform: none; }
+.dw-crumbs button[aria-current] { color: var(--text); background: color-mix(in srgb, var(--accent) 30%, var(--glass)); }
+.dw-crumbs button + button::before { content: "›"; margin-right: 8px; color: var(--muted); }
 .dw-upload { display: inline-grid; place-items: center; cursor: pointer; }
-.dw-files { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-height: 0; }
-.dw-file { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 8px; border-bottom: 1px solid var(--file-line); }
-.dw-file-name { flex: 1; min-width: 0; min-height: 36px; padding: 0; text-align: left; background: none; border: 0; box-shadow: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-.dw-file-name:hover { transform: none; text-decoration: underline; }
-.dw-file.dir .dw-file-name { color: var(--accent); }
-.dw-file small { color: var(--muted); font-size: 0.78rem; white-space: nowrap; }
-.dw-inline { flex: 1; margin: 4px 0; }
-.dw-empty { padding: 10px 4px; }
-.dw-editor { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.dw-files-cols, .dw-file { display: grid; grid-template-columns: minmax(0, 1fr) 90px 110px 76px; align-items: center; column-gap: 10px; }
+.dw-files-cols { padding: 0 10px; font-size: 0.75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.dw-files { list-style: none; margin: 0; padding: 4px; overflow-y: auto; flex: 1; min-height: 0; border-radius: 14px; border: 1px solid var(--file-line); background: color-mix(in srgb, var(--glass) 40%, transparent); }
+.dw-files.dropping { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 40%, transparent); }
+.dw-file { min-height: 42px; padding: 0 6px; border-radius: 8px; }
+.dw-file:hover { background: color-mix(in srgb, var(--glass) 70%, transparent); }
+.dw-file.hot { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.dw-file-name { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 40px; padding: 0 4px; text-align: left; background: none; border: 0; box-shadow: none; font-weight: 600; }
+.dw-file-name:hover { transform: none; }
+.dw-file-name span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dw-file-name svg { flex: none; width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); }
+.dw-file.dir .dw-file-name svg { color: var(--accent); }
+.dw-file-size, .dw-file-time { color: var(--muted); font-size: 0.8rem; white-space: nowrap; text-align: right; }
+.dw-file-tools { display: flex; justify-content: flex-end; gap: 2px; opacity: 0; transition: opacity 0.2s; }
+.dw-file:hover .dw-file-tools, .dw-file:focus-within .dw-file-tools { opacity: 1; }
+@media (hover: none) { .dw-file-tools { opacity: 1; } }
+.dw-inline { grid-column: 1 / -1; margin: 4px 0; }
+.dw-empty { display: block; padding: 14px 8px; }
+.dw-editor { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+.dw-editor-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem; color: var(--muted); }
+.dw-editor .dw-files-head > button { min-height: 40px; padding: 0 16px; }
+.dw-editor .dw-files-head > .primary { width: auto; margin: 0; }
 .dw-editor textarea { flex: 1; min-height: 240px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; resize: none; }
-.dw-src[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 30%, var(--glass)); }
-.dw-log { flex: 1; min-height: 240px; margin: 0; padding: 10px; overflow: auto; border-radius: 10px; background: var(--term-bg); color: var(--term-fg); font-size: 0.78rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
-.dw-history { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
-.dw-history li { padding: 8px 4px; border-bottom: 1px solid var(--file-line); }
+.dw-sources { width: 220px; }
+.dw-log { flex: 1; min-height: 240px; margin: 0; padding: 12px; overflow: auto; border-radius: 14px; background: var(--term-bg); color: var(--term-fg); font-size: 0.78rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dw-history { list-style: none; margin: 0; padding: 4px; overflow-y: auto; flex: 1; min-height: 0; border-radius: 14px; border: 1px solid var(--file-line); background: color-mix(in srgb, var(--glass) 40%, transparent); }
+.dw-history li { padding: 9px 10px; border-bottom: 1px solid var(--file-line); }
+.dw-history li:last-child { border-bottom: 0; }
 .dw-history strong { display: block; font-size: 0.92rem; }
 .dw-history small { color: var(--muted); font-size: 0.8rem; overflow-wrap: anywhere; }
-@media (pointer: coarse) { .dw-settings input, .dw-settings textarea, .dw-grant input, .dw-editor textarea, .dw-inline { font-size: 16px; } }
+.dw-status { margin-top: -2px; }
+@media (pointer: coarse) { .dw-side input, .dw-connect input, .dw-editor textarea, .dw-inline, .wiz-step input { font-size: 16px; } }
 @media (max-width: 900px) {
   .dw-body { display: flex; flex-direction: column; overflow-y: auto; }
-  .dw-settings { overflow: visible; padding-right: 2px; }
-  .dw-work { min-height: 70dvh; }
+  .dw-side { overflow: visible; margin: 0; padding: 0; }
+  .dw-work { min-height: 75dvh; }
+  .dw-files-cols, .dw-file { grid-template-columns: minmax(0, 1fr) 70px 64px; }
+  .dw-files-cols span:nth-child(3), .dw-file-time { display: none; }
 }
-/* The setup guide: one step per item, every command with a copy button. */
-.dialog.device-setup { max-width: 760px; max-height: 88dvh; overflow-y: auto; }
-.setup-steps { margin: 14px 0 0; padding-left: 22px; }
-.setup-steps li + li { margin-top: 16px; }
-.setup-steps h3 { margin: 0 0 4px; font-size: 1rem; }
-.setup-steps p { margin: 0 0 6px; font-size: 0.9rem; color: var(--muted); }
-.setup-cmd { position: relative; padding: 10px 44px 10px 12px; border-radius: var(--radius-button); background: var(--field); border: 1px solid var(--glass-border); }
-/* A narrow devices tile (the left column): the buttons go under the name, so the name keeps its room. */
-.mtile.m-devices { container-type: inline-size; }
-@container (max-width: 400px) {
-  .device-row { flex-wrap: wrap; row-gap: 4px; }
-  .device-row .check-text { flex: 1 1 calc(100% - 52px); }
-  .dev-buttons { flex-basis: 100%; justify-content: flex-end; }
-}
-/* Main buttons in the device window are as wide as their word (.primary is full width elsewhere). */
-.dw-buttons > .primary, .dw-panel-head > .primary, .dw-grant .primary, .dw-save .primary { width: auto; flex: none; min-height: 40px; margin-top: 0; padding: 0 16px; font-size: 0.95rem; }
-/* Ticks in the device window: real checkboxes at their own size (the field style of inputs is not for them). */
-.check-line input[type="checkbox"] { flex: none; width: 20px; height: 20px; min-height: 0; margin: 0; padding: 0; accent-color: var(--accent); box-shadow: none; }
-.check-line { min-height: 32px; }
-.dw-ai-pass-box .info-dot, #dw-ai-pass-box .info-dot { margin-left: 2px; }
-.dialog.device-setup h2 { display: flex; align-items: center; gap: 8px; }
+
+/* ===== The setup assistant: one step at a time ===== */
+.dialog.device-wizard { max-width: 640px; overflow: visible; }   /* visible: the hidden list of the select would make it scroll */
+.wiz-head { display: flex; align-items: center; gap: 10px; }
+.wiz-head h2 { flex: 1; margin: 0; outline: none; }
+.wiz-progress { display: flex; align-items: center; gap: 12px; margin: 10px 0 18px; }
+.wiz-dots { display: flex; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.wiz-dots li { width: 8px; height: 8px; border-radius: 50%; background: var(--field); box-shadow: inset 0 0 0 1px var(--glass-border); transition: transform 0.3s cubic-bezier(0.3, 1.4, 0.5, 1); }
+.wiz-dots li.done { background: color-mix(in srgb, var(--accent) 55%, var(--field)); }
+.wiz-dots li.now { background: var(--accent); transform: scale(1.3); }
+.wiz-count { font-size: 0.82rem; font-weight: 600; color: var(--muted); }
+.wiz-step[hidden] { display: none; }
+.wiz-step h3 { margin: 0 0 6px; font-size: 1.1rem; }
+.wiz-text { margin: 0 0 12px; color: var(--muted); line-height: 1.45; }
+.wiz-actions { display: flex; gap: 10px; margin: 6px 0; }
+.wiz-actions .primary, .wiz-actions button { width: auto; margin: 0; min-height: 46px; padding: 0 20px; }
+.wiz-actions [hidden] { display: none; }
+.wiz-state { min-height: 1.35em; margin: 6px 0; font-weight: 600; }
+.wiz-fp[hidden] { display: none; }
+.wiz-fp { padding: 10px 12px; border-radius: 10px; background: var(--field); border: 1px solid var(--glass-border); }
+.setup-cmd { position: relative; margin: 8px 0; padding: 10px 46px 10px 12px; border-radius: 10px; background: var(--field); border: 1px solid var(--glass-border); }
+.wiz-more { margin-top: 12px; }
+.wiz-more summary { cursor: pointer; font-weight: 600; color: var(--muted); min-height: 36px; display: flex; align-items: center; }
+.wiz-inline { display: flex; gap: 10px; align-items: center; }
+.wiz-inline input { flex: 1; margin: 0; }
+.wiz-inline button { min-height: 46px; padding: 0 18px; }
+.wiz-nav { margin-top: 20px; }
+.wiz-nav [hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .wiz-dots li { transition: none; } }
+.wiz-more summary { list-style: none; gap: 8px; }
+.wiz-more summary::-webkit-details-marker { display: none; }
+.wiz-more summary::before { content: "›"; display: inline-block; font-size: 1.1rem; transition: transform 0.3s cubic-bezier(0.3, 1.4, 0.5, 1); }
+.wiz-more[open] summary::before { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .wiz-more summary::before { transition: none; } }

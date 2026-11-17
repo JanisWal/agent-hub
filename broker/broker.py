@@ -276,7 +276,8 @@ async def op_online(device: dict, args: dict) -> dict:
 
 
 async def op_test(device: dict, args: dict) -> dict:
-    """Log in, find out the operating system and whether sudo allows the buttons' commands."""
+    """Log in, find out the operating system, its MAC address (for switching on) and whether sudo allows the
+    buttons' commands."""
     conn, secret = await connect(device)
     async with conn:
         code, out = await run(conn, profiles.DETECT, "", 20)
@@ -284,6 +285,10 @@ async def op_test(device: dict, args: dict) -> dict:
         if "Linux" not in out and "Darwin" not in out:
             _, windows = await run(conn, profiles.DETECT_WINDOWS, "", 20)
         family, name = profiles.detect(out, windows)
+        mac = ""
+        if profiles.mac_command(family):
+            _, found = await run(conn, profiles.mac_command(family), "", 20)
+            mac = profiles.find_mac(found)
         sudo = None
         if family and family != "windows":
             if secret:
@@ -291,7 +296,7 @@ async def op_test(device: dict, args: dict) -> dict:
             else:
                 code, out = await run(conn, profiles.SUDO_TEST, "", 20)
             sudo = code == 0
-    return {"family": family, "name": name, "sudo": sudo}
+    return {"family": family, "name": name, "sudo": sudo, "mac": mac}
 
 
 async def _action(device: dict, action: str) -> dict:

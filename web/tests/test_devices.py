@@ -163,17 +163,11 @@ class DevicesTest(unittest.TestCase):
         self.assertTrue(devices.ai_may(self.user.id, d.id, "reboot"))           # ... unless the user allowed it
         self.assertIsNotNone(devices.payload(self.user.id, d.id, "ai"))
 
-    def test_home_network_needs_the_owner(self):
+    def test_home_network_only_for_the_owners_devices(self):
         owner = users.create_user("o@example.com", "Oooo!pass12", role="owner")
         mine = devices.create(owner.id, projects.create_project(owner.id, "O").id, "Pi", "pi.local")
         self.assertTrue(mine.lan_ok)                                           # the owner's own devices
-        d = self.make()
-        self.assertFalse(d.lan_ok)
-        self.assertFalse(devices.set_lan(self.user.id, d.id, True))            # not the owner
-        self.assertEqual(devices.approvals(self.user.id), [])
-        self.assertEqual([a.device_id for a in devices.approvals(owner.id)], [d.id])
-        self.assertTrue(devices.set_lan(owner.id, d.id, True))
-        self.assertTrue(devices.payload(self.user.id, d.id)["lan_ok"])
+        self.assertFalse(self.make().lan_ok)                                   # nobody else's
 
     def test_the_manager_knows_the_inventory_but_never_keys_or_logins(self):
         d = self.make("Roadster", "roadster.local", "Car computer", key="topsecret", kind="raspberry_pi", ssh_user="pi")
@@ -200,7 +194,9 @@ class DevicesTest(unittest.TestCase):
         self.assertTrue(rule.startswith("pi ALL=(root) NOPASSWD: /usr/bin/systemctl reboot, "))
         self.assertIn(r"Dpkg\:\:Options\:\:\=--force-confdef", rule)               # sudoers specials escaped
         self.assertEqual(device_profiles.sudoers("debian", "bad user"), "")
-        self.assertEqual(device_profiles.supported("windows"), ("reboot", "poweroff"))
+        self.assertEqual(device_profiles.supported("windows"), device_profiles.ACTIONS)   # updates via PSWindowsUpdate
+        self.assertIn("modules", dict(device_profiles.guide("windows", "admin", "", "x")))
+        self.assertEqual(device_profiles.find_mac('"0A-1B-2C-3D-4E-5F","x"'), "0a:1b:2c:3d:4e:5f")
         self.assertEqual(device_profiles.count_updates("x\nAGENTHUB_UPDATES=7\n"), 7)
         steps = dict(device_profiles.guide("debian", "pi", "ssh-ed25519 AAAAC3Nz agent-hub", "pi.local"))
         self.assertIn("ssh-ed25519 AAAAC3Nz agent-hub", steps["key"])
@@ -254,17 +250,13 @@ class DevicesTest(unittest.TestCase):
         self.answers["keygen"] = {"sealed": "PLAINTEXT", "public": "ssh-ed25519 AAAA"}
         self.assertEqual(R.device_keygen(d.id, user=self.user).status_code, 400)           # never stores clear text
 
-    def test_serious_actions_need_the_password_a_search_does_not(self):
+    def test_the_buttons_need_no_password(self):
         d = self.ready()
-        wrong = R.device_action(FakeRequest(), d.id, "reboot", "nope", user=self.user)
-        self.assertEqual(wrong.status_code, 403)
-        self.assertNotIn("start", [c[0] for c in self.calls])
-        self.assertTrue(R.device_action(FakeRequest(), d.id, "reboot", "Aaaa!pass12", user=self.user)["ok"])
+        self.assertTrue(R.device_action(FakeRequest(), d.id, "reboot", "", user=self.user)["ok"])
         self.assertTrue(R.device_action(FakeRequest(), d.id, "update", "", user=self.user)["ok"])
         self.assertEqual(self.calls[-1][2]["action"], "updates_check")
         devices.set_updates(self.user.id, d.id, found=3)
-        self.assertEqual(R.device_action(FakeRequest(), d.id, "update", "", user=self.user).status_code, 403)  # install
-        self.assertEqual(R.device_action(FakeRequest(), d.id, "update", "Aaaa!pass12", user=self.user)["action"], "updates_install")
+        self.assertEqual(R.device_action(FakeRequest(), d.id, "update", "", user=self.user)["action"], "updates_install")
         self.assertEqual(R.device_action(FakeRequest(), d.id, "toast", "", user=self.user).status_code, 400)
 
     def test_state_takes_a_finished_job_over_once(self):
@@ -299,18 +291,90 @@ class DevicesTest(unittest.TestCase):
             os.environ.pop("HUB_BASE_URL")
         self.assertTrue(R._origin_ok("http://127.0.0.1:8000", "127.0.0.1:8000"))
 
-    def test_the_tile_shows_led_buttons_and_the_suggested_address(self):
+    def test_the_tile_shows_led_buttons_picture_and_the_suggested_address(self):
         d = self.ready()
         devices.set_ip_hint(self.user.id, d.id, "192.168.1.5")
         html = devicepage.tile("de", devices.list_devices(self.user.id, self.project.id))
         self.assertIn('class="dev-led"', html)
         self.assertIn('data-btn="power"', html)
         self.assertIn('<span class="dev-hint"', html)
-        self.assertNotIn('data-btn="update" aria-label="Updates" data-tip="Updates" disabled', html)
         plain = self.make("Plain", "plain.local")
-        html = devicepage.row("de", devices.get(self.user.id, plain.id))
-        self.assertIn("disabled", html)                                                  # nothing works before trust
+        self.assertIn("disabled", devicepage.row("de", devices.get(self.user.id, plain.id)))   # nothing before setup
         self.assertIn("Diesen Namen", devicepage.dialogs("de"))
+        self.assertIn('id="device-wizard"', devicepage.dialogs("en"))
+
+    def test_login_secret_and_mac_on_their_own(self):
+        d = self.make()
+        self.assertTrue(R.device_login(d.id, "pi", "2222", "DC-A6-32-01-02-03", user=self.user)["ok"])
+        d = devices.get(self.user.id, d.id)
+        self.assertEqual((d.ssh_user, d.ssh_port, d.mac), ("pi", 2222, "dc:a6:32:01:02:03"))
+        self.assertEqual(R.device_login(d.id, "a b", "22", None, user=self.user).status_code, 400)
+        self.assertEqual(R.device_login(d.id, "pi", "22", "nope", user=self.user).status_code, 400)
+        self.assertTrue(R.device_secret(d.id, "password", "pw!", "", user=self.user)["ok"])
+        self.assertEqual(self.opened(self.stored(d.id)), "pw!")
+        self.assertEqual(devices.get(self.user.id, d.id).auth, "password")
+        self.assertTrue(R.device_secret(d.id, "key", "", "1", user=self.user)["ok"])
+        self.assertEqual(self.stored(d.id), "")
+        self.assertNotIn("pw!", str(R.device_info(d.id, user=self.user)))
+
+    def test_a_dropped_picture_must_really_be_one(self):
+        import base64
+        d = self.make()
+        jpeg = "data:image/jpeg;base64," + base64.b64encode(b"\xff\xd8\xff\xe0" + b"x" * 40).decode()
+        self.assertTrue(R.device_picture(d.id, jpeg, user=self.user)["ok"])
+        self.assertIn('<img class="dev-picture"', devicepage.row("de", devices.get(self.user.id, d.id)))
+        fake = "data:image/png;base64," + base64.b64encode(b"<script>alert(1)</script>").decode()
+        for bad in (fake, "javascript:alert(1)", "data:image/svg+xml;base64,PHN2Zz4=", jpeg + "x" * devices.MAX_PICTURE):
+            self.assertEqual(R.device_picture(d.id, bad, user=self.user).status_code, 400)
+        self.assertTrue(R.device_picture(d.id, "", user=self.user)["ok"])
+        self.assertEqual(devices.get(self.user.id, d.id).picture, "")
+
+    def test_the_ai_picks_a_pictogram_only_from_the_set(self):
+        d = self.make("Küche", kind="raspberry_pi")
+        with db.connect() as conn:
+            self.assertTrue(devices.set_icon_ai(conn, self.project.id, "küche", "dev_display"))
+            self.assertFalse(devices.set_icon_ai(conn, self.project.id, "Küche", "evil\"><script>"))
+        self.assertEqual(devices.get(self.user.id, d.id).icon, "dev_display")
+
+    def test_the_manager_only_asks_and_the_user_decides(self):
+        d = self.ready()
+        with db.connect() as conn:   # not allowed yet: dropped
+            self.assertFalse(devices.request_action(conn, self.user.id, self.project.id, "Roadster", "reboot", "x"))
+        devices.set_ai(self.user.id, d.id, ["reboot"], False)
+        with db.connect() as conn:
+            self.assertTrue(devices.request_action(conn, self.user.id, self.project.id, "roadster", "reboot", "Kernel update"))
+            self.assertFalse(devices.request_action(conn, self.user.id, self.project.id, "Roadster", "reboot", "again"))
+            self.assertFalse(devices.request_action(conn, self.user.id, self.project.id, "Roadster", "poweroff", "x"))
+        asks = devices.open_requests(self.user.id, self.project.id)
+        self.assertEqual([(a.device, a.action, a.reason) for a in asks], [("Roadster", "reboot", "Kernel update")])
+        self.assertTrue(R.device_request(asks[0].id, "yes", user=self.user)["started"])
+        self.assertEqual(self.calls[-1][0], "start")
+        self.assertEqual(devices.open_requests(self.user.id, self.project.id), [])
+        self.assertEqual(R.device_request(asks[0].id, "yes", user=self.user).status_code, 404)   # once only
+
+    def test_the_manager_answer_creates_the_request(self):
+        d = self.ready()
+        devices.set_ai(self.user.id, d.id, ["updates_check"], False)
+        from app import claude_link
+        claude_link.begin(self.user.id)
+        claude_link.complete(self.user.id, True)
+        chat.send(self.user.id, self.project.id, "Gibt es Updates?")
+        job = chat.claim_next()
+        self.assertIn("you may ask for: updates_check", job.prompt)
+        chat.finish(job.chat_id, True, 'Ich frage nach. <device name="Roadster" action="updates_check">Lange nicht geprüft</device>')
+        self.assertEqual([a.action for a in devices.open_requests(self.user.id, self.project.id)], ["updates_check"])
+        self.assertNotIn("<device", chat.list_messages(self.user.id, self.project.id)[0].answer)
+
+    def test_switching_on_needs_a_mac_and_the_home_network(self):
+        d = self.ready()
+        self.assertEqual(R.device_action(FakeRequest(), d.id, "wake", "", user=self.user).status_code, 400)   # no MAC
+        devices.set_login(self.user.id, d.id, "pi", 22, "dc:a6:32:01:02:03")
+        self.assertEqual(R.device_action(FakeRequest(), d.id, "wake", "", user=self.user).status_code, 400)   # not the owner's network
+        with db.connect() as conn:
+            conn.execute("UPDATE devices SET lan_ok = 1")
+        self.assertEqual(R.device_action(FakeRequest(), d.id, "wake", "", user=self.user)["action"], "wake")
+        self.assertEqual(devices.claim_wake(), "dc:a6:32:01:02:03")
+        self.assertIsNone(devices.claim_wake())                                   # handed out once
 
 
 if __name__ == "__main__":

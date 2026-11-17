@@ -40,6 +40,8 @@ async def handle(process: asyncssh.SSHServerProcess):
         process.stdout.write(OS_RELEASE)
     elif "updates" in command or "upgradable" in command:
         process.stdout.write("AGENTHUB_UPDATES=3\n")
+    elif "/sys/class/net" in command:
+        process.stdout.write("dc:a6:32:01:02:03\n")
     elif "journalctl" in command:
         process.stdout.write("boot ok\n")
     elif command.startswith("sudo -S"):
@@ -122,7 +124,8 @@ class BrokerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_the_test_finds_the_system_with_a_key_and_with_a_password(self):
         answer = (await self.ask("test", self.device()))[0]
-        self.assertEqual((answer["family"], answer["name"], answer["sudo"]), ("debian", "Debian GNU/Linux 13", True))
+        self.assertEqual((answer["family"], answer["name"], answer["sudo"], answer["mac"]),
+                         ("debian", "Debian GNU/Linux 13", True, "dc:a6:32:01:02:03"))
         answer = (await self.ask("test", self.device(auth="password", secret=B.seal("pw"))))[0]
         self.assertTrue(answer["ok"])
         self.assertTrue(any(c.startswith("sudo -S -p ''") for c in COMMANDS))     # the password goes on stdin
