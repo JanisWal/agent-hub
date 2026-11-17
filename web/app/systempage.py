@@ -31,12 +31,14 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
   <div class="sys-list glass">
     %BACKUP%
     <div class="sys-row sys-upload" data-url="/system/upload">
-      <div class="sys-main"><span class="sys-name">%t.sys_upload%</span>%UPLOAD_INFO%</div>
+      <span class="sys-name">%t.sys_upload%</span>
       <div class="sys-fields">%UPLOAD_FIELDS%</div>
+      %UPLOAD_INFO%
     </div>
     <div class="sys-row sys-upload" data-url="/system/ai">
-      <div class="sys-main"><span class="sys-name">%t.sys_ai%</span>%AI_INFO%</div>
+      <span class="sys-name">%t.sys_ai%</span>
       <div class="sys-fields">%AI_FIELD%</div>
+      %AI_INFO%
     </div>
     %REBOOT%
     %POWEROFF%
