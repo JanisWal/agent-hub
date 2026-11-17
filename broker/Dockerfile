@@ -7,5 +7,7 @@ RUN pip install --no-cache-dir asyncssh==2.24.0 pyrage==1.3.0
 WORKDIR /app
 COPY broker/ /app/broker/
 COPY web/app/device_profiles.py /app/broker/device_profiles.py
+# A user without an entry in /etc/passwd: asyncssh asks for the local name, and nothing of a home is read.
+ENV USER=broker LOGNAME=broker HOME=/nonexistent
 USER 65532:65532
 CMD ["python", "-u", "-m", "broker.broker"]
