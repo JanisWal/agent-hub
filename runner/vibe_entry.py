@@ -21,7 +21,7 @@ HOME = Path(os.environ.get("HOME", "/home/vibe"))
 LEVELS = {"none": "off", "off": "off", "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max"}
 # Tools per job (always by --disabled-tools: with --enabled-tools Vibe hides its deferred web tools in headless runs).
 OFF_ALWAYS = ("ask_user_question", "powershell*", "git_bash*", "task")
-OFF_JOB = {"chat-all": (), "chat-apart": ("web_fetch",), "run": ()}
+OFF_JOB = {"chat-all": (), "chat-apart": ("web_fetch",), "chat-brief": ("*",), "run": ()}   # brief: the status, no tools
 
 
 def config(model: str, level: str) -> str:

@@ -24,3 +24,11 @@ def manager_settings(model: str = Form(""), autonomy: str = Form(""), net: str =
     current = agents.settings(user.id)
     manager = current["roles"]["chef"]
     return ok(model=manager["model"], effort=manager["effort"], autonomy=current["autonomy"], net=manager["net"])
+
+
+@router.post("/projects/{project_id}/status/again")
+def status_again(project_id: int, user: users.User = Depends(api_user)):
+    """Ask for a new written status now (statusnote.request): 'queued', 'wait' or 'none' (no AI); foreign is 404."""
+    from .. import statusnote
+    result = statusnote.request(user.id, project_id)
+    return fail(404) if result == "missing" else ok(result=result)

@@ -12,7 +12,7 @@ import time
 
 from urllib.parse import urlsplit
 
-from . import agents, catalog, checks, devices as devicestore, files as filestore, i18n, serversettings, status as statusmod, ui, vault
+from . import agents, catalog, checks, devices as devicestore, files as filestore, i18n, serversettings, status as statusmod, statusnote, ui, vault
 from .icons import icon
 from .layout import esc, fill
 
@@ -83,16 +83,23 @@ def _when(lang: str, moment: int | None, now: int) -> str:
     return i18n.t(lang, "status_ago_days", n=seconds // 86400)
 
 
-def _status_tile(lang: str, a: statusmod.Assessment | None, now: int) -> str:
-    """The assessment of the project (status.py): the lamp, how work is going, how far the project is, the numbers
-    and what explains an amber or red lamp. Counted from the data, no AI."""
-    lamp = a.lamp if a else "none"
+def _status_tile(lang: str, a: statusmod.Assessment | None, now: int, note: statusnote.Note | None = None) -> str:
+    """The state of the project: the written status of the AI (statusnote.py) as headline and one or two sentences,
+    else the counted wording (status.py); the lamp (the AI's level, never below what the hub counted), the progress,
+    the numbers and what explains an amber or red lamp. The round arrow asks for a new written status."""
+    lamp = statusnote.lamp(a.lamp if a else "none", note)
+    again = esc(i18n.t(lang, "status_again"))
     head = (f'<header><h2>{esc(i18n.t(lang, "manager_status"))}</h2>'
             f'{ui.info_dot(i18n.t(lang, "manager_status"), i18n.t(lang, "status_hint"))}'
+            f'<button class="icon-button card-btn status-again" type="button" id="status-again" aria-label="{again}" '
+            f'data-tip="{again}" data-wait="{esc(i18n.t(lang, "status_again_wait"))}" '
+            f'data-none="{esc(i18n.t(lang, "status_again_none"))}" data-queued="{esc(i18n.t(lang, "status_again_queued"))}" data-note="{note.created_at if note else 0}">{icon("refresh")}</button>'
             f'<span class="m-lamp lamp-{lamp}" role="img" aria-label="{esc(i18n.t(lang, "status_lamp_" + lamp))}" '
             f'data-tip="{esc(i18n.t(lang, "status_lamp_" + lamp))}"></span></header>')
-    if a is None or (a.total == 0 and a.last_activity is None):
-        return f'<section class="mtile glass m-status" id="status">{head}<p class="muted">{esc(i18n.t(lang, "status_empty"))}</p></section>'
+    say = '<p class="muted status-say" id="status-say" role="status" aria-live="polite"></p>'
+    if a is None or (a.total == 0 and a.last_activity is None and note is None):
+        return (f'<section class="mtile glass m-status" id="status">{head}'
+                f'<p class="muted">{esc(i18n.t(lang, "status_empty"))}</p>{say}</section>')
     facts = "".join(
         f'<div><dt>{esc(i18n.t(lang, key))}</dt><dd>{value}</dd></div>'
         for key, value in (("status_planned", a.planned), ("status_in_progress", a.in_progress),
@@ -100,16 +107,22 @@ def _status_tile(lang: str, a: statusmod.Assessment | None, now: int) -> str:
     extra = [i18n.t(lang, key, n=n) for key, n in (("status_proposals", a.proposals), ("status_todos", a.todos_open),
                                                     ("status_checks_due", a.checks_due)) if n]
     reasons = "".join(f'<li>{esc(i18n.t(lang, "status_reason_" + code))}</li>' for code in a.reasons)
+    if note is not None and note.title:
+        headline = esc(note.title)
+        when = esc(i18n.t(lang, "status_written", when=_when(lang, note.created_at, now)))
+    else:
+        headline = esc(i18n.t(lang, "status_activity_" + a.activity))
+        when = esc(i18n.t(lang, "status_last", when=_when(lang, a.last_activity, now)))
+    written = f'<p class="status-note">{esc(note.text)}</p>' if note is not None and note.text else ""
     return (
         f'<section class="mtile glass m-status" id="status">{head}'
-        f'<p class="status-line"><strong>{esc(i18n.t(lang, "status_activity_" + a.activity))}</strong>'
-        f'<small>{esc(i18n.t(lang, "status_last", when=_when(lang, a.last_activity, now)))}</small></p>'
+        f'<p class="status-line"><strong>{headline}</strong><small>{when}</small></p>{written}'
         f'<div class="status-progress"><progress max="100" value="{a.progress}" aria-label="{esc(i18n.t(lang, "status_progress", n=a.progress))}"></progress>'
         f'<span>{esc(i18n.t(lang, "status_progress", n=a.progress))}</span></div>'
         f'<dl class="status-facts">{facts}</dl>'
         + (f'<ul class="status-reasons">{reasons}</ul>' if reasons else "")
         + (f'<p class="muted status-extra">{esc(" · ".join(extra))}</p>' if extra else "")
-        + '</section>'
+        + say + '</section>'
     )
 
 
@@ -582,7 +595,8 @@ def _waiting_tile(lang: str, autonomy: str, waiting: list[tuple[agents.Task, str
 def render(lang: str, settings: dict, regular_checks: list | None = None, now: int | None = None,
            stored_files: list | None = None, files_confirm: bool = True, trashed_files: list | None = None,
            ais: tuple[str, ...] = ("claude",), waiting: list | None = None, versions: list | None = None,
-           assessment: statusmod.Assessment | None = None, device_list: list | None = None) -> str:
+           assessment: statusmod.Assessment | None = None, device_list: list | None = None,
+           note: statusnote.Note | None = None) -> str:
     """`settings` is agents.settings(user_id): the manager is the role "chef". `regular_checks` are the
     project's checks (checks.list_checks). `ais`: the providers the user has connected (their models are offered).
     `waiting`: (task, last report) of agents.waiting_tasks, the decisions of "waiting for you"."""
@@ -593,7 +607,7 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
     return fill(
         MANAGER,
         lang,
-        STATUS=_status_tile(lang, assessment, int(now if now is not None else time.time())),
+        STATUS=_status_tile(lang, assessment, int(now if now is not None else time.time()), note),
         DEVICES=_devices_tile(lang, device_list or []),
         CHECKS=_checks_tile(lang, regular_checks or [], int(now if now is not None else time.time())),
         FILES=_files_tile(lang, stored_files or [], files_confirm),

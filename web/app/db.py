@@ -222,6 +222,20 @@ CREATE TABLE IF NOT EXISTS work_wipes (
     created_at INTEGER NOT NULL,
     PRIMARY KEY (kind, ref)
 );
+-- The written status of a project (statusnote.py, KONZEPT-AGENTEN.md 9.7; 17.11.2026): what the AI wrote in its last
+-- status rounds, newest last, a few kept per project. `source` 'ai' is a note; 'failed' marks a round that brought
+-- none, so the hub does not try again at once. `fingerprint` is the hash of the facts the AI read.
+CREATE TABLE IF NOT EXISTS project_status (
+    id          INTEGER PRIMARY KEY,
+    project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    level       TEXT NOT NULL DEFAULT '',
+    title       TEXT NOT NULL DEFAULT '',
+    text        TEXT NOT NULL DEFAULT '',
+    source      TEXT NOT NULL DEFAULT 'ai',
+    fingerprint TEXT NOT NULL DEFAULT '',
+    created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS project_status_by_project ON project_status (project_id, id);
 -- Settings of the whole server, chosen by the owner (serversettings.py), e.g. how uploads are cut.
 CREATE TABLE IF NOT EXISTS server_settings (
     key   TEXT PRIMARY KEY,
@@ -248,7 +262,8 @@ NEW_COLUMNS = {
                       "memory_saved": "INTEGER NOT NULL DEFAULT 0",   # the answer updated the memory file
                       "effort": "TEXT NOT NULL DEFAULT ''",           # effort level (catalog.py); '' = older question
                       "provider": "TEXT NOT NULL DEFAULT 'claude'",   # which AI answers (catalog.PROVIDERS)
-                      "tried": "TEXT NOT NULL DEFAULT ''"},           # AIs that could not answer it (chat fallback)
+                      "tried": "TEXT NOT NULL DEFAULT ''",            # AIs that could not answer it (chat fallback)
+                      "kind": "TEXT NOT NULL DEFAULT 'chat'"},        # 'chat' or 'status' (a status round, statusnote.py)
     "agent_runs": {"effort": "TEXT NOT NULL DEFAULT ''",     # effort level of the run's model (catalog.py)
                    "provider": "TEXT NOT NULL DEFAULT 'claude'"},   # which AI does the run (aichoice.py)
     "agent_tasks": {"merged": "INTEGER NOT NULL DEFAULT 0"},   # the runner merged the approved branch (agents.py)

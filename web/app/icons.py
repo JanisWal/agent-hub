@@ -34,6 +34,16 @@ ICONS = {
     "dev_mac": '<rect x="5" y="5" width="14" height="10" rx="1.5"/><path d="M2.5 19h19l-1.5-4H4z"/>',
     "dev_chip": '<rect x="7" y="7" width="10" height="10" rx="1.5"/><path d="M10 3v4M14 3v4M10 17v4M14 17v4M3 10h4M3 14h4M17 10h4M17 14h4"/>',
     "dev_router": '<rect x="3" y="14" width="18" height="6" rx="2"/><path d="M7 17v.01M11 17v.01M8 14l-2-6M16 14l2-6"/>',
+    "dev_linux": '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/><path d="M10.4 13c-.6-.9-.3-2 .2-2.8.3-.5.4-1 .4-1.6a1 1 0 0 1 2 0c0 .6.1 1.1.4 1.6.5.8.8 1.9.2 2.8"/>',
+    # Device actions and the device window (17.11.2026): power, restart (a circle with an arrow), update (a line with
+    # an arrow up above it), the shell, the files and the logs of a device
+    "power": '<path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>',
+    "refresh": '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
+    "update": '<path d="M5 20h14"/><path d="M12 16V4M7 9l5-5 5 5"/>',
+    "terminal": '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/>',
+    "folder": '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+    "list": '<path d="M8 6h13M8 12h13M8 18h13M3.5 6v.01M3.5 12v.01M3.5 18v.01"/>',
+    "copy": '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
     "dev_box": '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M9 12h6"/>',
     "key": '<circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3L21 2M16 7l3 3M13.5 9.5l2.5 2.5"/>',
     "crown": '<path d="M3 7l4.5 4L12 4l4.5 7L21 7l-2 11H5z"/><path d="M5 21h14"/>',

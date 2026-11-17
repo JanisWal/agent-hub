@@ -169,6 +169,15 @@ def provider_of(model: str | None) -> str:
     return hit[0].id if hit else DEFAULT_PROVIDER
 
 
+def light(provider_id: str = DEFAULT_PROVIDER) -> tuple[str, str]:
+    """The cheapest choice of a provider for small jobs such as the written status (statusnote.py): the first model
+    of its list marked "fast" (else its first model) with that model's first, lowest level. From the list, never fixed
+    in the code."""
+    models = provider(provider_id).models
+    model = next((m for m in models if m.hint == "fast"), models[0])
+    return model.id, model.efforts[0] if model.efforts else model.default_effort
+
+
 def check(model: str, effort: str | None = None, provider_id: str | None = None) -> None:
     """ValueError if the model is not in the list (of `provider_id`, or of any provider), or the level is not one of
     this model's."""

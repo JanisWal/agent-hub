@@ -529,6 +529,14 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 .status-facts dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
 .status-reasons { margin: 12px 0 0; padding-left: 18px; font-size: 0.85rem; font-weight: 600; }
 .status-extra { margin-top: 10px; font-size: 0.8rem; }
+/* The written status of the AI (statusnote.py, 17.11.2026): headline in bold above, one or two sentences below. The
+   round arrow asks for a new one; what the hub answers stands in the quiet line at the foot (fixed place, empty = no
+   height). */
+.status-note { margin-top: 6px; font-size: 0.9rem; line-height: 1.45; overflow-wrap: anywhere; }
+.status-line strong { overflow-wrap: anywhere; }
+.m-status header .status-again { flex: none; }
+.status-say { font-size: 0.8rem; margin-top: 8px; min-height: 0; }
+.status-say:empty { display: none; }
 
 /* ===== Devices tile: the check-row list, with the key lock and a description line ===== */
 .device-desc { overflow-wrap: anywhere; }
