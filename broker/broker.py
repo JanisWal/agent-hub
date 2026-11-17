@@ -657,6 +657,7 @@ async def _limited(function, device, args):
 async def main() -> None:
     if not os.environ.get("HUB_BROKER_TOKEN") or not os.environ.get("HUB_VAULT_IDENTITY"):
         print("broker: HUB_BROKER_TOKEN and HUB_VAULT_IDENTITY are needed", flush=True)
+    _browser_key()   # made once at start (a few seconds on the Pi), not while a request waits
     server = await asyncio.start_server(handle, "0.0.0.0", PORT, limit=MAX_LINE + 1024)
     print(f"broker: listening on {PORT}", flush=True)
     async with server:
