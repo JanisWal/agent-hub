@@ -14,7 +14,7 @@ os.environ.setdefault("HUB_VAULT_PUBLIC", str(pyrage.x25519.Identity.generate().
 from app import board, db, devices, projects, users  # noqa: E402
 
 db.DB_PATH = os.environ["HUB_DB"]
-password = "Prev!" + os.urandom(6).hex()
+password = os.environ.get("PREVIEW_PASSWORD") or "Prev!" + os.urandom(6).hex()
 user = users.create_user("preview@example.com", password, role="owner")
 users.set_profile(user.id, "Janis", sys.argv[1] if len(sys.argv) > 1 else "de")
 project = projects.create_project(user.id, "Roadster")
@@ -28,6 +28,10 @@ devices.set_ip_hint(user.id, display.id, "192.168.178.31")
 for name, kind in (("Werkstatt-PC", "windows_pc"), ("NAS", "linux_server"), ("MacBook", "mac"), ("ESP32 Heizung", "microcontroller"),
                    ("Fritzbox", "router"), ("Steckdose", "other"), ("Linux-Laptop", "linux_pc"), ("Build-Server", "windows_server")):
     devices.create(user.id, project.id, name, name.lower().replace(" ", "-").replace("ü", "ue") + ".local", kind=kind)
+devices.set_ai(user.id, pi.id, ["reboot", "updates_check"], False)
+with db.connect() as conn:
+    devices.request_action(conn, user.id, project.id, "Server", "reboot", "Nach dem Kernel-Update ist ein Neustart nötig.")
+    devices.set_icon_ai(conn, project.id, "NAS", "dev_storage")
 with db.connect() as conn:
     conn.execute("INSERT INTO project_status (project_id, level, title, text, source, created_at) VALUES (?, 'green',"
                  " 'Heizungssteuerung im Test', 'Die Abschaltung ist eingegrenzt, ein Fehler am Relais ist offen. Als"
