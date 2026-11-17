@@ -553,7 +553,7 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 
 /* ===== Devices, broker (17.11.2026, Janis): rows like the files, LED, three round glass buttons, the device window ===== */
 .device-list { overflow-y: auto; padding: 4px 6px; margin: 0 -6px; overscroll-behavior: contain; }
-.device-row { cursor: pointer; }
+.device-row { cursor: pointer; flex-shrink: 0; }   /* the list scrolls, rows keep their height */
 .device-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .device-row .check-text { flex: 1; min-width: 0; }
 .device-row .check-title { display: flex; align-items: center; gap: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -666,3 +666,17 @@ input.dw-hinted::placeholder { color: var(--muted); opacity: 0.75; }
 .setup-steps h3 { margin: 0 0 4px; font-size: 1rem; }
 .setup-steps p { margin: 0 0 6px; font-size: 0.9rem; color: var(--muted); }
 .setup-cmd { position: relative; padding: 10px 44px 10px 12px; border-radius: var(--radius-button); background: var(--field); border: 1px solid var(--glass-border); }
+/* A narrow devices tile (the left column): the buttons go under the name, so the name keeps its room. */
+.mtile.m-devices { container-type: inline-size; }
+@container (max-width: 400px) {
+  .device-row { flex-wrap: wrap; row-gap: 4px; }
+  .device-row .check-text { flex: 1 1 calc(100% - 52px); }
+  .dev-buttons { flex-basis: 100%; justify-content: flex-end; }
+}
+/* Main buttons in the device window are as wide as their word (.primary is full width elsewhere). */
+.dw-buttons > .primary, .dw-panel-head > .primary, .dw-grant .primary, .dw-save .primary { width: auto; flex: none; min-height: 40px; margin-top: 0; padding: 0 16px; font-size: 0.95rem; }
+/* Ticks in the device window: real checkboxes at their own size (the field style of inputs is not for them). */
+.check-line input[type="checkbox"] { flex: none; width: 20px; height: 20px; min-height: 0; margin: 0; padding: 0; accent-color: var(--accent); box-shadow: none; }
+.check-line { min-height: 32px; }
+.dw-ai-pass-box .info-dot, #dw-ai-pass-box .info-dot { margin-left: 2px; }
+.dialog.device-setup h2 { display: flex; align-items: center; gap: 8px; }
