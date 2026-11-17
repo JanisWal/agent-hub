@@ -27,7 +27,7 @@ FIELDS_NEW = """<label>%t.devices_name%<input name="name" required maxlength="%M
       <label>%t.devices_hostname%<input name="hostname" required maxlength="%MAX_HOSTNAME%" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="server.fritz.box"></label>
       <label>%t.devices_ip%<input name="ip" maxlength="%MAX_IP%" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="decimal" placeholder="192.168.178.20"></label>
     </div>
-    <label>%t.devices_description%<input name="description" maxlength="%MAX_DESCRIPTION%" autocomplete="off"></label>"""
+    <label>%t.devices_description%<textarea name="description" maxlength="%MAX_DESCRIPTION%" rows="3" autocomplete="off"></textarea></label>"""
 
 DIALOGS = """<dialog class="dialog device-dialog" id="device-dialog" %ERRS%>
   <form method="post" action="" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
@@ -86,25 +86,26 @@ DIALOGS = """<dialog class="dialog device-dialog" id="device-dialog" %ERRS%>
   <section class="wiz-step" data-step="guide" data-guide="ssh_on"></section>
   <section class="wiz-step" data-step="guide" data-guide="user"></section>
   <section class="wiz-step" data-step="access">
-    <h3>%t.setup_title_key%</h3>
+    <h3>%t.dev_wiz_key_title%</h3>
     <p class="wiz-text">%t.dev_wiz_access_text%</p>
     <div class="wiz-actions"><button type="button" class="primary" id="wiz-keygen">%t.dev_keygen%</button></div>
     <p class="wiz-state" id="wiz-key-state" role="status"></p>
     <div id="wiz-key-cmd"></div>
-    <details class="wiz-more"><summary>%t.dev_wiz_use_password%</summary>
-      <p class="wiz-text">%t.dev_wiz_password_text%</p>
-      <div class="wiz-inline"><input type="password" id="wiz-pass" maxlength="256" autocomplete="new-password" aria-label="%t.dev_auth_password%" placeholder="%t.dev_auth_password%">
-        <button type="button" id="wiz-pass-save">%t.save%</button></div>
-    </details>
     <details class="wiz-more"><summary>%t.dev_paste%</summary>
       <p class="wiz-text">%t.dev_paste_note%</p>
       <textarea class="device-key" id="wiz-key" maxlength="%MAX_KEY%" autocomplete="off" autocapitalize="off" spellcheck="false" rows="4" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
       <div class="wiz-inline"><button type="button" id="wiz-key-save">%t.save%</button></div>
     </details>
   </section>
+  <section class="wiz-step" data-step="password">
+    <h3>%t.dev_wiz_pass_title%</h3>
+    <p class="wiz-text">%t.dev_wiz_password_text%</p>
+    <div class="wiz-inline"><input type="password" id="wiz-pass" maxlength="256" autocomplete="new-password" aria-label="%t.dev_auth_password%" placeholder="%t.dev_wiz_pass_placeholder%">
+      <button type="button" id="wiz-pass-save">%t.save%</button></div>
+    <p class="wiz-state" id="wiz-pass-state" role="status"></p>
+  </section>
   <section class="wiz-step" data-step="guide" data-guide="sudoers"></section>
   <section class="wiz-step" data-step="guide" data-guide="modules"></section>
-  <section class="wiz-step" data-step="guide" data-guide="no_password"></section>
   <section class="wiz-step" data-step="hostkey">
     <h3>%t.dev_wiz_hostkey%</h3>
     <p class="wiz-text">%t.dev_connection_info%</p>
@@ -129,7 +130,7 @@ DIALOGS = """<dialog class="dialog device-dialog" id="device-dialog" %ERRS%>
 
 <dialog class="dialog device-window" id="device-window" aria-labelledby="dw-name" %ERRS%
     data-saved="%t.dev_saved%" data-key-stored="%t.devices_key_stored%" data-key-own="%t.dev_key_own%" data-key-none="%t.dev_key_none%"
-    data-pass-stored="%t.dev_pass_stored%" data-host-known="%t.dev_host_known_short%" data-host-none="%t.dev_host_none_short%"
+    data-pass-stored="%t.dev_pass_stored%" data-pass-none="%t.dev_pass_none_short%" data-host-known="%t.dev_host_known_short%" data-host-none="%t.dev_host_none_short%"
     data-sudo-ok="%t.dev_sudo_ok_short%" data-sudo-no="%t.dev_sudo_no_short%" data-os-none="%t.dev_os_none_short%"
     data-led-on="%t.dev_led_on%" data-led-off="%t.dev_led_off%" data-led-busy="%t.dev_led_busy%" data-led-unknown="%t.dev_led_unknown%"
     data-updates="%t.dev_updates_waiting%" data-reboot-needed="%t.dev_reboot_needed%" data-found="%t.dev_updates_found%" data-none="%t.dev_updates_none%"
@@ -216,7 +217,6 @@ DIALOGS = """<dialog class="dialog device-dialog" id="device-dialog" %ERRS%>
           %SHELL_INFO%
         </div>
         <div class="dw-connect" id="dw-connect" hidden>
-          <span class="dw-connect-icon" aria-hidden="true">%KEY%</span>
           <p>%t.dev_connect_text%</p>
           <form id="dw-connect-form" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
             <input type="password" name="password" required autocomplete="current-password" aria-label="%t.dev_pass_label%" placeholder="%t.dev_pass_label%">
@@ -269,7 +269,7 @@ FIELD_ERRORS = ("name", "kind", "ip", "hostname", "description", "key", "duplica
                 "mac", "auth", "other")
 HISTORY = ("trust", "forget_host", "test", "keygen", "secret", "shell", "file_get", "file_put", "file_rename",
            "file_delete", "file_mkdir", "file_write", "wake")
-FACTS = ("kind", "hostname", "ip", "system", "user", "mac", "description", "login", "hostkey", "rights")
+FACTS = ("kind", "hostname", "ip", "system", "user", "mac", "description", "login", "password", "hostkey", "rights")
 
 
 def _errs(lang: str) -> str:
@@ -306,7 +306,7 @@ def dialogs(lang: str) -> str:
                  f'<span>{esc(i18n.t(lang, "dev_action_" + a))}</span></label>' for a in devicestore.AI_CHOICES)
     return fill(
         DIALOGS, lang, FIELDS_NEW=_fields(lang), ERRS=_errs(lang), NAMES=_names(lang), AI_CHOICES=ai,
-        CHEVRON=icon("chevron_down"), CROSS=icon("cross"), COPY=icon("copy"), PENCIL=icon("pencil"), KEY=icon("key"),
+        CHEVRON=icon("chevron_down"), CROSS=icon("cross"), COPY=icon("copy"), PENCIL=icon("pencil"),
         TERMINAL=icon("terminal"), FOLDER=icon("folder"), LIST=icon("list"), NOTE=icon("note"), PLUS=icon("plus"),
         ARROW_LEFT=icon("arrow_left"), REFRESH=icon("refresh"), POWER=icon("power"), UPDATE=icon("update"),
         FOLDER_E=esc(icon("folder")), FILE_E=esc(icon("file")), PENCIL_E=esc(icon("pencil")), TRASH_E=esc(icon("trash")),
@@ -336,16 +336,13 @@ def picture(device: devicestore.Device) -> str:
 def row(lang: str, device: devicestore.Device) -> str:
     acts = device.actions
     pending = devicestore.updates_pending(device)
-    address = (f' · {esc(device.ip)}' if device.ip else
-               f' · <span class="dev-hint" data-tip="{esc(i18n.t(lang, "dev_ip_hint"))}">{esc(device.ip_hint)}</span>'
-               if device.ip_hint else "")
     return (
         f'<li class="file-row device-row{" has-updates" if pending else ""}" data-id="{device.id}" tabindex="0" '
         f'data-trusted="{1 if device.trusted else 0}" data-name="{esc(device.name)}">'
         f'<span class="file-tile device-tile" aria-hidden="true">{picture(device)}</span>'
         f'<span class="dev-text"><span class="dev-name"><span class="dev-led" role="img" '
         f'aria-label="{esc(i18n.t(lang, "dev_led_unknown"))}"></span><span class="dev-name-text">{esc(device.name)}</span></span>'
-        f'<small>{esc(i18n.t(lang, "device_kind_" + device.kind))} · {esc(device.hostname)}{address}</small></span>'
+        f'<small>{esc(i18n.t(lang, "device_kind_" + device.kind))} · {esc(device.hostname)}</small></span>'
         f'<span class="dev-buttons">'
         + _button(lang, "power", "power", "poweroff" in acts or device.can_wake)
         + _button(lang, "reboot", "refresh", "reboot" in acts)

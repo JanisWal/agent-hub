@@ -99,7 +99,8 @@
   }
   function keyState() {
     if (!device) return;
-    state("wiz-key-state", device.has_key ? (device.auth === "password" ? t("passStored") : t("keyStored")) : "");
+    state("wiz-key-state", device.has_key ? t("keyStored") : "");
+    state("wiz-pass-state", device.has_password ? t("passStored") : "");
   }
 
   function open(id, done) {
@@ -165,13 +166,10 @@
       loadDevice().then(function () { return loadGuide($("wiz-family").value); }).then(keyState);
     });
   });
-  function saveSecret(auth, value, field) {
+  function saveSecret(kind, value, field) {
     if (!value) return;
-    var body = new FormData();
-    body.append("auth", auth);
-    body.append("secret", value);
-    UI.post(url("/secret"), body).then(function (answer) {
-      if (!answer.ok) { fail(answer.error === "key" ? "failed" : answer.error); return; }
+    UI.sealSecret(device.id, kind, value).then(function (answer) {
+      if (!answer.ok) { fail(answer.error === "bad" ? "secret" : answer.error); return; }
       field.value = "";
       loadDevice().then(keyState);
     });

@@ -18,19 +18,30 @@
     // (--fold from 1 to 0), so the other tile can show all it has. The usual minimum is read before the CSS of a
     // shared column sets it to 0.
     var natural = [a, b].map(function (tile) { return parseFloat(getComputedStyle(tile).minHeight) || 80; });
-    function folded(tile) {   // the height at which only the header is left
-      if (tile.querySelector(":scope > .split-extra")) return needed(tile, true);
+    function extra(tile) { return tile.querySelector(":scope > .split-extra"); }
+    // A tile with a part marked .split-extra (the status text, Janis 17.11.2026) rests where everything but that part
+    // shows, with its own padding below (harmonious, not cut), and opens only as far as that part reaches (no empty
+    // block). Measured from where the children really are, margins included.
+    function bottom(tile, withoutExtra) {
+      var top = tile.getBoundingClientRect().top, low = 0, style = getComputedStyle(tile);
+      Array.prototype.forEach.call(tile.children, function (child) {
+        if (withoutExtra && child.classList.contains("split-extra")) return;
+        if (child.offsetParent === null || !child.getBoundingClientRect().height) return;
+        low = Math.max(low, child.getBoundingClientRect().bottom + (parseFloat(getComputedStyle(child).marginBottom) || 0));
+      });
+      return low - top + parseFloat(style.paddingBottom) + (parseFloat(style.borderBottomWidth) || 0);
+    }
+    function folded(tile) {   // the height at which only the header is left (or, with an extra, all but the extra)
+      if (extra(tile)) return bottom(tile, true);
       var style = getComputedStyle(tile), head = tile.querySelector(":scope > header");
       return (head ? head.offsetHeight : 0) + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + 2;
     }
-    // A tile with a part marked .split-extra (the status text, Janis 17.11.2026) gives way only down to everything
-    // but that part: it is folded away at first and the splitter brings it out.
     // What the tile needs to show all it has: padding, header and every visible child with the gaps between them
     // (14.11.2026: a hint taller than the minimum ran out of the tile, after a reload with a saved height).
-    function needed(tile, withoutExtra) {
+    function needed(tile) {
+      if (extra(tile)) return bottom(tile, false);
       var style = getComputedStyle(tile), gap = parseFloat(style.rowGap) || 0, sum = 0, count = 0;
       Array.prototype.forEach.call(tile.children, function (child) {
-        if (withoutExtra && child.classList.contains("split-extra")) return;
         if (child.offsetParent === null && getComputedStyle(child).position !== "fixed") return;   // hidden
         sum += child.offsetHeight;
         count++;
@@ -74,13 +85,23 @@
     function limits() {   // each tile keeps at least its header
       var ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
       var fa = fixed(a), inner = ra.height + rb.height - fa - fixed(b);
-      return { top: ra.top, fixed: fa, total: inner, low: Math.min((folded(a) - fa) / inner, 0.5),
-               high: Math.max(1 - (folded(b) - fixed(b)) / inner, 0.5) };
+      var high = Math.max(1 - (folded(b) - fixed(b)) / inner, 0.5);
+      if (extra(a)) high = Math.min(high, (needed(a) - fa) / inner);   // not further than the text reaches
+      return { top: ra.top, fixed: fa, total: inner, low: Math.min((folded(a) - fa) / inner, extra(a) ? 1 : 0.5),
+               high: Math.max(high, Math.min((folded(a) - fa) / inner, 1)) };
     }
     function clamp(value, box) { return Math.min(Math.max(value, box.low), box.high); }
     var saved = load(name);
-    if (saved > 0 && saved < 1) apply(saved);
-    window.addEventListener("resize", fade);
+    // A tile with an extra rests folded at first (its text hidden): that is its place until the user pulls it out.
+    function rest() {
+      if (!extra(a) || load(name) > 0 || !col.offsetParent || !col.getBoundingClientRect().height) return;
+      var box = limits();
+      apply(box.low);
+    }
+    if (saved > 0 && saved < 1) apply(saved); else rest();
+    window.addEventListener("resize", function () { if (load(name) > 0) fade(); else rest(); });
+    window.addEventListener("load", rest);
+    document.addEventListener("agenthub:view", function () { setTimeout(rest, 30); });
     // Shown again (another station) or resized: measure anew.
     if (window.ResizeObserver) new ResizeObserver(function () { fade(); }).observe(col);
     window.addEventListener("load", fade);   // fonts and pictures may change the heights after the first look
@@ -110,7 +131,7 @@
     }
     split.addEventListener("pointerup", end);
     split.addEventListener("pointercancel", end);
-    split.addEventListener("dblclick", function () { apply(null); store(name, null); });
+    split.addEventListener("dblclick", function () { store(name, null); apply(null); rest(); });
     split.addEventListener("keydown", function (event) {
       var step = { ArrowUp: -0.05, ArrowDown: 0.05 }[event.key];
       if (step === undefined) return;

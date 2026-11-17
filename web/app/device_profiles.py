@@ -218,8 +218,5 @@ def guide(family: str, user: str, public_key: str, hostname: str) -> list[tuple[
         rule = sudoers(family, user)
         steps.append(("sudoers", f"echo '{rule}' | sudo tee /etc/sudoers.d/agent-hub && sudo chmod 440 "
                                  f"/etc/sudoers.d/agent-hub && sudo visudo -c" if rule else ""))
-        steps.append(("no_password", "" if family == "macos" else
-                      "echo 'PasswordAuthentication no' | sudo tee /etc/ssh/sshd_config.d/10-agent-hub.conf && "
-                      "sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd"))
     steps.append(("test", ""))
     return steps

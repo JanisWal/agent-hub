@@ -130,7 +130,7 @@ def _info(device: devices.Device, lang: str) -> dict:
     return {"id": device.id, "name": device.name, "kind": device.kind, "hostname": device.hostname, "ip": device.ip,
             "description": device.description, "ip_hint": device.ip_hint, "mac": device.mac,
             "picture": device.picture, "icon": device.icon, "trusted": device.trusted, "ssh_user": device.ssh_user, "ssh_port": device.ssh_port,
-            "auth": device.auth, "has_key": device.has_key, "public_key": device.public_key,
+            "has_key": device.has_key, "has_password": device.has_password, "public_key": device.public_key,
             "host_fp": device.host_fp, "pinned_ip": device.pinned_ip, "os_family": device.os_family,
             "os_name": device.os_name, "sudo_ok": device.sudo_ok, "lan_ok": device.lan_ok,
             "ai_actions": list(device.ai_actions), "ai_password": device.ai_password,
@@ -239,18 +239,39 @@ def device_login(device_id: int, ssh_user: str = Form(""), ssh_port: str = Form(
     return fail(404) if done is None else ok()
 
 
+@router.get("/devices/sealkey")
+def device_sealkey(user: users.User = Depends(api_user)):
+    """The broker's public key for the browser's end-to-end encryption of a pasted key or password (17.11.2026)."""
+    answer = _broker("browser_key", None)
+    return answer if isinstance(answer, JSONResponse) else ok(spki=answer["spki"])
+
+
 @router.post("/devices/{device_id}/secret")
-def device_secret(device_id: int, auth: str = Form("key"), secret: str = Form(""), remove: str = Form(""),
+def device_secret(device_id: int, kind: str = Form("key"), wrapped: str = Form(""), remove: str = Form(""),
                   user: users.User = Depends(api_user)):
-    """Store a pasted key or a password (sealed at once, never sent back), or remove the stored one."""
+    """Store a key or a password the browser encrypted for the broker (`wrapped`, JSON {k, iv, c}): the broker opens
+    and seals it, this service never sees it in the clear. Or remove the stored one."""
+    kind, removing = _given(kind, "key"), _given(remove, "") == "1"
+    if devices.get(user.id, device_id) is None:
+        return fail(404)
+    sealed = None
+    if not removing:
+        try:
+            box = json.loads(_given(wrapped, "") or "{}")
+        except ValueError:
+            return _bad("bad")
+        if not isinstance(box, dict) or not all(isinstance(box.get(k), str) and len(box[k]) < 20000 for k in ("k", "iv", "c")):
+            return _bad("bad")
+        answer = _broker("reseal", None, wrapped={k: box[k] for k in ("k", "iv", "c")}, kind=kind)
+        if isinstance(answer, JSONResponse):
+            return answer
+        sealed = answer.get("sealed", "")
     try:
-        done = devices.set_secret(user.id, device_id, _given(auth, "key"), _given(secret, ""), _given(remove, "") == "1")
+        done = devices.set_secret(user.id, device_id, kind, remove=removing, sealed=sealed)
     except ValueError as exc:
         return _bad(str(exc))
-    if done is None:
-        return fail(404)
-    devices.log(device_id, user.id, "secret", "removed" if _given(remove, "") == "1" else "ok")
-    return ok()
+    devices.log(device_id, user.id, "secret", "removed" if removing else kind)
+    return ok() if done else fail(404)
 
 
 @router.post("/devices/{device_id}/picture")

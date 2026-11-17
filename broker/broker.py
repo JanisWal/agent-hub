@@ -53,7 +53,8 @@ MAX_SHELLS = 4
 ERRORS = ("token", "bad", "target", "address_changed", "unreachable", "refused", "timeout", "auth", "host_key_unknown",
           "host_key_changed", "secret", "unsupported", "sudo", "busy", "not_allowed", "failed", "missing", "exists")
 CGNAT = ipaddress.ip_network("100.64.0.0/10")   # Tailscale addresses count as public here
-HUMAN_ONLY = ("shell", "ls", "get", "put", "rename", "delete", "mkdir", "read", "write", "logs", "keygen", "test")
+HUMAN_ONLY = ("shell", "ls", "get", "put", "rename", "delete", "mkdir", "read", "write", "logs", "keygen", "test",
+              "browser_key", "reseal")
 
 JOBS: dict[str, dict] = {}
 _shells = {"open": 0}
@@ -168,13 +169,16 @@ def _check_origin(op: str, device: dict, origin: str) -> None:
     if origin == "ai":
         if op in HUMAN_ONLY:
             raise BrokerError("not_allowed")
-        if device.get("auth") == "password" and not device.get("ai_password"):
-            raise BrokerError("not_allowed")   # a password is for the human unless the user allowed it for the AI
+        if device.get("password") and not device.get("ai_password"):
+            device["password"] = ""            # the password is the human's unless the user allowed it for the AI
+        if not device.get("secret") and not device.get("password"):
+            raise BrokerError("not_allowed")
 
 
 async def connect(device: dict) -> tuple[asyncssh.SSHClientConnection, str]:
-    """An SSH connection with the trusted host key and the device's own login. Returns (connection, secret) where
-    the secret is the password (for sudo -S) or "" for a key."""
+    """An SSH connection with the trusted host key and the device's own login: its key and, if stored (and allowed for
+    this origin, see _check_origin), its password; SSH tries the key first. Returns (connection, password) where the
+    password is for sudo -S ("" without one: then the sudoers rule must allow the command)."""
     if not device.get("host_key"):
         raise BrokerError("host_key_unknown")
     try:
@@ -182,18 +186,17 @@ async def connect(device: dict) -> tuple[asyncssh.SSHClientConnection, str]:
     except (ValueError, asyncssh.KeyImportError):
         raise BrokerError("host_key_unknown") from None
     address = await target(device)
-    secret = unseal(device.get("secret", "")) if device.get("secret") else ""
+    key = unseal(device["secret"]) if device.get("secret") else ""
+    password = unseal(device["password"]) if device.get("password") else ""
     options = {"username": device.get("user") or None, "known_hosts": ([trusted], [], []),
                "connect_timeout": CONNECT_TIMEOUT, "keepalive_interval": 30, "agent_path": None,
-               "client_keys": [], "password": None, "kbdint_auth": False}
-    if device.get("auth") == "password":
-        options["password"] = secret or None
-    elif secret:
+               "client_keys": [], "password": password or None, "kbdint_auth": False}
+    if key:
         try:
-            options["client_keys"] = [asyncssh.import_private_key(secret)]
+            options["client_keys"] = [asyncssh.import_private_key(key)]
         except (ValueError, asyncssh.KeyImportError):
             raise BrokerError("secret") from None
-        secret = ""
+    key = None
     try:
         conn = await asyncssh.connect(address, _port(device), **options)
     except asyncssh.HostKeyNotVerifiable:
@@ -206,7 +209,7 @@ async def connect(device: dict) -> tuple[asyncssh.SSHClientConnection, str]:
         raise BrokerError("refused") from None
     except (OSError, asyncssh.Error):
         raise BrokerError("unreachable") from None
-    return conn, secret
+    return conn, password
 
 
 def _with_sudo(cmd: str, secret: str) -> tuple[str, str | None]:
@@ -370,6 +373,61 @@ async def op_logs(device: dict, args: dict) -> dict:
     return {"text": out[-MAX_LOG:]}
 
 
+# --- end to end from the browser (17.11.2026): a pasted key or password is encrypted in the browser with WebCrypto
+# (AES-256-GCM, its key wrapped with RSA-OAEP SHA-256 to this broker's public key) and only opened here, then sealed
+# with age at once. Cloudflare and the web service see ciphertext only. The RSA key pair lives in memory, made at
+# start: after a restart the page simply fetches the new public key.
+_BROWSER = {}
+
+
+def _browser_key():
+    if "private" not in _BROWSER:
+        from cryptography.hazmat.primitives.asymmetric import rsa
+        _BROWSER["private"] = rsa.generate_private_key(public_exponent=65537, key_size=3072)
+    return _BROWSER["private"]
+
+
+async def op_browser_key(device: dict, args: dict) -> dict:
+    from cryptography.hazmat.primitives import serialization
+    spki = _browser_key().public_key().public_bytes(serialization.Encoding.DER,
+                                                    serialization.PublicFormat.SubjectPublicKeyInfo)
+    return {"spki": base64.b64encode(spki).decode("ascii")}
+
+
+def open_from_browser(wrapped: dict) -> str:
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    try:
+        aes = _browser_key().decrypt(base64.b64decode(wrapped["k"]), padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None))
+        clear = AESGCM(aes).decrypt(base64.b64decode(wrapped["iv"]), base64.b64decode(wrapped["c"]), None)
+        return clear.decode("utf-8")
+    except Exception:
+        raise BrokerError("secret") from None
+
+
+async def op_reseal(device: dict, args: dict) -> dict:
+    """A secret from the browser: opened with the broker's key, checked, sealed with age. Nothing is kept."""
+    wrapped, kind = args.get("wrapped"), args.get("kind")
+    if not isinstance(wrapped, dict) or kind not in ("key", "password"):
+        raise BrokerError("bad")
+    text = open_from_browser(wrapped)
+    if kind == "password":
+        if not text or len(text) > 256 or any(c in text for c in "\x00\r\n"):
+            raise BrokerError("bad")
+    else:
+        text = text.replace("\r\n", "\n").replace("\r", "\n").strip("\n ")
+        if not text or len(text) > 8000 or "\x00" in text:
+            raise BrokerError("bad")
+        try:
+            asyncssh.import_private_key(text)
+        except (ValueError, asyncssh.KeyImportError):
+            raise BrokerError("secret") from None   # a key with a passphrase or no key at all can not be used
+        text += "\n"
+    return {"sealed": seal(text)}
+
+
 async def op_keygen(device: dict, args: dict) -> dict:
     """A new ed25519 key pair: the private part sealed at once, only the public line goes out."""
     key = asyncssh.generate_private_key("ssh-ed25519", comment="agent-hub")
@@ -519,7 +577,7 @@ async def op_shell(device: dict, args: dict, reader, writer) -> None:
         _shells["open"] -= 1
 
 
-SIMPLE = {"hostkey": op_hostkey, "resolve": op_resolve, "online": op_online, "test": op_test, "start": op_start, "job": op_job,
+SIMPLE = {"browser_key": op_browser_key, "reseal": op_reseal, "hostkey": op_hostkey, "resolve": op_resolve, "online": op_online, "test": op_test, "start": op_start, "job": op_job,
           "logs": op_logs, "keygen": op_keygen}
 FILES = ("ls", "get", "put", "rename", "delete", "mkdir", "read", "write")
 
@@ -563,7 +621,7 @@ async def handle(reader, writer) -> None:
             raise BrokerError("bad")
         _check_origin(op, device, request.get("origin", "human"))
         if op in SIMPLE:
-            result = await (SIMPLE[op](device, args) if op in ("start", "job", "keygen")
+            result = await (SIMPLE[op](device, args) if op in ("start", "job", "keygen", "browser_key", "reseal")
                             else _limited(SIMPLE[op], device, args))
             await _send(writer, {"ok": True, **result})
         elif op in FILES:
@@ -599,6 +657,7 @@ async def _limited(function, device, args):
 async def main() -> None:
     if not os.environ.get("HUB_BROKER_TOKEN") or not os.environ.get("HUB_VAULT_IDENTITY"):
         print("broker: HUB_BROKER_TOKEN and HUB_VAULT_IDENTITY are needed", flush=True)
+    _browser_key()   # made once at start (a few seconds on the Pi), not while a request waits
     server = await asyncio.start_server(handle, "0.0.0.0", PORT, limit=MAX_LINE + 1024)
     print(f"broker: listening on {PORT}", flush=True)
     async with server:

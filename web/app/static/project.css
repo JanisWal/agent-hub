@@ -10,7 +10,9 @@
 
 /* The project page fills the window down to the same line as the chat window (96 px above the bottom, clear of the theme button): main keeps that padding, the columns stretch to it. */
 .project-page main { display: flex; align-items: stretch; place-items: initial; padding-top: 4px; }
-.project { flex: 1; min-width: 0; width: 100%; max-width: none; display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: calc(var(--space) * 3.5); align-items: stretch; }
+/* The stations are as wide as their longest name plus the same room on both sides (Janis, 17.11.2026: it ends with
+   symmetric space after "Programmierer"; in English or any later language too, nothing is cut). */
+.project { flex: 1; min-width: 0; width: 100%; max-width: none; display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: calc(var(--space) * 3.5); align-items: stretch; }
 
 /* ===== Stations: the segment slider of the file tabs, upright (Janis, 14.11.2026: the same look, not only the same
    mechanics). A sunken glass groove holds the stations; the open one sits on a glass thumb (segment.js) that slides
@@ -91,7 +93,7 @@ a.station:not(.active):hover { color: var(--text); }
 /* ===== Manager view: the second view of the page, tiles of the manager (DESIGN.md 10b) ===== */
 /* Three columns as Janis sketched them: status and devices | checks and files | chat above "waiting for you". The
    tall tiles (m-grow, m-chat) take the free height, so files and devices are "dynamic". */
-.manager { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(0, 1.6fr); gap: calc(var(--space) * 3); align-items: stretch; }
+.manager { min-width: 0; display: grid; grid-template-columns: minmax(0, 1.22fr) minmax(0, 1.2fr) minmax(0, 1.6fr); gap: calc(var(--space) * 3); align-items: stretch; }
 .mcol { min-width: 0; display: flex; flex-direction: column; gap: calc(var(--space) * 3); }
 .mtile.m-grow { flex: 1 1 0; }
 .mtile.m-chat { flex: 3 1 0; min-height: 360px; }
@@ -129,7 +131,6 @@ html.splitting, html.splitting * { cursor: row-resize !important; -webkit-user-s
   .mtile.m-shut > :not(header) { visibility: hidden; }
   /* The status text of the AI (split-extra): folded away until the splitter below the tile brings it out; only it
      fades, the rest of the tile stays (17.11.2026). */
-  .mcol:not(.split-set) .split-extra { display: none; }
   .mtile.has-extra.m-folded > :not(header) { opacity: 1; }
   .mtile.has-extra.m-folded > .split-extra { opacity: var(--fold, 1); }
   .mtile.has-extra.m-shut > :not(header) { visibility: visible; }
@@ -391,8 +392,11 @@ dialog.archive-day[open] { display: flex; flex-direction: column; width: min(760
 .file-row:hover::before { opacity: 1; }
 /* The lifted card keeps its old place under the pointer (Janis, 14.11.2026: at the lower edge it jumped up and down):
    a strip below it fills the 2 px it rose, so the pointer stays on the card. Only the look moves, not the hit area. */
-.file-row::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 0; }
-.file-row:hover::after { height: 3px; }
+.file-row::after { content: ""; position: absolute; left: 0; right: 0; top: 100%; height: 0; z-index: -1; }
+/* 17.11.2026 (Janis: at the very edge it still went up and down): while lifted, the hit area reaches 4 px past the
+   card on every side, behind its content (z-index -1 inside the card's own stacking context, so buttons still get
+   their clicks). The pointer stays "on" the card wherever it entered. A standard for every card that lifts. */
+.file-row:hover::after { top: -4px; bottom: -4px; left: -4px; right: -4px; height: auto; }
 .file-row:active { scale: 0.985; }
 .file-tile { flex: none; display: grid; place-items: center; width: 38px; height: 38px; border-radius: 6px; background: var(--field); border: 1px solid var(--file-line); box-shadow: inset 0 1px 3px rgba(80, 40, 10, 0.12); color: var(--muted); cursor: pointer; }
 .file-tile svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
@@ -545,24 +549,26 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 .m-devices, .device-window { --file-line: color-mix(in srgb, var(--text) 16%, transparent); --file-line-hover: color-mix(in srgb, var(--text) 40%, transparent); --file-soft: 0 4px 14px color-mix(in srgb, var(--text) 9%, transparent), 0 1px 2px color-mix(in srgb, var(--text) 10%, transparent); }
 .mtile.m-devices { container-type: inline-size; }
 .device-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: -8px -14px -10px; padding: 10px 14px 18px; gap: 8px; }
-.device-row { flex-shrink: 0; cursor: pointer; display: grid; grid-template-columns: 52px minmax(0, 1fr) auto; align-items: center; column-gap: 14px; padding: 8px 10px 8px 8px; min-height: 68px; }
+.device-row { flex-shrink: 0; cursor: pointer; display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; column-gap: 14px; padding: 9px 12px 9px 9px; min-height: 74px; }
 .device-row:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .device-row.hot { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent), var(--shadow); }
-.device-tile { width: 52px; height: 52px; border-radius: 10px; color: var(--accent); overflow: hidden; cursor: inherit; }
-.device-tile svg { width: 30px; height: 30px; stroke-width: 1.7; }
+.device-tile { width: 56px; height: 56px; border-radius: 10px; color: var(--accent); overflow: hidden; cursor: inherit; }
+.device-tile svg { width: 32px; height: 32px; stroke-width: 1.7; }
 .dev-picture { width: 100%; height: 100%; object-fit: cover; display: block; }
 .dev-text { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .dev-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-weight: 650; }
 .dev-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dev-text small { color: var(--muted); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dev-hint { opacity: 0.6; }   /* an address found in the network: a suggestion, not the user's */
 .dev-buttons { display: flex; gap: 8px; }
-/* A narrow tile (the left column): the picture spans two lines, name and kind on top, the three buttons spread
-   across the line below (Janis: the buttons may take more room). */
-@container (max-width: 420px) {
-  .device-row { grid-template-columns: 52px minmax(0, 1fr); grid-template-rows: auto auto; row-gap: 8px; }
-  .device-row .device-tile { grid-row: 1 / span 2; align-self: center; }
-  .device-row .dev-buttons { grid-column: 2; justify-content: space-between; max-width: 190px; }
+/* A narrow tile (the left column; Janis, 17.11.2026): the picture is a square over the full height of the card, from
+   its top to its bottom; next to it name and kind on top and the three buttons spread evenly below, both edges
+   lined up with the picture. */
+@container (max-width: 440px) {
+  .device-row { grid-template-columns: 80px minmax(0, 1fr); grid-template-rows: 1fr auto; column-gap: 14px; row-gap: 6px; align-items: stretch; padding: 9px 12px 9px 9px; }
+  .device-row .device-tile { grid-row: 1 / span 2; width: 80px; height: 80px; border-radius: 12px; align-self: center; }
+  .device-row .device-tile svg { width: 42px; height: 42px; }
+  .device-row .dev-text { justify-content: center; }
+  .device-row .dev-buttons { grid-column: 2; justify-content: space-between; }
 }
 /* LED: green on, red off, white while it restarts, shuts down or installs; no colour while unknown. */
 .dev-led { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--field); box-shadow: inset 0 0 0 1px var(--glass-border); }
@@ -661,8 +667,6 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 @media (max-width: 640px) { .dw-tabs .file-tab-label { display: none; } }
 .dw-connect { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px; border-radius: 16px; border: 1px dashed var(--file-line); }
 .dw-connect[hidden] { display: none; }
-.dw-connect-icon { display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; color: var(--accent); background: color-mix(in srgb, var(--glass) 70%, transparent); border: 1px solid var(--glass-border); box-shadow: inset 0 1px 0 var(--highlight), 0 4px 12px rgba(60, 30, 10, 0.12); }
-.dw-connect-icon svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .dw-connect p { margin: 0; max-width: 420px; color: var(--muted); }
 .dw-connect form { display: flex; gap: 10px; width: min(420px, 100%); }
 .dw-connect input { flex: 1; margin: 0; }

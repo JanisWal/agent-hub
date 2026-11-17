@@ -294,18 +294,24 @@
   }
 
   function showTip(el) {
+    // Inside an open modal dialog the tip must live in that dialog: the dialog sits in the top layer above the page,
+    // so a tip in <body> would be hidden behind it (17.11.2026: no "i" of the device window showed anything).
+    var home = el.closest("dialog[open]") || document.body;
+    if (tip.parentNode !== home) home.appendChild(tip);
     tip.textContent = el.dataset.tip;
     tip.classList.toggle("wide", el.classList.contains("info-dot"));   // an explanation, not a label
     tip.style.left = "0px";
     tip.style.top = "0px";
+    var origin = tip.getBoundingClientRect();   // a dialog with a transform moves the origin of position: fixed
+    var ox = origin.left, oy = origin.top;
     var r = el.getBoundingClientRect();
     var w = tip.offsetWidth;
     var h = tip.offsetHeight;
     var x = Math.min(Math.max(8, r.left + r.width / 2 - w / 2), window.innerWidth - w - 8);
     var below = r.bottom + 10 + h <= window.innerHeight - 8;
     tip.style.setProperty("--tip-from", below ? "4px" : "-4px");
-    tip.style.left = Math.round(x) + "px";
-    tip.style.top = Math.round(below ? r.bottom + 10 : r.top - h - 10) + "px";
+    tip.style.left = Math.round(x - ox) + "px";
+    tip.style.top = Math.round((below ? r.bottom + 10 : r.top - h - 10) - oy) + "px";
     tip.classList.add("show");
   }
 

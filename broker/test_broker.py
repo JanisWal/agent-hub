@@ -126,10 +126,10 @@ class BrokerTest(unittest.IsolatedAsyncioTestCase):
         answer = (await self.ask("test", self.device()))[0]
         self.assertEqual((answer["family"], answer["name"], answer["sudo"], answer["mac"]),
                          ("debian", "Debian GNU/Linux 13", True, "dc:a6:32:01:02:03"))
-        answer = (await self.ask("test", self.device(auth="password", secret=B.seal("pw"))))[0]
+        answer = (await self.ask("test", self.device(secret="", password=B.seal("pw"))))[0]
         self.assertTrue(answer["ok"])
         self.assertTrue(any(c.startswith("sudo -S -p ''") for c in COMMANDS))     # the password goes on stdin
-        self.assertEqual((await self.ask("test", self.device(auth="password", secret=B.seal("bad"))))[0]["error"], "auth")
+        self.assertEqual((await self.ask("test", self.device(secret="", password=B.seal("bad"))))[0]["error"], "auth")
 
     async def test_an_action_runs_as_a_job_with_the_profile_command(self):
         self.assertTrue((await self.ask("start", self.device(), action="updates_check", key="d1"))[0]["ok"])
@@ -145,7 +145,7 @@ class BrokerTest(unittest.IsolatedAsyncioTestCase):
     async def test_the_ai_never_gets_shell_files_logs_or_a_password(self):
         for op in ("shell", "ls", "get", "logs", "keygen", "test"):
             self.assertEqual((await self.ask(op, self.device(), origin="ai"))[0]["error"], "not_allowed", op)
-        device = self.device(auth="password", secret=B.seal("pw"))
+        device = self.device(secret="", password=B.seal("pw"))
         self.assertEqual((await self.ask("start", device, origin="ai", action="reboot", key="d2"))[0]["error"], "not_allowed")
         device["ai_password"] = True
         self.assertTrue((await self.ask("start", device, origin="ai", action="reboot", key="d2"))[0]["ok"])
@@ -170,6 +170,27 @@ class BrokerTest(unittest.IsolatedAsyncioTestCase):
         out = b"".join(base64.b64decode(m["out"]) for m in shell if "out" in m)
         self.assertIn(b"got:hello", out)
         self.assertIn("exit", shell[-1])
+
+    async def test_end_to_end_from_the_browser(self):
+        """What the browser does with WebCrypto: AES-GCM for the secret, its key wrapped with RSA-OAEP SHA-256."""
+        from cryptography.hazmat.primitives import hashes, serialization
+        from cryptography.hazmat.primitives.asymmetric import padding
+        from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+        spki = (await self.ask("browser_key"))[0]["spki"]
+        public = serialization.load_der_public_key(base64.b64decode(spki))
+        def wrap(text):
+            aes, iv = AESGCM.generate_key(bit_length=256), os.urandom(12)
+            k = public.encrypt(aes, padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None))
+            c = AESGCM(aes).encrypt(iv, text.encode(), None)
+            return {"k": base64.b64encode(k).decode(), "iv": base64.b64encode(iv).decode(), "c": base64.b64encode(c).decode()}
+        sealed = (await self.ask("reseal", wrapped=wrap("geheim!"), kind="password"))[0]["sealed"]
+        self.assertEqual(B.unseal(sealed), "geheim!")
+        key = self.client_key.export_private_key().decode()
+        self.assertEqual(B.unseal((await self.ask("reseal", wrapped=wrap(key), kind="key"))[0]["sealed"]).strip(), key.strip())
+        self.assertEqual((await self.ask("reseal", wrapped=wrap("not a key"), kind="key"))[0]["error"], "secret")
+        broken = wrap("x"); broken["c"] = base64.b64encode(b"tampered").decode()
+        self.assertEqual((await self.ask("reseal", wrapped=broken, kind="password"))[0]["error"], "secret")
+        self.assertEqual((await self.ask("reseal", origin="ai", wrapped=wrap("x"), kind="password"))[0]["error"], "not_allowed")
 
     async def test_keygen_seals_the_private_part(self):
         answer = (await self.ask("keygen"))[0]
