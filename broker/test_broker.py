@@ -32,7 +32,7 @@ async def handle(process: asyncssh.SSHServerProcess):
     COMMANDS.append(command)
     if command is None or command == "":
         process.stdout.write("$ ")
-        data = await process.stdin.read(5)
+        data = (await process.stdin.readline()).strip()   # the server's line editor gives whole lines
         process.stdout.write(f"got:{data}")
         process.exit(0)
         return
@@ -162,7 +162,7 @@ class BrokerTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue((await self.ask("delete", self.device(), path="/d"))[0]["ok"])
         self.assertEqual((await self.ask("delete", self.device(), path="/nothing"))[0]["error"], "missing")
         shell = await self.ask("shell", self.device(), size=[80, 24],
-                               follow=({"in": base64.b64encode(b"hello").decode()},))
+                               follow=({"in": base64.b64encode(b"hello\r").decode()},))
         self.assertTrue(shell[0]["ok"])
         out = b"".join(base64.b64decode(m["out"]) for m in shell if "out" in m)
         self.assertIn(b"got:hello", out)
