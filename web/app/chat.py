@@ -175,8 +175,8 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
         "SELECT text, cycle, days, last_done FROM checks WHERE project_id = ? ORDER BY id LIMIT ?",
         (project_id, CHECKS),
     ).fetchall()
-    machines = conn.execute(   # the key column is never read here: the manager knows what a device is, not how to get in
-        "SELECT name, hostname, description FROM devices WHERE project_id = ? ORDER BY id LIMIT ?",
+    machines = conn.execute(   # never the secret, the host key or the login: the manager knows what a device is, not how to get in
+        "SELECT name, kind, hostname, ip, ip_hint, os_name, description FROM devices WHERE project_id = ? ORDER BY id LIMIT ?",
         (project_id, DEVICES),
     ).fetchall()
     work = conn.execute(   # "For you": what the user does himself (todos.py), open ones first
@@ -205,8 +205,13 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
         f"{'due' if checks.is_due(c['cycle'], c['last_done'], now, c['days']) else 'not due yet'})"
         for c in regular
     ) or "(none)"
+    def address(d) -> str:   # the user's IP, else the one the hub found for the hostname (marked as a guess)
+        return d["ip"] or (f"{d['ip_hint']} (found for the hostname)" if d["ip_hint"] else "")
+
     device_list = "\n".join(
-        f"- {d['name']} ({d['hostname']})" + (f": {_clip(d['description'], NOTE_CUT)}" if d["description"] else "")
+        f"- {d['name']}: {d['kind'].replace('_', ' ')}, host {d['hostname']}"
+        + (f", IP {address(d)}" if address(d) else "") + (f", runs {d['os_name']}" if d["os_name"] else "")
+        + (f"; {_clip(d['description'], NOTE_CUT)}" if d["description"] else "")
         for d in machines) or "(none)"
     own_work = "\n".join(
         f"- {t['text']} (open)" if t["done_at"] is None
@@ -218,7 +223,8 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
     def context() -> str:
         memory = "\n\n".join(talks) or "(no earlier questions)"
         return (f"{head}\n\nOpen board items:\n{board}\n\nRegular checks (your recurring to-dos, not board items):\n"
-                f"{routine}\n\nDevices of the project (you never get their keys and do not switch hardware):\n{device_list}"
+                f"{routine}\n\nDevices of the project (its inventory: use it to know which device the user means; you never get "
+                f"their keys, never use their shell and never restart or switch them):\n{device_list}"
                 f"\n\nFor you (work the user does himself, by hand; you advise and keep the state):\n{own_work}"
                 f"\n\nEarlier questions in this project:\n{memory}")
 

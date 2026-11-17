@@ -138,6 +138,20 @@ CREATE TABLE IF NOT EXISTS devices (
     created_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS devices_by_project ON devices (project_id, id);
+-- What happened on a device (devices.log, 17.11.2026): connections, shell sessions with their length, actions and
+-- file transfers, who did it and whether a human or the AI asked. Never what was typed. Goes with the device.
+CREATE TABLE IF NOT EXISTS device_log (
+    id         INTEGER PRIMARY KEY,
+    device_id  INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    user_id    INTEGER,
+    origin     TEXT NOT NULL DEFAULT 'human',
+    action     TEXT NOT NULL,
+    result     TEXT NOT NULL DEFAULT '',
+    detail     TEXT NOT NULL DEFAULT '',
+    seconds    INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS device_log_by_device ON device_log (device_id, id);
 -- "For you" (todos.py, Janis 16.11.2026): work the user does himself (hardware, fitting, errands), done once,
 -- with a note of what he did. Decisions are not here but in "waiting for you" (Manager view).
 CREATE TABLE IF NOT EXISTS todos (
@@ -272,6 +286,17 @@ NEW_COLUMNS = {
     "checks": {"days": "TEXT NOT NULL DEFAULT '1111111'"},   # weekdays of a daily check, Monday first (checks.py)
     "power_requests": {"result": "TEXT"},                    # how a manual backup ended: 'ok' or 'failed' (power.py)
     "claude_connections": {"expires_at": "INTEGER"},         # when the user's Claude token runs out (claude_link.py)
+    # The broker's side of a device (devices.py, 17.11.2026): login, the trusted host key and address, the system it
+    # runs, what the AI may do, the found updates. `key_enc` holds the key or the password (`auth`), sealed by vault.py.
+    "devices": {"ssh_user": "TEXT NOT NULL DEFAULT ''", "ssh_port": "INTEGER NOT NULL DEFAULT 22",
+                "auth": "TEXT NOT NULL DEFAULT 'key'", "public_key": "TEXT NOT NULL DEFAULT ''",
+                "host_key": "TEXT NOT NULL DEFAULT ''", "host_fp": "TEXT NOT NULL DEFAULT ''",
+                "pinned_ip": "TEXT NOT NULL DEFAULT ''", "os_family": "TEXT NOT NULL DEFAULT ''",
+                "os_name": "TEXT NOT NULL DEFAULT ''", "sudo_ok": "INTEGER", "lan_ok": "INTEGER NOT NULL DEFAULT 0",
+                "ai_actions": "TEXT NOT NULL DEFAULT ''", "ai_password": "INTEGER NOT NULL DEFAULT 0",
+                "updates_found": "INTEGER NOT NULL DEFAULT 0", "updates_at": "INTEGER",
+                "reboot_needed": "INTEGER NOT NULL DEFAULT 0", "checked_at": "INTEGER",
+                "ip_hint": "TEXT NOT NULL DEFAULT ''"},   # the address the broker found for the hostname (a suggestion)
 }
 
 # The three statements below run once, when a database from before the feature is opened for the

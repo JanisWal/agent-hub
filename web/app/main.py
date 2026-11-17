@@ -1,4 +1,5 @@
 """Agent-Hub web app: creates the FastAPI app and wires routes, static files and safety headers."""
+import os
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -35,9 +36,19 @@ def _api_login_required(request: Request, error: ApiLoginRequired):
 # anywhere over http(s): the icon of a linked website; blob: for previews the browser makes itself. Nothing may
 # frame the site, post a form elsewhere or change the base address. Stored files are served with a stricter policy
 # of their own (routes/files.py), which stays (setdefault).
+# The shell of a device is a WebSocket to the hub itself (routes/devices.py, 17.11.2026): its wss:// address is named
+# too, because older Safari versions do not count ws/wss as 'self'. The terminal (xterm.js) is a file in /static.
+def _socket_origin() -> str:
+    from urllib.parse import urlsplit
+    base = urlsplit(os.environ.get("HUB_BASE_URL", "").strip())
+    if base.scheme in ("http", "https") and base.netloc:
+        return f" {'wss' if base.scheme == 'https' else 'ws'}://{base.netloc}"
+    return ""
+
+
 CONTENT_POLICY = "; ".join((
     "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob: https: http:", "media-src 'self' blob:", "connect-src 'self' blob:",
+    "img-src 'self' data: blob: https: http:", "media-src 'self' blob:", "connect-src 'self' blob:" + _socket_origin(),
     "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'self'",
 ))
 

@@ -49,10 +49,10 @@ class IsolationTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_b_cannot_see_change_or_delete_the_devices_of_a(self):
-        from cryptography.fernet import Fernet
+        import pyrage
         from app.routes import devices as device_routes
-        os.environ["HUB_VAULT_KEY"] = Fernet.generate_key().decode()
-        self.addCleanup(os.environ.pop, "HUB_VAULT_KEY", None)
+        os.environ["HUB_VAULT_PUBLIC"] = str(pyrage.x25519.Identity.generate().to_public())
+        self.addCleanup(os.environ.pop, "HUB_VAULT_PUBLIC", None)
         mine = devices.create(self.a.id, self.project.id, "Roadster", "roadster.local", "Car", "secret")
         before = snapshot()
         self.assertEqual(devices.list_devices(self.b.id, self.project.id), [])
@@ -62,6 +62,23 @@ class IsolationTest(unittest.TestCase):
         self.assertEqual(device_routes.change_device(mine.id, "Taken", "evil.local", "", "", "", "other", "", user=self.b_user()).status_code, 404)
         self.assertEqual(device_routes.delete_device(mine.id, user=self.b_user()).status_code, 404)
         self.assertEqual(device_routes.create_device(self.project.id, "Mine", "x.local", "", "", "other", "", user=self.b_user()).status_code, 404)
+        # the broker's side (17.11.2026): nothing of A's device for B, not even its state, log, window or setup
+        self.assertIsNone(devices.payload(self.b.id, mine.id))
+        self.assertIsNone(devices.get(self.b.id, mine.id))
+        self.assertIsNone(devices.history(self.b.id, mine.id))
+        self.assertFalse(devices.trust_host(self.b.id, mine.id, "ssh-ed25519 AAAA", "SHA256:x", "192.168.1.2"))
+        self.assertFalse(devices.set_ai(self.b.id, mine.id, ["reboot"], True))
+        self.assertFalse(devices.set_lan(self.b.id, mine.id, True))                         # B is not the owner
+        self.assertFalse(devices.ai_may(self.b.id, mine.id, "reboot"))
+        for call in (lambda: device_routes.device_info(mine.id, user=self.b),
+                     lambda: device_routes.device_setup(mine.id, user=self.b),
+                     lambda: device_routes.device_history(mine.id, user=self.b),
+                     lambda: device_routes.device_hostkey(mine.id, user=self.b),
+                     lambda: device_routes.device_test(mine.id, user=self.b),
+                     lambda: device_routes.device_keygen(mine.id, user=self.b),
+                     lambda: device_routes.device_state(mine.id, user=self.b),
+                     lambda: device_routes.device_ai(mine.id, ["reboot"], "1", user=self.b)):
+            self.assertEqual(call().status_code, 404)
         self.assertEqual(snapshot(), before)
 
     def test_b_cannot_see_the_status_of_a(self):

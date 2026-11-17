@@ -19,8 +19,12 @@ services:
       HUB_BASE_URL: "${HUB_BASE_URL:-}"
       # SHA-256 of the runner's token (the runner itself holds the token). Empty = runner interface off.
       HUB_RUNNER_TOKEN_HASH: "${HUB_RUNNER_TOKEN_HASH:-}"
-      # Master key for secrets kept in the database (device keys, web/app/vault.py). Empty = keys cannot be stored.
-      HUB_VAULT_KEY: "${HUB_VAULT_KEY:-}"
+      # Public age key for secrets kept in the database (device keys and passwords, web/app/vault.py): the web service
+      # can only lock them away; the private key is only in the broker. Empty = no secrets can be stored.
+      HUB_VAULT_PUBLIC: "${HUB_VAULT_PUBLIC:-}"
+      # The broker (SSH to the devices): its address in the network "devices" and the shared token.
+      HUB_BROKER_URL: "broker:7000"
+      HUB_BROKER_TOKEN: "${HUB_BROKER_TOKEN:-}"
     restart: unless-stopped
     healthcheck:                 # `docker compose ps` shows "healthy"; python is in the image, curl is not
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5)"]
@@ -30,6 +34,7 @@ services:
       start_period: 20s
     networks:
       default: {}
+      devices: {}                # only to reach the broker
       web:
         aliases: [agent-hub]     # the tunnel's route points to http://agent-hub:8000
 
@@ -88,6 +93,27 @@ services:
       - runner
     restart: unless-stopped
 
+  # The broker (broker/broker.py, 17.11.2026): the only service that opens SSH connections to devices and the only one
+  # with the private age key that opens their secrets (HUB_VAULT_IDENTITY). Its own network "devices", shared only with
+  # the web service: the runner, the egress proxy and the AI runs can not reach it. That network is a normal bridge
+  # with a way out, so the broker reaches the home network; which addresses it may connect to, it checks itself
+  # (private ones only for devices the owner approved, never the Docker networks or the server's own services).
+  # No port is published, no Docker socket, no data folder.
+  broker:
+    build:
+      context: .
+      dockerfile: broker/Dockerfile
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    environment:
+      HUB_BROKER_TOKEN: "${HUB_BROKER_TOKEN:-}"
+      HUB_VAULT_IDENTITY: "${HUB_VAULT_IDENTITY:-}"
+    networks:
+      - devices
+    restart: unless-stopped
+
 # The tickets of running runs (runner/tokens.py): in memory only (tmpfs), never on the SD card or in a backup.
 # Only the runner (writes) and the egress proxy (reads) mount it; the runs and the web service do not.
 volumes:
@@ -101,6 +127,8 @@ volumes:
 networks:
   web:
     external: true
+  devices:                         # web <-> broker only; the broker's way to the devices (17.11.2026)
+    name: agent-hub-devices
   agents:                          # the network of the agent containers: no route anywhere except to "egress"
     name: agent-hub-agents
     internal: true
