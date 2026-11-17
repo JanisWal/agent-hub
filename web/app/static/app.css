@@ -814,3 +814,10 @@ main { overflow: clip; } /* shadows may reach to the window edge, but their empt
 @media (pointer: coarse) {
   input, textarea, select, .setting input, .setting select { font-size: max(16px, 1rem); }
 }
+
+/* The status lamp (Manager view and the project tiles of the dashboard): grey, green, orange (at rest), yellow, red. */
+.m-lamp { flex: none; width: 14px; height: 14px; border-radius: 50%; --lamp: var(--muted); background: var(--lamp); opacity: 0.55; box-shadow: 0 0 0 4px color-mix(in srgb, var(--lamp) 18%, transparent); }
+.m-lamp.lamp-green { --lamp: var(--go); opacity: 1; }
+.m-lamp.lamp-rest { --lamp: var(--rest); opacity: 1; }
+.m-lamp.lamp-yellow { --lamp: var(--warn); opacity: 1; }
+.m-lamp.lamp-red { --lamp: var(--danger); opacity: 1; }

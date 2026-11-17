@@ -127,13 +127,13 @@ html.splitting, html.splitting * { cursor: row-resize !important; -webkit-user-s
   .mtile.m-folded { overflow: clip; }
   .mtile.m-folded > :not(header) { opacity: var(--fold, 1); }
   .mtile.m-shut > :not(header) { visibility: hidden; }
+  /* The status text of the AI (split-extra): folded away until the splitter below the tile brings it out; only it
+     fades, the rest of the tile stays (17.11.2026). */
+  .mcol:not(.split-set) .split-extra { display: none; }
+  .mtile.has-extra.m-folded > :not(header) { opacity: 1; }
+  .mtile.has-extra.m-folded > .split-extra { opacity: var(--fold, 1); }
+  .mtile.has-extra.m-shut > :not(header) { visibility: visible; }
 }
-/* The status lamp: grey until the manager reports (green, amber, red later). */
-.m-lamp { flex: none; width: 14px; height: 14px; border-radius: 50%; --lamp: var(--muted); background: var(--lamp); opacity: 0.55; box-shadow: 0 0 0 4px color-mix(in srgb, var(--lamp) 18%, transparent); }
-.m-lamp.lamp-green { --lamp: var(--go); opacity: 1; }
-.m-lamp.lamp-rest { --lamp: var(--rest); opacity: 1; }
-.m-lamp.lamp-yellow { --lamp: var(--warn); opacity: 1; }
-.m-lamp.lamp-red { --lamp: var(--danger); opacity: 1; }
 /* The drop-down at the pencil next to the title (name and description of the project). */
 .title-menu { position: absolute; top: calc(100% + 10px); left: 50%; translate: -50% 0; z-index: 25; width: min(520px, calc(100vw - 32px)); max-width: none; padding: 20px 22px 18px; border-radius: 28px; }
 .title-menu label { margin-bottom: calc(var(--space) * 1.5); }
@@ -533,7 +533,7 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 /* The written status of the AI (statusnote.py, 17.11.2026): headline in bold above, one or two sentences below. The
    round arrow asks for a new one; what the hub answers stands in the quiet line at the foot (fixed place, empty = no
    height). */
-.status-note { margin-top: 6px; font-size: 0.9rem; line-height: 1.45; overflow-wrap: anywhere; }
+.status-note { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--file-line); font-size: 0.9rem; line-height: 1.45; overflow-wrap: anywhere; }
 .status-line strong { overflow-wrap: anywhere; }
 .m-status header .status-again { flex: none; }
 .status-say { font-size: 0.8rem; margin-top: 8px; min-height: 0; }

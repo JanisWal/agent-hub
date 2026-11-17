@@ -302,3 +302,29 @@ def save(conn: sqlite3.Connection, row: sqlite3.Row, ok: bool, answer: str, now:
                  " (SELECT id FROM project_status WHERE project_id = ? ORDER BY id DESC LIMIT ?)",
                  (project_id, project_id, KEEP))
     return found is not None
+
+
+@dataclass
+class Brief:
+    lamp: str
+    title: str
+    text: str
+
+
+def for_dashboard(user_id: int, project_ids: list[int], now: int | None = None) -> dict[int, Brief]:
+    """The state of each of the user's projects for its tile on the dashboard (PROJEKT.md, "Projektkachel"): the
+    lamp, the written headline (else the counted wording, as a key for i18n) and the text. Foreign ids are left out."""
+    now = int(now if now is not None else time.time())
+    out = {}
+    for pid in project_ids:
+        a = statusmod.assess(user_id, pid, now)
+        if a is None:
+            continue
+        note = latest(user_id, pid)
+        if note is not None and note.title:
+            out[pid] = Brief(lamp(a.lamp, note), note.title, note.text)
+        elif a.total or a.last_activity:
+            out[pid] = Brief(a.lamp, "", "status_activity_" + a.activity)
+        else:
+            out[pid] = Brief(a.lamp, "", "")
+    return out

@@ -19,14 +19,18 @@
     // shared column sets it to 0.
     var natural = [a, b].map(function (tile) { return parseFloat(getComputedStyle(tile).minHeight) || 80; });
     function folded(tile) {   // the height at which only the header is left
+      if (tile.querySelector(":scope > .split-extra")) return needed(tile, true);
       var style = getComputedStyle(tile), head = tile.querySelector(":scope > header");
       return (head ? head.offsetHeight : 0) + parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + 2;
     }
+    // A tile with a part marked .split-extra (the status text, Janis 17.11.2026) gives way only down to everything
+    // but that part: it is folded away at first and the splitter brings it out.
     // What the tile needs to show all it has: padding, header and every visible child with the gaps between them
     // (14.11.2026: a hint taller than the minimum ran out of the tile, after a reload with a saved height).
-    function needed(tile) {
+    function needed(tile, withoutExtra) {
       var style = getComputedStyle(tile), gap = parseFloat(style.rowGap) || 0, sum = 0, count = 0;
       Array.prototype.forEach.call(tile.children, function (child) {
+        if (withoutExtra && child.classList.contains("split-extra")) return;
         if (child.offsetParent === null && getComputedStyle(child).position !== "fixed") return;   // hidden
         sum += child.offsetHeight;
         count++;

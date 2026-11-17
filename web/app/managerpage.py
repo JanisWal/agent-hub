@@ -20,6 +20,7 @@ MANAGER = """<section class="manager" id="manager-view" data-view-panel="manager
   %MVAULT%
   <div class="mcol">
     %STATUS%
+    <div class="m-split" data-split="status-devices" role="separator" aria-orientation="horizontal" tabindex="0" aria-label="%t.split_label%"></div>
     %DEVICES%
   </div>
   <div class="mcol">
@@ -113,16 +114,18 @@ def _status_tile(lang: str, a: statusmod.Assessment | None, now: int, note: stat
     else:
         headline = esc(i18n.t(lang, "status_activity_" + a.activity))
         when = esc(i18n.t(lang, "status_last", when=_when(lang, a.last_activity, now)))
-    written = f'<p class="status-note">{esc(note.text)}</p>' if note is not None and note.text else ""
+    # the longer text of the AI comes last and is folded away at first (Janis, 17.11.2026): the splitter below the
+    # tile shows it; at its highest point the tile shows everything but this text (splitter.js, class split-extra)
+    written = f'<p class="status-note split-extra">{esc(note.text)}</p>' if note is not None and note.text else ""
     return (
-        f'<section class="mtile glass m-status" id="status">{head}'
-        f'<p class="status-line"><strong>{headline}</strong><small>{when}</small></p>{written}'
+        f'<section class="mtile glass m-status{" has-extra" if written else ""}" id="status">{head}'
+        f'<p class="status-line"><strong>{headline}</strong><small>{when}</small></p>'
         f'<div class="status-progress"><progress max="100" value="{a.progress}" aria-label="{esc(i18n.t(lang, "status_progress", n=a.progress))}"></progress>'
         f'<span>{esc(i18n.t(lang, "status_progress", n=a.progress))}</span></div>'
         f'<dl class="status-facts">{facts}</dl>'
         + (f'<ul class="status-reasons">{reasons}</ul>' if reasons else "")
         + (f'<p class="muted status-extra">{esc(" · ".join(extra))}</p>' if extra else "")
-        + say + '</section>'
+        + say + written + '</section>'
     )
 
 
