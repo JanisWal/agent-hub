@@ -128,7 +128,8 @@ def device_ai(device_id: int, actions: list[str] = Form([]), ai_password: str = 
 def _info(device: devices.Device, lang: str) -> dict:
     now = int(time.time())
     return {"id": device.id, "name": device.name, "kind": device.kind, "hostname": device.hostname, "ip": device.ip,
-            "description": device.description, "ip_hint": device.ip_hint, "ssh_user": device.ssh_user, "ssh_port": device.ssh_port,
+            "description": device.description, "ip_hint": device.ip_hint, "mac": device.mac,
+            "picture": device.picture, "icon": device.icon, "trusted": device.trusted, "ssh_user": device.ssh_user, "ssh_port": device.ssh_port,
             "auth": device.auth, "has_key": device.has_key, "public_key": device.public_key,
             "host_fp": device.host_fp, "pinned_ip": device.pinned_ip, "os_family": device.os_family,
             "os_name": device.os_name, "sudo_ok": device.sudo_ok, "lan_ok": device.lan_ok,
@@ -220,10 +221,44 @@ def device_test(device_id: int, user: users.User = Depends(api_user)):
     if isinstance(answer, JSONResponse):
         devices.log(device_id, user.id, "test", json.loads(answer.body).get("error", "failed"))
         return answer
-    devices.set_system(user.id, device_id, answer.get("family", ""), answer.get("name", ""), answer.get("sudo"))
+    devices.set_system(user.id, device_id, answer.get("family", ""), answer.get("name", ""), answer.get("sudo"),
+                       mac=answer.get("mac", ""))
     devices.log(device_id, user.id, "test", "ok", answer.get("name", ""))
     _online[device_id] = (time.time(), True)
     return ok(family=answer.get("family", ""), name=answer.get("name", ""), sudo=answer.get("sudo"))
+
+
+@router.post("/devices/{device_id}/login")
+def device_login(device_id: int, ssh_user: str = Form(""), ssh_port: str = Form("22"), mac: str | None = Form(None),
+                 user: users.User = Depends(api_user)):
+    """SSH user, port and (optionally) MAC on their own (the setup assistant and the window)."""
+    try:
+        done = devices.set_login(user.id, device_id, _given(ssh_user, ""), _given(ssh_port, "22"), _given(mac))
+    except ValueError as exc:
+        return _bad(str(exc))
+    return fail(404) if done is None else ok()
+
+
+@router.post("/devices/{device_id}/secret")
+def device_secret(device_id: int, auth: str = Form("key"), secret: str = Form(""), remove: str = Form(""),
+                  user: users.User = Depends(api_user)):
+    """Store a pasted key or a password (sealed at once, never sent back), or remove the stored one."""
+    try:
+        done = devices.set_secret(user.id, device_id, _given(auth, "key"), _given(secret, ""), _given(remove, "") == "1")
+    except ValueError as exc:
+        return _bad(str(exc))
+    if done is None:
+        return fail(404)
+    devices.log(device_id, user.id, "secret", "removed" if _given(remove, "") == "1" else "ok")
+    return ok()
+
+
+@router.post("/devices/{device_id}/picture")
+def device_picture(device_id: int, picture: str = Form(""), user: users.User = Depends(api_user)):
+    """A picture dropped on the device (the browser makes it small first), or empty for the pictogram again."""
+    if devices.get(user.id, device_id) is None:
+        return fail(404)
+    return ok() if devices.set_picture(user.id, device_id, _given(picture, "")) else _bad("picture")
 
 
 @router.post("/devices/{device_id}/keygen")
@@ -289,7 +324,7 @@ def device_state(device_id: int, user: users.User = Depends(api_user)):
     job = _read_job(user, device) if broker.available() else {"state": "none"}
     device = devices.get(user.id, device_id)
     return ok(online=online, job=job, updates=devices.updates_pending(device), reboot_needed=device.reboot_needed,
-              actions=list(device.actions))
+              actions=list(device.actions), wake=device.can_wake)
 
 
 @router.post("/devices/{device_id}/action")
@@ -299,6 +334,12 @@ def device_action(request: Request, device_id: int, button: str = Form(""), pass
     device, payload = _device(user, device_id)
     if device is None:
         return fail(404)
+    if button == "wake":   # switching on: the runner sends the packet from the server's own network
+        if not devices.request_wake(user.id, device_id):
+            return _bad("unsupported")
+        devices.log(device_id, user.id, "wake", "started")
+        _online.pop(device_id, None)
+        return ok(action="wake")
     if button == "update":
         action = "updates_install" if devices.updates_pending(device) else "updates_check"
     else:
@@ -514,3 +555,26 @@ async def device_shell(websocket: WebSocket, device_id: int):
             await websocket.close()
         except RuntimeError:
             pass
+
+
+# --- what the manager asks for (Janis, 17.11.2026): only after the user's yes in "waiting for you" ---------------------
+@router.post("/devices/requests/{request_id}")
+def device_request(request_id: int, answer: str = Form(""), user: users.User = Depends(api_user)):
+    """Yes starts the action as the AI's (broker origin "ai": only what the user allowed it), no drops it."""
+    yes = _given(answer, "") == "yes"
+    request = devices.decide(user.id, request_id, yes)
+    if request is None:
+        return fail(404)
+    if not yes:
+        devices.log(request.device_id, user.id, request.action, "refused", request.reason, origin="ai")
+        return ok(started=False)
+    payload = devices.payload(user.id, request.device_id, "ai")
+    if payload is None or not devices.ai_may(user.id, request.device_id, request.action):
+        return _bad("not_allowed")
+    try:
+        broker.call("start", payload, origin="ai", action=request.action, key=_job_key(request.device_id))
+    except broker.BrokerError as exc:
+        devices.log(request.device_id, user.id, request.action, exc.code, request.reason, origin="ai")
+        return _bad(exc.code)
+    devices.log(request.device_id, user.id, request.action, "started", request.reason, origin="ai")
+    return ok(started=True)

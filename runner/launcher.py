@@ -71,6 +71,24 @@ _BAD_PATH = re.compile(r"[,\s\x00=:]")   # would confuse --mount parsing or hide
 _MARKER = re.compile(r"^RESULT:\s*([a-z_]+)\s*$")
 
 
+# Switching a device on (Wake-on-LAN, 17.11.2026): the magic packet is a broadcast in the home network. The broker's
+# Docker network does not pass broadcasts on, so a short container in the server's own network sends it: no
+# privileges, no capabilities, read-only, nothing but this fixed script and the checked MAC as its one argument.
+_WAKE_MAC = re.compile(r"[0-9a-f]{2}(?::[0-9a-f]{2}){5}")
+WAKE_SCRIPT = ("import socket,sys;m=bytes.fromhex(sys.argv[1].replace(':',''));"
+               "s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.setsockopt(socket.SOL_SOCKET,socket.SO_BROADCAST,1);"
+               "[s.sendto(b'\\xff'*6+m*16,('255.255.255.255',p)) for p in (9,7)]")
+
+
+def build_wake_command(mac: str) -> list[str]:
+    """The `docker run` command that sends the Wake-on-LAN packet for `mac` (aa:bb:cc:dd:ee:ff). ValueError else."""
+    if not isinstance(mac, str) or not _WAKE_MAC.fullmatch(mac):
+        raise ValueError("bad mac")
+    return ["docker", "run", "--rm", "--pull=never", "--network=host", "--user", "65534:65534", "--cap-drop", "ALL",
+            "--security-opt", "no-new-privileges", "--read-only", "--memory", "32m", POWER_IMAGE,
+            "python", "-c", WAKE_SCRIPT, mac]
+
+
 def build_power_command(action: str) -> list[str]:
     """The `docker run` command that restarts or shuts down the Pi or starts its backup. ValueError for any other
     action."""

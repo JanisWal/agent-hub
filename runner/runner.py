@@ -375,8 +375,26 @@ class Runner:
         if action == "backup" and job.get("id"):   # restart and shutdown end this very Pi: nothing to report
             self.api.call("POST", f"/runner/power/{int(job['id'])}/result", success="1" if success else "0")
 
+    def handle_wake(self) -> None:
+        """Switch a device on (Wake-on-LAN): the hub hands out each MAC once (web/app/devices.claim_wake)."""
+        mac = self.api.call("POST", "/runner/wake/claim").get("mac")
+        if not mac:
+            return
+        try:
+            command = launcher.build_wake_command(mac)
+        except ValueError:
+            print("runner: ignored a bad MAC for waking", file=sys.stderr, flush=True)
+            return
+        try:
+            done = self.run_power(command)
+            if done.returncode:
+                print(f"runner: waking failed: {(done.stderr or '').strip()[:200]}", file=sys.stderr, flush=True)
+        except subprocess.TimeoutExpired:
+            print("runner: waking timed out", file=sys.stderr, flush=True)
+
     def step(self) -> None:
         self.handle_power()
+        self.handle_wake()
         self.handle_wipes()
         self.handle_expired()
         self.handle_key_wipes()

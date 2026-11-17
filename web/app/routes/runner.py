@@ -16,7 +16,7 @@ import os
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 
-from .. import agents, ai_link, chat, claude_link, power, throttle, users
+from .. import agents, ai_link, chat, claude_link, devices, power, throttle, users
 from ..deps import fail, ok
 
 TOKEN_HASH_ENV = "HUB_RUNNER_TOKEN_HASH"
@@ -142,6 +142,12 @@ def power_claim():
     """What the owner asked for on the Pi (restart, shutdown, backup; once), or null."""
     job = power.claim_next()
     return ok(id=None if job is None else job[0], action=None if job is None else job[1])
+
+
+@router.post("/wake/claim")
+def wake_claim():
+    """The MAC address of a device the user switched on (devices.request_wake), handed out once, or null."""
+    return ok(mac=devices.claim_wake())
 
 
 @router.post("/power/{request_id}/result")

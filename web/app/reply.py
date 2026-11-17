@@ -33,6 +33,9 @@ LARGE_QUESTION = 300   # a question this long opens large even if the AI said sm
 _ASK = re.compile(r"<ask(\s[^<>]*)?>(.*?)</ask>", re.DOTALL)
 _TASK = re.compile(r"<task(\s[^<>]*)?>(.*?)</task>", re.DOTALL)
 _STATUS = re.compile(r"<status(\s[^<>]*)?>(.*?)</status>", re.DOTALL)
+_DEVICE = re.compile(r"<device(\s[^<>]*)?>(.*?)</device>", re.DOTALL)
+_ICON = re.compile(r"<icon(\s[^<>]*)?>(.*?)</icon>", re.DOTALL)
+MAX_DEVICE_ASKS = 3
 _OPTION = re.compile(r"<option>(.*?)</option>", re.DOTALL)
 _ATTR = re.compile(r"([a-z]+)=\"([^\"<>]*)\"")
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -117,3 +120,20 @@ def parse(answer: str) -> Signals:
             status = Status(level, text, _line(attrs.get("title", ""), MAX_STATUS_TITLE))
     text = _STATUS.sub("", _TASK.sub("", _ASK.sub("", answer))).strip()
     return Signals(text, asks, tasks, status)
+
+
+def device_asks(answer: str) -> tuple[str, list[tuple[str, str, str]]]:
+    """The manager's requests for actions on devices, <device name="NAME" action="ACTION">why</device> (17.11.2026;
+    they only ever wait for the user's yes, devices.request_action): (text without them, [(name, action, reason)])."""
+    asks = []
+    for raw, inner in _DEVICE.findall(answer):
+        attrs = _attrs(raw)
+        name, action = _line(attrs.get("name", ""), 60), attrs.get("action", "")
+        if name and re.fullmatch(r"[a-z_]{1,30}", action) and len(asks) < MAX_DEVICE_ASKS:
+            asks.append((name, action, _line(inner, 300)))
+    return _DEVICE.sub("", answer).strip(), asks
+
+
+def icons(answer: str) -> list[tuple[str, str]]:
+    """Pictograms the AI chose for devices in a status round, <icon device="NAME">dev_x</icon>: [(name, icon)]."""
+    return [(_line(_attrs(raw).get("device", ""), 60), _line(inner, 40)) for raw, inner in _ICON.findall(answer)][:20]

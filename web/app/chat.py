@@ -15,7 +15,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import agents, aichoice, catalog, checks, db, files, memory, statusnote
+from . import agents, aichoice, catalog, checks, db, devices, files, memory, reply, statusnote
 
 # The manager is the role "chef": model and effort level are settings of the user (agents.py, list in catalog.py).
 MAX_PROMPT = 2000
@@ -44,6 +44,13 @@ TOOLS_TEXT = {
            "folder (public internet only, no home network).",
     "apart": "You have a web search and a shell in an empty scratch folder; the shell has no internet.",
 }
+
+
+# Actions on devices (Janis, 17.11.2026): the manager may only ASK; the user says yes or no in "waiting for you",
+# whatever the autonomy. Only actions the user allowed per device; the hub drops any other request.
+DEVICE_RULE = ("Where a device lists actions you may ask for and one is needed (or the user wants it), ask with "
+               "<device name=\"DEVICE NAME\" action=\"ACTION\">one sentence why</device>; nothing happens until the "
+               "user says yes. Never claim it was done.")
 
 
 # Memory and files (memory.py): the hub gives the memory file and a list of the other files with every question.
@@ -176,7 +183,7 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
         (project_id, CHECKS),
     ).fetchall()
     machines = conn.execute(   # never the secret, the host key or the login: the manager knows what a device is, not how to get in
-        "SELECT name, kind, hostname, ip, ip_hint, os_name, description FROM devices WHERE project_id = ? ORDER BY id LIMIT ?",
+        "SELECT name, kind, hostname, ip, ip_hint, os_name, description, ai_actions FROM devices WHERE project_id = ? ORDER BY id LIMIT ?",
         (project_id, DEVICES),
     ).fetchall()
     work = conn.execute(   # "For you": what the user does himself (todos.py), open ones first
@@ -212,6 +219,7 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
         f"- {d['name']}: {d['kind'].replace('_', ' ')}, host {d['hostname']}"
         + (f", IP {address(d)}" if address(d) else "") + (f", runs {d['os_name']}" if d["os_name"] else "")
         + (f"; {_clip(d['description'], NOTE_CUT)}" if d["description"] else "")
+        + (f" [you may ask for: {d['ai_actions'].replace(',', ', ')}]" if d["ai_actions"] else "")
         for d in machines) or "(none)"
     own_work = "\n".join(
         f"- {t['text']} (open)" if t["done_at"] is None
@@ -224,7 +232,7 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
         memory = "\n\n".join(talks) or "(no earlier questions)"
         return (f"{head}\n\nOpen board items:\n{board}\n\nRegular checks (your recurring to-dos, not board items):\n"
                 f"{routine}\n\nDevices of the project (its inventory: use it to know which device the user means; you never get "
-                f"their keys, never use their shell and never restart or switch them):\n{device_list}"
+                f"their keys and never use their shell). {DEVICE_RULE}\n{device_list}"
                 f"\n\nFor you (work the user does himself, by hand; you advise and keep the state):\n{own_work}"
                 f"\n\nEarlier questions in this project:\n{memory}")
 
@@ -398,8 +406,9 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
             return True
     saved = False
     text = answer
+    asks = []
     if parsed is not None:
-        text = parsed.text
+        text, asks = reply.device_asks(parsed.text)
         if parsed.memory:
             saved = memory.save_memory(row["user_id"], row["project_id"], parsed.memory)
         for name, body in (parsed.files or {}).items():   # the other memory files it wrote (memory folder)
@@ -419,6 +428,8 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
                 (row["user_id"], row["project_id"], row["prompt"], text[:MAX_ANSWER], "done" if ok else "failed",
                  row["model"], row["effort"], row["created_at"], int(time.time())),
             )
+            for name, action, reason in asks:   # they wait for the user's yes in "waiting for you" (devices.py)
+                devices.request_action(conn, row["user_id"], row["project_id"], name, action, reason)
     return cur.rowcount == 1
 
 

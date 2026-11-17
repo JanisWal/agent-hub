@@ -94,8 +94,20 @@ PROFILES = {
     "windows": {  # OpenSSH server of Windows 10/11 and Server 2019+; Windows Update has no built-in command
         "name": "Windows",
         "reboot": "shutdown /r /t 0", "poweroff": "shutdown /s /t 0",
-        "updates_check": None, "updates_install": None,
+        # Windows Update through the module PSWindowsUpdate (installed in the setup), programs through winget if there.
+        # Installing runs as a job of the system (Invoke-WUJob): Windows Update refuses a remote session itself.
+        "updates_check": ('powershell -NoProfile -Command "$n=0; if (Get-Module -ListAvailable -Name PSWindowsUpdate)'
+                          ' { $n += @(Get-WindowsUpdate -ErrorAction SilentlyContinue).Count };'
+                          ' if (Get-Command winget -ErrorAction SilentlyContinue) { $n += @(winget upgrade'
+                          ' --accept-source-agreements | Select-String -Pattern \'^\\S.*\\s\\d[\\w.]*\\s+\\d[\\w.]*\\s+\\w+\\s*$\').Count };'
+                          ' Write-Output (\'' + COUNT_MARK + '\' + $n)"'),
+        "updates_install": ('powershell -NoProfile -Command "Import-Module PSWindowsUpdate;'
+                            ' Invoke-WUJob -RunNow -Confirm:$false -Script { Import-Module PSWindowsUpdate;'
+                            ' Install-WindowsUpdate -AcceptAll -IgnoreReboot -Confirm:$false;'
+                            ' winget upgrade --all --silent --accept-source-agreements --accept-package-agreements } | Out-Null;'
+                            ' if (Get-WURebootStatus -Silent) { Write-Output \'' + REBOOT_MARK + '\' }"'),
         "sudo": [],
+        "modules": "Install-PackageProvider -Name NuGet -Force; Install-Module PSWindowsUpdate -Force -Scope AllUsers",
         "logs": {"journal": "powershell -NoProfile -Command \"Get-WinEvent -LogName System -MaxEvents 100 | "
                             "Format-Table -AutoSize -Wrap TimeCreated,LevelDisplayName,Message | Out-String -Width 200\""},
         "ssh_on": ("Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0; "
@@ -110,6 +122,11 @@ _IDS = {"debian": "debian", "ubuntu": "debian", "raspbian": "debian", "linuxmint
         "alpine": "alpine"}
 DETECT = "uname -s 2>/dev/null; cat /etc/os-release 2>/dev/null; sw_vers 2>/dev/null"
 DETECT_WINDOWS = "cmd /c ver"
+# The MAC address of the interface with the default route (for switching on by Wake-on-LAN)
+MAC = {"linux": "cat /sys/class/net/$(ip route show default 2>/dev/null | awk '{print $5; exit}')/address 2>/dev/null",
+       "macos": "ifconfig $(route -n get default 2>/dev/null | awk '/interface:/{print $2}') 2>/dev/null | awk '/ether/{print $2; exit}'",
+       "windows": "getmac /fo csv /nh"}
+_MAC_IN = re.compile(r"([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}")
 SUDO_TEST = "sudo -n true"
 _SUDOERS_SPECIAL = re.compile(r"([\\,:=!@()])")
 _USER = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.@-]{0,63}")
@@ -130,6 +147,20 @@ def detect(output: str, windows: str = "") -> tuple[str, str]:
         if family:
             return family, pretty or PROFILES[family]["name"]
     return "", pretty
+
+
+def mac_command(family: str) -> str | None:
+    if family == "windows":
+        return MAC["windows"]
+    if family == "macos":
+        return MAC["macos"]
+    return MAC["linux"] if family in PROFILES else None
+
+
+def find_mac(output: str) -> str:
+    """The first MAC address in a command's output, as aa:bb:cc:dd:ee:ff, or ''."""
+    found = _MAC_IN.search(output or "")
+    return found.group(0).lower().replace("-", ":") if found else ""
 
 
 def command(family: str, action: str) -> str | None:
@@ -179,6 +210,7 @@ def guide(family: str, user: str, public_key: str, hostname: str) -> list[tuple[
         steps.append(("key", ("$k = '" + key + "'; Add-Content -Path \"$env:ProgramData\\ssh\\administrators_authorized_keys\" "
                               "-Value $k; icacls \"$env:ProgramData\\ssh\\administrators_authorized_keys\" /inheritance:r "
                               "/grant \"Administrators:F\" /grant \"SYSTEM:F\"") if key else ""))
+        steps.append(("modules", profile.get("modules", "")))
     else:
         steps.append(("user", "" if family == "macos" else f"sudo adduser {user}"))
         steps.append(("key", (f"sudo -u {user} sh -c 'mkdir -p ~/.ssh && chmod 700 ~/.ssh && "
