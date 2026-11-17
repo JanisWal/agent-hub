@@ -115,13 +115,19 @@ def _status_tile(lang: str, a: statusmod.Assessment | None, now: int) -> str:
 
 DEVICE_DIALOGS = """<dialog class="dialog" id="device-dialog" data-title-new="%t.devices_new%" data-title-edit="%t.devices_edit%"
         data-btn-new="%t.create%" data-btn-edit="%t.save%" data-key-new="%t.devices_key_new%" data-key-edit="%t.devices_key_edit%"
-        data-err-name="%t.devices_err_name%" data-err-hostname="%t.devices_err_hostname%" data-err-description="%t.devices_err_description%"
+        data-err-name="%t.devices_err_name%" data-err-kind="%t.devices_err_other%" data-err-ip="%t.devices_err_ip%" data-err-hostname="%t.devices_err_hostname%" data-err-description="%t.devices_err_description%"
         data-err-key="%t.devices_err_key%" data-err-duplicate="%t.devices_err_duplicate%" data-err-limit="%t.devices_err_limit%"
         data-err-vault="%t.devices_err_vault%" data-err-other="%t.devices_err_other%">
   <form method="post" action="" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
     <h2 id="device-dialog-title">%t.devices_new%</h2>
-    <label>%t.devices_name%<input name="name" required maxlength="%MAX_NAME%" autocomplete="off"></label>
+    <label>%t.devices_name%<input name="name" required maxlength="%MAX_NAME%" autocomplete="off" placeholder="%t.devices_name_placeholder%"></label>
+    <label class="setting has-select">
+      <span class="setting-label">%t.devices_kind%</span>
+      <select name="kind">%KINDS%</select>
+      %CHEVRON%
+    </label>
     <label>%t.devices_hostname%<input name="hostname" required maxlength="%MAX_HOSTNAME%" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="roadster.local"></label>
+    <label>%t.devices_ip%<input name="ip" maxlength="%MAX_IP%" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="decimal" placeholder="192.168.1.20"></label>
     <label>%t.devices_description%<input name="description" maxlength="%MAX_DESCRIPTION%" autocomplete="off"></label>
     <label>%t.devices_key%<textarea class="device-key" name="key" id="device-key" maxlength="%MAX_KEY%" autocomplete="off" autocapitalize="off" spellcheck="false" rows="4"></textarea></label>
     <p class="muted" id="device-key-state" hidden>%t.devices_key_stored%</p>
@@ -148,9 +154,12 @@ def _device_row(lang: str, device: devicestore.Device) -> str:
             f'aria-label="{esc(i18n.t(lang, "devices_key_stored"))}">{icon("key")}</span>') if device.has_key else ""
     return (
         f'<li class="check-row device-row" data-id="{device.id}" data-key="{1 if device.has_key else 0}" '
-        f'data-name="{esc(device.name)}" data-hostname="{esc(device.hostname)}" data-description="{esc(device.description)}">'
+        f'data-name="{esc(device.name)}" data-kind="{device.kind}" data-hostname="{esc(device.hostname)}" '
+        f'data-ip="{esc(device.ip)}" data-description="{esc(device.description)}">'
+        f'<span class="file-tile device-tile" aria-hidden="true">{icon(device.icon)}</span>'
         f'<span class="check-text"><span class="check-title">{esc(device.name)}</span>'
-        f'<small>{esc(device.hostname)}</small>'
+        f'<small>{esc(i18n.t(lang, "device_kind_" + device.kind))} · {esc(device.hostname)}'
+        f'{" · " + esc(device.ip) if device.ip else ""}</small>'
         + (f'<small class="device-desc">{esc(device.description)}</small>' if device.description else "")
         + f'</span>{lock}'
         f'<button class="icon-button card-btn" type="button" data-device="edit" aria-label="{edit_label}" '
@@ -244,7 +253,8 @@ def dialogs(lang: str) -> str:
     )
     return fill(MVAULT_DIALOGS, lang, CROSS=icon("cross")) + "\n" + fill(DEVICE_DIALOGS, lang, MAX_NAME=str(devicestore.MAX_NAME),
                 MAX_HOSTNAME=str(devicestore.MAX_HOSTNAME), MAX_DESCRIPTION=str(devicestore.MAX_DESCRIPTION),
-                MAX_KEY=str(devicestore.MAX_KEY)) + "\n" + fill(CHECK_DIALOGS, lang, MAX_TEXT=str(checks.MAX_TEXT), CYCLES=options, DAYS=days,
+                MAX_KEY=str(devicestore.MAX_KEY), MAX_IP=str(devicestore.MAX_IP), CHEVRON=icon("chevron_down"),
+                KINDS="".join(f'<option value="{k}">{esc(i18n.t(lang, "device_kind_" + k))}</option>' for k in devicestore.KINDS)) + "\n" + fill(CHECK_DIALOGS, lang, MAX_TEXT=str(checks.MAX_TEXT), CYCLES=options, DAYS=days,
                 CHEVRON=icon("chevron_down")) + "\n" + fill(FILE_DIALOGS, lang, AREAS=areas, CHEVRON=icon("chevron_down"),
                                                          DOWNLOAD=icon("download"), CROSS=icon("cross"), PENCIL=icon("pencil"),
                                                          MANY=esc(i18n.t(lang, "files_confirm_delete_many", n="{n}")),

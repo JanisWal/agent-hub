@@ -8,9 +8,10 @@ at all (CLAUDE.md), so this list is about reaching a device, not about the permi
 and the approval come with the broker.
 
 Like every data module, each function gets the `user_id` and the project must be his: foreign things are "not found"
-(None or False). Errors in input are a ValueError whose text is a code: name, hostname, description, key, duplicate,
+(None or False). Errors in input are a ValueError whose text is a code: name, kind, hostname, ip, description, key, duplicate,
 limit, vault. Standard library only (plus vault.py).
 """
+import ipaddress
 import re
 import sqlite3
 import time
@@ -23,6 +24,13 @@ MAX_HOSTNAME = 253
 MAX_DESCRIPTION = 500
 MAX_KEY = 8000
 MAX_PER_PROJECT = 50
+MAX_IP = 45
+KINDS = ("raspberry_pi", "linux_server", "windows_server", "windows_pc", "mac", "microcontroller", "router", "other")
+KIND_ICON = {"raspberry_pi": "dev_pi", "linux_server": "dev_server", "windows_server": "dev_windows",
+             "windows_pc": "dev_pc", "mac": "dev_mac", "microcontroller": "dev_chip", "router": "dev_router",
+             "other": "dev_box"}
+NAME_ICON = (("server", "dev_server"), ("router", "dev_router"), ("laptop", "dev_mac"), ("notebook", "dev_mac"),
+             ("pc", "dev_pc"))   # a device of kind "other" gets its picture from its name if the name says what it is
 _HOST = re.compile(r"[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?")   # a name or an IPv4 address; no scheme, port or path
 
 
@@ -35,22 +43,45 @@ class Device:
     description: str
     has_key: bool
     created_at: int
+    kind: str = "other"
+    ip: str = ""
+
+    @property
+    def icon(self) -> str:
+        return icon_for(self.kind, self.name)
+
+
+def icon_for(kind: str, name: str = "") -> str:
+    """The name of the pictogram (icons.py) for a device: by its kind, for "other" by a word in its name."""
+    if kind == "other":
+        lowered = name.lower()
+        for word, picture in NAME_ICON:
+            if re.search(rf"\b{word}", lowered):
+                return picture
+    return KIND_ICON.get(kind, "dev_box")
 
 
 def _to_device(row: sqlite3.Row) -> Device:
     return Device(row["id"], row["project_id"], row["name"], row["hostname"], row["description"],
-                  bool(row["key_enc"]), row["created_at"])
+                  bool(row["key_enc"]), row["created_at"], row["kind"], row["ip"])
 
 
-def _clean(name: str, hostname: str, description: str) -> tuple[str, str, str]:
-    name, hostname, description = name.strip(), hostname.strip().lower(), description.strip()
+def _clean(name: str, hostname: str, description: str, kind: str = "other", ip: str = "") -> tuple[str, str, str, str, str]:
+    name, hostname, description, ip = name.strip(), hostname.strip().lower(), description.strip(), ip.strip()
+    if kind not in KINDS:
+        raise ValueError("kind")
+    if ip:
+        try:
+            ip = str(ipaddress.ip_address(ip))
+        except ValueError:
+            raise ValueError("ip") from None
     if not name or len(name) > MAX_NAME:
         raise ValueError("name")
     if len(hostname) > MAX_HOSTNAME or not _HOST.fullmatch(hostname):
         raise ValueError("hostname")
     if len(description) > MAX_DESCRIPTION:
         raise ValueError("description")
-    return name, hostname, description
+    return name, hostname, description, kind, ip
 
 
 def _sealed(key: str) -> str:
@@ -85,10 +116,10 @@ def list_devices(user_id: int, project_id: int) -> list[Device]:
 
 
 def create(user_id: int, project_id: int, name: str, hostname: str, description: str = "", key: str = "",
-           now: int | None = None) -> Device | None:
+           kind: str = "other", ip: str = "", now: int | None = None) -> Device | None:
     """Add a device; None for a foreign project. ValueError(code) for bad input, a name that is already used in the
     project, a full list, or a key that cannot be stored encrypted (no master key)."""
-    name, hostname, description = _clean(name, hostname, description)
+    name, hostname, description, kind, ip = _clean(name, hostname, description, kind, ip)
     sealed = _sealed(key) if key.strip() else ""
     with db.connect() as conn:
         if conn.execute("SELECT 1 FROM projects WHERE id = ? AND user_id = ?", (project_id, user_id)).fetchone() is None:
@@ -98,17 +129,18 @@ def create(user_id: int, project_id: int, name: str, hostname: str, description:
         if conn.execute("SELECT COUNT(*) FROM devices WHERE project_id = ?", (project_id,)).fetchone()[0] >= MAX_PER_PROJECT:
             raise ValueError("limit")
         cur = conn.execute(
-            "INSERT INTO devices (project_id, name, hostname, description, key_enc, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (project_id, name, hostname, description, sealed, int(now if now is not None else time.time())))
+            "INSERT INTO devices (project_id, name, kind, hostname, ip, description, key_enc, created_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (project_id, name, kind, hostname, ip, description, sealed, int(now if now is not None else time.time())))
         row = conn.execute("SELECT * FROM devices WHERE id = ?", (cur.lastrowid,)).fetchone()
     return _to_device(row)
 
 
 def update(user_id: int, device_id: int, name: str, hostname: str, description: str = "", key: str = "",
-           remove_key: bool = False) -> int | None:
+           remove_key: bool = False, kind: str = "other", ip: str = "") -> int | None:
     """Change a device; its project id, or None if it is not the user's. An empty `key` keeps the stored one, a new
     one replaces it, `remove_key` deletes it. Errors as in `create`."""
-    name, hostname, description = _clean(name, hostname, description)
+    name, hostname, description, kind, ip = _clean(name, hostname, description, kind, ip)
     sealed = _sealed(key) if key.strip() and not remove_key else None
     with db.connect() as conn:
         row = _owned(conn, user_id, device_id)
@@ -116,8 +148,8 @@ def update(user_id: int, device_id: int, name: str, hostname: str, description: 
             return None
         if _taken(conn, row["project_id"], name, device_id):
             raise ValueError("duplicate")
-        conn.execute("UPDATE devices SET name = ?, hostname = ?, description = ? WHERE id = ?",
-                     (name, hostname, description, device_id))
+        conn.execute("UPDATE devices SET name = ?, kind = ?, hostname = ?, ip = ?, description = ? WHERE id = ?",
+                     (name, kind, hostname, ip, description, device_id))
         if remove_key:
             conn.execute("UPDATE devices SET key_enc = '' WHERE id = ?", (device_id,))
         elif sealed is not None:

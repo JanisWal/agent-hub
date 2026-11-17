@@ -124,13 +124,15 @@ CREATE TABLE IF NOT EXISTS checks (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS checks_by_project ON checks (project_id, id);
--- Devices of a project (devices.py, Janis 07.11.2026): name, hostname, description. `key_enc` is the key encrypted by
+-- Devices of a project (devices.py, Janis 07.11.2026): name (what it is), kind, hostname, optional ip, description. `key_enc` is the key encrypted by
 -- vault.py ('' = none); it is never shown again and no AI reads it.
 CREATE TABLE IF NOT EXISTS devices (
     id          INTEGER PRIMARY KEY,
     project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     name        TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'other',
     hostname    TEXT NOT NULL,
+    ip          TEXT NOT NULL DEFAULT '',
     description TEXT NOT NULL DEFAULT '',
     key_enc     TEXT NOT NULL DEFAULT '',
     created_at  INTEGER NOT NULL

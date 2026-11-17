@@ -539,3 +539,5 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 .check-line { display: flex; align-items: center; gap: 8px; margin-top: var(--space); }
 .check-line[hidden] { display: none; }
 .mtile.m-devices .check-list { max-height: none; }
+.device-tile { cursor: default; color: var(--accent); }   /* the picture of a device: its pictogram on the rounded square of the files */
+.device-tile svg { width: 22px; height: 22px; }

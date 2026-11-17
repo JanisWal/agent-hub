@@ -15,9 +15,9 @@ def _bad(code: str) -> JSONResponse:
 
 @router.post("/projects/{project_id}/devices")
 def create_device(project_id: int, name: str = Form(""), hostname: str = Form(""), description: str = Form(""),
-                  key: str = Form(""), user: users.User = Depends(api_user)):
+                  key: str = Form(""), kind: str = Form("other"), ip: str = Form(""), user: users.User = Depends(api_user)):
     try:
-        device = devices.create(user.id, project_id, name, hostname, description, key)
+        device = devices.create(user.id, project_id, name, hostname, description, key, kind, ip)
     except ValueError as exc:
         return _bad(str(exc))
     return fail(404) if device is None else ok(id=device.id)
@@ -25,9 +25,10 @@ def create_device(project_id: int, name: str = Form(""), hostname: str = Form(""
 
 @router.post("/devices/{device_id}")
 def change_device(device_id: int, name: str = Form(""), hostname: str = Form(""), description: str = Form(""),
-                  key: str = Form(""), remove_key: str = Form(""), user: users.User = Depends(api_user)):
+                  key: str = Form(""), remove_key: str = Form(""), kind: str = Form("other"), ip: str = Form(""),
+                  user: users.User = Depends(api_user)):
     try:
-        project_id = devices.update(user.id, device_id, name, hostname, description, key, remove_key == "1")
+        project_id = devices.update(user.id, device_id, name, hostname, description, key, remove_key == "1", kind, ip)
     except ValueError as exc:
         return _bad(str(exc))
     return fail(404) if project_id is None else ok()

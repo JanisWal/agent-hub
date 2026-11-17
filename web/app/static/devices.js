@@ -29,7 +29,10 @@
     document.getElementById("device-dialog-title").textContent = dialog.dataset[edit ? "titleEdit" : "titleNew"];
     document.getElementById("device-dialog-button").textContent = dialog.dataset[edit ? "btnEdit" : "btnNew"];
     form.elements.name.value = options.name || "";
+    form.elements.kind.value = options.kind || "other";
+    form.elements.kind.dispatchEvent(new Event("change", { bubbles: true }));   // the styled list follows (core.js)
     form.elements.hostname.value = options.hostname || "";
+    form.elements.ip.value = options.ip || "";
     form.elements.description.value = options.description || "";
     keyInput.value = "";
     keyInput.placeholder = dialog.dataset[options.hasKey ? "keyEdit" : "keyNew"];
@@ -43,7 +46,7 @@
   function openFor(row) {
     openDialog({
       action: "/devices/" + row.dataset.id, edit: true, hasKey: row.dataset.key === "1",
-      name: row.dataset.name, hostname: row.dataset.hostname, description: row.dataset.description,
+      name: row.dataset.name, kind: row.dataset.kind, hostname: row.dataset.hostname, ip: row.dataset.ip, description: row.dataset.description,
     });
   }
 

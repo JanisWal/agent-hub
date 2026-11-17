@@ -37,6 +37,23 @@ class DevicesTest(unittest.TestCase):
         self.assertEqual((d.name, d.hostname, d.description, d.has_key), ("Roadster", "roadster.local", "Car", False))
         self.assertEqual([x.id for x in devices.list_devices(self.user.id, self.project.id)], [d.id])
 
+    def test_kind_ip_and_the_picture(self):
+        d = self.make("Server", "pi.local", key="")
+        d = devices.create(self.user.id, self.project.id, "Garage", "garage.local", kind="raspberry_pi", ip="192.168.001.20".replace("001", "1"))
+        self.assertEqual((d.kind, d.ip, d.icon), ("raspberry_pi", "192.168.1.20", "dev_pi"))
+        self.assertEqual(devices.icon_for("windows_server"), "dev_windows")
+        self.assertEqual(devices.icon_for("other", "Backup server"), "dev_server")     # the name says what it is
+        self.assertEqual(devices.icon_for("other", "Subserver-less"), "dev_box")
+        self.assertEqual(devices.icon_for("other", "Thing"), "dev_box")
+        self.assertEqual(devices.icon_for("windows_pc", "Server"), "dev_pc")           # the kind wins over the name
+        self.assertEqual(devices.create(self.user.id, self.project.id, "V6", "v6.local", ip="::1").ip, "::1")
+        for bad in ({"kind": "toaster"}, {"ip": "999.1.1.1"}, {"ip": "host.local"}):
+            with self.assertRaises(ValueError) as ctx:
+                devices.create(self.user.id, self.project.id, "X", "x.local", **bad)
+            self.assertEqual(str(ctx.exception), next(iter(bad)))
+        devices.update(self.user.id, d.id, "Garage", "garage.local", kind="router", ip="")
+        self.assertEqual([(x.kind, x.ip) for x in devices.list_devices(self.user.id, self.project.id) if x.id == d.id], [("router", "")])
+
     def test_the_key_is_stored_encrypted_and_never_in_the_clear(self):
         secret = "-----BEGIN OPENSSH PRIVATE KEY-----\nabc123SECRET\n-----END OPENSSH PRIVATE KEY-----"
         d = self.make(key=secret)
