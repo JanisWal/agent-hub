@@ -48,7 +48,7 @@ class Mistral:
 
     def chat_command(self, *, chat_id, user_id, model, ticket, mode, effort, files_dir=None, code_dir=None):
         return launcher.build_vibe_command(name=f"agent-chat-{int(chat_id)}", user_id=user_id, model=model,
-                                           ticket=ticket, job="chat-apart" if mode == "apart" else "chat-all",
+                                           ticket=ticket, job={"apart": "chat-apart", "brief": "chat-brief"}.get(mode, "chat-all"),
                                            effort=effort, files_dir=files_dir, code_dir=code_dir)
 
     def run_command(self, *, run_id, user_id, model, ticket, net, effort, work_dir, files_dir=None):

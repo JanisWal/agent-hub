@@ -38,7 +38,7 @@ API_PROXY = "http://egress:3129"   # only Anthropic (sign-ins)
 GATEWAY = "http://egress:3130"     # the Claude API with the user's token put in by the proxy (runner/egress.py)
 MISTRAL_GATEWAY = "http://egress:3131"   # the same for Mistral (its key put in by the proxy)
 # Mistral runs: limits per job (turns, seconds); the proxy follows the same switch as Claude.
-VIBE_JOBS = {"chat-all": (12, 180), "chat-apart": (10, 180), "run": (60, 1050)}
+VIBE_JOBS = {"chat-all": (12, 180), "chat-apart": (10, 180), "chat-brief": (1, 90), "run": (60, 1050)}
 _TICKET = re.compile(r"hubrun-[A-Za-z0-9_-]{43}")   # runner/tokens.py
 # What the manager chat may do: tools, proxy and steps (model turns) per question.
 CHAT_MODES = {
@@ -51,6 +51,9 @@ CHAT_MODES = {
     # Web and code apart (switch off): the web search runs on Anthropic's side, the container only reaches
     # Anthropic, so code has no internet and nothing it reads can leave. No WebFetch: it would need the open web.
     "apart": {"tools": ("WebSearch", "Bash"), "proxy": API_PROXY, "turns": 10},
+    # The written status of a project (web/app/statusnote.py, 17.11.2026): no tools at all, one turn, only Anthropic
+    # reachable. It reads a short digest on stdin and answers one line; nothing else costs tokens.
+    "brief": {"tools": (), "proxy": API_PROXY, "turns": 1},
 }
 # Restart and shutdown of the Pi (owner's request, see web/app/power.py). The host is reached through the
 # Docker socket: a short-lived privileged container joins the host's namespaces and runs `systemctl`.
@@ -291,7 +294,7 @@ def build_vibe_command(*, name: str, user_id: int, model: str, ticket: str, job:
     if not isinstance(ticket, str) or not _TICKET.fullmatch(ticket):
         raise ValueError("bad ticket")
     _model_args(model, effort)                        # the same patterns as for Claude
-    proxy = {"chat-all": WEB_PROXY, "chat-apart": API_PROXY}.get(job) or RUN_PROXY.get(net)
+    proxy = {"chat-all": WEB_PROXY, "chat-apart": API_PROXY, "chat-brief": API_PROXY}.get(job) or RUN_PROXY.get(net)
     if proxy is None:
         raise ValueError("unknown net mode")
     _check_container(memory, image, network)

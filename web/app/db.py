@@ -138,6 +138,20 @@ CREATE TABLE IF NOT EXISTS devices (
     created_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS devices_by_project ON devices (project_id, id);
+-- What happened on a device (devices.log, 17.11.2026): connections, shell sessions with their length, actions and
+-- file transfers, who did it and whether a human or the AI asked. Never what was typed. Goes with the device.
+CREATE TABLE IF NOT EXISTS device_log (
+    id         INTEGER PRIMARY KEY,
+    device_id  INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+    user_id    INTEGER,
+    origin     TEXT NOT NULL DEFAULT 'human',
+    action     TEXT NOT NULL,
+    result     TEXT NOT NULL DEFAULT '',
+    detail     TEXT NOT NULL DEFAULT '',
+    seconds    INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS device_log_by_device ON device_log (device_id, id);
 -- "For you" (todos.py, Janis 16.11.2026): work the user does himself (hardware, fitting, errands), done once,
 -- with a note of what he did. Decisions are not here but in "waiting for you" (Manager view).
 CREATE TABLE IF NOT EXISTS todos (
@@ -222,6 +236,20 @@ CREATE TABLE IF NOT EXISTS work_wipes (
     created_at INTEGER NOT NULL,
     PRIMARY KEY (kind, ref)
 );
+-- The written status of a project (statusnote.py, KONZEPT-AGENTEN.md 9.7; 17.11.2026): what the AI wrote in its last
+-- status rounds, newest last, a few kept per project. `source` 'ai' is a note; 'failed' marks a round that brought
+-- none, so the hub does not try again at once. `fingerprint` is the hash of the facts the AI read.
+CREATE TABLE IF NOT EXISTS project_status (
+    id          INTEGER PRIMARY KEY,
+    project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    level       TEXT NOT NULL DEFAULT '',
+    title       TEXT NOT NULL DEFAULT '',
+    text        TEXT NOT NULL DEFAULT '',
+    source      TEXT NOT NULL DEFAULT 'ai',
+    fingerprint TEXT NOT NULL DEFAULT '',
+    created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS project_status_by_project ON project_status (project_id, id);
 -- Settings of the whole server, chosen by the owner (serversettings.py), e.g. how uploads are cut.
 CREATE TABLE IF NOT EXISTS server_settings (
     key   TEXT PRIMARY KEY,
@@ -248,7 +276,8 @@ NEW_COLUMNS = {
                       "memory_saved": "INTEGER NOT NULL DEFAULT 0",   # the answer updated the memory file
                       "effort": "TEXT NOT NULL DEFAULT ''",           # effort level (catalog.py); '' = older question
                       "provider": "TEXT NOT NULL DEFAULT 'claude'",   # which AI answers (catalog.PROVIDERS)
-                      "tried": "TEXT NOT NULL DEFAULT ''"},           # AIs that could not answer it (chat fallback)
+                      "tried": "TEXT NOT NULL DEFAULT ''",            # AIs that could not answer it (chat fallback)
+                      "kind": "TEXT NOT NULL DEFAULT 'chat'"},        # 'chat' or 'status' (a status round, statusnote.py)
     "agent_runs": {"effort": "TEXT NOT NULL DEFAULT ''",     # effort level of the run's model (catalog.py)
                    "provider": "TEXT NOT NULL DEFAULT 'claude'"},   # which AI does the run (aichoice.py)
     "agent_tasks": {"merged": "INTEGER NOT NULL DEFAULT 0"},   # the runner merged the approved branch (agents.py)
@@ -257,6 +286,17 @@ NEW_COLUMNS = {
     "checks": {"days": "TEXT NOT NULL DEFAULT '1111111'"},   # weekdays of a daily check, Monday first (checks.py)
     "power_requests": {"result": "TEXT"},                    # how a manual backup ended: 'ok' or 'failed' (power.py)
     "claude_connections": {"expires_at": "INTEGER"},         # when the user's Claude token runs out (claude_link.py)
+    # The broker's side of a device (devices.py, 17.11.2026): login, the trusted host key and address, the system it
+    # runs, what the AI may do, the found updates. `key_enc` holds the key or the password (`auth`), sealed by vault.py.
+    "devices": {"ssh_user": "TEXT NOT NULL DEFAULT ''", "ssh_port": "INTEGER NOT NULL DEFAULT 22",
+                "auth": "TEXT NOT NULL DEFAULT 'key'", "public_key": "TEXT NOT NULL DEFAULT ''",
+                "host_key": "TEXT NOT NULL DEFAULT ''", "host_fp": "TEXT NOT NULL DEFAULT ''",
+                "pinned_ip": "TEXT NOT NULL DEFAULT ''", "os_family": "TEXT NOT NULL DEFAULT ''",
+                "os_name": "TEXT NOT NULL DEFAULT ''", "sudo_ok": "INTEGER", "lan_ok": "INTEGER NOT NULL DEFAULT 0",
+                "ai_actions": "TEXT NOT NULL DEFAULT ''", "ai_password": "INTEGER NOT NULL DEFAULT 0",
+                "updates_found": "INTEGER NOT NULL DEFAULT 0", "updates_at": "INTEGER",
+                "reboot_needed": "INTEGER NOT NULL DEFAULT 0", "checked_at": "INTEGER",
+                "ip_hint": "TEXT NOT NULL DEFAULT ''"},   # the address the broker found for the hostname (a suggestion)
 }
 
 # The three statements below run once, when a database from before the feature is opened for the

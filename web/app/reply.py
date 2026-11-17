@@ -5,7 +5,7 @@ the text the user reads. Memory and read markers stay in memory.py; this module 
 
     <ask kind="choice|text" size="small|large">Question<option>Answer</option>...</ask>
     <task kind="bug|minor|major" title="...">Description and acceptance criteria</task>
-    <status level="green|yellow|red">One sentence</status>
+    <status level="green|yellow|red" title="A few words">One or two sentences</status>   (title optional)
 
 `parse` is a pure function: it knows no user, no project and no database. Whoever stores the result (a later module)
 must save it under the project of the question and nowhere else. Anything that does not fit (unknown value, empty text,
@@ -23,6 +23,7 @@ MAX_QUESTION = 1000
 MAX_OPTIONS = 6
 MAX_OPTION = 200
 MAX_STATUS = 300
+MAX_STATUS_TITLE = 60
 ASK_KINDS = ("choice", "text")
 ASK_SIZES = ("small", "large")
 TASK_KINDS = ("bug", "minor", "major")
@@ -56,6 +57,7 @@ class Task:
 class Status:
     level: str               # "green", "yellow" or "red"
     text: str
+    title: str = ""          # a short headline (the status tile shows it in bold); may be empty
 
 
 @dataclass
@@ -109,8 +111,9 @@ def parse(answer: str) -> Signals:
             tasks.append(Task(attrs["kind"], title, body))
     status = None
     for raw, inner in _STATUS.findall(answer):
-        level, text = _attrs(raw).get("level"), _line(inner, MAX_STATUS)
+        attrs = _attrs(raw)
+        level, text = attrs.get("level"), _line(inner, MAX_STATUS)
         if level in LEVELS and text:
-            status = Status(level, text)
+            status = Status(level, text, _line(attrs.get("title", ""), MAX_STATUS_TITLE))
     text = _STATUS.sub("", _TASK.sub("", _ASK.sub("", answer))).strip()
     return Signals(text, asks, tasks, status)

@@ -15,7 +15,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import agents, aichoice, catalog, checks, db, files, memory
+from . import agents, aichoice, catalog, checks, db, files, memory, statusnote
 
 # The manager is the role "chef": model and effort level are settings of the user (agents.py, list in catalog.py).
 MAX_PROMPT = 2000
@@ -92,7 +92,7 @@ KEEP = 10                # messages shown per project
 MAX_STORED = 100         # messages kept per user, the oldest go first
 # "all": web and code together, code with the open internet; "apart": web search, code without internet.
 # Which one is the user's setting agents.net_in ("together"/"apart"). Old messages may still say "web".
-MODES = ("all", "apart")
+MODES = ("all", "apart")   # what a user may choose; "brief" (no tools) is only for status rounds (statusnote.py)
 NET_TO_MODE = {"together": "all", "apart": "apart"}
 # Why a question failed, read from the reason the runner sent (Janis, 14.11.2026: show a short text, not what Claude
 # Code says). The reason stays in the answer column for looking into problems; the page only gets the kind.
@@ -175,8 +175,8 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
         "SELECT text, cycle, days, last_done FROM checks WHERE project_id = ? ORDER BY id LIMIT ?",
         (project_id, CHECKS),
     ).fetchall()
-    machines = conn.execute(   # the key column is never read here: the manager knows what a device is, not how to get in
-        "SELECT name, hostname, description FROM devices WHERE project_id = ? ORDER BY id LIMIT ?",
+    machines = conn.execute(   # never the secret, the host key or the login: the manager knows what a device is, not how to get in
+        "SELECT name, kind, hostname, ip, ip_hint, os_name, description FROM devices WHERE project_id = ? ORDER BY id LIMIT ?",
         (project_id, DEVICES),
     ).fetchall()
     work = conn.execute(   # "For you": what the user does himself (todos.py), open ones first
@@ -188,7 +188,7 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
     ).fetchall()
     history = conn.execute(
         "SELECT prompt, answer FROM chat_messages WHERE user_id = ? AND project_id = ? AND status = 'done'"
-        " AND id < ? ORDER BY id DESC LIMIT ?", (user_id, project_id, row["id"], HISTORY),
+        " AND kind = 'chat' AND id < ? ORDER BY id DESC LIMIT ?", (user_id, project_id, row["id"], HISTORY),
     ).fetchall()[::-1]
     autonomy = AUTONOMY_TEXT.get(agents.autonomy_in(conn, user_id), AUTONOMY_TEXT[agents.DEFAULT_AUTONOMY])
     head = (f"Project: {project['name']}\nDescription: {project['description'] or '(none yet)'}\n"
@@ -205,8 +205,13 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
         f"{'due' if checks.is_due(c['cycle'], c['last_done'], now, c['days']) else 'not due yet'})"
         for c in regular
     ) or "(none)"
+    def address(d) -> str:   # the user's IP, else the one the hub found for the hostname (marked as a guess)
+        return d["ip"] or (f"{d['ip_hint']} (found for the hostname)" if d["ip_hint"] else "")
+
     device_list = "\n".join(
-        f"- {d['name']} ({d['hostname']})" + (f": {_clip(d['description'], NOTE_CUT)}" if d["description"] else "")
+        f"- {d['name']}: {d['kind'].replace('_', ' ')}, host {d['hostname']}"
+        + (f", IP {address(d)}" if address(d) else "") + (f", runs {d['os_name']}" if d["os_name"] else "")
+        + (f"; {_clip(d['description'], NOTE_CUT)}" if d["description"] else "")
         for d in machines) or "(none)"
     own_work = "\n".join(
         f"- {t['text']} (open)" if t["done_at"] is None
@@ -218,7 +223,8 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
     def context() -> str:
         memory = "\n\n".join(talks) or "(no earlier questions)"
         return (f"{head}\n\nOpen board items:\n{board}\n\nRegular checks (your recurring to-dos, not board items):\n"
-                f"{routine}\n\nDevices of the project (you never get their keys and do not switch hardware):\n{device_list}"
+                f"{routine}\n\nDevices of the project (its inventory: use it to know which device the user means; you never get "
+                f"their keys, never use their shell and never restart or switch them):\n{device_list}"
                 f"\n\nFor you (work the user does himself, by hand; you advise and keep the state):\n{own_work}"
                 f"\n\nEarlier questions in this project:\n{memory}")
 
@@ -273,16 +279,16 @@ def send(user_id: int, project_id: int, prompt: str, mode: str | None = None, no
         if not aichoice.connected_in(conn, user_id, provider):
             raise ValueError(provider)
         _drop_stale(conn, now)
-        if conn.execute("SELECT 1 FROM chat_messages WHERE user_id = ? AND status IN ('queued', 'running')",
-                        (user_id,)).fetchone():
+        if conn.execute("SELECT 1 FROM chat_messages WHERE user_id = ? AND kind = 'chat' AND status IN"
+                        " ('queued', 'running')", (user_id,)).fetchone():
             raise ValueError("busy")
         cur = conn.execute(
             "INSERT INTO chat_messages (user_id, project_id, prompt, mode, model, effort, provider, status, created_at)"
             " VALUES (?, ?, ?, ?, ?, ?, ?, 'queued', ?)", (user_id, project_id, prompt, mode, model, effort, provider, now),
         )
         conn.execute(
-            "DELETE FROM chat_messages WHERE user_id = ? AND id NOT IN"
-            " (SELECT id FROM chat_messages WHERE user_id = ? ORDER BY id DESC LIMIT ?)",
+            "DELETE FROM chat_messages WHERE user_id = ? AND kind = 'chat' AND id NOT IN"
+            " (SELECT id FROM chat_messages WHERE user_id = ? AND kind = 'chat' ORDER BY id DESC LIMIT ?)",
             (user_id, user_id, MAX_STORED),
         )
         row = conn.execute("SELECT * FROM chat_messages WHERE id = ?", (cur.lastrowid,)).fetchone()
@@ -293,7 +299,7 @@ def list_messages(user_id: int, project_id: int) -> list[Message]:
     """The latest messages of this project, oldest first; empty if the project is not the user's."""
     with db.connect() as conn:
         rows = conn.execute(
-            "SELECT * FROM (SELECT * FROM chat_messages WHERE user_id = ? AND project_id = ?"
+            "SELECT * FROM (SELECT * FROM chat_messages WHERE user_id = ? AND project_id = ? AND kind = 'chat'"
             " ORDER BY id DESC LIMIT ?) ORDER BY id", (user_id, project_id, KEEP),
         ).fetchall()
     return [_message(r) for r in rows]
@@ -315,7 +321,10 @@ def _next_ai(conn: sqlite3.Connection, row: sqlite3.Row, failed: str | None = No
 
 def _switch(conn: sqlite3.Connection, row: sqlite3.Row, provider: str, failed: str) -> None:
     """Give the question to another AI of the same user: its model and level for the manager, the failed AI noted."""
-    model, effort = agents._choice(conn, row["user_id"], "chef", provider)
+    if row["kind"] == "status":   # a status round stays on the cheapest model of the other AI
+        model, effort = catalog.light(provider)
+    else:
+        model, effort = agents._choice(conn, row["user_id"], "chef", provider)
     tried = ",".join(p for p in dict.fromkeys([*row["tried"].split(","), failed]) if p)
     conn.execute("UPDATE chat_messages SET provider = ?, model = ?, effort = ?, tried = ? WHERE id = ?",
                  (provider, model, effort, tried, row["id"]))
@@ -329,6 +338,7 @@ def claim_next(now: int | None = None) -> ChatJob | None:
         _drop_stale(conn, now)
         if not agents.slot_free(conn):
             return None   # as many AI containers at once as the owner allows (agent runs included)
+        statusnote.scan(conn, now)   # the written status of projects that changed (statusnote.py), at most every few minutes
         for row in conn.execute("SELECT * FROM chat_messages WHERE status = 'queued' ORDER BY id").fetchall():
             if not aichoice.connected_in(conn, row["user_id"], row["provider"]):
                 other = _next_ai(conn, row, row["provider"])
@@ -337,6 +347,10 @@ def claim_next(now: int | None = None) -> ChatJob | None:
                 _switch(conn, row, other, row["provider"])
                 row = conn.execute("SELECT * FROM chat_messages WHERE id = ?", (row["id"],)).fetchone()
             conn.execute("UPDATE chat_messages SET status = 'running', started_at = ? WHERE id = ?", (now, row["id"]))
+            if row["kind"] == "status":   # no files and no code: the digest is all it reads
+                return ChatJob(row["id"], row["user_id"], row["model"],
+                               statusnote.prompt_for(conn, row["user_id"], row["project_id"], now), "brief",
+                               row["effort"], row["provider"], 0)
             stored, links = files.for_agents(conn, row["user_id"], row["project_id"])
             return ChatJob(row["id"], row["user_id"], row["model"], build_input(conn, row), row["mode"],
                            row["effort"], row["provider"], row["project_id"], stored, links)
@@ -363,6 +377,10 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
                              " tokens_out = tokens_out + ?, created_at = ? WHERE id = ?",
                              (tokens_in, tokens_out, int(time.time()), chat_id))
                 return True
+        if row["kind"] == "status":   # a status round: its note is kept apart, the message itself goes
+            statusnote.save(conn, row, ok, answer)
+            conn.execute("DELETE FROM chat_messages WHERE id = ?", (chat_id,))
+            return True
         parsed = memory.parse_answer(answer) if ok else None
         failed = (memory.edit_failures(memory.check_edits(row["user_id"], row["project_id"], parsed.edits))
                   if parsed is not None and parsed.edits else "")

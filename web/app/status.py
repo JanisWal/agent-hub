@@ -1,6 +1,6 @@
 """Assessment of a project's state (Manager view, tile "Status"): how much is planned and done, how far the project is
-from what was set out, and how work is going (running, active, quiet, stalled, idle), with a lamp in three levels
-(Janis, 07.11.2026: runs; problems but manageable; intervention needed).
+from what was set out, and how work is going (running, active, quiet, stalled, idle), with a lamp (Janis, 07.11.2026: runs; problems but manageable; intervention needed; since 17.11.2026 also orange
+"at rest": nothing to do and nothing stuck).
 
 It is counted from the data, no AI is asked: the same numbers give the same answer and it costs nothing. The manager's
 own written status (reply format `<status>`) can come later next to it.
@@ -20,9 +20,9 @@ RECENT = 2 * DAY          # work this recently is "active"
 STALL = 7 * DAY           # open work with nothing for so long is "stalled"
 APPROVAL_WAIT = 3 * DAY   # a release that waits so long is a problem
 FAILED_WITHIN = 3 * DAY   # a failed run this recently counts
-BUSY_EVENTS = 5           # events in a week from which the project is "busy"
+BUSY_EVENTS = 6           # events in a week from which the project is "busy"
 RUNNING = ("coding", "testing", "reviewing", "documenting")
-LAMPS = ("none", "green", "yellow", "red")
+LAMPS = ("none", "green", "rest", "yellow", "red")   # rest = orange: nothing to do, nothing stuck (Janis, 17.11.2026)
 ACTIVITIES = ("running", "busy", "active", "quiet", "stalled", "idle")
 
 
@@ -72,23 +72,28 @@ def assess(user_id: int, project_id: int, now: int | None = None) -> Assessment 
         proposals = _one(conn, "SELECT COUNT(*) FROM board_items WHERE project_id = ? AND status = 'proposed'", project_id)
         todos_open = _one(conn, "SELECT COUNT(*) FROM todos WHERE project_id = ? AND done_at IS NULL", project_id)
         escalated = _one(conn, "SELECT COUNT(*) FROM agent_tasks WHERE project_id = ? AND status = 'escalated'", project_id)
+        # waiting since the last run of the task ended (that is when it came to the user), not since it was made
         old_release = _one(conn, "SELECT COUNT(*) FROM agent_tasks t WHERE t.project_id = ? AND t.status = 'awaiting_approval'"
-                           " AND t.created_at < ?", project_id, now - APPROVAL_WAIT)
+                           " AND COALESCE((SELECT MAX(r.finished_at) FROM agent_runs r WHERE r.task_id = t.id), t.created_at) < ?",
+                           project_id, now - APPROVAL_WAIT)
         failed = _one(conn, "SELECT COUNT(*) FROM agent_runs r JOIN agent_tasks t ON t.id = r.task_id WHERE t.project_id = ?"
                       " AND r.status = 'failed' AND r.finished_at > ? AND t.status IN"
                       " ('coding','testing','reviewing','documenting','awaiting_approval')", project_id, now - FAILED_WITHIN)
         running_now = _one(conn, "SELECT COUNT(*) FROM agent_runs r JOIN agent_tasks t ON t.id = r.task_id"
                            " WHERE t.project_id = ? AND r.status IN ('queued','running')", project_id)
         week = now - 7 * DAY
-        # one row per kind of event: (newest time, number in the last week)
+        # one row per kind of event: (newest time, number in the last week). Only what a person or an agent did counts:
+        # the memory files the hub makes itself (memory.py) are not activity (17.11.2026: they made every project
+        # "busy"), the AI's written status neither, and an upload of many files counts once per hour, not per file.
         stamps = []
         for sql in (
             "SELECT MAX(created_at), SUM(created_at > :w) FROM board_items WHERE project_id = :p",
             "SELECT MAX(COALESCE(finished_at, created_at)), SUM(COALESCE(finished_at, created_at) > :w) FROM agent_tasks WHERE project_id = :p",
             "SELECT MAX(COALESCE(r.finished_at, r.created_at)), SUM(COALESCE(r.finished_at, r.created_at) > :w) FROM agent_runs r"
             " JOIN agent_tasks t ON t.id = r.task_id WHERE t.project_id = :p",
-            "SELECT MAX(created_at), SUM(created_at > :w) FROM chat_messages WHERE project_id = :p",
-            "SELECT MAX(created_at), SUM(created_at > :w) FROM files WHERE project_id = :p",
+            "SELECT MAX(created_at), SUM(created_at > :w) FROM chat_messages WHERE project_id = :p AND kind = 'chat'",
+            "SELECT MAX(created_at), COUNT(DISTINCT CASE WHEN created_at > :w THEN created_at / 3600 END) FROM files"
+            " WHERE project_id = :p AND category != 'memory' AND trashed_at IS NULL",
             "SELECT MAX(COALESCE(done_at, created_at)), SUM(COALESCE(done_at, created_at) > :w) FROM todos WHERE project_id = :p",
         ):
             stamps.append(conn.execute(sql, {"w": week, "p": project_id}).fetchone())
@@ -130,6 +135,8 @@ def assess(user_id: int, project_id: int, now: int | None = None) -> Assessment 
         lamp = "yellow"
     elif total == 0 and last is None:
         lamp = "none"
+    elif not unfinished:
+        lamp = "rest"   # everything is done or nothing is planned: it does not run, but nothing is stuck either
     else:
         lamp = "green"
     return Assessment(planned, in_progress, waiting, done, proposals, todos_open, due, progress, activity, events,

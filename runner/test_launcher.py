@@ -130,8 +130,19 @@ class ChatCommandTest(unittest.TestCase):
         self.assertNotIn("HTTPS_PROXY=http://egress:3128", cmd)
         self.assertNotIn("WebFetch", " ".join(cmd))
 
+    def test_the_status_round_has_no_tools_one_turn_and_only_anthropic(self):
+        cmd = L.build_chat_command(chat_id=8, user_id=2, model="haiku", ticket=TICKET, mode="brief", effort="low")
+        self.assertEqual(cmd[cmd.index("--tools") + 1], "")
+        self.assertNotIn("--allowedTools", cmd)
+        self.assertEqual(cmd[cmd.index("--max-turns") + 1], "1")
+        self.assertIn("HTTPS_PROXY=http://egress:3129", cmd)
+        vibe = L.build_vibe_command(name="agent-chat-8", user_id=2, model="mistral-small-2603", ticket=TICKET,
+                                    job="chat-brief", effort="none")
+        self.assertIn("HUB_JOB=chat-brief", vibe)
+        self.assertIn("HUB_TURNS=1", vibe)
+
     def test_only_the_manager_modes_exist(self):
-        self.assertEqual(tuple(L.CHAT_MODES), ("all", "apart"))              # the old single modes are gone
+        self.assertEqual(tuple(L.CHAT_MODES), ("all", "apart", "brief"))     # the old single modes are gone
         for old in ("plain", "web", "code", "everything"):
             with self.assertRaises(ValueError):
                 L.build_chat_command(chat_id=5, user_id=2, model="haiku", ticket=TICKET, mode=old)

@@ -131,6 +131,7 @@ html.splitting, html.splitting * { cursor: row-resize !important; -webkit-user-s
 /* The status lamp: grey until the manager reports (green, amber, red later). */
 .m-lamp { flex: none; width: 14px; height: 14px; border-radius: 50%; --lamp: var(--muted); background: var(--lamp); opacity: 0.55; box-shadow: 0 0 0 4px color-mix(in srgb, var(--lamp) 18%, transparent); }
 .m-lamp.lamp-green { --lamp: var(--go); opacity: 1; }
+.m-lamp.lamp-rest { --lamp: var(--rest); opacity: 1; }
 .m-lamp.lamp-yellow { --lamp: var(--warn); opacity: 1; }
 .m-lamp.lamp-red { --lamp: var(--danger); opacity: 1; }
 /* The drop-down at the pencil next to the title (name and description of the project). */
@@ -529,6 +530,14 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 .status-facts dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
 .status-reasons { margin: 12px 0 0; padding-left: 18px; font-size: 0.85rem; font-weight: 600; }
 .status-extra { margin-top: 10px; font-size: 0.8rem; }
+/* The written status of the AI (statusnote.py, 17.11.2026): headline in bold above, one or two sentences below. The
+   round arrow asks for a new one; what the hub answers stands in the quiet line at the foot (fixed place, empty = no
+   height). */
+.status-note { margin-top: 6px; font-size: 0.9rem; line-height: 1.45; overflow-wrap: anywhere; }
+.status-line strong { overflow-wrap: anywhere; }
+.m-status header .status-again { flex: none; }
+.status-say { font-size: 0.8rem; margin-top: 8px; min-height: 0; }
+.status-say:empty { display: none; }
 
 /* ===== Devices tile: the check-row list, with the key lock and a description line ===== */
 .device-desc { overflow-wrap: anywhere; }
@@ -541,3 +550,133 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 .mtile.m-devices .check-list { max-height: none; }
 .device-tile { cursor: default; color: var(--accent); }   /* the picture of a device: its pictogram on the rounded square of the files */
 .device-tile svg { width: 22px; height: 22px; }
+
+/* ===== Devices, broker (17.11.2026, Janis): rows like the files, LED, three round glass buttons, the device window ===== */
+.device-list { overflow-y: auto; padding: 4px 6px; margin: 0 -6px; overscroll-behavior: contain; }
+.device-row { cursor: pointer; flex-shrink: 0; }   /* the list scrolls, rows keep their height */
+.device-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.device-row .check-text { flex: 1; min-width: 0; }
+.device-row .check-title { display: flex; align-items: center; gap: 7px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.device-row small { display: block; color: var(--muted); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dev-hint { opacity: 0.6; }                         /* an address found in the network: a suggestion, not the user's */
+/* LED: green on, red off, white while it restarts, shuts down or installs; nothing while unknown. */
+.dev-led { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--field); box-shadow: inset 0 0 0 1px var(--glass-border); }
+.dev-led.led-on { background: var(--go); box-shadow: 0 0 8px color-mix(in srgb, var(--go) 70%, transparent); }
+.dev-led.led-off { background: var(--danger); box-shadow: 0 0 8px color-mix(in srgb, var(--danger) 60%, transparent); }
+.dev-led.led-busy { background: var(--led-white); box-shadow: 0 0 10px color-mix(in srgb, var(--led-white) 85%, transparent), inset 0 0 0 1px rgba(0, 0, 0, 0.15); animation: dev-pulse 1.6s ease-in-out infinite; }
+@keyframes dev-pulse { 50% { opacity: 0.55; } }
+.dev-buttons { flex: none; display: flex; gap: 6px; }
+.icon-button.dev-btn { position: relative; width: 34px; height: 34px; min-width: 34px; min-height: 34px; color: var(--text); }
+.icon-button.dev-btn::after { content: ""; position: absolute; inset: -5px; border-radius: 50%; }   /* 44 px to touch */
+.icon-button.dev-btn svg { width: 17px; height: 17px; }
+.icon-button.dev-btn:disabled { opacity: 0.38; cursor: default; transform: none; }
+.icon-button.dev-btn.working svg { animation: dev-pulse 1.2s ease-in-out infinite; }
+.icon-button.dev-btn.flash-go { color: var(--on-go); background: var(--go); box-shadow: 0 0 0 2px color-mix(in srgb, var(--go) 55%, transparent), 0 0 18px color-mix(in srgb, var(--go) 55%, transparent); }
+.icon-button.dev-btn.flash-stop { color: var(--on-danger); background: var(--danger); box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 55%, transparent), 0 0 18px color-mix(in srgb, var(--danger) 45%, transparent); }
+.icon-button.dev-btn { transition: background-color 0.35s, box-shadow 0.35s, color 0.35s, transform 0.3s cubic-bezier(0.3, 1.4, 0.5, 1); }
+.dev-dot { position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--go); box-shadow: 0 0 0 2px var(--bg); display: none; }
+.device-row.has-updates .dev-dot { display: block; }   /* updates were found: the next press installs them */
+.dev-say:empty { display: none; }
+@media (prefers-reduced-motion: reduce) { .dev-led.led-busy, .icon-button.dev-btn.working svg { animation: none; } .icon-button.dev-btn { transition: none; } }
+@media (max-width: 520px) { .dev-buttons { gap: 2px; } .icon-button.dev-btn { width: 30px; height: 30px; min-width: 30px; min-height: 30px; } }
+
+/* The dialog of a new device: a notch wider on a wide screen (Janis, 17.11.2026); two fields side by side. */
+.dialog.device-dialog { max-width: 520px; }
+.dev-pair { display: grid; grid-template-columns: 1.6fr 1fr; gap: 0 12px; }
+.dev-pair-small { grid-template-columns: 1.6fr 0.6fr; }
+@media (max-width: 520px) { .dev-pair, .dev-pair-small { grid-template-columns: 1fr; } }
+
+/* The device window: the whole screen like the file viewer; settings left, the work on the device right. */
+.dialog.device-window { position: fixed; inset: 0; margin: 0; width: 100vw; height: 100dvh; max-width: none; max-height: none; border-radius: 0; padding: 14px 18px 18px; box-sizing: border-box; }
+.dialog.device-window[open] { display: flex; flex-direction: column; }
+.dw-sheet { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 12px; }
+.dw-head { display: flex; align-items: center; gap: 12px; }
+.dw-head h2 { flex: 1; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dw-head .dev-led { width: 12px; height: 12px; }
+.dw-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(320px, 420px) 1fr; gap: 20px; }
+.dw-settings { overflow-y: auto; padding: 4px 10px 20px 2px; overscroll-behavior: contain; }
+.dw-settings h3, .dw-panel h3 { display: flex; align-items: center; gap: 6px; margin: 22px 0 8px; font-size: 1.02rem; }
+.dw-settings form h3:first-child { margin-top: 0; }
+.dw-line { margin: 6px 0; font-size: 0.9rem; overflow-wrap: anywhere; }
+.dw-line:empty { display: none; }
+.dw-small { font-size: 0.8rem; }
+.dw-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.dw-buttons > button { min-height: 40px; padding: 0 14px; }
+.dw-buttons[hidden], .dw-public[hidden], #dw-key-part[hidden], #dw-pass-part[hidden], .dw-line[hidden] { display: none; }
+.dw-save { align-items: center; }
+.dw-save .dw-said { flex: 2; margin: 0; font-size: 0.85rem; }
+.dw-public { position: relative; margin-top: 10px; padding: 10px 44px 10px 12px; border-radius: var(--radius-button); background: var(--field); border: 1px solid var(--glass-border); }
+.dw-public code, .dw-fp code, .setup-cmd code { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.78rem; line-height: 1.45; overflow-wrap: anywhere; white-space: pre-wrap; user-select: all; }
+.dw-public .dw-copy, .setup-cmd .card-btn { position: absolute; top: 6px; right: 6px; }
+.dw-copy.copied, .setup-cmd .card-btn.copied { color: var(--go); }
+.dw-paste { margin-top: 12px; }
+.dw-paste summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+.dw-link { min-height: 32px; margin-top: 10px; padding: 0; background: none; border: 0; box-shadow: none; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; font-weight: 600; }
+.dw-link:hover { color: var(--text); transform: none; }
+.dw-link[hidden] { display: none; }
+.danger-link { display: block; margin-top: 26px; color: var(--danger); }
+.dw-ai .check-line { margin-top: 6px; }
+input.dw-hinted::placeholder { color: var(--muted); opacity: 0.75; }
+.dw-work { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+.dw-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.dw-tab { display: inline-flex; align-items: center; gap: 7px; min-height: 38px; padding: 0 14px; border-radius: 999px; font-size: 0.9rem; }
+.dw-tab svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.dw-tab[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 30%, var(--glass)); }
+.dw-panel { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.dw-panel[hidden], .dw-grant[hidden], .dw-editor[hidden], .dw-files[hidden] { display: none; }
+.dw-panel-head { display: flex; align-items: center; gap: 8px; }
+.dw-panel-head h3 { flex: 1; margin: 0; }
+.dw-panel-head > button:not(.icon-button) { min-height: 38px; padding: 0 14px; }
+.dw-grant { padding: 14px; border-radius: var(--radius-button); background: var(--field); border: 1px solid var(--glass-border); }
+.dw-grant p { margin: 0 0 10px; font-size: 0.9rem; }
+.dw-grant form { display: flex; gap: 8px; }
+.dw-grant input { flex: 1; margin: 0; }
+/* The terminal: --term-bg and --term-fg are design variables (a later skin may change them). */
+:root { --term-bg: #1b1410; --term-fg: #f6e6d8; --led-white: #ffffff; }
+.dw-term { flex: 1; min-height: 240px; padding: 8px; border-radius: 10px; background: var(--term-bg); overflow: hidden; }
+.dw-term .xterm { height: 100%; }
+.dw-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.82rem; color: var(--muted); }
+.dw-upload { display: inline-grid; place-items: center; cursor: pointer; }
+.dw-files { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; min-height: 0; }
+.dw-file { display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 8px; border-bottom: 1px solid var(--file-line); }
+.dw-file-name { flex: 1; min-width: 0; min-height: 36px; padding: 0; text-align: left; background: none; border: 0; box-shadow: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.dw-file-name:hover { transform: none; text-decoration: underline; }
+.dw-file.dir .dw-file-name { color: var(--accent); }
+.dw-file small { color: var(--muted); font-size: 0.78rem; white-space: nowrap; }
+.dw-inline { flex: 1; margin: 4px 0; }
+.dw-empty { padding: 10px 4px; }
+.dw-editor { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.dw-editor textarea { flex: 1; min-height: 240px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; resize: none; }
+.dw-src[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 30%, var(--glass)); }
+.dw-log { flex: 1; min-height: 240px; margin: 0; padding: 10px; overflow: auto; border-radius: 10px; background: var(--term-bg); color: var(--term-fg); font-size: 0.78rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dw-history { list-style: none; margin: 0; padding: 0; overflow-y: auto; }
+.dw-history li { padding: 8px 4px; border-bottom: 1px solid var(--file-line); }
+.dw-history strong { display: block; font-size: 0.92rem; }
+.dw-history small { color: var(--muted); font-size: 0.8rem; overflow-wrap: anywhere; }
+@media (pointer: coarse) { .dw-settings input, .dw-settings textarea, .dw-grant input, .dw-editor textarea, .dw-inline { font-size: 16px; } }
+@media (max-width: 900px) {
+  .dw-body { display: flex; flex-direction: column; overflow-y: auto; }
+  .dw-settings { overflow: visible; padding-right: 2px; }
+  .dw-work { min-height: 70dvh; }
+}
+/* The setup guide: one step per item, every command with a copy button. */
+.dialog.device-setup { max-width: 760px; max-height: 88dvh; overflow-y: auto; }
+.setup-steps { margin: 14px 0 0; padding-left: 22px; }
+.setup-steps li + li { margin-top: 16px; }
+.setup-steps h3 { margin: 0 0 4px; font-size: 1rem; }
+.setup-steps p { margin: 0 0 6px; font-size: 0.9rem; color: var(--muted); }
+.setup-cmd { position: relative; padding: 10px 44px 10px 12px; border-radius: var(--radius-button); background: var(--field); border: 1px solid var(--glass-border); }
+/* A narrow devices tile (the left column): the buttons go under the name, so the name keeps its room. */
+.mtile.m-devices { container-type: inline-size; }
+@container (max-width: 400px) {
+  .device-row { flex-wrap: wrap; row-gap: 4px; }
+  .device-row .check-text { flex: 1 1 calc(100% - 52px); }
+  .dev-buttons { flex-basis: 100%; justify-content: flex-end; }
+}
+/* Main buttons in the device window are as wide as their word (.primary is full width elsewhere). */
+.dw-buttons > .primary, .dw-panel-head > .primary, .dw-grant .primary, .dw-save .primary { width: auto; flex: none; min-height: 40px; margin-top: 0; padding: 0 16px; font-size: 0.95rem; }
+/* Ticks in the device window: real checkboxes at their own size (the field style of inputs is not for them). */
+.check-line input[type="checkbox"] { flex: none; width: 20px; height: 20px; min-height: 0; margin: 0; padding: 0; accent-color: var(--accent); box-shadow: none; }
+.check-line { min-height: 32px; }
+.dw-ai-pass-box .info-dot, #dw-ai-pass-box .info-dot { margin-left: 2px; }
+.dialog.device-setup h2 { display: flex; align-items: center; gap: 8px; }

@@ -188,6 +188,13 @@ def read_memory(conn: sqlite3.Connection, user_id: int, project_id: int) -> str 
     return None if row is None else _text_of(row, MAX_MEMORY) or ""
 
 
+def excerpt(conn: sqlite3.Connection, user_id: int, project_id: int, name: str, limit: int,
+            tail: bool = False) -> str | None:
+    """Start (or end, `tail`) of a memory file of the user's project, cut to `limit`; None if there is none."""
+    row = _find(conn, user_id, project_id, name)
+    return None if row is None else _text_of(row, limit, tail)
+
+
 def save_memory(user_id: int, project_id: int, text: str, name: str = MEMORY_NAME) -> bool:
     """Keep what the manager wrote as a memory file: replaces the file of that name or makes it (in the area Memory).
     Longer than MAX_MEMORY it is cut at a line end. False if it could not be saved (a name that is not allowed, not
