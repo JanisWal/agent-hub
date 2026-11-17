@@ -4,9 +4,10 @@ secret is only ever received, never sent back. Errors answer 400 with a code in 
 Who may what (CLAUDE.md "Geräte und Geheimnisse"): every route checks the user and the device's owner (devices.py).
 - Without a password: the list, the state (online, job), reading the host key, trusting it, the connection test,
   making a key, searching updates, the settings of the device.
-- With the user's password each time (deps.reauth): restart, shut down, installing updates, forgetting the host key.
+- Restart, shut down and updates need no password (Janis, 17.11.2026); forgetting the host key does (deps.reauth).
 - Shell, files and the device's logs: after the password once, for GRANT_SECONDS on this device and this login
-  (`grant`). The shell is a WebSocket that checks the session, the origin (HUB_BASE_URL) and the grant.
+  (`grant`); an open shell keeps the grant alive, so a session never asks again. The shell is a WebSocket that checks
+  the session, the origin (HUB_BASE_URL) and the grant.
 Nothing here is reachable with the runner's token or a run's ticket: these are browser routes (cookies) only.
 """
 import asyncio
@@ -33,7 +34,7 @@ _online: dict[int, tuple[float, bool]] = {}
 _pending: dict[int, tuple[float, str, str, str]] = {}   # device -> (time, key, fingerprint, address)
 _seen_jobs: set[tuple[int, int]] = set()
 BUTTONS = {"power": "poweroff", "reboot": "reboot"}
-WITH_PASSWORD = ("reboot", "poweroff", "updates_install")
+WITH_PASSWORD = ()   # Janis, 17.11.2026: restart, shut down and updates need no password (only shell, files, logs)
 
 
 def _bad(code: str, status: int = 400) -> JSONResponse:
@@ -462,6 +463,7 @@ async def device_shell(websocket: WebSocket, device_id: int):
         await websocket.close(code=4403)
         return
     payload = devices.payload(user.id, device_id)
+    grant_key = (_session_key(websocket.cookies.get(COOKIE_NAME)), device_id)
     await websocket.accept()
     started = time.time()
     try:
@@ -490,6 +492,7 @@ async def device_shell(websocket: WebSocket, device_id: int):
         while True:
             text = await websocket.receive_text()
             message = json.loads(text)
+            _grants[grant_key] = time.time() + GRANT_SECONDS   # typing keeps the session's grant alive
             if "in" in message and isinstance(message["in"], str):
                 data = message["in"].encode("utf-8")[:65536]
                 writer.write(json.dumps({"in": base64.b64encode(data).decode("ascii")}).encode() + b"\n")
@@ -511,9 +514,3 @@ async def device_shell(websocket: WebSocket, device_id: int):
             await websocket.close()
         except RuntimeError:
             pass
-
-
-# --- the owner: home network for other users' devices ---------------------------------------------------------------
-@router.post("/admin/devices/{device_id}/lan")
-def device_lan(device_id: int, allowed: str = Form("0"), user: users.User = Depends(api_user)):
-    return ok() if devices.set_lan(user.id, device_id, allowed == "1") else fail(404)

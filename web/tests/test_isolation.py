@@ -68,7 +68,6 @@ class IsolationTest(unittest.TestCase):
         self.assertIsNone(devices.history(self.b.id, mine.id))
         self.assertFalse(devices.trust_host(self.b.id, mine.id, "ssh-ed25519 AAAA", "SHA256:x", "192.168.1.2"))
         self.assertFalse(devices.set_ai(self.b.id, mine.id, ["reboot"], True))
-        self.assertFalse(devices.set_lan(self.b.id, mine.id, True))                         # B is not the owner
         self.assertFalse(devices.ai_may(self.b.id, mine.id, "reboot"))
         for call in (lambda: device_routes.device_info(mine.id, user=self.b),
                      lambda: device_routes.device_setup(mine.id, user=self.b),

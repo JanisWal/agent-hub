@@ -129,15 +129,13 @@
     var name = button.dataset.btn;
     var installs = name === "update" && r.classList.contains("has-updates");
     var action = { power: "poweroff", reboot: "reboot" }[name] || (installs ? "updates_install" : "updates_check");
-    var label = r.querySelector(".check-title").textContent.trim();
     function send(password) {
       var body = new FormData();
       body.append("button", name);
       if (password) body.append("password", password);
       return post("/devices/" + r.dataset.id + "/action", body);
     }
-    var asked = action === "updates_check" ? send("") :
-      askPassword(dialogTitle(action), label, send);
+    var asked = send("");   // no password for the buttons (Janis, 17.11.2026)
     asked.then(function (answer) {
       if (!answer) return;
       if (!answer.ok) { flash(r, "stop"); say(errorText(answer.error)); return; }
@@ -147,7 +145,6 @@
     });
   }
   function cap(action) { return action.replace(/(^|_)([a-z])/g, function (m, s, c) { return c.toUpperCase(); }); }
-  function dialogTitle(action) { return document.getElementById("device-window").dataset["a" + cap(action)] || ""; }
 
   // --- a new device: the dialog, then its window opens (with the setup)
   function showError(code) {

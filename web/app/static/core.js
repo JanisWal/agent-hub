@@ -102,6 +102,19 @@
     });
   }
 
+  // "Back" goes where you came from (Janis, 17.11.2026: from a project to /admin and back into the project, with its
+  // view such as #manager). Every page with no back link of this kind notes itself; a link marked data-back-last
+  // goes to the last noted page. A convenience: without storage it stays the link's own address.
+  var backLink = document.querySelector("a[data-back-last]");
+  function note() { try { sessionStorage.setItem("lastPage", location.pathname + location.search + location.hash); } catch (e) {} }
+  if (!backLink) { note(); window.addEventListener("hashchange", note); }
+  else {
+    try {
+      var last = sessionStorage.getItem("lastPage");
+      if (last && last.charAt(0) === "/" && last.charAt(1) !== "/") backLink.setAttribute("href", last);
+    } catch (e) {}
+  }
+
   window.AgentHub = Object.assign(window.AgentHub || {}, { validate: validate, clear: clear, reload: reload, swap: swap, hold: hold });
 
   document.addEventListener("submit", function (event) {

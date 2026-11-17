@@ -163,17 +163,11 @@ class DevicesTest(unittest.TestCase):
         self.assertTrue(devices.ai_may(self.user.id, d.id, "reboot"))           # ... unless the user allowed it
         self.assertIsNotNone(devices.payload(self.user.id, d.id, "ai"))
 
-    def test_home_network_needs_the_owner(self):
+    def test_home_network_only_for_the_owners_devices(self):
         owner = users.create_user("o@example.com", "Oooo!pass12", role="owner")
         mine = devices.create(owner.id, projects.create_project(owner.id, "O").id, "Pi", "pi.local")
         self.assertTrue(mine.lan_ok)                                           # the owner's own devices
-        d = self.make()
-        self.assertFalse(d.lan_ok)
-        self.assertFalse(devices.set_lan(self.user.id, d.id, True))            # not the owner
-        self.assertEqual(devices.approvals(self.user.id), [])
-        self.assertEqual([a.device_id for a in devices.approvals(owner.id)], [d.id])
-        self.assertTrue(devices.set_lan(owner.id, d.id, True))
-        self.assertTrue(devices.payload(self.user.id, d.id)["lan_ok"])
+        self.assertFalse(self.make().lan_ok)                                   # nobody else's
 
     def test_the_manager_knows_the_inventory_but_never_keys_or_logins(self):
         d = self.make("Roadster", "roadster.local", "Car computer", key="topsecret", kind="raspberry_pi", ssh_user="pi")
@@ -254,17 +248,13 @@ class DevicesTest(unittest.TestCase):
         self.answers["keygen"] = {"sealed": "PLAINTEXT", "public": "ssh-ed25519 AAAA"}
         self.assertEqual(R.device_keygen(d.id, user=self.user).status_code, 400)           # never stores clear text
 
-    def test_serious_actions_need_the_password_a_search_does_not(self):
+    def test_the_buttons_need_no_password(self):
         d = self.ready()
-        wrong = R.device_action(FakeRequest(), d.id, "reboot", "nope", user=self.user)
-        self.assertEqual(wrong.status_code, 403)
-        self.assertNotIn("start", [c[0] for c in self.calls])
-        self.assertTrue(R.device_action(FakeRequest(), d.id, "reboot", "Aaaa!pass12", user=self.user)["ok"])
+        self.assertTrue(R.device_action(FakeRequest(), d.id, "reboot", "", user=self.user)["ok"])
         self.assertTrue(R.device_action(FakeRequest(), d.id, "update", "", user=self.user)["ok"])
         self.assertEqual(self.calls[-1][2]["action"], "updates_check")
         devices.set_updates(self.user.id, d.id, found=3)
-        self.assertEqual(R.device_action(FakeRequest(), d.id, "update", "", user=self.user).status_code, 403)  # install
-        self.assertEqual(R.device_action(FakeRequest(), d.id, "update", "Aaaa!pass12", user=self.user)["action"], "updates_install")
+        self.assertEqual(R.device_action(FakeRequest(), d.id, "update", "", user=self.user)["action"], "updates_install")
         self.assertEqual(R.device_action(FakeRequest(), d.id, "toast", "", user=self.user).status_code, 400)
 
     def test_state_takes_a_finished_job_over_once(self):

@@ -8,8 +8,9 @@ Secrets: the key or password is sealed at once (vault.py, the web service has on
 out again; the page only learns that one is stored. A key made by the hub (`keygen`) shows its public line, the private
 part never leaves the broker unsealed. Principle (Janis, 17.11.2026): the key is for the AI, the password for the human:
 the AI may trigger only the actions the user ticked (`ai_actions`), never shell, files or logs, and with a password
-login only if the user allowed the password for the AI (`ai_password`). Home-network targets need the owner's approval
-(`lan_ok`; the owner's own devices have it).
+login only if the user allowed the password for the AI (`ai_password`). Home-network targets need `lan_ok`: the
+owner's own devices have it; other users' devices stay outside the home network (Janis, 17.11.2026: no approval page
+for now).
 
 Like every data module, each function gets the `user_id` and the project must be his: foreign things are "not found"
 (None or False). Errors in input are a ValueError whose text is a code: name, kind, hostname, ip, description, key,
@@ -200,7 +201,7 @@ def create(user_id: int, project_id: int, name: str, hostname: str, description:
            auth: str = "key") -> Device | None:
     """Add a device; None for a foreign project. ValueError(code) for bad input, a name that is already used in the
     project, a full list, or a secret that cannot be stored encrypted (no public key). The owner's own devices may
-    reach the home network at once; other users' devices need his approval (set_lan)."""
+    reach the home network at once; other users' devices do not (lan_ok)."""
     name, hostname, description, kind, ip, ssh_user, ssh_port, auth = _clean(
         name, hostname, description, kind, ip, ssh_user, ssh_port, auth)
     sealed = _sealed(key, auth) if key.strip() else ""
@@ -371,39 +372,6 @@ def updates_pending(device: Device, now: int | None = None) -> int:
     if not device.updates_found or not device.updates_at or now - device.updates_at > UPDATES_VALID:
         return 0
     return device.updates_found
-
-
-# --- approvals of the owner (home network) ----------------------------------------------------------------------------
-@dataclass
-class Approval:
-    device_id: int
-    device: str
-    hostname: str
-    ip: str
-    project: str
-    user: str
-    lan_ok: bool
-
-
-def approvals(owner_id: int) -> list[Approval]:
-    """Devices of other users, for the owner to allow or refuse the home network. Empty for anyone but the owner."""
-    with db.connect() as conn:
-        if not _is_owner(conn, owner_id):
-            return []
-        rows = conn.execute(
-            "SELECT d.id, d.name, d.hostname, d.ip, d.lan_ok, p.name AS project, COALESCE(u.display_name, u.email) AS who"
-            " FROM devices d JOIN projects p ON p.id = d.project_id JOIN users u ON u.id = p.user_id"
-            " WHERE u.id != ? AND u.deleted_at IS NULL ORDER BY d.lan_ok, d.id", (owner_id,)).fetchall()
-    return [Approval(r["id"], r["name"], r["hostname"], r["ip"], r["project"], r["who"] or "", bool(r["lan_ok"]))
-            for r in rows]
-
-
-def set_lan(owner_id: int, device_id: int, allowed: bool) -> bool:
-    """The owner allows (or takes back) the home network for a device. False for anyone else or an unknown device."""
-    with db.connect() as conn:
-        if not _is_owner(conn, owner_id):
-            return False
-        return conn.execute("UPDATE devices SET lan_ok = ? WHERE id = ?", (int(allowed), device_id)).rowcount == 1
 
 
 # --- the hub's log of a device -----------------------------------------------------------------------------------------
