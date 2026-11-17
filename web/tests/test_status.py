@@ -77,8 +77,10 @@ class StatusTest(unittest.TestCase):
         self.item(at=NOW - 8 * DAY)
         a = self.assess()
         self.assertEqual((a.activity, a.lamp, a.reasons), ("stalled", "yellow", ["stalled"]))
-        self.item(at=NOW - DAY)                                       # something happened yesterday
+        self.item(at=NOW - 3 * DAY)                                   # something happened three days ago
         self.assertEqual(self.assess().activity, "quiet")
+        self.item(at=NOW - DAY)                                       # and yesterday
+        self.assertEqual(self.assess().activity, "active")
 
     def test_an_escalated_task_or_a_failed_run_is_red(self):
         i = self.item(at=NOW - DAY)
