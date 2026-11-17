@@ -24,7 +24,7 @@
 }
 .sys-row > .info-dot { grid-column: -2; }
 .sys-name { grid-column: 1; padding-right: var(--space); font-weight: 600; white-space: nowrap; }
-.sys-fields { grid-column: 2 / -2; display: grid; grid-template-columns: subgrid; }
+.sys-fields { grid-column: 2 / -2; display: grid; grid-template-columns: subgrid; gap: var(--space); }
 /* One action per row (Janis, 14.11.2026): the button carries the name and takes the width, the "i" next to it explains. */
 .sys-action .sys-btn { grid-column: 1 / -2; min-height: 46px; }
 .sys-field.setting { min-width: 0; margin: 0; padding: 6px 12px; background: color-mix(in srgb, var(--bg) 40%, var(--field)); }
@@ -39,10 +39,11 @@
   background: var(--field);
   font-weight: 600;
 }
-/* Narrow: the name gets its own line above the choices, the "i" stays at the right of the name. */
+/* Narrow: the name gets its own line with the "i" at the right, the choices take the full line below it (two equal
+   halves in every row, so they still line up). */
 @media (max-width: 560px) {
-  .sys-list { grid-template-columns: 1fr 1fr auto; }
-  .sys-name { grid-column: 1 / -2; }
-  .sys-fields { grid-column: 1 / -2; grid-row: 2; }
+  .sys-list { grid-template-columns: 1fr auto; }
+  .sys-name { grid-column: 1; }
+  .sys-fields { grid-column: 1 / -1; grid-row: 2; grid-template-columns: 1fr 1fr; }
 }
 @media (pointer: coarse) { .sys-field select { font-size: max(16px, 1rem); } }   /* no zoom while typing (app.css) */
