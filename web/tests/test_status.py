@@ -107,6 +107,14 @@ class StatusTest(unittest.TestCase):
             self.item(at=NOW - 3 * DAY)
         self.assertEqual(self.assess().activity, "busy")
 
+    def test_nothing_left_to_do_is_orange_at_rest(self):
+        self.item(state="archived", at=NOW - DAY)                     # done, nothing open
+        a = self.assess()
+        self.assertEqual((a.lamp, a.done, a.planned), ("rest", 1, 0))
+        self.assertIn("lamp-rest", managerpage._status_tile("de", a, NOW))
+        self.item(at=NOW - DAY)                                       # new work: green again
+        self.assertEqual(self.assess().lamp, "green")
+
     def test_due_checks_are_counted_but_do_not_change_the_lamp(self):
         self.item(at=NOW - DAY)
         checks.create(self.user.id, self.pid, "Security", "weekly", now=NOW - 30 * DAY)

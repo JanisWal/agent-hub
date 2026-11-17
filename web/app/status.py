@@ -1,6 +1,6 @@
 """Assessment of a project's state (Manager view, tile "Status"): how much is planned and done, how far the project is
-from what was set out, and how work is going (running, active, quiet, stalled, idle), with a lamp in three levels
-(Janis, 07.11.2026: runs; problems but manageable; intervention needed).
+from what was set out, and how work is going (running, active, quiet, stalled, idle), with a lamp (Janis, 07.11.2026: runs; problems but manageable; intervention needed; since 17.11.2026 also orange
+"at rest": nothing to do and nothing stuck).
 
 It is counted from the data, no AI is asked: the same numbers give the same answer and it costs nothing. The manager's
 own written status (reply format `<status>`) can come later next to it.
@@ -22,7 +22,7 @@ APPROVAL_WAIT = 3 * DAY   # a release that waits so long is a problem
 FAILED_WITHIN = 3 * DAY   # a failed run this recently counts
 BUSY_EVENTS = 6           # events in a week from which the project is "busy"
 RUNNING = ("coding", "testing", "reviewing", "documenting")
-LAMPS = ("none", "green", "yellow", "red")
+LAMPS = ("none", "green", "rest", "yellow", "red")   # rest = orange: nothing to do, nothing stuck (Janis, 17.11.2026)
 ACTIVITIES = ("running", "busy", "active", "quiet", "stalled", "idle")
 
 
@@ -135,6 +135,8 @@ def assess(user_id: int, project_id: int, now: int | None = None) -> Assessment 
         lamp = "yellow"
     elif total == 0 and last is None:
         lamp = "none"
+    elif not unfinished:
+        lamp = "rest"   # everything is done or nothing is planned: it does not run, but nothing is stuck either
     else:
         lamp = "green"
     return Assessment(planned, in_progress, waiting, done, proposals, todos_open, due, progress, activity, events,

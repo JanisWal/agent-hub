@@ -16,6 +16,7 @@
   --success: #2c6e3a;
   --go: #2f8f4e;
   --warn: #d9a21b;   /* status lamp: problems, but manageable */
+  --rest: #e2711d;   /* status lamp: at rest, nothing to do and nothing stuck (Janis, 17.11.2026) */
   --on-go: #f1fff5;
   --shadow: 0 18px 50px rgba(110, 65, 28, 0.22), 0 2px 8px rgba(110, 65, 28, 0.12);
   --highlight: rgba(255, 255, 255, 0.45);
@@ -46,6 +47,7 @@
   --success: #86d492;
   --go: #5bd27e;
   --warn: #f0c04a;
+  --rest: #ff9a4a;
   --on-go: #072612;
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
   --highlight: rgba(255, 220, 190, 0.28);
@@ -71,6 +73,7 @@
     --success: #86d492;
     --go: #5bd27e;
     --warn: #f0c04a;
+    --rest: #ff9a4a;
     --on-go: #072612;
     --shadow: 0 18px 50px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.35);
     --highlight: rgba(255, 220, 190, 0.28);

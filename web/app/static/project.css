@@ -131,6 +131,7 @@ html.splitting, html.splitting * { cursor: row-resize !important; -webkit-user-s
 /* The status lamp: grey until the manager reports (green, amber, red later). */
 .m-lamp { flex: none; width: 14px; height: 14px; border-radius: 50%; --lamp: var(--muted); background: var(--lamp); opacity: 0.55; box-shadow: 0 0 0 4px color-mix(in srgb, var(--lamp) 18%, transparent); }
 .m-lamp.lamp-green { --lamp: var(--go); opacity: 1; }
+.m-lamp.lamp-rest { --lamp: var(--rest); opacity: 1; }
 .m-lamp.lamp-yellow { --lamp: var(--warn); opacity: 1; }
 .m-lamp.lamp-red { --lamp: var(--danger); opacity: 1; }
 /* The drop-down at the pencil next to the title (name and description of the project). */
