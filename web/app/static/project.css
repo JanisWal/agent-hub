@@ -100,8 +100,6 @@ a.station:not(.active):hover { color: var(--text); }
 .mtile header { display: flex; align-items: center; gap: 10px; }
 .mtile h2 { flex: 1; margin: 0; font-size: 1.2rem; letter-spacing: -0.01em; }
 .mtile p { margin: 0; line-height: 1.45; }
-.mtile .m-tag { padding: 4px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); background: var(--field); }
-.mtile.m-soon { opacity: 0.78; }
 /* Status and checks sit side by side and stay level while they are empty (Janis, 11.11.2026): the two hints wrap
    differently (up to 4 lines in a narrow column) and the plus button makes the checks header taller, so both get the same room to start with: also enough for the first two checks. */
 .mtile.m-status, .mtile.m-checks { min-height: 190px; }
@@ -131,7 +129,10 @@ html.splitting, html.splitting * { cursor: row-resize !important; -webkit-user-s
   .mtile.m-shut > :not(header) { visibility: hidden; }
 }
 /* The status lamp: grey until the manager reports (green, amber, red later). */
-.m-lamp { flex: none; width: 14px; height: 14px; border-radius: 50%; background: var(--muted); opacity: 0.55; box-shadow: 0 0 0 4px color-mix(in srgb, var(--muted) 18%, transparent); }
+.m-lamp { flex: none; width: 14px; height: 14px; border-radius: 50%; --lamp: var(--muted); background: var(--lamp); opacity: 0.55; box-shadow: 0 0 0 4px color-mix(in srgb, var(--lamp) 18%, transparent); }
+.m-lamp.lamp-green { --lamp: var(--go); opacity: 1; }
+.m-lamp.lamp-yellow { --lamp: var(--warn); opacity: 1; }
+.m-lamp.lamp-red { --lamp: var(--danger); opacity: 1; }
 /* The drop-down at the pencil next to the title (name and description of the project). */
 .title-menu { position: absolute; top: calc(100% + 10px); left: 50%; translate: -50% 0; z-index: 25; width: min(520px, calc(100vw - 32px)); max-width: none; padding: 20px 22px 18px; border-radius: 28px; }
 .title-menu label { margin-bottom: calc(var(--space) * 1.5); }
@@ -512,3 +513,31 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 .me-view .check-list { max-height: none; }
 @media (max-width: 1100px) { .manager.role-view { grid-template-columns: 1fr; } .r-scroll { max-height: none; } }
 @media (prefers-reduced-motion: reduce) { .r-now.running .r-dot { animation: none; } }
+
+/* ===== Status tile: how work is going, how far the project is, the numbers (status.py) ===== */
+.status-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.status-line small { color: var(--muted); font-size: 0.8rem; }
+.status-progress { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 0.82rem; color: var(--muted); }
+.status-progress span { white-space: nowrap; }
+.status-progress progress { flex: 1; min-width: 0; height: 8px; border: 0; border-radius: 999px; overflow: hidden; appearance: none; -webkit-appearance: none; background: var(--field); }
+.status-progress progress::-webkit-progress-bar { background: var(--field); }
+.status-progress progress::-webkit-progress-value { border-radius: 999px; background: var(--accent); }
+.status-progress progress::-moz-progress-bar { border-radius: 999px; background: var(--accent); }
+.status-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin: 12px 0 0; }
+.status-facts div { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.status-facts dt { color: var(--muted); font-size: 0.82rem; }
+.status-facts dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+.status-reasons { margin: 12px 0 0; padding-left: 18px; font-size: 0.85rem; font-weight: 600; }
+.status-extra { margin-top: 10px; font-size: 0.8rem; }
+
+/* ===== Devices tile: the check-row list, with the key lock and a description line ===== */
+.device-desc { overflow-wrap: anywhere; }
+.device-lock { flex: none; display: grid; place-items: center; width: 24px; height: 24px; color: var(--muted); }
+.device-lock svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.device-key { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; min-height: 90px; resize: vertical; }
+@media (pointer: coarse) { .device-key { font-size: 16px; } }
+.check-line { display: flex; align-items: center; gap: 8px; margin-top: var(--space); }
+.check-line[hidden] { display: none; }
+.mtile.m-devices .check-list { max-height: none; }
+.device-tile { cursor: default; color: var(--accent); }   /* the picture of a device: its pictogram on the rounded square of the files */
+.device-tile svg { width: 22px; height: 22px; }
