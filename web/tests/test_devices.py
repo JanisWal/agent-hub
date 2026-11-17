@@ -57,9 +57,9 @@ class DevicesTest(unittest.TestCase):
     def make(self, name="Roadster", host="Roadster.local", description="Car", key="", **kw):
         return devices.create(self.user.id, self.project.id, name, host, description, key, **kw)
 
-    def stored(self, device_id):
+    def stored(self, device_id, column="key_enc"):
         with db.connect() as conn:
-            return conn.execute("SELECT key_enc FROM devices WHERE id = ?", (device_id,)).fetchone()[0]
+            return conn.execute(f"SELECT {column} FROM devices WHERE id = ?", (device_id,)).fetchone()[0]
 
     def opened(self, sealed):
         self.assertTrue(sealed.startswith("age:"))
@@ -68,8 +68,8 @@ class DevicesTest(unittest.TestCase):
     # --- data ---------------------------------------------------------------------------------------------------------
     def test_a_device_has_name_hostname_description_login(self):
         d = self.make(ssh_user="pi", ssh_port="2222")
-        self.assertEqual((d.name, d.hostname, d.description, d.has_key, d.ssh_user, d.ssh_port, d.auth),
-                         ("Roadster", "roadster.local", "Car", False, "pi", 2222, "key"))
+        self.assertEqual((d.name, d.hostname, d.description, d.has_key, d.has_password, d.ssh_user, d.ssh_port),
+                         ("Roadster", "roadster.local", "Car", False, False, "pi", 2222))
         self.assertEqual([x.id for x in devices.list_devices(self.user.id, self.project.id)], [d.id])
         for bad, code in (({"ssh_user": "a b"}, "user"), ({"ssh_port": "70000"}, "port"), ({"ssh_port": "x"}, "port"),
                           ({"auth": "token"}, "auth"), ({"kind": "toaster"}, "kind"), ({"ip": "999.1.1.1"}, "ip")):
@@ -105,7 +105,7 @@ class DevicesTest(unittest.TestCase):
         self.assertNotIn("SECRET", dump)
         self.assertNotIn("SECRET", repr(devices.list_devices(self.user.id, self.project.id)))
         p = devices.create(self.user.id, self.project.id, "Box", "box.local", key="pass word!", auth="password")
-        self.assertEqual(self.opened(self.stored(p.id)), "pass word!")
+        self.assertEqual((self.stored(p.id), self.opened(self.stored(p.id, "pass_enc"))), ("", "pass word!"))   # apart from the key
         with self.assertRaises(ValueError):
             devices.create(self.user.id, self.project.id, "Box2", "box.local", key="two\nlines", auth="password")
 
@@ -128,9 +128,9 @@ class DevicesTest(unittest.TestCase):
         self.assertTrue(devices.get(self.user.id, d.id).trusted)                 # same address: still trusted
         devices.update(self.user.id, d.id, "Roadster", "other.local", "x")
         self.assertFalse(devices.get(self.user.id, d.id).trusted)                # new address: confirm again
-        devices.update(self.user.id, d.id, "Roadster", "other.local", "x", auth="password")
-        self.assertEqual(self.stored(d.id), "")                                  # a key is no password
         devices.update(self.user.id, d.id, "Roadster", "other.local", "x", key="pw", auth="password")
+        self.assertEqual(self.opened(self.stored(d.id)), "second\n")             # the key stays: they live apart
+        self.assertEqual(self.opened(self.stored(d.id, "pass_enc")), "pw")
         devices.update(self.user.id, d.id, "Roadster", "other.local", "x", remove_key=True)
         self.assertEqual(self.stored(d.id), "")
 
@@ -148,7 +148,7 @@ class DevicesTest(unittest.TestCase):
 
     # --- the AI and the owner -------------------------------------------------------------------------------------------
     def test_the_ai_only_what_was_ticked_and_a_password_only_when_allowed(self):
-        d = self.make(ssh_user="pi")
+        d = self.make(ssh_user="pi", key="the key")
         devices.trust_host(self.user.id, d.id, "ssh-ed25519 AAAA", "SHA256:abc", "192.168.1.5")
         devices.set_system(self.user.id, d.id, "debian", "Debian 13", True)
         self.assertFalse(devices.ai_may(self.user.id, d.id, "reboot"))          # nothing ticked
@@ -156,12 +156,15 @@ class DevicesTest(unittest.TestCase):
         self.assertEqual(devices.get(self.user.id, d.id).ai_actions, ("reboot", "updates_check"))   # no "shell"
         self.assertTrue(devices.ai_may(self.user.id, d.id, "reboot"))
         self.assertFalse(devices.ai_may(self.user.id, d.id, "poweroff"))
-        devices.update(self.user.id, d.id, "Roadster", "roadster.local", "Car", key="pw", auth="password")
-        self.assertFalse(devices.ai_may(self.user.id, d.id, "reboot"))          # a password is for the human
+        devices.set_secret(self.user.id, d.id, "password", "pw")
+        self.assertEqual(devices.payload(self.user.id, d.id, "ai")["password"], "")       # the key for the AI, never the password
+        self.assertTrue(devices.payload(self.user.id, d.id, "human")["password"])         # ... the password is yours
+        devices.set_secret(self.user.id, d.id, "key", remove=True)
+        self.assertFalse(devices.ai_may(self.user.id, d.id, "reboot"))          # only a password: not for the AI
         self.assertIsNone(devices.payload(self.user.id, d.id, "ai"))
         devices.set_ai(self.user.id, d.id, ["reboot"], True)
         self.assertTrue(devices.ai_may(self.user.id, d.id, "reboot"))           # ... unless the user allowed it
-        self.assertIsNotNone(devices.payload(self.user.id, d.id, "ai"))
+        self.assertTrue(devices.payload(self.user.id, d.id, "ai")["password"])
 
     def test_home_network_only_for_the_owners_devices(self):
         owner = users.create_user("o@example.com", "Oooo!pass12", role="owner")
@@ -211,7 +214,7 @@ class DevicesTest(unittest.TestCase):
 
     # --- routes with the fake broker ----------------------------------------------------------------------------------------
     def ready(self, **kw):
-        d = self.make(ssh_user="pi", **kw)
+        d = self.make(ssh_user="pi", key="the key", **kw)
         devices.trust_host(self.user.id, d.id, "ssh-ed25519 AAAA", "SHA256:abc", "192.168.1.5")
         devices.set_system(self.user.id, d.id, "debian", "Debian", True)
         return d
@@ -297,7 +300,7 @@ class DevicesTest(unittest.TestCase):
         html = devicepage.tile("de", devices.list_devices(self.user.id, self.project.id))
         self.assertIn('class="dev-led"', html)
         self.assertIn('data-btn="power"', html)
-        self.assertIn('<span class="dev-hint"', html)
+        self.assertNotIn('192.168.1.5', html)                                   # no IP in the row (Janis)
         plain = self.make("Plain", "plain.local")
         self.assertIn("disabled", devicepage.row("de", devices.get(self.user.id, plain.id)))   # nothing before setup
         self.assertIn("Diesen Namen", devicepage.dialogs("de"))
@@ -310,11 +313,18 @@ class DevicesTest(unittest.TestCase):
         self.assertEqual((d.ssh_user, d.ssh_port, d.mac), ("pi", 2222, "dc:a6:32:01:02:03"))
         self.assertEqual(R.device_login(d.id, "a b", "22", None, user=self.user).status_code, 400)
         self.assertEqual(R.device_login(d.id, "pi", "22", "nope", user=self.user).status_code, 400)
-        self.assertTrue(R.device_secret(d.id, "password", "pw!", "", user=self.user)["ok"])
-        self.assertEqual(self.opened(self.stored(d.id)), "pw!")
-        self.assertEqual(devices.get(self.user.id, d.id).auth, "password")
-        self.assertTrue(R.device_secret(d.id, "key", "", "1", user=self.user)["ok"])
-        self.assertEqual(self.stored(d.id), "")
+        import json
+        box = json.dumps({"k": "wrapped-key", "iv": "iv", "c": "ciphertext"})   # what the browser sends (end to end)
+        self.answers["reseal"] = {"sealed": vault.seal("pw!")}                   # the broker opens and seals it
+        self.assertTrue(R.device_secret(d.id, "password", box, "", user=self.user)["ok"])
+        self.assertEqual(self.calls[-1][2], {"wrapped": json.loads(box), "kind": "password"})
+        self.assertEqual(self.opened(self.stored(d.id, "pass_enc")), "pw!")
+        self.assertTrue(devices.get(self.user.id, d.id).has_password)
+        self.assertEqual(R.device_secret(d.id, "password", "plain text", "", user=self.user).status_code, 400)   # never clear
+        self.answers["reseal"] = {"sealed": "not sealed"}
+        self.assertEqual(R.device_secret(d.id, "key", box, "", user=self.user).status_code, 400)
+        self.assertTrue(R.device_secret(d.id, "password", "", "1", user=self.user)["ok"])
+        self.assertEqual(self.stored(d.id, "pass_enc"), "")
         self.assertNotIn("pw!", str(R.device_info(d.id, user=self.user)))
 
     def test_a_dropped_picture_must_really_be_one(self):

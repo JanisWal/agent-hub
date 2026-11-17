@@ -319,7 +319,8 @@ NEW_COLUMNS = {
                 "ip_hint": "TEXT NOT NULL DEFAULT ''",    # the address the broker found for the hostname (a suggestion)
                 "mac": "TEXT NOT NULL DEFAULT ''",        # for switching on (Wake-on-LAN), found by the connection test
                 "picture": "TEXT NOT NULL DEFAULT ''",    # a small picture the user dropped on the device (data URL)
-                "icon_ai": "TEXT NOT NULL DEFAULT ''"},   # the pictogram the AI chose from the fixed set (statusnote.py)
+                "icon_ai": "TEXT NOT NULL DEFAULT ''",    # the pictogram the AI chose from the fixed set (statusnote.py)
+                "pass_enc": "TEXT NOT NULL DEFAULT ''"},  # the password for the human, sealed (key_enc: the key, for the AI)
 }
 
 # The three statements below run once, when a database from before the feature is opened for the
@@ -390,6 +391,9 @@ def _prepare(conn: sqlite3.Connection) -> None:
         # everybody logs in once more.
         conn.execute("ALTER TABLE sessions RENAME COLUMN token TO token_hash")
         conn.execute("DELETE FROM sessions")
+    if "pass_enc" not in before["devices"]:
+        # Once (17.11.2026): a password used to sit in key_enc (auth 'password'); key and password are kept apart now.
+        conn.execute("UPDATE devices SET pass_enc = key_enc, key_enc = '', auth = 'key' WHERE auth = 'password' AND key_enc != ''")
     # Safety net: the database itself refuses a second owner (it does not say who the owner is).
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_one_owner ON users (role) WHERE role = 'owner'")
     conn.commit()

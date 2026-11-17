@@ -1,7 +1,8 @@
 """Devices of a project (Manager view, Janis 07.11.2026; broker 17.11.2026): the machines the project works on.
 
 A device has a name (what it is), a kind (the picture), a hostname or IP, a description, and for the broker: the SSH
-user and port, the login (`auth` "key" or "password") with its secret, the trusted host key with the address it was
+user and port, a key (for the AI and the buttons) and a password (for the human: shell, files, sudo), each sealed, the
+trusted host key with the address it was
 seen at, the operating system found by the connection test, and what the AI may do on it.
 
 Secrets: the key or password is sealed at once (vault.py, the web service has only the public key) and never given
@@ -89,6 +90,7 @@ class Device:
     mac: str = ""               # for switching on (Wake-on-LAN)
     picture: str = ""           # a picture the user dropped on the device (small data URL), wins over the pictogram
     icon_ai: str = ""           # the pictogram the AI chose from the fixed set
+    has_password: bool = False  # a password for the human is stored (sealed); `has_key`: a key for the AI
 
     @property
     def icon(self) -> str:
@@ -132,7 +134,7 @@ def _to_device(row: sqlite3.Row) -> Device:
                   None if row["sudo_ok"] is None else bool(row["sudo_ok"]), bool(row["lan_ok"]),
                   tuple(a for a in row["ai_actions"].split(",") if a in AI_CHOICES), bool(row["ai_password"]),
                   row["updates_found"], row["updates_at"], bool(row["reboot_needed"]), row["checked_at"], row["ip_hint"],
-                  row["mac"], row["picture"], row["icon_ai"])
+                  row["mac"], row["picture"], row["icon_ai"], bool(row["pass_enc"]))
 
 
 def _clean(name: str, hostname: str, description: str, kind: str = "other", ip: str = "", ssh_user: str = "",
@@ -222,6 +224,7 @@ def create(user_id: int, project_id: int, name: str, hostname: str, description:
     name, hostname, description, kind, ip, ssh_user, ssh_port, auth = _clean(
         name, hostname, description, kind, ip, ssh_user, ssh_port, auth)
     sealed = _sealed(key, auth) if key.strip() else ""
+    key_enc, pass_enc = ("", sealed) if auth == "password" else (sealed, "")
     with db.connect() as conn:
         if conn.execute("SELECT 1 FROM projects WHERE id = ? AND user_id = ?", (project_id, user_id)).fetchone() is None:
             return None
@@ -230,10 +233,10 @@ def create(user_id: int, project_id: int, name: str, hostname: str, description:
         if conn.execute("SELECT COUNT(*) FROM devices WHERE project_id = ?", (project_id,)).fetchone()[0] >= MAX_PER_PROJECT:
             raise ValueError("limit")
         cur = conn.execute(
-            "INSERT INTO devices (project_id, name, kind, hostname, ip, description, key_enc, created_at, ssh_user,"
-            " ssh_port, auth, lan_ok) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (project_id, name, kind, hostname, ip, description, sealed, int(now if now is not None else time.time()),
-             ssh_user, ssh_port, auth, int(_is_owner(conn, user_id))))
+            "INSERT INTO devices (project_id, name, kind, hostname, ip, description, key_enc, pass_enc, created_at,"
+            " ssh_user, ssh_port, auth, lan_ok) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'key', ?)",
+            (project_id, name, kind, hostname, ip, description, key_enc, pass_enc,
+             int(now if now is not None else time.time()), ssh_user, ssh_port, int(_is_owner(conn, user_id))))
         row = conn.execute("SELECT * FROM devices WHERE id = ?", (cur.lastrowid,)).fetchone()
     return _to_device(row)
 
@@ -257,14 +260,19 @@ def update(user_id: int, device_id: int, name: str, hostname: str, description: 
         if _taken(conn, row["project_id"], name, device_id):
             raise ValueError("duplicate")
         conn.execute("UPDATE devices SET name = ?, kind = ?, hostname = ?, ip = ?, description = ?, ssh_user = ?,"
-                     " ssh_port = ?, auth = ? WHERE id = ?",
-                     (name, kind, hostname, ip, description, ssh_user, ssh_port, auth, device_id))
+                     " ssh_port = ? WHERE id = ?",
+                     (name, kind, hostname, ip, description, ssh_user, ssh_port, device_id))
         if (hostname, ip, ssh_port) != (row["hostname"], row["ip"], row["ssh_port"]):
             conn.execute("UPDATE devices SET host_key = '', host_fp = '', pinned_ip = '' WHERE id = ?", (device_id,))
-        if remove_key or (auth != row["auth"] and sealed is None):
-            conn.execute("UPDATE devices SET key_enc = '', public_key = '' WHERE id = ?", (device_id,))
+        column = "pass_enc" if auth == "password" else "key_enc"   # the key and the password live apart
+        if remove_key:
+            conn.execute(f"UPDATE devices SET {column} = '' WHERE id = ?", (device_id,))
+            if column == "key_enc":
+                conn.execute("UPDATE devices SET public_key = '' WHERE id = ?", (device_id,))
         elif sealed is not None:
-            conn.execute("UPDATE devices SET key_enc = ?, public_key = '' WHERE id = ?", (sealed, device_id))
+            conn.execute(f"UPDATE devices SET {column} = ? WHERE id = ?", (sealed, device_id))
+            if column == "key_enc":
+                conn.execute("UPDATE devices SET public_key = '' WHERE id = ?", (device_id,))
     return row["project_id"]
 
 
@@ -284,10 +292,11 @@ def payload(user_id: int, device_id: int, origin: str = "human") -> dict | None:
         row = _owned(conn, user_id, device_id)
     if row is None or origin not in ("human", "ai"):
         return None
-    if origin == "ai" and row["auth"] == "password" and not row["ai_password"]:
+    password = row["pass_enc"] if origin == "human" or row["ai_password"] else ""   # the password is the human's
+    if origin == "ai" and not row["key_enc"] and not password:
         return None
     return {"id": row["id"], "host": row["hostname"], "ip": row["ip"], "port": row["ssh_port"],
-            "user": row["ssh_user"], "auth": row["auth"], "secret": row["key_enc"], "host_key": row["host_key"],
+            "user": row["ssh_user"], "secret": row["key_enc"], "password": password, "host_key": row["host_key"],
             "pinned_ip": row["pinned_ip"], "lan_ok": bool(row["lan_ok"]), "family": row["os_family"],
             "ai_password": bool(row["ai_password"])}
 
@@ -298,7 +307,7 @@ def ai_may(user_id: int, device_id: int, action: str) -> bool:
     device = get(user_id, device_id)
     if device is None or action not in device.ai_actions or action not in device.actions:
         return False
-    return device.auth != "password" or device.ai_password
+    return device.has_key or (device.has_password and device.ai_password)
 
 
 def trust_host(user_id: int, device_id: int, host_key: str, fingerprint: str, address: str) -> bool:
@@ -381,16 +390,28 @@ def set_login(user_id: int, device_id: int, ssh_user: str, ssh_port, mac: str | 
     return True
 
 
-def set_secret(user_id: int, device_id: int, auth: str, secret: str = "", remove: bool = False) -> bool | None:
-    """Store a key or a password (sealed at once) or remove what is stored. None if not the user's; ValueError
-    ("auth", "key", "vault") for bad input."""
-    if auth not in AUTHS:
+def set_secret(user_id: int, device_id: int, kind: str, secret: str = "", remove: bool = False,
+               sealed: str | None = None) -> bool | None:
+    """Store the key ("key") or the password ("password") or remove it. `sealed` is one the broker already sealed (from
+    the browser's end-to-end encryption, routes/devices.py); else `secret` is sealed here. None if not the user's;
+    ValueError ("auth", "key", "vault") for bad input. Key and password live apart (key for the AI, password for you)."""
+    if kind not in AUTHS:
         raise ValueError("auth")
-    sealed = "" if remove else _sealed(secret, auth)
+    if remove:
+        value = ""
+    elif sealed is not None:
+        if not sealed.startswith(vault.PREFIX) or len(sealed) > 4 * MAX_KEY:
+            raise ValueError("key")
+        value = sealed
+    else:
+        value = _sealed(secret, kind)
+    column = "key_enc" if kind == "key" else "pass_enc"
     with db.connect() as conn:
         if _owned(conn, user_id, device_id) is None:
             return None
-        conn.execute("UPDATE devices SET key_enc = ?, public_key = '', auth = ? WHERE id = ?", (sealed, auth, device_id))
+        conn.execute(f"UPDATE devices SET {column} = ? WHERE id = ?", (value, device_id))
+        if kind == "key":
+            conn.execute("UPDATE devices SET public_key = '' WHERE id = ?", (device_id,))
     return True
 
 
@@ -443,7 +464,7 @@ def request_action(conn: sqlite3.Connection, user_id: int, project_id: int, name
     device = _to_device(conn.execute("SELECT * FROM devices WHERE id = ?", (row["id"],)).fetchone())
     if action not in device.ai_actions or action not in device.actions:
         return False
-    if device.auth == "password" and not device.ai_password:
+    if not device.has_key and not (device.has_password and device.ai_password):
         return False
     open_rows = conn.execute("SELECT action FROM device_requests WHERE device_id = ? AND status = 'open'",
                              (device.id,)).fetchall()

@@ -66,7 +66,8 @@
     fact(facts, "description", d.description);
     var access = $("dw-access");
     access.textContent = "";
-    fact(access, "login", d.has_key ? (d.auth === "password" ? t("passStored") : d.public_key ? t("keyStored") : t("keyOwn")) : t("keyNone"));
+    fact(access, "login", d.has_key ? (d.public_key ? t("keyStored") : t("keyOwn")) : t("keyNone"));
+    fact(access, "password", d.has_password ? t("passStored") : t("passNone"));
     fact(access, "hostkey", d.host_fp ? t("hostKnown") : t("hostNone"));
     if (d.sudo_ok !== null) fact(access, "rights", d.sudo_ok ? t("sudoOk") : t("sudoNo"));
     show($("dw-public"), !!d.public_key);
@@ -75,7 +76,7 @@
     show($("dw-setup-card"), !d.host_fp || !d.os_family);
     win.querySelectorAll('#dw-ai input[name="actions"]').forEach(function (box) { box.checked = d.ai_actions.indexOf(box.value) >= 0; });
     $("dw-ai-pass").checked = d.ai_password;
-    show($("dw-ai-pass-box"), d.auth === "password");
+    show($("dw-ai-pass-box"), d.has_password);
     // the form (behind the pencil)
     ["name", "hostname", "ip", "description", "ssh_user", "ssh_port", "mac"].forEach(function (k) {
       if (form.elements[k]) form.elements[k].value = d[k] == null ? "" : d[k];

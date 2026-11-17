@@ -99,7 +99,34 @@
       return false;
     }, function () { say(errorText("picture")); return false; });
   }
-  window.DeviceUI = { askPassword: askPassword, errorText: errorText, refresh: refresh, post: post, setPicture: setPicture,
+  // End to end (17.11.2026): a key or password the user types is encrypted here, in the browser, for the broker only
+  // (WebCrypto: AES-256-GCM, its key wrapped with RSA-OAEP SHA-256 to the broker's public key). Cloudflare and the web
+  // service see ciphertext; the broker opens it and seals it with age at once (broker.op_reseal).
+  function b64(buffer) { return btoa(String.fromCharCode.apply(null, new Uint8Array(buffer))); }
+  function sealSecret(deviceId, kind, text) {
+    var subtle = window.crypto && window.crypto.subtle;
+    if (!subtle) return Promise.resolve({ ok: false, error: "secret" });
+    return fetch("/devices/sealkey", { credentials: "same-origin" }).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.ok) return { ok: false, error: d.error || "off" };
+      var der = Uint8Array.from(atob(d.spki), function (c) { return c.charCodeAt(0); });
+      var iv = crypto.getRandomValues(new Uint8Array(12));
+      return Promise.all([
+        subtle.importKey("spki", der, { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]),
+        subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt"])
+      ]).then(function (keys) {
+        return Promise.all([
+          subtle.exportKey("raw", keys[1]).then(function (raw) { return subtle.encrypt({ name: "RSA-OAEP" }, keys[0], raw); }),
+          subtle.encrypt({ name: "AES-GCM", iv: iv }, keys[1], new TextEncoder().encode(text))
+        ]);
+      }).then(function (parts) {
+        var body = new FormData();
+        body.append("kind", kind);
+        body.append("wrapped", JSON.stringify({ k: b64(parts[0]), iv: b64(iv), c: b64(parts[1]) }));
+        return post("/devices/" + deviceId + "/secret", body);
+      });
+    });
+  }
+  window.DeviceUI = { sealSecret: sealSecret, askPassword: askPassword, errorText: errorText, refresh: refresh, post: post, setPicture: setPicture,
                      statusLine: statusLine };
 
   // --- LED and buttons from the state of each device
