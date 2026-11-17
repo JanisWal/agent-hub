@@ -135,10 +135,10 @@ class DevicesTest(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM devices").fetchone()[0], 0)
 
     def test_routes_answer_with_codes_and_never_return_the_key(self):
-        created = device_routes.create_device(self.project.id, "Heater", "heater.local", "Garage", "topsecret", self.user)
+        created = device_routes.create_device(self.project.id, "Heater", "heater.local", "Garage", "topsecret", user=self.user)
         self.assertTrue(created["ok"])
         self.assertNotIn("topsecret", str(created))
-        bad = device_routes.create_device(self.project.id, "", "heater.local", "", "", self.user)
+        bad = device_routes.create_device(self.project.id, "", "heater.local", "", "", user=self.user)
         self.assertEqual((bad.status_code, bad.body), (400, b'{"ok":false,"error":"name"}'))
         gone = device_routes.delete_device(created["id"] + 99, self.user)
         self.assertEqual(gone.status_code, 404)

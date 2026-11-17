@@ -59,9 +59,9 @@ class IsolationTest(unittest.TestCase):
         self.assertIsNone(devices.create(self.b.id, self.project.id, "Mine", "x.local"))      # A's project
         self.assertIsNone(devices.update(self.b.id, mine.id, "Taken", "evil.local", "", "newkey", True))
         self.assertFalse(devices.delete(self.b.id, mine.id))
-        self.assertEqual(device_routes.change_device(mine.id, "Taken", "evil.local", "", "", "", self.b_user()).status_code, 404)
-        self.assertEqual(device_routes.delete_device(mine.id, self.b_user()).status_code, 404)
-        self.assertEqual(device_routes.create_device(self.project.id, "Mine", "x.local", "", "", self.b_user()).status_code, 404)
+        self.assertEqual(device_routes.change_device(mine.id, "Taken", "evil.local", "", "", "", user=self.b_user()).status_code, 404)
+        self.assertEqual(device_routes.delete_device(mine.id, user=self.b_user()).status_code, 404)
+        self.assertEqual(device_routes.create_device(self.project.id, "Mine", "x.local", "", "", user=self.b_user()).status_code, 404)
         self.assertEqual(snapshot(), before)
 
     def test_b_cannot_see_the_status_of_a(self):
