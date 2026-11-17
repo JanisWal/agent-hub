@@ -154,6 +154,7 @@ DIALOGS = """<dialog class="dialog device-dialog" id="device-dialog" %ERRS%>
           <button type="button" class="icon-button dev-btn big" data-btn="power" aria-label="%t.dev_btn_power%" data-tip="%t.dev_btn_power%">%POWER%</button>
           <button type="button" class="icon-button dev-btn big" data-btn="reboot" aria-label="%t.dev_btn_reboot%" data-tip="%t.dev_btn_reboot%">%REFRESH%</button>
           <button type="button" class="icon-button dev-btn big" data-btn="update" aria-label="%t.dev_btn_update%" data-tip="%t.dev_btn_update%">%UPDATE%<span class="dev-dot" aria-hidden="true"></span></button>
+          <span class="dev-cap" id="dw-cap-power" aria-hidden="true">%t.dev_btn_power%</span><span class="dev-cap" aria-hidden="true">%t.dev_btn_reboot%</span><span class="dev-cap" aria-hidden="true">%t.dev_btn_update%</span>
           <p class="dw-say" id="dw-say" role="status" aria-live="polite"></p>
         </div>
 

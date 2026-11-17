@@ -624,6 +624,8 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 .dw-actions { display: grid; grid-template-columns: repeat(3, 1fr); justify-items: center; gap: 10px; padding: 18px 16px 12px; }
 .icon-button.dev-btn.big { width: 56px; height: 56px; min-width: 56px; min-height: 56px; }
 .icon-button.dev-btn.big svg { width: 24px; height: 24px; }
+.dw-actions .dev-cap { margin-top: -4px; font-size: 0.75rem; font-weight: 600; color: var(--muted); }
+.dw-actions { grid-auto-flow: row; }
 .dw-say { grid-column: 1 / -1; min-height: 1.35em; margin: 2px 0 0; font-size: 0.82rem; font-weight: 600; color: var(--muted); text-align: center; }
 .dw-setup-card { display: flex; flex-direction: column; gap: 10px; border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .dw-setup-card[hidden] { display: none; }
@@ -721,7 +723,7 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 }
 
 /* ===== The setup assistant: one step at a time ===== */
-.dialog.device-wizard { max-width: 640px; max-height: 92dvh; overflow-y: auto; }
+.dialog.device-wizard { max-width: 640px; overflow: visible; }   /* visible: the hidden list of the select would make it scroll */
 .wiz-head { display: flex; align-items: center; gap: 10px; }
 .wiz-head h2 { flex: 1; margin: 0; outline: none; }
 .wiz-progress { display: flex; align-items: center; gap: 12px; margin: 10px 0 18px; }
@@ -748,3 +750,8 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 .wiz-nav { margin-top: 20px; }
 .wiz-nav [hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) { .wiz-dots li { transition: none; } }
+.wiz-more summary { list-style: none; gap: 8px; }
+.wiz-more summary::-webkit-details-marker { display: none; }
+.wiz-more summary::before { content: "›"; display: inline-block; font-size: 1.1rem; transition: transform 0.3s cubic-bezier(0.3, 1.4, 0.5, 1); }
+.wiz-more[open] summary::before { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .wiz-more summary::before { transition: none; } }

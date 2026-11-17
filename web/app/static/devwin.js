@@ -46,7 +46,7 @@
   function fact(list, key, value, muted) {
     if (!value && value !== 0) return;
     var dt = document.createElement("dt"); dt.textContent = t("f" + cap(key));
-    var dd = document.createElement("dd"); dd.textContent = value;
+    var dd = document.createElement("dd"); dd.textContent = String(value).replace(/\.$/, "");
     if (muted) dd.className = "muted-value";
     list.appendChild(dt); list.appendChild(dd);
   }
@@ -130,9 +130,9 @@
         var can = (s.actions || []).indexOf(need) >= 0;
         if (b.dataset.btn === "power" && s.online === false) {
           can = !!s.wake;
-          b.dataset.tip = t("powerOn"); b.setAttribute("aria-label", t("powerOn"));
+          b.dataset.tip = t("powerOn"); b.setAttribute("aria-label", t("powerOn")); $("dw-cap-power").textContent = t("powerOn");
         } else if (b.dataset.btn === "power") {
-          b.dataset.tip = t("powerOff"); b.setAttribute("aria-label", t("powerOff"));
+          b.dataset.tip = t("powerOff"); b.setAttribute("aria-label", t("powerOff")); $("dw-cap-power").textContent = t("powerOff");
         }
         b.disabled = busy || !can || (s.online === false && b.dataset.btn !== "power");
         b.classList.toggle("working", busy && job.action && job.action.indexOf(need.split("_")[0]) === 0);

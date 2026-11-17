@@ -93,7 +93,7 @@
     var last = index === list.length - 1;
     var next = $("wiz-next");
     next.textContent = last ? t("finish") : t("next");
-    next.classList.toggle("primary", last);
+    next.classList.toggle("primary", last || !list[index].querySelector(".primary"));   // one main button per step
     fail("");
     keyState();
   }
