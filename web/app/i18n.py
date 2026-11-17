@@ -1101,7 +1101,7 @@ STRINGS = {
         "dev_action_updates_install": "Install updates",
         "dev_login_info": "The key is for the AI, the password for you. Both are stored encrypted and can never be shown again, only replaced or removed.",
         "dev_keygen_info": "The server makes a key pair and keeps the private part encrypted. You only copy the public part to the device.",
-        "dev_connection_info": "The first time, the device shows its host key. If you trust it, every later connection is checked against it.",
+        "dev_connection_info": "The first time, the device shows its host key. If you trust it, every later connection is compared with it.",
         "dev_ai_info": "What the AI may trigger on this device. Shell, files and logs always stay yours.",
         "dev_ai_password_info": "Only for devices that can not use a key. Weaker than a key; the AI never sees the password.",
         "dev_shell_info": "A terminal on the device, for you only. It runs over the web; passwords you type here take that way.",
