@@ -1,12 +1,12 @@
 """HTML of the project page: stations on the left, kanban board and trash on the right."""
-from . import agents, aichoice, i18n, managerpage, memory, rolepage, todos, ui
+from . import agents, aichoice, devices, i18n, managerpage, memory, rolepage, status, todos, ui
 from .board import KINDS, Item
 from .icons import icon
 from .layout import esc, fill
 from .projects import MAX_DESCRIPTION, MAX_NAME, Project
 from .users import User
 
-SCRIPTS = ("motion.js", "segment.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "picker.js", "manager.js", "splitter.js", "checks.js", "upload.js", "tiffthumb.js", "files.js", "mvault.js", "roles.js", "todos.js")
+SCRIPTS = ("motion.js", "segment.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "picker.js", "manager.js", "splitter.js", "checks.js", "devices.js", "upload.js", "tiffthumb.js", "files.js", "mvault.js", "roles.js", "todos.js")
 STYLES = ("project.css",)
 
 COLUMN_LABEL = {"bug": "col_bug", "minor": "col_minor", "major": "col_major"}
@@ -259,7 +259,9 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
         STATIONS=_stations(lang, sum(1 for t in entries if not t.done)),
         MANAGER=managerpage.render(lang, settings, regular_checks or [], stored_files=stored_files or [],
                                     files_confirm=user.files_confirm, trashed_files=trashed_files or [],
-                                    ais=ais, waiting=waiting, versions=memory.versions(user.id, project.id)),
+                                    ais=ais, waiting=waiting, versions=memory.versions(user.id, project.id),
+                                    assessment=status.assess(user.id, project.id),
+                                    device_list=devices.list_devices(user.id, project.id)),
         ROLES=roles + rolepage.render_me(lang, entries),
         MANAGER_DIALOGS=managerpage.dialogs(lang) + "\n" + rolepage.dialogs(lang),
         TRASH=_trash(trashed, lang),

@@ -124,6 +124,18 @@ CREATE TABLE IF NOT EXISTS checks (
     created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS checks_by_project ON checks (project_id, id);
+-- Devices of a project (devices.py, Janis 07.11.2026): name, hostname, description. `key_enc` is the key encrypted by
+-- vault.py ('' = none); it is never shown again and no AI reads it.
+CREATE TABLE IF NOT EXISTS devices (
+    id          INTEGER PRIMARY KEY,
+    project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    hostname    TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    key_enc     TEXT NOT NULL DEFAULT '',
+    created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS devices_by_project ON devices (project_id, id);
 -- "For you" (todos.py, Janis 16.11.2026): work the user does himself (hardware, fitting, errands), done once,
 -- with a note of what he did. Decisions are not here but in "waiting for you" (Manager view).
 CREATE TABLE IF NOT EXISTS todos (

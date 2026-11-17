@@ -6,23 +6,20 @@ devices (tall). Middle: the regular checks and the files (they take the free spa
 old chat window used to sit: the manager chat (big) above "waiting for you". The project name and
 description are not here but in the drop-down at the pencil next to the title (projectpage.title_html).
 The manager chat works (chat.py); "waiting for you" lists the decisions (approvals, tasks that need the user; Janis
-16.11.2026), the status is empty, devices announced.
+16.11.2026); the status is an assessment counted from the data (status.py), the devices are a list with an encrypted key (devices.py).
 """
 import time
 
 from urllib.parse import urlsplit
 
-from . import agents, catalog, checks, files as filestore, i18n, serversettings, ui
+from . import agents, catalog, checks, devices as devicestore, files as filestore, i18n, serversettings, status as statusmod, ui, vault
 from .icons import icon
 from .layout import esc, fill
 
 MANAGER = """<section class="manager" id="manager-view" data-view-panel="manager" data-settings-url="/manager/settings" aria-label="%t.station_manager%" hidden>
   %MVAULT%
   <div class="mcol">
-    <section class="mtile glass m-status">
-      <header><h2>%t.manager_status%</h2><span class="m-lamp" title="%t.manager_status_none%"></span></header>
-      <p class="muted">%t.manager_status_empty%</p>
-    </section>
+    %STATUS%
     %DEVICES%
   </div>
   <div class="mcol">
@@ -72,13 +69,110 @@ def _select(lang: str, name: str, label_key: str, options: tuple, current: str) 
     )
 
 
-def _soon(lang: str, title: str, hint: str, css: str = "") -> str:
-    """A tile that is announced but not built: title, one line, and the "later" tag."""
-    later = esc(i18n.t(lang, "coming_soon"))
+def _when(lang: str, moment: int | None, now: int) -> str:
+    """How long ago, roughly: "just now", minutes, hours, days."""
+    if moment is None:
+        return i18n.t(lang, "status_never")
+    seconds = max(0, now - moment)
+    if seconds < 120:
+        return i18n.t(lang, "status_ago_now")
+    if seconds < 3600:
+        return i18n.t(lang, "status_ago_min", n=seconds // 60)
+    if seconds < 86400:
+        return i18n.t(lang, "status_ago_hours", n=seconds // 3600)
+    return i18n.t(lang, "status_ago_days", n=seconds // 86400)
+
+
+def _status_tile(lang: str, a: statusmod.Assessment | None, now: int) -> str:
+    """The assessment of the project (status.py): the lamp, how work is going, how far the project is, the numbers
+    and what explains an amber or red lamp. Counted from the data, no AI."""
+    lamp = a.lamp if a else "none"
+    head = (f'<header><h2>{esc(i18n.t(lang, "manager_status"))}</h2>'
+            f'{ui.info_dot(i18n.t(lang, "manager_status"), i18n.t(lang, "status_hint"))}'
+            f'<span class="m-lamp lamp-{lamp}" role="img" aria-label="{esc(i18n.t(lang, "status_lamp_" + lamp))}" '
+            f'data-tip="{esc(i18n.t(lang, "status_lamp_" + lamp))}"></span></header>')
+    if a is None or (a.total == 0 and a.last_activity is None):
+        return f'<section class="mtile glass m-status" id="status">{head}<p class="muted">{esc(i18n.t(lang, "status_empty"))}</p></section>'
+    facts = "".join(
+        f'<div><dt>{esc(i18n.t(lang, key))}</dt><dd>{value}</dd></div>'
+        for key, value in (("status_planned", a.planned), ("status_in_progress", a.in_progress),
+                           ("status_waiting", a.waiting), ("status_done", a.done)))
+    extra = [i18n.t(lang, key, n=n) for key, n in (("status_proposals", a.proposals), ("status_todos", a.todos_open),
+                                                    ("status_checks_due", a.checks_due)) if n]
+    reasons = "".join(f'<li>{esc(i18n.t(lang, "status_reason_" + code))}</li>' for code in a.reasons)
     return (
-        f'<section class="mtile glass m-soon {css}"><header><h2>{esc(i18n.t(lang, title))}</h2>'
-        f'<span class="m-tag">{later}</span></header>'
-        f'<p class="muted">{esc(i18n.t(lang, hint))}</p></section>'
+        f'<section class="mtile glass m-status" id="status">{head}'
+        f'<p class="status-line"><strong>{esc(i18n.t(lang, "status_activity_" + a.activity))}</strong>'
+        f'<small>{esc(i18n.t(lang, "status_last", when=_when(lang, a.last_activity, now)))}</small></p>'
+        f'<div class="status-progress"><progress max="100" value="{a.progress}" aria-label="{esc(i18n.t(lang, "status_progress", n=a.progress))}"></progress>'
+        f'<span>{esc(i18n.t(lang, "status_progress", n=a.progress))}</span></div>'
+        f'<dl class="status-facts">{facts}</dl>'
+        + (f'<ul class="status-reasons">{reasons}</ul>' if reasons else "")
+        + (f'<p class="muted status-extra">{esc(" · ".join(extra))}</p>' if extra else "")
+        + '</section>'
+    )
+
+
+DEVICE_DIALOGS = """<dialog class="dialog" id="device-dialog" data-title-new="%t.devices_new%" data-title-edit="%t.devices_edit%"
+        data-btn-new="%t.create%" data-btn-edit="%t.save%" data-key-new="%t.devices_key_new%" data-key-edit="%t.devices_key_edit%"
+        data-err-name="%t.devices_err_name%" data-err-hostname="%t.devices_err_hostname%" data-err-description="%t.devices_err_description%"
+        data-err-key="%t.devices_err_key%" data-err-duplicate="%t.devices_err_duplicate%" data-err-limit="%t.devices_err_limit%"
+        data-err-vault="%t.devices_err_vault%" data-err-other="%t.devices_err_other%">
+  <form method="post" action="" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
+    <h2 id="device-dialog-title">%t.devices_new%</h2>
+    <label>%t.devices_name%<input name="name" required maxlength="%MAX_NAME%" autocomplete="off"></label>
+    <label>%t.devices_hostname%<input name="hostname" required maxlength="%MAX_HOSTNAME%" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="roadster.local"></label>
+    <label>%t.devices_description%<input name="description" maxlength="%MAX_DESCRIPTION%" autocomplete="off"></label>
+    <label>%t.devices_key%<textarea class="device-key" name="key" id="device-key" maxlength="%MAX_KEY%" autocomplete="off" autocapitalize="off" spellcheck="false" rows="4"></textarea></label>
+    <p class="muted" id="device-key-state" hidden>%t.devices_key_stored%</p>
+    <label class="check-line" id="device-key-remove-box" hidden><input type="checkbox" name="remove_key" value="1"><span>%t.devices_key_remove%</span></label>
+    <p class="error" role="alert" id="device-error" hidden></p>
+    <div class="actions">
+      <button type="button" data-close>%t.cancel%</button>
+      <button class="primary" type="submit" id="device-dialog-button">%t.create%</button>
+    </div>
+  </form>
+</dialog>
+<dialog class="dialog danger" id="device-confirm">
+  <h2>%t.devices_confirm_delete%</h2>
+  <div class="actions">
+    <button type="button" data-close autofocus>%t.cancel%</button>
+    <button class="danger-btn" type="button" id="device-confirm-yes">%t.yes%</button>
+  </div>
+</dialog>"""
+
+
+def _device_row(lang: str, device: devicestore.Device) -> str:
+    edit_label, delete_label = esc(i18n.t(lang, "devices_edit")), esc(i18n.t(lang, "devices_delete"))
+    lock = (f'<span class="device-lock" data-tip="{esc(i18n.t(lang, "devices_key_stored"))}" '
+            f'aria-label="{esc(i18n.t(lang, "devices_key_stored"))}">{icon("key")}</span>') if device.has_key else ""
+    return (
+        f'<li class="check-row device-row" data-id="{device.id}" data-key="{1 if device.has_key else 0}" '
+        f'data-name="{esc(device.name)}" data-hostname="{esc(device.hostname)}" data-description="{esc(device.description)}">'
+        f'<span class="check-text"><span class="check-title">{esc(device.name)}</span>'
+        f'<small>{esc(device.hostname)}</small>'
+        + (f'<small class="device-desc">{esc(device.description)}</small>' if device.description else "")
+        + f'</span>{lock}'
+        f'<button class="icon-button card-btn" type="button" data-device="edit" aria-label="{edit_label}" '
+        f'title="{edit_label}">{icon("pencil")}</button>'
+        f'<button class="icon-button card-btn no" type="button" data-device="delete" aria-label="{delete_label}" '
+        f'title="{delete_label}">{icon("trash")}</button></li>'
+    )
+
+
+def _devices_tile(lang: str, items: list) -> str:
+    """The devices of the project (Janis, 07.11.2026): a list with the plus in the header. The key is only stored
+    (encrypted), the tile never has it."""
+    add = esc(i18n.t(lang, "devices_add"))
+    body = (f'<ul class="check-list device-list">{"".join(_device_row(lang, d) for d in items)}</ul>' if items
+            else f'<p class="muted">{esc(i18n.t(lang, "manager_devices_hint"))}</p>')
+    return (
+        f'<section class="mtile glass m-devices m-grow" id="devices" data-vault="{1 if vault.available() else 0}">'
+        f'<header><h2>{esc(i18n.t(lang, "manager_devices"))}</h2>'
+        f'{ui.info_dot(i18n.t(lang, "manager_devices"), i18n.t(lang, "devices_info"))}'
+        f'<span class="count">{len(items)}</span>'
+        f'<button class="icon-button m-add" id="device-add" type="button" aria-label="{add}" title="{add}">'
+        f'{icon("plus")}</button></header>{body}</section>'
     )
 
 
@@ -148,7 +242,9 @@ def dialogs(lang: str) -> str:
     areas = "".join(
         f'<option value="{value}">{esc(i18n.t(lang, key))}</option>' for value, key in FILE_TABS if value != "links"
     )
-    return fill(MVAULT_DIALOGS, lang, CROSS=icon("cross")) + "\n" + fill(CHECK_DIALOGS, lang, MAX_TEXT=str(checks.MAX_TEXT), CYCLES=options, DAYS=days,
+    return fill(MVAULT_DIALOGS, lang, CROSS=icon("cross")) + "\n" + fill(DEVICE_DIALOGS, lang, MAX_NAME=str(devicestore.MAX_NAME),
+                MAX_HOSTNAME=str(devicestore.MAX_HOSTNAME), MAX_DESCRIPTION=str(devicestore.MAX_DESCRIPTION),
+                MAX_KEY=str(devicestore.MAX_KEY)) + "\n" + fill(CHECK_DIALOGS, lang, MAX_TEXT=str(checks.MAX_TEXT), CYCLES=options, DAYS=days,
                 CHEVRON=icon("chevron_down")) + "\n" + fill(FILE_DIALOGS, lang, AREAS=areas, CHEVRON=icon("chevron_down"),
                                                          DOWNLOAD=icon("download"), CROSS=icon("cross"), PENCIL=icon("pencil"),
                                                          MANY=esc(i18n.t(lang, "files_confirm_delete_many", n="{n}")),
@@ -475,7 +571,8 @@ def _waiting_tile(lang: str, autonomy: str, waiting: list[tuple[agents.Task, str
 
 def render(lang: str, settings: dict, regular_checks: list | None = None, now: int | None = None,
            stored_files: list | None = None, files_confirm: bool = True, trashed_files: list | None = None,
-           ais: tuple[str, ...] = ("claude",), waiting: list | None = None, versions: list | None = None) -> str:
+           ais: tuple[str, ...] = ("claude",), waiting: list | None = None, versions: list | None = None,
+           assessment: statusmod.Assessment | None = None, device_list: list | None = None) -> str:
     """`settings` is agents.settings(user_id): the manager is the role "chef". `regular_checks` are the
     project's checks (checks.list_checks). `ais`: the providers the user has connected (their models are offered).
     `waiting`: (task, last report) of agents.waiting_tasks, the decisions of "waiting for you"."""
@@ -486,7 +583,8 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
     return fill(
         MANAGER,
         lang,
-        DEVICES=_soon(lang, "manager_devices", "manager_devices_hint", "m-grow"),
+        STATUS=_status_tile(lang, assessment, int(now if now is not None else time.time())),
+        DEVICES=_devices_tile(lang, device_list or []),
         CHECKS=_checks_tile(lang, regular_checks or [], int(now if now is not None else time.time())),
         FILES=_files_tile(lang, stored_files or [], files_confirm),
         # "Claude answers": the name of the AI in use comes from its provider (catalog.py), never from the code; chat.js

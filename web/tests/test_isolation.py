@@ -10,7 +10,7 @@ import unittest
 
 from fastapi import HTTPException
 
-from app import board, checks, dashboard, db, files, memory, power, projectpage, projects, resets, throttle, todos, ui, users
+from app import board, checks, dashboard, db, devices, status, files, memory, power, projectpage, projects, resets, throttle, todos, ui, users
 from app.routes import board as board_routes, checks as check_routes, todos as todo_routes, files as file_routes, projects as project_routes, resets as reset_routes
 
 
@@ -23,6 +23,7 @@ def snapshot() -> dict:
             "checks": [tuple(r) for r in conn.execute("SELECT * FROM checks ORDER BY id")],
             "files": [tuple(r) for r in conn.execute("SELECT * FROM files ORDER BY id")],
             "todos": [tuple(r) for r in conn.execute("SELECT * FROM todos ORDER BY id")],
+            "devices": [tuple(r) for r in conn.execute("SELECT * FROM devices ORDER BY id")],
         }
 
 
@@ -46,6 +47,29 @@ class IsolationTest(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+
+    def test_b_cannot_see_change_or_delete_the_devices_of_a(self):
+        from cryptography.fernet import Fernet
+        from app.routes import devices as device_routes
+        os.environ["HUB_VAULT_KEY"] = Fernet.generate_key().decode()
+        self.addCleanup(os.environ.pop, "HUB_VAULT_KEY", None)
+        mine = devices.create(self.a.id, self.project.id, "Roadster", "roadster.local", "Car", "secret")
+        before = snapshot()
+        self.assertEqual(devices.list_devices(self.b.id, self.project.id), [])
+        self.assertIsNone(devices.create(self.b.id, self.project.id, "Mine", "x.local"))      # A's project
+        self.assertIsNone(devices.update(self.b.id, mine.id, "Taken", "evil.local", "", "newkey", True))
+        self.assertFalse(devices.delete(self.b.id, mine.id))
+        self.assertEqual(device_routes.change_device(mine.id, "Taken", "evil.local", "", "", "", self.b_user()).status_code, 404)
+        self.assertEqual(device_routes.delete_device(mine.id, self.b_user()).status_code, 404)
+        self.assertEqual(device_routes.create_device(self.project.id, "Mine", "x.local", "", "", self.b_user()).status_code, 404)
+        self.assertEqual(snapshot(), before)
+
+    def test_b_cannot_see_the_status_of_a(self):
+        self.assertIsNone(status.assess(self.b.id, self.project.id))
+        self.assertIsNotNone(status.assess(self.a.id, self.project.id))
+
+    def b_user(self):
+        return self.b
 
     def test_model_and_effort_of_b_never_change_those_of_a(self):
         from app import agents

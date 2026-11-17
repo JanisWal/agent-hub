@@ -23,6 +23,7 @@ MAX_CONTEXT = 12000       # characters of project context in front of a question
 HISTORY = 6               # earlier questions and answers of the project the manager remembers
 HISTORY_CUT = 1500        # characters kept of each of them
 ITEMS = 40                # open board items listed at most
+DEVICES = 30              # devices listed at most (name, hostname, description; never the key)
 CHECKS = 20               # regular checks listed at most
 TODOS_OPEN = 20           # open entries of "For you" listed at most
 TODOS_DONE = 5            # last done entries of "For you" listed, with what the user did
@@ -174,6 +175,10 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
         "SELECT text, cycle, days, last_done FROM checks WHERE project_id = ? ORDER BY id LIMIT ?",
         (project_id, CHECKS),
     ).fetchall()
+    machines = conn.execute(   # the key column is never read here: the manager knows what a device is, not how to get in
+        "SELECT name, hostname, description FROM devices WHERE project_id = ? ORDER BY id LIMIT ?",
+        (project_id, DEVICES),
+    ).fetchall()
     work = conn.execute(   # "For you": what the user does himself (todos.py), open ones first
         "SELECT text, note, done_at FROM todos WHERE project_id = ? AND done_at IS NULL ORDER BY id LIMIT ?",
         (project_id, TODOS_OPEN),
@@ -200,6 +205,9 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
         f"{'due' if checks.is_due(c['cycle'], c['last_done'], now, c['days']) else 'not due yet'})"
         for c in regular
     ) or "(none)"
+    device_list = "\n".join(
+        f"- {d['name']} ({d['hostname']})" + (f": {_clip(d['description'], NOTE_CUT)}" if d["description"] else "")
+        for d in machines) or "(none)"
     own_work = "\n".join(
         f"- {t['text']} (open)" if t["done_at"] is None
         else f"- {t['text']} (done; what the user did: {_clip(t['note'], NOTE_CUT) or 'no note'})"
@@ -210,7 +218,8 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
     def context() -> str:
         memory = "\n\n".join(talks) or "(no earlier questions)"
         return (f"{head}\n\nOpen board items:\n{board}\n\nRegular checks (your recurring to-dos, not board items):\n"
-                f"{routine}\n\nFor you (work the user does himself, by hand; you advise and keep the state):\n{own_work}"
+                f"{routine}\n\nDevices of the project (you never get their keys and do not switch hardware):\n{device_list}"
+                f"\n\nFor you (work the user does himself, by hand; you advise and keep the state):\n{own_work}"
                 f"\n\nEarlier questions in this project:\n{memory}")
 
     while len(context()) > MAX_CONTEXT and talks:
