@@ -69,6 +69,13 @@ class IsolationTest(unittest.TestCase):
         self.assertFalse(devices.trust_host(self.b.id, mine.id, "ssh-ed25519 AAAA", "SHA256:x", "192.168.1.2"))
         self.assertFalse(devices.set_ai(self.b.id, mine.id, ["reboot"], True))
         self.assertFalse(devices.ai_may(self.b.id, mine.id, "reboot"))
+        self.assertIsNone(devices.set_login(self.b.id, mine.id, "evil", 22))
+        self.assertIsNone(devices.set_secret(self.b.id, mine.id, "key", "x"))
+        self.assertFalse(devices.set_picture(self.b.id, mine.id, ""))
+        self.assertFalse(devices.request_wake(self.b.id, mine.id))
+        self.assertEqual(devices.open_requests(self.b.id, self.project.id), [])
+        with db.connect() as conn:   # the manager of B can not ask for A's device, not even by its name
+            self.assertFalse(devices.request_action(conn, self.b.id, self.project.id, "Roadster", "reboot"))
         for call in (lambda: device_routes.device_info(mine.id, user=self.b),
                      lambda: device_routes.device_setup(mine.id, user=self.b),
                      lambda: device_routes.device_history(mine.id, user=self.b),
@@ -76,7 +83,11 @@ class IsolationTest(unittest.TestCase):
                      lambda: device_routes.device_test(mine.id, user=self.b),
                      lambda: device_routes.device_keygen(mine.id, user=self.b),
                      lambda: device_routes.device_state(mine.id, user=self.b),
-                     lambda: device_routes.device_ai(mine.id, ["reboot"], "1", user=self.b)):
+                     lambda: device_routes.device_ai(mine.id, ["reboot"], "1", user=self.b),
+                     lambda: device_routes.device_login(mine.id, "evil", "22", None, user=self.b),
+                     lambda: device_routes.device_secret(mine.id, "password", "x", "", user=self.b),
+                     lambda: device_routes.device_picture(mine.id, "", user=self.b),
+                     lambda: device_routes.device_request(1, "yes", user=self.b)):
             self.assertEqual(call().status_code, 404)
         self.assertEqual(snapshot(), before)
 

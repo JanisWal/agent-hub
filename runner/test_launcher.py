@@ -141,6 +141,17 @@ class ChatCommandTest(unittest.TestCase):
         self.assertIn("HUB_JOB=chat-brief", vibe)
         self.assertIn("HUB_TURNS=1", vibe)
 
+    def test_the_wake_command_has_no_rights_and_only_the_mac(self):
+        cmd = L.build_wake_command("dc:a6:32:01:02:03")
+        self.assertEqual(cmd[-1], "dc:a6:32:01:02:03")
+        self.assertIn("--network=host", cmd)
+        for flag in ("--cap-drop", "--read-only", "no-new-privileges"):
+            self.assertIn(flag, cmd)
+        self.assertNotIn("--privileged", cmd)
+        for bad in ("DC:A6:32:01:02:03", "dc:a6:32:01:02", "dc:a6:32:01:02:03 x", "", None):
+            with self.assertRaises(ValueError):
+                L.build_wake_command(bad)
+
     def test_only_the_manager_modes_exist(self):
         self.assertEqual(tuple(L.CHAT_MODES), ("all", "apart", "brief"))     # the old single modes are gone
         for old in ("plain", "web", "code", "everything"):
