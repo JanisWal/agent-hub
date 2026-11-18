@@ -807,7 +807,7 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 .file-crumbs button:hover { color: var(--text); transform: none; }
 .file-crumbs button[aria-current] { color: var(--text); background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 60%), color-mix(in srgb, var(--accent) 38%, var(--glass)); box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 28%, transparent), inset 0 1px 0 var(--highlight); }
 .file-crumbs button + button:not(.file-up-level)::before { content: "›"; margin-right: 7px; color: var(--muted); }
-.file-crumbs .file-up-level + button::before { content: none; }
+.file-crumbs .file-up-level + button:not(.file-up-level)::before { content: none; }   /* nothing between arrow and root */
 .file-crumbs .file-up-level { display: grid; place-items: center; width: 30px; padding: 0; }
 .file-crumbs svg, .file-tree svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .folder-empty { padding: 10px 4px; }
