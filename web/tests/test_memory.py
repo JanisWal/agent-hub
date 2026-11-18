@@ -64,10 +64,13 @@ class MemoryFolderTest(MemoryBase):
         self.assertEqual(memory.ensure_skeleton(self.a.id, self.pa.id, "de"), 0)       # a deleted one stays gone
         self.assertEqual(memory.ensure_skeleton(self.b.id, self.pa.id, "de"), 0)       # never in someone else's project
 
-    def test_a_file_of_the_same_name_in_another_area_is_never_written(self):
-        """Janis, 16.11.2026: the manager writes only to the area Memory; a manual elsewhere stays as it is."""
+    def test_a_file_of_the_same_name_with_another_label_is_never_written(self):
+        """Janis, 16.11.2026: the manager writes only to the memory files; a manual elsewhere stays as it is."""
         manual = self.put(self.a, self.pa, "anleitung.md", b"# Relais\nOriginal")
         files.update(self.a.id, manual.id, "anleitung.md", category="documents")
+        self.assertFalse(memory.save_memory(self.a.id, self.pa.id, "# Neu", "anleitung.md"))   # its name at the top: no
+        self.assertEqual(files.read_text(self.a.id, manual.id), "# Relais\nOriginal")
+        files.move(self.a.id, self.pa.id, [manual.id], files.create_folder(self.a.id, self.pa.id, "Docs").id)
         self.assertTrue(memory.save_memory(self.a.id, self.pa.id, "# Neu", "anleitung.md"))
         stored = {(f.name, f.category): f for f in files.list_files(self.a.id, self.pa.id)}
         self.assertEqual(files.read_text(self.a.id, stored[("anleitung.md", "documents")].id), "# Relais\nOriginal")

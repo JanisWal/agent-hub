@@ -15,10 +15,13 @@ measures; `finish_upload` checks that every block is in. Files live in FILES_DIR
 their display name (a name can not reach a path). Like every data module, each function gets the `user_id` and
 the project must be his: foreign things are "not found" (None, False or FileError). Standard library only.
 
-Folders (Janis, 18.11.2026): a folder is a row with `is_folder` = 1 and no file on disk; every row has `parent_id`,
-the folder it lies in (NULL = the top of its area). A folder belongs to one area, and everything in it to the same.
-Names are unique per place (area and folder), ignoring case. Moving, deleting, restoring and purging a folder take
-everything inside along; the trash shows only the top of what went in together.
+Folders and labels (Janis, 18.11.2026; labels since `file-tags`, PROJEKT.md list item 3h): a folder is a row with
+`is_folder` = 1 and no file on disk; every row has `parent_id`, the folder it lies in (NULL = the top of the project).
+The folders are ONE tree for the whole project, with no area. The area of a file is its label (`category`): set by
+its ending when it comes in (also each file of a dropped folder), changed by hand (`set_label`); a folder has none
+(''). Links have the label "links" and may lie in folders too. Names are unique per folder, ignoring case. Moving,
+deleting, restoring and purging a folder take everything inside along; the trash shows only the top of what went in
+together. The memory is the files labelled "memory" at the top (memory.py).
 """
 import os
 import shutil
@@ -235,97 +238,110 @@ def _subtree(conn: sqlite3.Connection, row_id: int) -> list[int]:
         (row_id,))]
 
 
-def create_folder(user_id: int, project_id: int, category: str, name: str, parent_id: int | None = None,
-                  reuse: bool = False, now: int | None = None) -> StoredFile:
-    """A new folder at the top of an area or inside a folder (then it takes that folder's area). `reuse`: a folder of
-    that name in that place is returned instead (an uploaded folder tree joins what is there). Raises FileError:
-    bad_name, bad_category, not_found (not his project or not his folder), name_taken."""
+def create_folder(user_id: int, project_id: int, name: str, parent_id: int | None = None, reuse: bool = False,
+                  now: int | None = None) -> StoredFile:
+    """A new folder at the top of the project or inside a folder. `reuse`: a folder of that name in that place is
+    returned instead (an uploaded folder tree joins what is there). Raises FileError: bad_name, not_found (not his
+    project or not his folder), name_taken."""
     name = _clean_name(name)
     with db.connect() as conn:
         if not _own_project(conn, user_id, project_id):
             raise FileError("not_found")
-        return make_folder(conn, project_id, category, name, parent_id, reuse, now)
+        return make_folder(conn, project_id, name, parent_id, reuse, now)
 
 
-def make_folder(conn: sqlite3.Connection, project_id: int, category: str, name: str, parent_id: int | None = None,
+def make_folder(conn: sqlite3.Connection, project_id: int, name: str, parent_id: int | None = None,
                 reuse: bool = False, now: int | None = None) -> StoredFile:
     """create_folder on an open connection; the caller has checked that the project is the user's."""
     name = _clean_name(name)
-    if parent_id is not None:
-        parent = _folder(conn, project_id, parent_id)
-        if parent is None:
-            raise FileError("not_found")
-        category = parent["category"]
-    elif category not in CATEGORIES:
-        raise FileError("bad_category")
+    if parent_id is not None and _folder(conn, project_id, parent_id) is None:
+        raise FileError("not_found")
     same = conn.execute(
-        "SELECT * FROM files WHERE project_id = ? AND category = ? AND parent_id IS ? AND status = 'ready'"
-        " AND lower(name) = lower(?) ORDER BY id LIMIT 1", (project_id, category, parent_id, name)).fetchone()
+        "SELECT * FROM files WHERE project_id = ? AND parent_id IS ? AND status = 'ready' AND lower(name) = lower(?)"
+        " ORDER BY id LIMIT 1", (project_id, parent_id, name)).fetchone()
     if same is not None:
         if reuse and same["is_folder"]:
             return _to_file(same)
         raise FileError("name_taken")
     cur = conn.execute(
         "INSERT INTO files (project_id, name, category, size, status, created_at, parts, parent_id, is_folder)"
-        " VALUES (?, ?, ?, 0, 'ready', ?, '', ?, 1)",
-        (project_id, name, category, int(now if now is not None else time.time()), parent_id))
+        " VALUES (?, ?, '', 0, 'ready', ?, '', ?, 1)",
+        (project_id, name, int(now if now is not None else time.time()), parent_id))
     return _to_file(conn.execute("SELECT * FROM files WHERE id = ?", (cur.lastrowid,)).fetchone())
 
 
-def _set_area(conn: sqlite3.Connection, row_id: int, category: str) -> None:
-    """A row and everything below it go to another area."""
-    ids = _subtree(conn, row_id)
-    conn.execute(f"UPDATE files SET category = ? WHERE id IN ({','.join('?' * len(ids))})", (category, *ids))
-
-
-def move(user_id: int, project_id: int, ids: list[int], category: str | None = None,
-         folder_id: int | None = None) -> int:
-    """Move files, links and folders (with all inside) of the user's project into a folder or to the top of an area
-    (marked rows dragged onto a folder, a segment or a tab). A name the place has already gets " (2)". Left out: rows
-    that are not his, links into another area than Links and files into Links, a folder into itself or below itself.
-    Returns how many moved. Raises FileError: not_found (not his project or folder), bad_category."""
+def move(user_id: int, project_id: int, ids: list[int], folder_id: int | None = None) -> int:
+    """Move files, links and folders (with all inside) of the user's project into a folder or to the top (marked rows
+    dragged onto a folder, a step of the path or "All"). The label stays. A name the place has already gets " (2)".
+    Left out: rows that are not his, a folder into itself or below itself. Returns how many moved. Raises FileError:
+    not_found (not his project or folder)."""
     with db.connect() as conn:
         if not _own_project(conn, user_id, project_id):
             raise FileError("not_found")
-        return move_rows(conn, project_id, ids, category, folder_id)
+        return move_rows(conn, project_id, ids, folder_id)
 
 
-def move_rows(conn: sqlite3.Connection, project_id: int, ids: list[int], category: str | None = None,
-              folder_id: int | None = None) -> int:
+def move_rows(conn: sqlite3.Connection, project_id: int, ids: list[int], folder_id: int | None = None) -> int:
     """move on an open connection; the caller has checked that the project is the user's."""
-    if folder_id is not None:
-        target = _folder(conn, project_id, folder_id)
-        if target is None:
-            raise FileError("not_found")
-        category = target["category"]
-    elif category not in CATEGORIES:
-        raise FileError("bad_category")
+    if folder_id is not None and _folder(conn, project_id, folder_id) is None:
+        raise FileError("not_found")
     moved = 0
     for row_id in dict.fromkeys(ids):
         row = conn.execute("SELECT * FROM files WHERE id = ? AND project_id = ? AND status = 'ready'",
                            (row_id, project_id)).fetchone()
-        if row is None:
+        if row is None or row["parent_id"] == folder_id:
             continue
-        if row["is_folder"]:
-            if "links" in (category, row["category"]) and category != row["category"]:
-                continue                               # links and files never mix: folders do not cross into Links
-            if folder_id is not None and folder_id in _subtree(conn, row["id"]):
-                continue                               # never into itself
-        elif (row["url"] is not None) != (category == "links"):
-            continue
-        if row["parent_id"] == folder_id and row["category"] == category:
-            continue
+        if row["is_folder"] and folder_id is not None and folder_id in _subtree(conn, row["id"]):
+            continue                                   # never into itself
         name = row["name"]
         taken = {r[0].lower() for r in conn.execute(
-            "SELECT name FROM files WHERE project_id = ? AND category = ? AND parent_id IS ? AND status = 'ready'"
-            " AND id != ?", (project_id, category, folder_id, row["id"]))}
+            "SELECT name FROM files WHERE project_id = ? AND parent_id IS ? AND status = 'ready' AND id != ?",
+            (project_id, folder_id, row["id"]))}
         if name.lower() in taken:
             name = _free_name(name, taken)
         conn.execute("UPDATE files SET parent_id = ?, name = ? WHERE id = ?", (folder_id, name, row["id"]))
-        if category != row["category"]:
-            _set_area(conn, row["id"], category)
         moved += 1
     return moved
+
+
+def set_label(user_id: int, project_id: int, ids: list[int], label: str) -> int:
+    """Give files a label (rows dragged onto a tab, or the pencil): a folder gives it to every file inside, the folder
+    stays where it is. Links keep "links", and no file becomes a link. Returns how many files changed. Raises
+    FileError: not_found (not his project), bad_category."""
+    if label not in CATEGORIES or label == "links":
+        raise FileError("bad_category")
+    with db.connect() as conn:
+        if not _own_project(conn, user_id, project_id):
+            raise FileError("not_found")
+        changed = 0
+        for row_id in dict.fromkeys(ids):
+            row = conn.execute("SELECT id FROM files WHERE id = ? AND project_id = ? AND status = 'ready'",
+                               (row_id, project_id)).fetchone()
+            if row is None:
+                continue
+            inside = _subtree(conn, row["id"])
+            changed += conn.execute(
+                f"UPDATE files SET category = ? WHERE id IN ({','.join('?' * len(inside))}) AND is_folder = 0"
+                " AND url IS NULL AND category != ?", (label, *inside, label)).rowcount
+    return changed
+
+
+def one_tree(conn: sqlite3.Connection) -> None:
+    """Once (18.11.2026, `file-tags`; db._prepare, remove when no database from before can be left): folders lose their
+    area, and names must now be unique per folder of the whole project. Inside a folder they already are (everything in
+    it had the folder's area); at the top a name may come once per area: the memory files keep theirs, every later one
+    gets " (2)". The labels of the files stay as they are."""
+    conn.execute("UPDATE files SET category = '' WHERE is_folder = 1")
+    taken: dict[int, set[str]] = {}
+    for row in conn.execute("SELECT id, project_id, name FROM files WHERE parent_id IS NULL AND status = 'ready'"
+                            " ORDER BY project_id, (category = 'memory' AND is_folder = 0) DESC, id").fetchall():
+        names = taken.setdefault(row["project_id"], set())
+        if row["name"].lower() in names:
+            free = _free_name(row["name"], names)
+            conn.execute("UPDATE files SET name = ? WHERE id = ?", (free, row["id"]))
+            names.add(free.lower())
+        else:
+            names.add(row["name"].lower())
 
 
 AGENT_FILES = 300   # files named in the list for a run or chat at most
@@ -333,9 +349,9 @@ AGENT_FILES = 300   # files named in the list for a run or chat at most
 
 def for_agents(conn: sqlite3.Connection, user_id: int, project_id: int) -> tuple[list[dict], list[dict]]:
     """(files, links) of a project for the read-only /files of a run or chat (runner/view.py, Janis 16.11.2026):
-    files as id, name, area, size and `path` (the names of the folders above it, outermost first; the runner copies
-    them into the same folders; never a path on disk), links as name and address. Only finished files of the user's
-    own project; nothing in the trash."""
+    files as id, name, area (its label), size and `path` (the names of the folders above it, outermost first; the
+    runner copies them into the same folders; never a path on disk), links as name, address and path. Only finished
+    files of the user's own project; nothing in the trash."""
     folders = {r["id"]: r for r in conn.execute(
         "SELECT f.id, f.name, f.parent_id FROM files f JOIN projects p ON p.id = f.project_id"
         " WHERE f.project_id = ? AND p.user_id = ? AND f.status = 'ready' AND f.is_folder = 1", (project_id, user_id))}
@@ -353,15 +369,16 @@ def for_agents(conn: sqlite3.Connection, user_id: int, project_id: int) -> tuple
         return names[::-1]
     stored = [{"id": r["id"], "name": r["name"], "area": r["category"], "size": r["size"], "path": path(r["parent_id"])}
               for r in rows if not r["url"]]
-    links = [{"name": r["name"], "url": r["url"]} for r in rows if r["url"]]
+    links = [{"name": r["name"], "url": r["url"], "path": path(r["parent_id"])} for r in rows if r["url"]]
     return stored, links
 
 
 def start_upload(user_id: int, project_id: int, name: str, size: int, now: int | None = None,
-                 folder_id: int | None = None) -> StoredFile:
+                 folder_id: int | None = None, label: str | None = None) -> StoredFile:
     """Make the file for an upload that follows in runs of blocks. It exists at its full size from the start (the rest
-    is filled in), so the runs may come in any order. `folder_id`: it goes into that folder (and its area). Raises
-    FileError: bad_name, not_found (not his project or folder), disk_full (the file would not fit and leave MIN_FREE)."""
+    is filled in), so the runs may come in any order. `folder_id`: it goes into that folder. `label`: a file dropped on
+    a tab gets that label, else the one of its ending. Raises FileError: bad_name, not_found (not his project or
+    folder), disk_full (the file would not fit and leave MIN_FREE)."""
     name = _clean_name(name)
     now = int(now if now is not None else time.time())
     if size < 0:
@@ -370,8 +387,7 @@ def start_upload(user_id: int, project_id: int, name: str, size: int, now: int |
     with db.connect() as conn:
         if not _own_project(conn, user_id, project_id):
             raise FileError("not_found")
-        folder = _folder(conn, project_id, folder_id)
-        if folder_id is not None and (folder is None or folder["category"] == "links"):
+        if folder_id is not None and _folder(conn, project_id, folder_id) is None:
             raise FileError("not_found")
         _drop_stale(conn, now)
         if free_bytes() - size < MIN_FREE:
@@ -379,7 +395,8 @@ def start_upload(user_id: int, project_id: int, name: str, size: int, now: int |
         cur = conn.execute(
             "INSERT INTO files (project_id, name, category, size, status, created_at, parts, parent_id)"
             " VALUES (?, ?, ?, ?, 'uploading', ?, ?, ?)",
-            (project_id, name, folder["category"] if folder else category_for(name), size, now, parts, folder_id),
+            (project_id, name, label if label in CATEGORIES and label != "links" else category_for(name), size, now,
+             parts, folder_id),
         )
         file_id = cur.lastrowid
         row = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
@@ -479,19 +496,18 @@ def finish_upload(user_id: int, file_id: int) -> StoredFile:
     return _to_file(row)
 
 
-def _same_name(conn: sqlite3.Connection, project_id: int, category: str, name: str, but: int | None = None,
+def _same_name(conn: sqlite3.Connection, project_id: int, name: str, but: int | None = None,
                parent: int | None = None) -> list[int]:
-    """Ids of the finished rows of one place (area and folder) with this name, ignoring upper and lower case (as
+    """Ids of the finished rows of one place (a folder, or the top) with this name, ignoring upper and lower case (as
     Windows and macOS do)."""
     return [r[0] for r in conn.execute(
-        "SELECT id FROM files WHERE project_id = ? AND category = ? AND parent_id IS ? AND status = 'ready'"
-        " AND lower(name) = lower(?) AND id IS NOT ?", (project_id, category, parent, name, but))]
+        "SELECT id FROM files WHERE project_id = ? AND parent_id IS ? AND status = 'ready'"
+        " AND lower(name) = lower(?) AND id IS NOT ?", (project_id, parent, name, but))]
 
 
-def _names_in(conn: sqlite3.Connection, project_id: int, category: str, parent: int | None) -> set[str]:
+def _names_in(conn: sqlite3.Connection, project_id: int, parent: int | None) -> set[str]:
     return {r[0].lower() for r in conn.execute(
-        "SELECT name FROM files WHERE project_id = ? AND category = ? AND parent_id IS ? AND status = 'ready'",
-        (project_id, category, parent))}
+        "SELECT name FROM files WHERE project_id = ? AND parent_id IS ? AND status = 'ready'", (project_id, parent))}
 
 
 def _free_name(name: str, taken: set[str]) -> str:
@@ -504,61 +520,58 @@ def _free_name(name: str, taken: set[str]) -> str:
     raise FileError("bad_name")
 
 
-def check_names(user_id: int, project_id: int, names: list[str], category: str | None = None,
-                folder_id: int | None = None) -> list[dict] | None:
-    """Before an upload: which of these names already exist in the place the file goes to (the chosen folder, else the
-    top of the chosen `category`, else of the area its ending gives). For each such name: the ids of the files with it
-    and a free name for "keep both". A name that comes twice in the same upload counts as taken too (with no ids).
-    None if the project (or the folder) is not his."""
-    if category is not None and category not in CATEGORIES:
-        category = None
+def check_names(user_id: int, project_id: int, names: list[str], folder_id: int | None = None) -> list[dict] | None:
+    """Before an upload: which of these names already exist in the place the files go to (the folder, else the top).
+    For each such name: the ids of the rows with it and a free name for "keep both". A name that comes twice in the
+    same upload counts as taken too (with no ids). None if the project (or the folder) is not his."""
     found = []
     with db.connect() as conn:
         if not _own_project(conn, user_id, project_id):
             return None
-        if folder_id is not None:
-            folder = _folder(conn, project_id, folder_id)
-            if folder is None:
-                return None
-            category = folder["category"]
-        names_by_area: dict[str, set[str]] = {}
+        if folder_id is not None and _folder(conn, project_id, folder_id) is None:
+            return None
+        taken = _names_in(conn, project_id, folder_id)
         for raw in names:
             try:
                 name = _clean_name(raw)
             except FileError:
                 continue
-            area = category or category_for(name)
-            if area not in names_by_area:
-                names_by_area[area] = _names_in(conn, project_id, area, folder_id)
-            taken = names_by_area[area]
             if name.lower() in taken:
                 free = _free_name(name, taken)
-                found.append({"name": raw, "ids": _same_name(conn, project_id, area, name, parent=folder_id), "free": free})
+                found.append({"name": raw, "ids": _same_name(conn, project_id, name, parent=folder_id), "free": free})
                 taken.add(free.lower())
             else:
                 taken.add(name.lower())
     return found
 
 
-def add_link(user_id: int, project_id: int, url: str, name: str = "", now: int | None = None) -> StoredFile:
-    """Add a link as a source of information. The name defaults to the host. Raises FileError: bad_url, not_found."""
+def add_link(user_id: int, project_id: int, url: str, name: str = "", now: int | None = None,
+             folder_id: int | None = None) -> StoredFile:
+    """Add a link as a source of information, at the top or in a folder. The name defaults to the host; a name the
+    place has already gets " (2)". Raises FileError: bad_url, not_found (not his project or folder)."""
     url = _clean_url(url)
     name = _clean_name(name) if (name or "").strip() else _clean_name(urlsplit(url).hostname or url)
     with db.connect() as conn:
         if not _own_project(conn, user_id, project_id):
             raise FileError("not_found")
+        if folder_id is not None and _folder(conn, project_id, folder_id) is None:
+            raise FileError("not_found")
+        taken = _names_in(conn, project_id, folder_id)
+        if name.lower() in taken:
+            name = _free_name(name, taken)
         cur = conn.execute(
-            "INSERT INTO files (project_id, name, category, size, url, status, created_at)"
-            " VALUES (?, ?, 'links', 0, ?, 'ready', ?)",
-            (project_id, name, url, int(now if now is not None else time.time())),
+            "INSERT INTO files (project_id, name, category, size, url, status, created_at, parent_id)"
+            " VALUES (?, ?, 'links', 0, ?, 'ready', ?, ?)",
+            (project_id, name, url, int(now if now is not None else time.time()), folder_id),
         )
         row = conn.execute("SELECT * FROM files WHERE id = ?", (cur.lastrowid,)).fetchone()
     return _to_file(row)
 
 
 def create_text_file(user_id: int, project_id: int, name: str, text: str, now: int | None = None) -> StoredFile:
-    """Make a finished text file at once, without an upload (the manager's memory file). Raises FileError:
-    bad_name, not_found (not his project), too_big (over TEXT_MAX), disk_full."""
+    """Make a finished text file at once at the top, without an upload (the manager's memory file). Raises FileError:
+    bad_name, not_found (not his project), too_big (over TEXT_MAX), disk_full, name_taken (a row of that name is at
+    the top already: names are unique per place)."""
     name = _clean_name(name)
     data = text.encode("utf-8")
     if len(data) > TEXT_MAX:
@@ -568,6 +581,8 @@ def create_text_file(user_id: int, project_id: int, name: str, text: str, now: i
             raise FileError("not_found")
         if free_bytes() - len(data) < MIN_FREE:
             raise FileError("disk_full")
+        if _same_name(conn, project_id, name):
+            raise FileError("name_taken")
         cur = conn.execute(
             "INSERT INTO files (project_id, name, category, size, status, created_at, parts)"
             " VALUES (?, ?, ?, ?, 'ready', ?, '')",
@@ -581,10 +596,10 @@ def create_text_file(user_id: int, project_id: int, name: str, text: str, now: i
 
 
 def update(user_id: int, file_id: int, name: str, url: str | None = None, category: str | None = None) -> StoredFile:
-    """Rename a file, link or folder; a link may get a new address, a file or folder may go to another area (to its
-    top, a folder with all inside; a folder never into or out of Links). Raises FileError."""
+    """Rename a file, link or folder where it is; a link may get a new address, a file another label (`category`; a
+    link stays a link, a folder has none). Raises FileError: bad_name, bad_url, bad_category, not_found, name_taken."""
     name = _clean_name(name)
-    if category is not None and category not in CATEGORIES:
+    if category is not None and (category not in CATEGORIES or category == "links"):
         raise FileError("bad_category")
     with db.connect() as conn:
         row = _owned(conn, user_id, file_id)
@@ -592,17 +607,10 @@ def update(user_id: int, file_id: int, name: str, url: str | None = None, catego
             raise FileError("not_found")
         is_link = row["url"] is not None
         new_url = _clean_url(url) if is_link and url is not None else row["url"]
-        category = category or row["category"]
-        if is_link or (row["is_folder"] and row["category"] == "links"):
-            category = "links"            # a link stays a link, a file never becomes one
-        elif category == "links":
-            raise FileError("bad_category")
-        parent = row["parent_id"] if category == row["category"] else None   # another area: to its top
-        if _same_name(conn, row["project_id"], category, name, but=file_id, parent=parent):
+        label = row["category"] if is_link or row["is_folder"] or category is None else category
+        if _same_name(conn, row["project_id"], name, but=file_id, parent=row["parent_id"]):
             raise FileError("name_taken")  # two rows of a place never share a name (the upload asks first)
-        conn.execute("UPDATE files SET name = ?, url = ?, parent_id = ? WHERE id = ?", (name, new_url, parent, file_id))
-        if category != row["category"]:
-            _set_area(conn, file_id, category)
+        conn.execute("UPDATE files SET name = ?, url = ?, category = ? WHERE id = ?", (name, new_url, label, file_id))
         row = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
     return _to_file(row)
 
@@ -683,7 +691,7 @@ def purge(user_id: int, file_id: int) -> bool:
 
 def restore(user_id: int, file_id: int) -> StoredFile | None:
     """Take a file or folder back out of the trash to its place (a folder with what went into the trash with it); if
-    its folder is gone, to the top of its area. A name that is taken there by now gets " (2)". None if it is not the
+    its folder is gone, to the top. A name that is taken there by now gets " (2)". None if it is not the
     user's or not in the trash."""
     with db.connect() as conn:
         row = _owned(conn, user_id, file_id)
@@ -691,8 +699,8 @@ def restore(user_id: int, file_id: int) -> StoredFile | None:
             return None
         parent = row["parent_id"] if _folder(conn, row["project_id"], row["parent_id"]) else None
         name = row["name"]
-        if _same_name(conn, row["project_id"], row["category"], name, parent=parent):
-            name = _free_name(name, _names_in(conn, row["project_id"], row["category"], parent))
+        if _same_name(conn, row["project_id"], name, parent=parent):
+            name = _free_name(name, _names_in(conn, row["project_id"], parent))
         ids = [i for i in _subtree(conn, file_id) if i != file_id]
         conn.execute("UPDATE files SET status = 'ready', trashed_at = NULL, name = ?, parent_id = ? WHERE id = ?",
                      (name, parent, file_id))

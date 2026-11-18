@@ -1,15 +1,15 @@
 """The read-only folders a run or a chat gets besides its work (Janis, 16.11.2026): the user's files of the project as
 /files and, for the manager chat, the project's code as /code. Standard library only.
 
-The hub sends the list (id, name, area, size; links with their address), never a path. The runner copies the files
-from the hub's storage (mounted read-only into the runner at HUB_FILES_SOURCE) into one folder per job under
-HUB_WORK_DIR/views/<name>/, with their real names, sorted by area and in their folders (`path`, 18.11.2026):
+The hub sends the list (id, name, label as `area`, size, the names of its folders as `path`; links with their
+address), never a path on disk. The runner copies the files from the hub's storage (mounted read-only into the runner
+at HUB_FILES_SOURCE) into one folder per job under HUB_WORK_DIR/views/<name>/, with their real names, in the
+project's own folder tree (one tree for the whole project since 18.11.2026, `file-tags`):
 
-    files/documents/  files/media/  files/code/  files/memory/   the files (copies, never the originals)
-    files/media/Backgrounds/Dark/x.png                           a file in a folder of the storage
-    files/INDEX.md                                               every file with area and size, also those left out
-    files/LINKS.md                                               the links: title and address
-    code/                                                        main of the project's repository (manager chat)
+    files/MEMORY.md  files/Backgrounds/Dark/x.png   the files (copies, never the originals) where they lie
+    files/INDEX.md                                  every file with its label and size, also those left out
+    files/LINKS.md                                  the links: folder, title and address
+    code/                                           main of the project's repository (manager chat)
 
 The folder belongs to root and is readable by everybody (the run user only reads it); the container mounts it with
 `readonly`, so nothing written there can reach the hub. A copy instead of the original: the storage folders are only
@@ -27,7 +27,7 @@ import tarfile
 import tempfile
 from pathlib import Path
 
-AREAS = ("documents", "media", "code", "memory")
+LABELS = ("documents", "media", "code", "memory")
 MAX_FILE = 50 * 1024 ** 2       # a larger file is not copied (videos, big archives)
 MAX_TOTAL = 200 * 1024 ** 2     # all copied files of one job together
 MAX_FILES = 300                 # files taken from the list at most
@@ -54,6 +54,12 @@ def _unique(folder: Path, name: str) -> Path:
     return target
 
 
+def _place(item: dict) -> str:
+    """The folders above a file as "Folder/Sub/" ("" at the top), each part made safe."""
+    folders = [safe_name(part) for part in (item.get("path") or [])[:MAX_DEPTH] if isinstance(part, str)]
+    return "".join(f"{part}/" for part in folders)
+
+
 def _size(n: int) -> str:
     return f"{n / 1024 ** 2:.1f} MB" if n >= 1024 ** 2 else f"{max(1, n // 1024)} KB"
 
@@ -75,34 +81,35 @@ class Views:
         (root / "files").mkdir(parents=True)
         index, used = [], 0
         for item in list(files)[:MAX_FILES]:
-            area = item.get("area") if item.get("area") in AREAS else "documents"
+            label = item.get("area") if item.get("area") in LABELS else "documents"
             size, shown = int(item.get("size") or 0), safe_name(item.get("name", ""))
-            folders = [safe_name(part) for part in (item.get("path") or [])[:MAX_DEPTH] if isinstance(part, str)]
-            place = "/".join([area, *folders])
+            place = _place(item)
             src = self.source / str(int(project_id)) / str(int(item["id"])) if self.source else None
             if src is None or not src.is_file():
-                index.append(f"- {place}/{shown} ({_size(size)}, not available)")
+                index.append(f"- {place}{shown} ({label}, {_size(size)}, not available)")
                 continue
-            folder = root / "files" / place
+            folder = root / "files" / place if place else root / "files"
             if size > MAX_FILE or used + size > MAX_TOTAL:
-                line, name = f"- {place}/{shown} ({_size(size)}, too big to give here", shown
+                line, name = f"- {place}{shown} ({label}, {_size(size)}, too big to give here", shown
             else:
                 folder.mkdir(parents=True, exist_ok=True)
                 target = _unique(folder, shown)
+                if target.name in ("INDEX.md", "LINKS.md") and not place:   # the hub's own lists keep their names
+                    target = _unique(folder, f"{target.stem} (2){target.suffix}")
                 shutil.copyfile(src, target, follow_symlinks=False)
                 used += size
-                line, name = f"- {place}/{target.name} ({_size(size)}", target.name
+                line, name = f"- {place}{target.name} ({label}, {_size(size)}", target.name
             picture = src.with_name(f"{src.name}.preview")
             if picture.is_file() and not picture.is_symlink() and used + picture.stat().st_size <= MAX_TOTAL:
                 folder.mkdir(parents=True, exist_ok=True)
                 jpeg = _unique(folder, f"{name}.jpg")
                 shutil.copyfile(picture, jpeg, follow_symlinks=False)
                 used += jpeg.stat().st_size
-                line += f"; to look at: {place}/{jpeg.name}"
+                line += f"; to look at: {place}{jpeg.name}"
             index.append(line + ")")
         (root / "files" / "INDEX.md").write_text(
             "# Files of the project (read-only)\n\n" + ("\n".join(index) or "(none)") + "\n", encoding="utf-8")
-        lines = [f"- {str(link.get('name', '')).strip() or 'Link'}: {str(link.get('url', '')).strip()}"
+        lines = [f"- {_place(link)}{str(link.get('name', '')).strip() or 'Link'}: {str(link.get('url', '')).strip()}"
                  for link in links if str(link.get("url", "")).startswith(("http://", "https://"))]
         (root / "files" / "LINKS.md").write_text(
             "# Links of the project\n\n" + ("\n".join(lines) or "(none)") + "\n", encoding="utf-8")

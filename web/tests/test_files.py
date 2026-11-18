@@ -52,20 +52,18 @@ class FilesTest(unittest.TestCase):
         self.assertTrue((files.files_dir() / "keep-me").exists())
         self.assertTrue(files.path_of(self.project.id, item.id).exists())
 
-    # --- folders (Janis, 18.11.2026)
-    def test_folders_hold_files_names_are_unique_per_place_and_the_list_shows_folders_first(self):
-        top = files.create_folder(self.user.id, self.project.id, "media", "Backgrounds")
-        dark = files.create_folder(self.user.id, self.project.id, "documents", "Dark", top.id)
-        self.assertEqual((dark.category, dark.parent_id, dark.kind), ("media", top.id, "folder"))   # the parent's area
+    # --- one folder tree for the project, labels by ending (Janis, 18.11.2026, file-tags)
+    def test_folders_hold_files_names_are_unique_per_folder_and_the_list_shows_folders_first(self):
+        top = files.create_folder(self.user.id, self.project.id, "Backgrounds")
+        dark = files.create_folder(self.user.id, self.project.id, "Dark", top.id)
+        self.assertEqual((dark.category, dark.parent_id, dark.kind), ("", top.id, "folder"))   # a folder has no label
         with self.assertRaises(files.FileError):
-            files.create_folder(self.user.id, self.project.id, "media", "backgrounds")              # case does not matter
-        self.assertEqual(files.create_folder(self.user.id, self.project.id, "media", "Backgrounds", reuse=True).id, top.id)
-        with self.assertRaises(files.FileError):
-            files.create_folder(self.user.id, self.project.id, "nowhere", "X")
+            files.create_folder(self.user.id, self.project.id, "backgrounds")                     # case does not matter
+        self.assertEqual(files.create_folder(self.user.id, self.project.id, "Backgrounds", reuse=True).id, top.id)
         item = files.start_upload(self.user.id, self.project.id, "notes.md", 2, folder_id=dark.id)
         files.append_chunk(self.user.id, item.id, 0, b"hi")
         item = files.finish_upload(self.user.id, item.id)
-        self.assertEqual((item.category, item.parent_id), ("media", dark.id))    # the folder's area, not the ending's
+        self.assertEqual((item.category, item.parent_id), ("memory", dark.id))   # the label of its ending, in the folder
         self.upload("notes.md", b"top")                                          # the same name elsewhere is fine
         self.assertEqual(files.check_names(self.user.id, self.project.id, ["notes.md"], folder_id=dark.id)[0]["ids"], [item.id])
         self.assertEqual(files.check_names(self.user.id, self.project.id, ["other.md"], folder_id=dark.id), [])
@@ -78,34 +76,45 @@ class FilesTest(unittest.TestCase):
         self.assertIn(["Backgrounds", "Dark"], [s["path"] for s in stored])
         self.assertNotIn("Backgrounds", [s["name"] for s in stored])           # folders are no files for the AI
 
-    def test_moving_marked_rows_into_folders_and_areas(self):
+    def test_a_file_dropped_on_a_tab_gets_its_label(self):
+        item = files.start_upload(self.user.id, self.project.id, "plan.pdf", 1, label="code")
+        self.assertEqual(item.category, "code")
+        for bad in ("links", "nowhere"):
+            self.assertEqual(files.start_upload(self.user.id, self.project.id, "x.pdf", 1, label=bad).category, "documents")
+
+    def test_moving_changes_only_the_place_and_labels_only_the_label(self):
         a = self.upload("a.png", b"a")
-        b = self.upload("b.png", b"b")
+        b = self.upload("b.py", b"b")
         link = files.add_link(self.user.id, self.project.id, "https://example.org", "Site")
-        box = files.create_folder(self.user.id, self.project.id, "media", "Box")
-        inner = files.create_folder(self.user.id, self.project.id, "media", "Inner", box.id)
-        self.upload("a.png", b"other")                                           # a name the target has already
-        self.assertEqual(files.move(self.user.id, self.project.id, [a.id, b.id, link.id], folder_id=box.id), 2)
+        box = files.create_folder(self.user.id, self.project.id, "Box")
+        inner = files.create_folder(self.user.id, self.project.id, "Inner", box.id)
+        self.upload("a.png", b"other")                                           # a name the folder will have
+        files.move(self.user.id, self.project.id, [self.upload("a.png", b"x").id], folder_id=box.id)
+        self.assertEqual(files.move(self.user.id, self.project.id, [a.id, b.id, link.id], folder_id=box.id), 3)
         rows = {f.id: f for f in files.list_files(self.user.id, self.project.id)}
-        self.assertEqual((rows[a.id].parent_id, rows[b.id].parent_id), (box.id, box.id))
-        self.assertEqual(rows[link.id].parent_id, None)                          # a link never leaves Links
+        self.assertEqual({rows[i].parent_id for i in (a.id, b.id, link.id)}, {box.id})   # links may lie in folders
+        self.assertEqual((rows[a.id].category, rows[a.id].name), ("media", "a (2).png"))  # label stays, name made free
+        self.assertEqual(rows[link.id].category, "links")
         self.assertEqual(files.move(self.user.id, self.project.id, [box.id], folder_id=inner.id), 0)   # not into itself
         self.assertEqual(files.move(self.user.id, self.project.id, [box.id], folder_id=box.id), 0)
-        self.assertEqual(files.move(self.user.id, self.project.id, [box.id], "documents"), 1)      # with all inside
+        self.assertEqual(files.move(self.user.id, self.project.id, [a.id]), 1)                  # back to the top
+        self.assertEqual(files.move(self.user.id, self.project.id, [a.id], folder_id=inner.id), 1)
+        # labels: a folder gives its label to every file inside, the folder stays where it is; links keep theirs
+        self.assertEqual(files.set_label(self.user.id, self.project.id, [box.id], "documents"), 3)
         rows = {f.id: f for f in files.list_files(self.user.id, self.project.id)}
-        self.assertEqual({rows[i].category for i in (box.id, inner.id, a.id, b.id)}, {"documents"})
-        self.assertEqual(files.move(self.user.id, self.project.id, [box.id], "links"), 0)         # folders stay out of Links
-        self.assertEqual(files.move(self.user.id, self.project.id, [a.id], "media"), 1)
-        rows = {f.id: f for f in files.list_files(self.user.id, self.project.id)}
-        self.assertEqual((rows[a.id].category, rows[a.id].parent_id, rows[a.id].name), ("media", None, "a (2).png"))
-        with self.assertRaises(files.FileError):
-            files.move(self.user.id, self.project.id, [a.id], "nowhere")
-        renamed = files.update(self.user.id, inner.id, "Renamed", category="code")                 # pencil: to the top
-        self.assertEqual((renamed.category, renamed.parent_id), ("code", None))
+        self.assertEqual({rows[i].category for i in (a.id, b.id)}, {"documents"})
+        self.assertEqual((rows[box.id].category, rows[box.id].parent_id, rows[link.id].category), ("", None, "links"))
+        for bad in ("links", "nowhere"):
+            with self.assertRaises(files.FileError):
+                files.set_label(self.user.id, self.project.id, [a.id], bad)
+        renamed = files.update(self.user.id, inner.id, "Renamed", category="code")   # pencil on a folder: name only
+        self.assertEqual((renamed.name, renamed.category, renamed.parent_id), ("Renamed", "", box.id))
+        relabelled = files.update(self.user.id, b.id, "b.py", category="code")
+        self.assertEqual((relabelled.category, relabelled.parent_id), ("code", box.id))   # stays in its folder
 
     def test_a_folder_goes_into_the_trash_with_all_inside_and_comes_back_together(self):
-        box = files.create_folder(self.user.id, self.project.id, "media", "Box")
-        inner = files.create_folder(self.user.id, self.project.id, "media", "Inner", box.id)
+        box = files.create_folder(self.user.id, self.project.id, "Box")
+        inner = files.create_folder(self.user.id, self.project.id, "Inner", box.id)
         a = self.upload("a.png", b"a")
         files.move(self.user.id, self.project.id, [a.id], folder_id=inner.id)
         early = self.upload("early.png", b"e")
@@ -125,8 +134,8 @@ class FilesTest(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM files").fetchone()[0], 0)
 
     def test_a_folder_comes_as_a_zip_with_its_paths(self):
-        box = files.create_folder(self.user.id, self.project.id, "media", "Box")
-        inner = files.create_folder(self.user.id, self.project.id, "media", "Inner", box.id)
+        box = files.create_folder(self.user.id, self.project.id, "Box")
+        inner = files.create_folder(self.user.id, self.project.id, "Inner", box.id)
         a = self.upload("a.png", b"A")
         b = self.upload("b.png", b"B")
         files.move(self.user.id, self.project.id, [a.id], folder_id=box.id)
@@ -135,8 +144,8 @@ class FilesTest(unittest.TestCase):
         names = [name for _, name in files.zip_entries(self.user.id, self.project.id, [box.id, loose.id])]
         self.assertEqual(names, ["Box/Inner/b.png", "Box/a.png", "a.png"])
 
-    def test_the_memory_is_only_the_top_of_memory(self):
-        sub = files.create_folder(self.user.id, self.project.id, "memory", "Old")
+    def test_the_memory_is_only_the_memory_files_at_the_top(self):
+        sub = files.create_folder(self.user.id, self.project.id, "Old")
         old = files.create_text_file(self.user.id, self.project.id, "MEMORY.md", "old notes")
         files.move(self.user.id, self.project.id, [old.id], folder_id=sub.id)
         with db.connect() as conn:
@@ -145,15 +154,30 @@ class FilesTest(unittest.TestCase):
             self.assertNotIn("Old", memory.listing(conn, self.user.id, self.project.id))
 
     def test_the_folder_routes(self):
-        made = file_routes.create_folder(self.project.id, "Plans", "documents", "", "0", self.user)
+        made = file_routes.create_folder(self.project.id, "Plans", "", "0", self.user)
         self.assertTrue(made["ok"] and made["folder"])
-        again = file_routes.create_folder(self.project.id, "Plans", "documents", "", "0", self.user)
+        again = file_routes.create_folder(self.project.id, "Plans", "", "0", self.user)
         self.assertEqual(again.status_code, 409)
-        self.assertEqual(file_routes.create_folder(self.project.id, "plans", "documents", "", "1", self.user)["id"], made["id"])
+        self.assertEqual(file_routes.create_folder(self.project.id, "plans", "", "1", self.user)["id"], made["id"])
         item = self.upload("x.pdf", b"x")
-        self.assertEqual(file_routes.move(self.project.id, f"{item.id},junk", "", str(made["id"]), self.user)["moved"], 1)
-        started = file_routes.start_upload(self.project.id, "y.pdf", 1, self.user, folder=str(made["id"]))
-        self.assertEqual(started["parent"], made["id"])
+        self.assertEqual(file_routes.move(self.project.id, f"{item.id},junk", str(made["id"]), self.user)["moved"], 1)
+        self.assertEqual(file_routes.set_label(self.project.id, str(made["id"]), "media", self.user)["changed"], 1)
+        self.assertEqual(file_routes.set_label(self.project.id, str(item.id), "links", self.user).status_code, 400)
+        started = file_routes.start_upload(self.project.id, "y.pdf", 1, self.user, folder=str(made["id"]), label="code")
+        self.assertEqual((started["parent"], started["category"]), (made["id"], "code"))
+        link = file_routes.add_link(self.project.id, "https://example.org", "", self.user, folder=str(made["id"]))
+        self.assertEqual(link["parent"], made["id"])
+
+    def test_once_folders_lose_their_area_and_top_names_become_unique(self):
+        with db.connect() as conn:                     # the state before file-tags: a folder per area, names per area
+            for name, category, folder in (("Notes", "media", 1), ("Notes", "documents", 1), ("MEMORY.md", "documents", 0),
+                                           ("MEMORY.md", "memory", 0), ("plan.pdf", "documents", 0)):
+                conn.execute("INSERT INTO files (project_id, name, category, size, status, created_at, parts, is_folder)"
+                             " VALUES (?, ?, ?, 0, 'ready', 0, '', ?)", (self.project.id, name, category, folder))
+            files.one_tree(conn)
+            rows = conn.execute("SELECT name, category, is_folder FROM files ORDER BY id").fetchall()
+        self.assertEqual([tuple(r) for r in rows], [("Notes", "", 1), ("Notes (2)", "", 1), ("MEMORY (2).md", "documents", 0),
+                                                    ("MEMORY.md", "memory", 0), ("plan.pdf", "documents", 0)])
 
     # --- sorting by ending
     def test_new_files_are_sorted_by_their_ending(self):
@@ -304,7 +328,7 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(self._post_chunk(item.id, 1, [b"x"], 1).status_code, 409)          # a wrong offset reads nothing
 
     # --- same names: the upload asks first, renaming refuses
-    def test_the_check_says_which_names_the_area_has_and_offers_free_ones(self):
+    def test_the_check_says_which_names_the_place_has_and_offers_free_ones(self):
         old = self.upload("Bild.png", b"x")
         self.upload("Bild (2).png", b"x")
         self.upload("Makefile", b"x")
@@ -314,13 +338,14 @@ class FilesTest(unittest.TestCase):
             {"name": "Makefile", "ids": [taken[1]["ids"][0]], "free": "Makefile (2)"},
             {"name": "Bild.png", "ids": [old.id], "free": "Bild (4).png"},       # a free name is never handed out twice
         ])
-        self.assertEqual(files.check_names(self.user.id, self.project.id, ["Bild.png"], "documents"), [])   # other area
+        box = files.create_folder(self.user.id, self.project.id, "Box")
+        self.assertEqual(files.check_names(self.user.id, self.project.id, ["Bild.png"], folder_id=box.id), [])   # another folder
 
     def test_a_name_twice_in_the_same_upload_counts_as_taken(self):
         taken = files.check_names(self.user.id, self.project.id, ["a.txt", "a.txt", "../bad", ""])
         self.assertEqual(taken, [{"name": "a.txt", "ids": [], "free": "a (2).txt"}])
 
-    def test_renaming_or_moving_onto_a_name_of_the_area_is_refused(self):
+    def test_renaming_onto_a_name_of_the_place_is_refused(self):
         first = self.upload("a.txt", b"x")
         second = self.upload("b.txt", b"x")
         for name, category in (("A.TXT", None), ("a.txt", "documents")):
@@ -328,15 +353,18 @@ class FilesTest(unittest.TestCase):
                 files.update(self.user.id, second.id, name, category=category)
             self.assertEqual(caught.exception.code, "name_taken")
         self.assertEqual(files.update(self.user.id, first.id, "a.txt").name, "a.txt")        # its own name is fine
-        files.update(self.user.id, first.id, "a.txt", category="code")                     # another area is free
-        self.assertEqual(files.update(self.user.id, second.id, "a.txt").name, "a.txt")
+        files.update(self.user.id, first.id, "a.txt", category="code")                     # the label does not free it
+        with self.assertRaises(files.FileError):
+            files.update(self.user.id, second.id, "a.txt")
+        files.move(self.user.id, self.project.id, [first.id], files.create_folder(self.user.id, self.project.id, "Box").id)
+        self.assertEqual(files.update(self.user.id, second.id, "a.txt").name, "a.txt")     # another folder is free
 
     def test_the_check_route_answers_only_for_own_projects(self):
         self.upload("a.txt", b"x")
-        answer = file_routes.check_names(self.project.id, ["a.txt"], "", self.user)
+        answer = file_routes.check_names(self.project.id, ["a.txt"], self.user)
         self.assertEqual(answer["taken"][0]["free"], "a (2).txt")
         other = users.create_user("b@example.com", "Bbbb!pass12")
-        self.assertEqual(file_routes.check_names(self.project.id, ["a.txt"], "", other).status_code, 404)
+        self.assertEqual(file_routes.check_names(self.project.id, ["a.txt"], other).status_code, 404)
 
     # --- several files out as one ZIP
     def test_marked_files_come_as_one_zip_with_the_original_bytes(self):
@@ -344,8 +372,8 @@ class FilesTest(unittest.TestCase):
         import zipfile
         a = self.upload("a.txt", b"first file")
         pic = self.upload("a.png", bytes(range(256)) * 4)
-        same = self.upload("a.txt", b"other area")                      # documents first, then moved to code
-        files.update(self.user.id, same.id, "a.txt", category="code")
+        same = self.upload("a.txt", b"other area")                      # the same name in another folder
+        files.move(self.user.id, self.project.id, [same.id], files.create_folder(self.user.id, self.project.id, "Box").id)
         link = files.add_link(self.user.id, self.project.id, "https://example.org", "Link")
         entries = files.zip_entries(self.user.id, self.project.id, [pic.id, a.id, same.id, link.id, 9999, a.id])
         self.assertEqual([name for _, name in entries], ["a.png", "a.txt", "a (2).txt"])   # no link, no doubles
@@ -400,8 +428,8 @@ class FilesTest(unittest.TestCase):
                 files.start_upload(self.user.id, self.project.id, bad, 1)
         self.assertEqual(len(self.upload("x" * 300 + ".md", b"x").name), files.MAX_NAME)
 
-    # --- rename, move, delete
-    def test_rename_and_move_by_hand(self):
+    # --- rename, label, delete
+    def test_rename_and_label_by_hand(self):
         item = self.upload("a.pdf", b"x")
         changed = files.update(self.user.id, item.id, "manual.pdf", category="memory")
         self.assertEqual((changed.name, changed.category), ("manual.pdf", "memory"))

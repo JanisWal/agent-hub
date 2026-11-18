@@ -1,17 +1,19 @@
-// Files and links in the Manager view: five areas as tabs (a sliding highlight like an iOS segmented control),
-// upload with requests sized to the line, several files at once under each other with a cross to cancel, drag files
-// onto the tile (the tabs pop up and the one under the pointer takes the file) or paste them, drag a file out to the
-// desktop or a folder (Chrome and Edge), the pencil renames and moves, a click opens a big reader for Markdown and text
-// or a viewer for pictures, video and sound, delete after a confirmation. Needs core.js and motion.js.
+// Files and links in the Manager view: the tabs "All" and one per label (a sliding highlight like an iOS segmented
+// control), upload with requests sized to the line, several files at once under each other with a cross to cancel,
+// drag files onto the tile (the tabs pop up and the one under the pointer takes the file) or paste them, drag a file
+// out to the desktop or a folder (Chrome and Edge), the pencil renames and changes the label, a click opens a big
+// reader for Markdown and text or a viewer for pictures, video and sound, delete after a confirmation. Needs core.js
+// and motion.js.
 //
 // The upload itself is upload.js (pieces, resume, retries); its settings come from the administration page. Before an
 // upload the server says which names already exist in the place; then a dialog asks: keep both, replace or skip.
 //
-// Folders (Janis, 18.11.2026): every list holds all rows of its area (folders first); this script shows the ones of
-// the place chosen. Small tile: the folder bar under the tabs ("All" = every file of the area, then its top folders),
-// sub-folders as rows, the path line with a back arrow. Enlarged tile: the explorer, a tree of areas and folders, the
-// path bar and columns. Dropped folders keep their structure; marked rows dragged onto a folder, a segment, a tree
-// entry or a tab move there.
+// One folder tree and labels (Janis, 18.11.2026, `file-tags`): one list holds every row; this script shows the ones of
+// the tab. "All" goes folder by folder (path line with a back arrow); a label tab shows every file with that label,
+// flat, its folder under the name. Enlarged tile: the explorer, a tree of the folders on the left (each opened on its
+// own, scrolled apart from the list), columns on the right. Dropped folders keep their structure and every file in it
+// gets the label of its ending; marked rows dragged onto a folder, a tree entry, a step of the path or "All" move there,
+// dragged onto a label tab they get that label.
 (function () {
   var tile = document.getElementById("files");
   var project = document.querySelector(".project");
@@ -20,7 +22,7 @@
   var BLOCK = parseInt(tile.dataset.block, 10);   // the unit the server counts in (files.BLOCK_SIZE)
   var tabsBox = tile.querySelector(".file-tabs");
   var tabs = Array.prototype.slice.call(tile.querySelectorAll(".file-tab"));
-  var panels = Array.prototype.slice.call(tile.querySelectorAll(".file-list"));
+  var list = tile.querySelector(".file-list");
   var scroller = tile.querySelector(".file-scroll");
   var thumb = tile.querySelector(".file-thumb");
   var area = tile.querySelector(".file-area");
@@ -40,15 +42,13 @@
   var areaSelect = form.querySelector('select[name="category"]');
   var dialogError = document.getElementById("file-dialog-error");
   var confirmDialog = document.getElementById("file-confirm");
-  var active = "memory";
+  var active = "all";        // the tab: "all" (the folder tree) or a label
   var editing = null;        // the row in the pencil dialog, or null for a new link
   var pendingId = null;
   var pendingMany = null;     // ids waiting for the answer to "delete these?"
   var selected = {};          // ids marked (shift click: a range, ctrl or cmd click: one)
   var anchorId = null;        // the row a shift click counts the range from
   var lang = document.documentElement.lang || "de";
-  var folderBar = tile.querySelector(".file-folders");
-  var folderThumb = folderBar.querySelector(".folder-thumb");
   var crumbsBox = tile.querySelector(".file-crumbs");
   var tree = tile.querySelector(".file-tree");
   var iconBox = document.getElementById("file-icons");
@@ -97,16 +97,14 @@
     }).then(function (html) {
       var fresh = new DOMParser().parseFromString(html, "text/html").getElementById("files");
       if (!fresh) throw new Error("refresh");
-      panels.forEach(function (panel) {
-        var next = fresh.querySelector('.file-list[data-cat="' + panel.dataset.cat + '"]');
-        if (next) panel.innerHTML = next.innerHTML;
-      });
+      var next = fresh.querySelector(".file-list");
+      if (next) list.innerHTML = next.innerHTML;
       tabs.forEach(function (tab) {
         var next = fresh.querySelector('.file-tab[data-cat="' + tab.dataset.cat + '"] .file-count');
         if (next) tab.querySelector(".file-count").textContent = next.textContent;
       });
     }).then(function () {
-      applyView(true);
+      applyView();
       if (typeof showMarks === "function") showMarks();
       ensureThumbs();
       document.dispatchEvent(new CustomEvent("hub:trash-changed"));   // a deleted file is in the trash list now (mvault.js)
@@ -281,26 +279,29 @@
   });
   function placeThumb(instant) { segment.place(instant); }
 
-  // --- folders: which place is open per area ("" = All in the small tile, the top of the area in the explorer)
-  var place = {};
-  try { place = JSON.parse(load("files-place") || "{}") || {}; } catch (e) { place = {}; }
+  // --- one folder tree for the project, labels as tabs (Janis, 18.11.2026, `file-tags`): "All" goes folder by folder
+  // (`current`, "" = the top) with the path line and a back arrow; a label tab shows every file with that label, flat,
+  // its folder under the name. In the explorer the tree on the left opens each folder on its own (`openIds`); at first
+  // only the way to the open folder. Tree and list scroll apart: choosing a folder never moves the tree.
+  var current = load("files-folder") || "";
+  var openIds = {};
+  try { openIds = JSON.parse(load("files-open") || "{}") || {}; } catch (e) { openIds = {}; }
   function expanded() { return !!managerBox && managerBox.classList.contains("files-expanded"); }
-  function panelOf(cat) { return panels.filter(function (p) { return p.dataset.cat === cat; })[0]; }
-  function rowsIn(cat) { return Array.prototype.slice.call(panelOf(cat).querySelectorAll(".file-row")); }
-  function foldersIn(cat) {
+  function rows() { return Array.prototype.slice.call(list.querySelectorAll(".file-row")); }
+  function folders() {
     var map = {};
-    rowsIn(cat).forEach(function (r) {
+    rows().forEach(function (r) {
       if (r.dataset.folder === "1") map[r.dataset.id] = { id: r.dataset.id, name: r.dataset.name, parent: r.dataset.parent };
     });
     return map;
   }
-  function chain(map, id) {            // the folders from the top of the area down to `id`
+  function chain(map, id) {            // the folders from the top down to `id`
     var out = [], seen = {};
     while (id && map[id] && !seen[id]) { seen[id] = true; out.unshift(map[id]); id = map[id].parent; }
     return out;
   }
-  function here() { var id = place[active] || ""; return id && foldersIn(active)[id] ? id : ""; }
-  function areaName(cat) { return tabs.filter(function (t) { return t.dataset.cat === cat; })[0].dataset.name; }
+  function here() { return current && folders()[current] ? current : ""; }
+  function tabName(cat) { return tabs.filter(function (t) { return t.dataset.cat === cat; })[0].dataset.name; }
   function iconOf(name) {
     var node = iconBox.content.querySelector('[data-icon="' + name + '"]');
     return node ? node.innerHTML : "";
@@ -314,62 +315,22 @@
     if (text) { var label = document.createElement("span"); label.textContent = text; b.appendChild(label); }
     return b;
   }
-  var folderSegment = null;
-  function folderSegments() { return Array.prototype.slice.call(folderBar.querySelectorAll(".file-folder")); }
-  function buildBar(instant) {
-    var top = chain(foldersIn(active), here())[0];
-    var chosen = top ? top.id : "";
-    var wanted = [{ id: "", name: tile.dataset.all }].concat(rowsIn(active).filter(function (r) {
-      return r.dataset.folder === "1" && !r.dataset.parent;
-    }).map(function (r) { return { id: r.dataset.id, name: r.dataset.name }; }));
-    var old = folderSegments();
-    var same = old.length === wanted.length && old.every(function (b, i) {
-      return b.dataset.folder === wanted[i].id && b.textContent === wanted[i].name && b.dataset.cat === active;
-    });
-    if (!same) {                        // only rebuilt when the folders changed, so the glass can glide
-      old.forEach(function (b) { b.remove(); });
-      wanted.forEach(function (f) {
-        var b = document.createElement("button");
-        b.type = "button";
-        b.className = "file-folder";
-        b.setAttribute("role", "tab");
-        b.dataset.seg = "";
-        b.dataset.folder = f.id;
-        b.dataset.cat = active;
-        b.textContent = f.name;
-        folderBar.appendChild(b);
-      });
-      instant = true;
-    }
-    folderSegments().forEach(function (b) { b.setAttribute("aria-selected", b.dataset.folder === chosen ? "true" : "false"); });
-    fitBar(instant);
-  }
-  // Equal parts while every name fits; else each as wide as its name; else the bar scrolls (Janis, 13.11.2026).
-  function fitBar(instant) {
-    folderBar.classList.remove("by-name");
-    var over = folderSegments().some(function (b) { return b.scrollWidth > b.clientWidth + 1; });
-    folderBar.classList.toggle("by-name", over);
-    if (folderSegment) folderSegment.place(instant !== false);
-    var on = folderSegments().filter(function (b) { return b.getAttribute("aria-selected") === "true"; })[0];
-    if (on && over) on.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }
   function buildCrumbs() {
     crumbsBox.textContent = "";
-    var path = chain(foldersIn(active), here());
-    var big = expanded();
-    crumbsBox.hidden = !(big || path.length >= 2);
+    var path = chain(folders(), here());
+    crumbsBox.hidden = active !== "all" || !(expanded() || path.length);
     if (crumbsBox.hidden) return;
-    if (!big) {                         // the small tile: a back arrow to the folder above
-      var back = placeButton("file-up-level", "", path[path.length - 2].id, iconOf("back"));
+    if (path.length) {                  // back to the folder above (or the top)
+      var up = path.length > 1 ? path[path.length - 2] : { id: "", name: tile.dataset.all };
+      var back = placeButton("file-up-level", "", up.id, iconOf("back"));
       back.setAttribute("aria-label", tile.dataset.back);
       back.dataset.tip = tile.dataset.back;
-      back.dataset.label = path[path.length - 2].name;
+      back.dataset.label = up.name;
       crumbsBox.appendChild(back);
-    } else {
-      var root = placeButton("", areaName(active), "", "");
-      if (!path.length) root.setAttribute("aria-current", "location");
-      crumbsBox.appendChild(root);
     }
+    var root = placeButton("", tile.dataset.all, "", "");
+    if (!path.length) root.setAttribute("aria-current", "location");
+    crumbsBox.appendChild(root);
     path.forEach(function (f, i) {
       var b = placeButton("", f.name, f.id, "");
       if (i === path.length - 1) b.setAttribute("aria-current", "location");
@@ -379,105 +340,113 @@
   }
   function buildTree() {
     if (!expanded()) { tree.textContent = ""; return; }
-    var list = document.createElement("ul");
-    var open = here();
-    tabs.forEach(function (tab) {
-      var cat = tab.dataset.cat;
-      var rows = rowsIn(cat).filter(function (r) { return r.dataset.folder === "1"; });
-      var area = document.createElement("li");
-      area.className = "tree-area";
-      var head = placeButton("", tab.dataset.name, "", iconOf(cat));
-      head.dataset.cat = cat;
-      if (cat === active && !open) head.setAttribute("aria-current", "location");
-      area.appendChild(head);
-      var sub = document.createElement("ul");
-      (function add(parent, depth) {
-        if (depth > 24) return;
-        rows.forEach(function (r) {
-          if (r.dataset.parent !== parent) return;
-          var item = document.createElement("li");
-          var b = placeButton("tree-folder", r.dataset.name, r.dataset.id, iconOf("folder"));
-          b.dataset.cat = cat;
-          b.style.setProperty("--depth", depth);
-          if (cat === active && open === r.dataset.id) b.setAttribute("aria-current", "location");
-          item.appendChild(b);
-          sub.appendChild(item);
-          add(r.dataset.id, depth + 1);
-        });
-      })("", 1);
-      area.appendChild(sub);
-      list.appendChild(area);
-    });
+    var keep = tree.scrollTop;          // rebuilt in place: the tree stays where it was scrolled to
+    var map = folders();
+    var kids = {};
+    Object.keys(map).forEach(function (id) { (kids[map[id].parent] = kids[map[id].parent] || []).push(map[id]); });
+    var open = active === "all" ? here() : null;
+    var top = document.createElement("ul");
+    var root = document.createElement("li");
+    root.className = "tree-area";
+    var head = placeButton("tree-place", tile.dataset.all, "", iconOf("folder"));
+    if (open === "") head.setAttribute("aria-current", "location");
+    root.appendChild(head);
+    top.appendChild(root);
+    (function add(parent, depth, into) {
+      if (depth > 24) return;
+      (kids[parent] || []).sort(function (a, b) { return a.name.localeCompare(b.name); }).forEach(function (f) {
+        var item = document.createElement("li");
+        var line = document.createElement("div");
+        line.className = "tree-line";
+        line.style.setProperty("--depth", depth);
+        var has = !!(kids[f.id] || []).length;
+        var toggle = placeButton("tree-toggle" + (openIds[f.id] ? " open" : ""), "", f.id, has ? iconOf("chevron") : "");
+        toggle.disabled = !has;
+        toggle.setAttribute("aria-label", tile.dataset.openFolder);
+        toggle.setAttribute("aria-expanded", openIds[f.id] && has ? "true" : "false");
+        line.appendChild(toggle);
+        var b = placeButton("tree-place tree-folder", f.name, f.id, iconOf("folder"));
+        if (open === f.id) b.setAttribute("aria-current", "location");
+        line.appendChild(b);
+        item.appendChild(line);
+        into.appendChild(item);
+        if (has && openIds[f.id]) {
+          var sub = document.createElement("ul");
+          item.appendChild(sub);
+          add(f.id, depth + 1, sub);
+        }
+      });
+    })("", 1, top);
     tree.textContent = "";
-    tree.appendChild(list);
+    tree.appendChild(top);
+    tree.scrollTop = keep;
   }
-  // Shows the rows of the open place: under "All" (small tile, no folder open) every file of the area with its folder
-  // named under it; otherwise what lies directly in the open folder (or at the top of the area), folders first.
-  function applyView(instant) {
-    var panel = panelOf(active);
-    var current = here();
-    var flat = !expanded() && !current;
-    place[active] = current;
-    store("files-place", JSON.stringify(place));
+  // Shows the rows of the tab: under "All" what lies directly in the open folder (folders first); under a label every
+  // file with that label, flat, with its folder named under it.
+  function applyView() {
+    var flat = active !== "all";
+    var folder = here();
+    current = folder;
+    store("files-folder", current);
     var visible = 0;
-    rowsIn(active).forEach(function (r) {
-      var on = flat ? r.dataset.folder !== "1" : r.dataset.parent === current;
+    rows().forEach(function (r) {
+      var on = flat ? r.dataset.folder !== "1" && r.dataset.cat === active : r.dataset.parent === folder;
       r.hidden = !on;
       if (on) visible++;
     });
-    panel.classList.toggle("all-mode", flat);
-    var hint = panel.querySelector(".file-empty:not(.folder-empty)");
-    var empty = panel.querySelector(".folder-empty");
-    if (hint) hint.hidden = visible > 0 || !!current;
-    if (!visible && current) {
+    list.classList.toggle("flat", flat);
+    tile.classList.toggle("flat-view", flat);
+    Array.prototype.forEach.call(list.querySelectorAll("[data-hint]"), function (hint) {
+      hint.hidden = visible > 0 || hint.dataset.hint !== active || (!flat && !!folder);
+    });
+    var empty = list.querySelector(".folder-empty");
+    if (!visible && !flat && folder) {
       if (!empty) {
         empty = document.createElement("li");
         empty.className = "file-empty folder-empty muted";
         empty.textContent = tile.dataset.folderEmpty;
-        panel.appendChild(empty);
+        list.appendChild(empty);
       }
       empty.hidden = false;
     } else if (empty) {
       empty.hidden = true;
     }
-    buildBar(instant);
     buildCrumbs();
     buildTree();
   }
   function choose(folder) {
-    place[active] = folder || "";
-    applyView(false);
-    scroller.scrollTop = 0;
+    current = folder || "";
+    chain(folders(), current).forEach(function (f) { if (f.id !== current) openIds[f.id] = true; });   // the way there opens
+    store("files-open", JSON.stringify(openIds));
+    if (active !== "all") show("all", false, true);
+    else applyView();
+    scroller.scrollTop = 0;              // the list starts at the top of the folder; the tree stays where it is
+  }
+  function toggleFolder(id) {
+    if (openIds[id]) delete openIds[id]; else openIds[id] = true;
+    store("files-open", JSON.stringify(openIds));
+    buildTree();
   }
   function spot() {                    // where the plus, pasting and a drop beside every target put files
-    var folder = here();
-    return folder ? { cat: active, folder: folder } : { cat: null, folder: "" };
+    return { folder: active === "all" ? here() : "", label: "" };
   }
-  folderSegment = Segment.attach(folderBar, {
-    thumb: folderThumb,
-    items: folderSegments,
-    current: function () { return folderSegments().filter(function (b) { return b.getAttribute("aria-selected") === "true"; })[0]; },
-    pick: function (b) { choose(b.dataset.folder); }
-  });
-  if (window.ResizeObserver) new ResizeObserver(function () { fitBar(true); }).observe(folderBar);
 
-  function show(category, instant) {
+  function show(category, instant, keepScroll) {
     active = category;
     tabs.forEach(function (tab) { tab.setAttribute("aria-selected", tab.dataset.cat === category ? "true" : "false"); });
-    panels.forEach(function (panel) { panel.hidden = panel.dataset.cat !== category; });
-    var name = tabs.filter(function (tab) { return tab.dataset.cat === category; })[0].dataset.name;
-    area.textContent = " · " + name;             // "Dateien · Medien" while the tabs only show symbols
+    area.textContent = " · " + tabName(category);     // "Dateien · Medien" while the tabs only show symbols
     var label = tile.dataset[category === "links" ? "addLink" : "addFile"];
     addButton.setAttribute("aria-label", label);
     addButton.dataset.tip = label;                    // our own tooltip (core.js), never `title`: that is the browser's grey box
     placeThumb(instant);
-    if (!instant) scroller.scrollTop = 0;              // a new tab starts at its top
+    if (!instant && !keepScroll) scroller.scrollTop = 0;   // a new tab starts at its top
     store("files-tab", category);
-    applyView(true);
+    applyView();
   }
   tabs.forEach(function (tab) { tab.addEventListener("click", function () { show(tab.dataset.cat); }); });
   var saved = load("files-tab");
-  show(tabs.some(function (tab) { return tab.dataset.cat === saved; }) ? saved : active, true);   // segment.js follows resizes
+  chain(folders(), here()).forEach(function (f) { if (f.id !== current) openIds[f.id] = true; });
+  show(tabs.some(function (tab) { return tab.dataset.cat === saved; }) ? saved : "all", true);   // segment.js follows resizes
 
   var notice = load("files-notice");
   if (notice) { say(errorBox, notice); store("files-notice", ""); }
@@ -548,12 +517,10 @@
       window.__uploadLog.push({ file: job.file.name, offset: info.offset, bytes: info.length, ms: info.ms, attempt: info.attempt });
       if (window.console && console.debug) console.debug("upload", job.file.name, info);
     },
-    onDone: function (job, info) {      // moves to the chosen area, replaces the old file, makes the preview; none may fail the upload
-      var move = job.meta.category && job.meta.category !== info.category
-        ? call("/files/" + info.id, fields({ name: info.name, category: job.meta.category })).catch(nothing) : Promise.resolve();
-      return move.then(function () {                         // the old file goes only now that the new one is complete
-        return Promise.all((job.meta.replace || []).map(function (id) { return call("/files/" + id + "/delete").catch(nothing); }));
-      }).then(function () { return thumbOfUpload({ file: job.file, id: job.id }); }).catch(nothing);
+    onDone: function (job) {            // replaces the old file, makes the preview; neither may fail the upload
+      return Promise.all((job.meta.replace || []).map(function (id) {   // the old file goes only now that the new one is complete
+        return call("/files/" + id + "/delete").catch(nothing);
+      })).then(function () { return thumbOfUpload({ file: job.file, id: job.id }); }).catch(nothing);
     },
     onFinished: function (job) { job.meta.row.remove(); refreshSoon(); },
     onFail: function (job, message) { job.meta.row.remove(); say(errorBox, message); },
@@ -588,43 +555,42 @@
   });
   sameDialog.addEventListener("close", function () { answerSame("skip"); });
 
-  function startJobs(list, category, taken, choice, folder) {
+  function startJobs(files, label, taken, choice, folder) {
     var hits = taken.slice();
     var replaced = {};
-    list.forEach(function (file) {
+    files.forEach(function (file) {
       var at = -1;
       for (var i = 0; i < hits.length && at < 0; i++) if (hits[i].name === file.name) at = i;
-      if (at < 0) return uploader.add(file, { category: category, folder: folder });
+      if (at < 0) return uploader.add(file, { label: label, folder: folder });
       var hit = hits.splice(at, 1)[0];
       if (choice === "skip") return;
       var ids = hit.ids.filter(function (id) { return !replaced[id]; });
       if (choice === "replace" && ids.length) {
         ids.forEach(function (id) { replaced[id] = true; });
-        return uploader.add(file, { category: category, folder: folder, replace: ids });
+        return uploader.add(file, { label: label, folder: folder, replace: ids });
       }
-      uploader.add(file, { category: category, folder: folder, name: hit.free });   // keep both (or a second copy)
+      uploader.add(file, { label: label, folder: folder, name: hit.free });   // keep both (or a second copy)
     });
   }
 
-  // `folder`: into that folder (its area is `category`); "" = the top of `category`, or by the ending without one.
-  function addJobs(list, category, folder) {
+  // `folder`: into that folder ("" = the top). `label`: the tab the files were dropped on ("" = by their ending).
+  function addJobs(files, folder, label) {
     say(errorBox, "");
-    if (category) show(category);
+    if (label) show(label);
     var body = new FormData();
-    list.forEach(function (file) { body.append("names", file.name); });
-    if (category) body.append("category", category);
+    files.forEach(function (file) { body.append("names", file.name); });
     if (folder) body.append("folder", folder);
     return call("/projects/" + projectId + "/files/check", body)
       .then(function (data) { return data.taken || []; }, function () { return []; })   // the check failing must not stop an upload
       .then(function (taken) {
-        if (!taken.length) return startJobs(list, category, [], null, folder);
-        return askSame(taken).then(function (choice) { startJobs(list, category, taken, choice, folder); });
+        if (!taken.length) return startJobs(files, label, [], null, folder);
+        return askSame(taken).then(function (choice) { startJobs(files, label, taken, choice, folder); });
       });
   }
 
   // A folder dropped from outside (Janis, 13.11.2026: they came as empty files): its tree is read in the browser, the
   // folders are made on the server one after the other (an existing one of the same name is joined), then the files
-  // of each folder go up into it. Everything lands in the area of the place it was dropped on.
+  // of each folder go up into it. Each file gets the label of its ending (18.11.2026).
   function walk(entry, path, found) {
     if (entry.isFile) {
       return new Promise(function (resolve) {
@@ -648,17 +614,16 @@
       return children.reduce(function (done, child) { return done.then(function () { return walk(child, dir, found); }); }, Promise.resolve());
     });
   }
-  function uploadTree(entries, where) {
+  function uploadTree(entries, folder) {
     say(errorBox, "");
-    var cat = where.cat && where.cat !== "links" ? where.cat : active !== "links" ? active : "documents";
     var found = { files: [], dirs: [] };
-    var ids = { "": where.cat === cat ? where.folder || "" : "" };
+    var ids = { "": folder || "" };
     entries.reduce(function (done, entry) { return done.then(function () { return walk(entry, [], found); }); }, Promise.resolve())
       .then(function () {
         return found.dirs.reduce(function (done, dir) {
           return done.then(function () {
             return call("/projects/" + projectId + "/folders", fields({
-              name: dir[dir.length - 1], category: cat, parent: ids[dir.slice(0, -1).join("/")] || "", reuse: "1"
+              name: dir[dir.length - 1], parent: ids[dir.slice(0, -1).join("/")] || "", reuse: "1"
             })).then(function (made) { ids[dir.join("/")] = String(made.id); });
           });
         }, Promise.resolve());
@@ -667,20 +632,25 @@
         var groups = {};
         found.files.forEach(function (f) { var key = f.path.join("/"); (groups[key] = groups[key] || []).push(f.file); });
         return Object.keys(groups).reduce(function (done, key) {
-          return done.then(function () { return ids[key] !== undefined ? addJobs(groups[key], cat, ids[key]) : null; });
+          return done.then(function () { return ids[key] !== undefined ? addJobs(groups[key], ids[key], "") : null; });
         }, Promise.resolve());
       })
       .then(refreshSoon, function (problem) { say(errorBox, problem.message); refreshSoon(); });
   }
 
+  // Rows dragged onto a place: a folder, a tree entry, a step of the path or the tab "All" move them there; a label tab
+  // gives them its label (a folder: every file inside; the folder stays where it is).
   function moveRows(ids, target) {
-    call("/projects/" + projectId + "/files/move", fields({ ids: ids.join(","), category: target.cat, folder: target.folder || "" }))
-      .then(function (answer) {
-        selected = {};
-        anchorId = null;
-        flash(tile.dataset.moved.replace("{n}", answer.moved));
-        return refresh();
-      }, function (problem) { say(errorBox, problem.message); });
+    var labelling = !!target.label;
+    var request = labelling
+      ? call("/projects/" + projectId + "/files/label", fields({ ids: ids.join(","), label: target.label }))
+      : call("/projects/" + projectId + "/files/move", fields({ ids: ids.join(","), folder: target.folder || "" }));
+    request.then(function (answer) {
+      selected = {};
+      anchorId = null;
+      flash(labelling ? tile.dataset.labelled.replace("{n}", answer.changed) : tile.dataset.moved.replace("{n}", answer.moved));
+      return refresh();
+    }, function (problem) { say(errorBox, problem.message); });
   }
 
   addButton.addEventListener("click", function () {
@@ -688,21 +658,21 @@
   });
   document.getElementById("file-folder-add").addEventListener("click", function () { openDialog(null, "folder"); });
   picker.addEventListener("change", function () {
-    var list = Array.prototype.slice.call(picker.files);
+    var files = Array.prototype.slice.call(picker.files);
     var where = spot();
     picker.value = "";
-    if (list.length) addJobs(list, where.cat, where.folder);
+    if (files.length) addJobs(files, where.folder, where.label);
   });
 
   // Files pasted with Ctrl+V or Cmd+V (not while writing in a field, and only while this view is showing).
   document.addEventListener("paste", function (event) {
     var target = event.target;
     var typing = target && (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable);
-    var list = event.clipboardData ? Array.prototype.slice.call(event.clipboardData.files) : [];
-    if (typing || !list.length || !tile.offsetParent) return;
+    var files = event.clipboardData ? Array.prototype.slice.call(event.clipboardData.files) : [];
+    if (typing || !files.length || !tile.offsetParent) return;
     event.preventDefault();
     var where = spot();
-    addJobs(list, where.cat, where.folder);
+    addJobs(files, where.folder, where.label);
   });
 
   // --- drag files onto the tile: the tabs pop up like glass drops, the one under the pointer pops more
@@ -710,30 +680,39 @@
     if (!tab.__pop) tab.__pop = Motion.spring(1, Motion.LIFT, function (v) { tab.style.transform = "scale(" + v + ")"; }, 0.002);
     tab.__pop.to(scale);
   }
-  var hot = null;                      // the place under the pointer: { node, cat, folder, name }
+  var hot = null;                      // the place under the pointer: { node, folder, label, name }
   var dragging = false;
   function hasFiles(event) { return event.dataTransfer && Array.prototype.indexOf.call(event.dataTransfer.types, "Files") >= 0; }
-  // Places that take a drop: a tab (the top of its area), a segment of the folder bar, a folder row, an entry of the
-  // tree and a step of the path.
-  var PLACES = ".file-tab, .file-folder, .file-row.folder, .file-tree button, .file-crumbs button";
+  // Places that take a drop: a tab ("All" = the top, a label tab = that label), a folder row, an entry of the tree and
+  // a step of the path.
+  var PLACES = ".file-tab, .file-row.folder, .file-tree .tree-place, .file-crumbs button";
   function targetOf(element) {
     var node = element && element.closest ? element.closest(PLACES) : null;
     if (!node || !tile.contains(node)) return null;
-    if (node.classList.contains("file-tab")) return { node: node, cat: node.dataset.cat, folder: "", name: node.dataset.name };
-    if (node.classList.contains("file-row")) return { node: node, cat: node.dataset.cat, folder: node.dataset.id, name: node.dataset.name };
-    var cat = node.dataset.cat || active;
-    var name = node.dataset.label || node.textContent || areaName(cat);
-    if (node.classList.contains("file-folder") && !node.dataset.folder) name = areaName(cat);
-    return { node: node, cat: cat, folder: node.dataset.folder || "", name: name };
+    if (node.classList.contains("file-tab")) {
+      var cat = node.dataset.cat;
+      return cat === "all" ? { node: node, folder: "", label: "", name: node.dataset.name }
+        : { node: node, folder: "", label: cat, name: node.dataset.name };
+    }
+    if (node.classList.contains("file-row")) return { node: node, folder: node.dataset.id, label: "", name: node.dataset.name };
+    return { node: node, folder: node.dataset.folder || "", label: "", name: node.dataset.label || node.textContent || tile.dataset.all };
   }
-  function canMove(target) {           // never a folder into itself
-    return !!target && moving.indexOf(target.folder) < 0;
+  function canMove(target) {           // never a folder into itself; links get no other label
+    if (!target) return false;
+    if (target.label) {
+      return target.label !== "links" && moving.some(function (id) {
+        var row = list.querySelector('.file-row[data-id="' + id + '"]');
+        return row && row.dataset.kind !== "link";
+      });
+    }
+    return moving.indexOf(target.folder) < 0;
   }
   function setHot(target) {
     var node = target ? target.node : null;
     if (dragging && (hot ? hot.node : null) === node && node) return;
     hot = target;
-    dragText = target ? tile.dataset[moving ? "moveTo" : "dropTo"].replace("{name}", target.name) : moving ? "" : dropText;
+    var key = !target ? "" : moving ? (target.label ? "labelTo" : "moveTo") : "dropTo";
+    dragText = target ? tile.dataset[key].replace("{name}", target.name) : moving ? "" : dropText;
     renderStatus();
     Array.prototype.forEach.call(tile.querySelectorAll(".hot"), function (el) { if (el !== node) el.classList.remove("hot"); });
     if (node) node.classList.add("hot");
@@ -775,11 +754,11 @@
     event.preventDefault();
     var items = event.dataTransfer.items ? Array.prototype.slice.call(event.dataTransfer.items) : [];
     var entries = items.map(function (item) { return item.webkitGetAsEntry ? item.webkitGetAsEntry() : null; }).filter(Boolean);
-    var list = Array.prototype.slice.call(event.dataTransfer.files);
-    var where = hot ? { cat: hot.cat, folder: hot.folder } : spot();
+    var files = Array.prototype.slice.call(event.dataTransfer.files);
+    var where = hot ? { folder: hot.folder, label: hot.label } : spot();
     endDrag();
-    if (entries.some(function (entry) { return entry.isDirectory; })) uploadTree(entries, where);
-    else if (list.length) addJobs(list, where.cat, where.folder);
+    if (entries.some(function (entry) { return entry.isDirectory; })) uploadTree(entries, where.folder);
+    else if (files.length) addJobs(files, where.folder, where.label);
   });
 
   // --- drag files out of the tile onto the desktop or a folder: the browser downloads them there (Chrome and Edge
@@ -872,8 +851,8 @@
     urlInput.value = row ? row.dataset.url || "" : "";
     urlBox.hidden = !link;
     urlInput.required = link;
-    areaBox.hidden = link || !row || row.dataset.cat === "links";   // a new folder is made where you are
-    areaSelect.value = row ? row.dataset.cat : active;
+    areaBox.hidden = !row || folder || link;     // the label of a file; a new folder is made where you are
+    areaSelect.value = row && !folder && !link ? row.dataset.cat : "documents";
     say(dialogError, "");
     dialog.showModal();
     (link && !row ? urlInput : nameInput).focus();
@@ -884,19 +863,18 @@
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     var request;
-    var next = !editing ? (dialogMode === "folder" ? active : "links")      // the tab to show afterwards
-      : editing.dataset.kind === "link" || editing.dataset.cat === "links" ? "links" : areaSelect.value;
+    var next = !editing && dialogMode === "folder" ? "all" : active;   // a new folder shows in "All", else the tab stays
     if (!editing && dialogMode === "folder") {
-      request = call("/projects/" + projectId + "/folders", fields({ name: nameInput.value, category: active, parent: here() }));
+      request = call("/projects/" + projectId + "/folders", fields({ name: nameInput.value, parent: spot().folder }));
     } else if (!editing) {
-      request = call("/projects/" + projectId + "/links", fields({ url: urlInput.value, name: nameInput.value }));
+      request = call("/projects/" + projectId + "/links", fields({ url: urlInput.value, name: nameInput.value, folder: spot().folder }));
     } else {
       var values = { name: nameInput.value };
       if (editing.dataset.kind === "link") values.url = urlInput.value;
-      else if (editing.dataset.cat !== "links") values.category = areaSelect.value;
+      else if (!isFolder(editing)) values.category = areaSelect.value;
       request = call("/files/" + editing.dataset.id, fields(values));
     }
-    request.then(function () { show(next); dialog.close(); return refresh(); },
+    request.then(function () { if (next !== active) show(next, false, true); dialog.close(); return refresh(); },
       function (problem) { say(dialogError, problem.message); });
   });
 
@@ -921,10 +899,12 @@
       }
       return;
     }
-    var step = event.target.closest(".file-crumbs button, .file-folder");
+    var step = event.target.closest(".file-crumbs button");
     if (step) { choose(step.dataset.folder); return; }
-    var entry = event.target.closest(".file-tree button");
-    if (entry) { if (entry.dataset.cat !== active) show(entry.dataset.cat); choose(entry.dataset.folder); return; }
+    var toggle = event.target.closest(".file-tree .tree-toggle");
+    if (toggle) { if (!toggle.disabled) toggleFolder(toggle.dataset.folder); return; }
+    var entry = event.target.closest(".file-tree .tree-place");
+    if (entry) { choose(entry.dataset.folder); return; }
     if (row && event.button === 0 && (event.shiftKey || event.ctrlKey || event.metaKey)) {   // marks only, nothing opens
       event.preventDefault();
       markRow(row, event);
@@ -1281,8 +1261,9 @@
       expandButton.setAttribute("aria-label", label);
       expandButton.dataset.tip = label;
       store("files-expanded", on ? "1" : "0");
+      measureTop();
       placeThumb(true);
-      applyView(true);
+      applyView();
     }
     if (animate !== false && document.startViewTransition && !Motion.reduced()) {
       tile.style.viewTransitionName = "files-tile";             // this tile glides, the page around it blends
@@ -1293,6 +1274,12 @@
       apply();
     }
   }
+  // Where the enlarged tile starts: it ends at the bottom of the window, so tree and list scroll apart (project.css).
+  function measureTop() {
+    if (!managerView.classList.contains("files-expanded")) return;
+    managerView.style.setProperty("--files-top", Math.round(column.getBoundingClientRect().top + window.scrollY) + "px");
+  }
+  window.addEventListener("resize", measureTop);
   expandButton.addEventListener("click", function () { setExpanded(!managerView.classList.contains("files-expanded")); });
   if (load("files-expanded") === "1") setExpanded(true, false);
 

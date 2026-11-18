@@ -271,7 +271,7 @@ class IsolationTest(unittest.TestCase):
         self.assertEqual(autofolders.request(self.b.id, self.mine.id), "queued")
         job = chat.claim_next()
         self.assertNotIn("secret.txt", job.prompt)
-        chat.finish(job.chat_id, True, f'<move id="{secret.id}" to="documents/Stolen"/>')
+        chat.finish(job.chat_id, True, f'<move id="{secret.id}" to="Stolen"/>')
         self.assertEqual(autofolders.apply(self.b.id, self.mine.id), 0)
         with db.connect() as conn:
             self.assertIsNone(conn.execute("SELECT 1 FROM files WHERE name = 'Stolen'").fetchone())
@@ -283,27 +283,31 @@ class IsolationTest(unittest.TestCase):
         from pathlib import Path
         files.FILES_DIR = Path(self.tmp.name) / "files"
         files.free_bytes = lambda: 10 * 1024 ** 3
-        folder = files.create_folder(self.a.id, self.project.id, "media", "Secret folder")
+        folder = files.create_folder(self.a.id, self.project.id, "Secret folder")
         inside = files.create_text_file(self.a.id, self.project.id, "x.txt", "secret")
         files.move(self.a.id, self.project.id, [inside.id], folder_id=folder.id)
-        mine = files.create_folder(self.b.id, self.mine.id, "media", "Mine")
+        mine = files.create_folder(self.b.id, self.mine.id, "Mine")
         before = snapshot()
         for call in (
-            lambda: files.create_folder(self.b.id, self.project.id, "media", "planted"),        # A's project
-            lambda: files.create_folder(self.b.id, self.mine.id, "media", "planted", folder.id), # A's folder as parent
+            lambda: files.create_folder(self.b.id, self.project.id, "planted"),                 # A's project
+            lambda: files.create_folder(self.b.id, self.mine.id, "planted", folder.id),          # A's folder as parent
             lambda: files.start_upload(self.b.id, self.mine.id, "planted.md", 1, folder_id=folder.id),
-            lambda: files.move(self.b.id, self.project.id, [inside.id], "documents"),
+            lambda: files.move(self.b.id, self.project.id, [inside.id]),
+            lambda: files.set_label(self.b.id, self.project.id, [inside.id], "media"),
+            lambda: files.add_link(self.b.id, self.mine.id, "https://example.org", folder_id=folder.id),
             lambda: files.move(self.b.id, self.mine.id, [inside.id], folder_id=folder.id),
             lambda: files.update(self.b.id, folder.id, "hacked"),
         ):
             with self.assertRaises(files.FileError):
                 call()
         self.assertEqual(files.move(self.b.id, self.mine.id, [inside.id, folder.id], folder_id=mine.id), 0)
+        self.assertEqual(files.set_label(self.b.id, self.mine.id, [inside.id, folder.id], "media"), 0)
+        self.assertEqual(file_routes.set_label(self.project.id, str(inside.id), "media", self.b).status_code, 404)
         self.assertIsNone(files.check_names(self.b.id, self.mine.id, ["x.txt"], folder_id=folder.id))
         self.assertEqual(files.zip_entries(self.b.id, self.mine.id, [folder.id]), [])
         self.assertFalse(files.delete(self.b.id, folder.id))
-        self.assertEqual(file_routes.create_folder(self.project.id, "planted", "media", "", "0", self.b).status_code, 404)
-        self.assertEqual(file_routes.move(self.project.id, str(inside.id), "documents", "", self.b).status_code, 404)
+        self.assertEqual(file_routes.create_folder(self.project.id, "planted", "", "0", self.b).status_code, 404)
+        self.assertEqual(file_routes.move(self.project.id, str(inside.id), "", self.b).status_code, 404)
         self.assertEqual(snapshot(), before)
         with db.connect() as conn:
             stored, _ = files.for_agents(conn, self.b.id, self.project.id)
