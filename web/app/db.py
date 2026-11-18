@@ -357,6 +357,7 @@ def _prepare(conn: sqlite3.Connection) -> None:
     """Bring a database up to date: create missing tables, add missing columns, and do the
     one-time conversions of old data (roles, pages, session tokens, the old `is_admin` column)."""
     had_archive = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'chat_archive'").fetchone() is not None
+    had_one_tree = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'files_by_place'").fetchone() is not None
     conn.executescript(SCHEMA)
     before = {table: _columns(conn, table) for table in {"users", "projects", "sessions", *NEW_COLUMNS}}
     for table, columns in NEW_COLUMNS.items():
@@ -367,6 +368,10 @@ def _prepare(conn: sqlite3.Connection) -> None:
                 except sqlite3.OperationalError:
                     pass  # another process added it first
     conn.execute("CREATE INDEX IF NOT EXISTS files_by_parent ON files (project_id, parent_id)")   # needs the new column
+    if not had_one_tree:   # once (18.11.2026, file-tags): one folder tree per project, files.one_tree; the index marks it
+        from . import files
+        files.one_tree(conn)
+        conn.execute("CREATE INDEX IF NOT EXISTS files_by_place ON files (project_id, parent_id, name COLLATE NOCASE)")
     if not had_archive:   # once: the answered questions from before the archive go into it (after the new columns exist)
         conn.execute(
             "INSERT INTO chat_archive (user_id, project_id, prompt, answer, status, model, effort, created_at, answered_at)"

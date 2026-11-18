@@ -44,13 +44,12 @@
     tree.textContent = "";
     nodes.forEach(function (n) {
       var row = document.createElement("li");
-      row.className = "tidy-row" + (n.kind === "area" ? " tidy-area" : n.kind === "folder" ? " tidy-folder" : "") +
-        (n.moved || n.new ? " changed" : "");
+      row.className = "tidy-row" + (n.kind === "folder" ? " tidy-folder" : "") + (n.moved || n.new ? " changed" : "");
       row.style.setProperty("--depth", n.depth);
-      row.appendChild(icon(n.kind === "area" || n.kind !== "folder" ? n.area : "folder"));
+      row.appendChild(icon(n.kind === "folder" ? "folder" : n.label));   // a file shows the symbol of its label
       var name = document.createElement("span");
       name.className = "tidy-name";
-      name.textContent = n.kind === "area" ? (text["area" + n.area.charAt(0).toUpperCase() + n.area.slice(1)] || n.name) : n.name;
+      name.textContent = n.name;
       row.appendChild(name);
       if (n.new || n.moved) {
         var tag = document.createElement("small");

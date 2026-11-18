@@ -186,6 +186,7 @@
         var name = (job.meta && job.meta.name) || job.file.name;   // files.js may give another name ("keep both")
         var values = { name: name, size: job.file.size };
         if (job.meta && job.meta.folder) values.folder = job.meta.folder;   // into a folder (18.11.2026)
+        if (job.meta && job.meta.label) values.label = job.meta.label;     // dropped on a tab: its label (file-tags)
         return call(urls.start, form(values)).then(function (info) { job.id = info.id; remember(job); });
       }
       var begin = known ? call(urls.progress(known), null, "GET").then(function (data) {

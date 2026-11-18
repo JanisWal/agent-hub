@@ -50,39 +50,52 @@ def preferences(confirm: str = Form("1"), user: users.User = Depends(api_user)):
 
 
 @router.post("/projects/{project_id}/files/check")
-def check_names(project_id: int, names: list[str] = Form([]), category: str = Form(""),
-                user: users.User = Depends(api_user), folder: str = Form("")):
+def check_names(project_id: int, names: list[str] = Form([]), user: users.User = Depends(api_user),
+                folder: str = Form("")):
     """Before an upload: which names exist already in the place the files go to, each with a free name (files.check_names)."""
-    taken = files.check_names(user.id, project_id, names[:1000], category or None, _folder_id(folder))
+    taken = files.check_names(user.id, project_id, names[:1000], _folder_id(folder))
     return fail(404) if taken is None else ok(taken=taken)
 
 
 @router.post("/projects/{project_id}/files/start")
 def start_upload(project_id: int, name: str = Form(""), size: int = Form(0), user: users.User = Depends(api_user),
-                 folder: str = Form("")):
+                 folder: str = Form(""), label: str = Form("")):
+    """`label`: the tab a file was dropped on; empty = by its ending."""
     try:
-        return ok(**_info(files.start_upload(user.id, project_id, name, size, folder_id=_folder_id(folder))))
+        return ok(**_info(files.start_upload(user.id, project_id, name, size, folder_id=_folder_id(folder),
+                                             label=label or None)))
     except files.FileError as problem:
         return _fail(user, problem)
 
 
 @router.post("/projects/{project_id}/folders")
-def create_folder(project_id: int, name: str = Form(""), category: str = Form(""), parent: str = Form(""),
-                  reuse: str = Form("0"), user: users.User = Depends(api_user)):
+def create_folder(project_id: int, name: str = Form(""), parent: str = Form(""), reuse: str = Form("0"),
+                  user: users.User = Depends(api_user)):
     """A new folder (the folder circle, or one folder of an uploaded tree: reuse=1 joins one of that name)."""
     try:
-        return ok(**_info(files.create_folder(user.id, project_id, category, name, _folder_id(parent), reuse == "1")))
+        return ok(**_info(files.create_folder(user.id, project_id, name, _folder_id(parent), reuse == "1")))
     except files.FileError as problem:
         return _fail(user, problem)
 
 
+def _ids(text: str) -> list[int]:
+    return [int(part) for part in text.split(",")[:1000] if part.strip().isdigit()]
+
+
 @router.post("/projects/{project_id}/files/move")
-def move(project_id: int, ids: str = Form(""), category: str = Form(""), folder: str = Form(""),
-         user: users.User = Depends(api_user)):
-    """Marked rows dragged onto a folder, a segment of the folder bar, a tree entry or a tab (files.move)."""
-    wanted = [int(part) for part in ids.split(",")[:1000] if part.strip().isdigit()]
+def move(project_id: int, ids: str = Form(""), folder: str = Form(""), user: users.User = Depends(api_user)):
+    """Marked rows dragged onto a folder, a tree entry, a step of the path or "All" (files.move)."""
     try:
-        return ok(moved=files.move(user.id, project_id, wanted, category or None, _folder_id(folder)))
+        return ok(moved=files.move(user.id, project_id, _ids(ids), _folder_id(folder)))
+    except files.FileError as problem:
+        return _fail(user, problem)
+
+
+@router.post("/projects/{project_id}/files/label")
+def set_label(project_id: int, ids: str = Form(""), label: str = Form(""), user: users.User = Depends(api_user)):
+    """Marked rows dragged onto a tab: they get its label (a folder: every file inside), files.set_label."""
+    try:
+        return ok(changed=files.set_label(user.id, project_id, _ids(ids), label))
     except files.FileError as problem:
         return _fail(user, problem)
 
@@ -106,7 +119,7 @@ def structure_state(project_id: int, user: users.User = Depends(api_user)):
     plan = autofolders.state(user.id, project_id)
     if plan is None:
         return fail(404)
-    nodes = [{"depth": n.depth, "name": n.name, "kind": n.kind, "area": n.area, "moved": n.moved, "new": n.new}
+    nodes = [{"depth": n.depth, "name": n.name, "kind": n.kind, "label": n.label, "moved": n.moved, "new": n.new}
              for n in plan.nodes]
     return ok(status=plan.status, contents=plan.contents, note=plan.note, moved=plan.moved, folders=plan.folders,
               failure=chat.failure_kind(plan.answer) if plan.status == "failed" else "", nodes=nodes)
@@ -168,9 +181,10 @@ def finish_upload(file_id: int, user: users.User = Depends(api_user)):
 
 
 @router.post("/projects/{project_id}/links")
-def add_link(project_id: int, url: str = Form(""), name: str = Form(""), user: users.User = Depends(api_user)):
+def add_link(project_id: int, url: str = Form(""), name: str = Form(""), user: users.User = Depends(api_user),
+             folder: str = Form("")):
     try:
-        return ok(**_info(files.add_link(user.id, project_id, url, name)))
+        return ok(**_info(files.add_link(user.id, project_id, url, name, folder_id=_folder_id(folder))))
     except files.FileError as problem:
         return _fail(user, problem)
 

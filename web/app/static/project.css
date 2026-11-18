@@ -377,6 +377,9 @@ dialog.archive-day[open] { display: flex; flex-direction: column; width: min(760
 .manager.files-expanded .mcol.has-files { display: flex; }
 .manager.files-expanded .mcol.has-files > :not(.m-files) { display: none; }
 .manager.files-expanded .m-files { flex: 1 1 auto; min-height: 0; }
+/* Tree and list scroll apart (Janis, 18.11.2026): the enlarged tile ends at the bottom of the window (--files-top: where
+   it starts, set by files.js), so each side has its own scrolling and a click down in the tree never moves it. */
+.manager.files-expanded .mcol.has-files { height: max(420px, calc(100dvh - var(--files-top, 160px) - 24px)); }
 .manager.files-expanded .file-scroll { max-height: none; }
 @container (min-width: 500px) { .m-files .file-area { display: none; } }
 /* Uploads and lists scroll inside the tile (Janis, 13.11.2026): the tile never grows with the number of files. In the
@@ -776,61 +779,62 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 .wiz-more[open] summary::before { transform: rotate(90deg); }
 @media (prefers-reduced-motion: reduce) { .wiz-more summary::before { transition: none; } }
 
-/* --- Folders of the file tile (Janis, 18.11.2026, DESIGN.md "Kachel Dateien: Ordner und Explorer").
-   Small tile: under the tabs the folder bar, the same segment slider at half the height. "All" first; equal parts
-   while every name fits, else each segment as wide as its name (.by-name), else it scrolls sideways (no bar).
-   A folder shows its sub-folders as rows; the path line with the back arrow leads out. Enlarged tile: the explorer,
-   a tree of the areas and their folders on the left, the path bar and the columns Name, Size, Added on the right. */
-.file-folders { position: relative; display: flex; gap: 0; padding: 2px; border-radius: 9px; border: 1px solid var(--file-line); background: color-mix(in srgb, var(--field) 70%, transparent); box-shadow: inset 0 1px 3px rgba(80, 40, 10, 0.12); overflow-x: auto; scrollbar-width: none; -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); }
-.file-folders::-webkit-scrollbar { display: none; }
-.file-folders .folder-thumb { top: 2px; bottom: 2px; border-radius: 7px; }
-.file-folder { position: relative; z-index: 1; flex: 1 1 0; min-width: 0; min-height: 22px; padding: 1px 10px; border-radius: 7px; border: 1px solid transparent; background: none; box-shadow: none; color: var(--muted); font-size: 0.76rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color 0.2s; }
-.file-folders.by-name .file-folder { flex: 1 0 auto; overflow: visible; }
-.file-folder:hover { transform: none; color: var(--text); }
-.file-folder[aria-selected="true"], .file-folder.seg-over { color: var(--text); }
-.file-folder.hot, .file-tree .hot, .file-crumbs .hot, .file-row.folder.hot { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 20%, transparent); }
-.file-row[hidden], .file-folders[hidden], .file-crumbs[hidden] { display: none; }
+/* --- One folder tree and labels in the file tile (Janis, 18.11.2026, `file-tags`; DESIGN.md "Kachel Dateien").
+   "All" goes folder by folder: the path line has the look of the tabs (field with an inner shadow and blur), the
+   open step is the same glass streak with its glow, the back arrow leads out. A label tab is a flat list with the
+   folder under each name. Enlarged tile: the explorer, the tree of folders on the left (each one opened on its own),
+   the path and the columns on the right; tree and list scroll apart. */
+.file-tree .hot, .file-crumbs .hot, .file-row.folder.hot { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 20%, transparent); }
+.file-row[hidden], .file-crumbs[hidden] { display: none; }
 .file-row.folder .file-tile { color: var(--accent); }
 .file-row.folder .file-text { cursor: pointer; }
 .file-where { display: none; }
-.file-list.all-mode .file-where { display: inline; }
-.file-size, .file-time, .file-cols { display: none; }
+.file-list.flat .file-where { display: inline; }
+.file-size, .file-time, .file-place, .file-cols { display: none; }
 .file-body { flex: 1 1 auto; min-height: 0; display: flex; gap: 14px; }
 .file-tree { display: none; }
 .file-main { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
-.file-crumbs { flex: none; display: flex; align-items: center; gap: 2px; overflow-x: auto; scrollbar-width: none; padding: 2px; border-radius: 9px; border: 1px solid var(--file-line); background: color-mix(in srgb, var(--field) 70%, transparent); box-shadow: inset 0 1px 3px rgba(80, 40, 10, 0.12); }
+.file-crumbs { flex: none; display: flex; align-items: center; gap: 2px; overflow-x: auto; scrollbar-width: none; padding: 3px; border-radius: 12px; border: 1px solid var(--file-line); background: color-mix(in srgb, var(--field) 70%, transparent); box-shadow: inset 0 1px 3px rgba(80, 40, 10, 0.14); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); }
 .file-crumbs::-webkit-scrollbar { display: none; }
-.file-crumbs button { flex: none; min-height: 26px; padding: 0 9px; border-radius: 7px; background: none; border: 0; box-shadow: none; font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+.file-crumbs button { flex: none; min-height: 28px; padding: 0 10px; border-radius: 9px; background: none; border: 0; box-shadow: none; font-size: 0.8rem; font-weight: 600; color: var(--muted); transition: color 0.2s; }
 .file-crumbs button:hover { color: var(--text); transform: none; }
-.file-crumbs button[aria-current] { color: var(--text); background: color-mix(in srgb, var(--accent) 30%, var(--glass)); }
+.file-crumbs button[aria-current] { color: var(--text); background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 60%), color-mix(in srgb, var(--accent) 38%, var(--glass)); box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 28%, transparent), inset 0 1px 0 var(--highlight); }
 .file-crumbs button + button:not(.file-up-level)::before { content: "›"; margin-right: 7px; color: var(--muted); }
+.file-crumbs .file-up-level + button::before { content: none; }
 .file-crumbs .file-up-level { display: grid; place-items: center; width: 30px; padding: 0; }
 .file-crumbs svg, .file-tree svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .folder-empty { padding: 10px 4px; }
 
 /* the explorer */
-.manager.files-expanded .file-folders { display: none; }
 /* Only in the explorer (Janis, 18.11.2026, list item 3h): "New folder" and "Structure folders automatically". The
    small tile has no room for them; the other circles close up, and the view transition of the tile glides them. */
 .m-files .file-full-only { display: none; }
 .manager.files-expanded .m-files .file-full-only { display: inline-flex; }
 .manager.files-expanded .file-tree { display: block; flex: 0 0 clamp(200px, 22%, 280px); min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 6px; border-radius: 14px; border: 1px solid var(--file-line); background: color-mix(in srgb, var(--glass) 40%, transparent); }
 .file-tree ul { list-style: none; margin: 0; padding: 0; }
-.file-tree button { display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; min-height: 34px; padding: 0 8px 0 calc(8px + var(--depth, 0) * 16px); border-radius: 8px; border: 0; background: none; box-shadow: none; color: var(--text); font-size: 0.86rem; font-weight: 600; text-align: left; }
-.file-tree button:hover { transform: none; background: color-mix(in srgb, var(--glass) 70%, transparent); }
-.file-tree button[aria-current] { background: color-mix(in srgb, var(--accent) 30%, var(--glass)); }
-.file-tree button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.file-tree button svg { flex: none; color: var(--muted); }
+.file-tree .tree-line { display: flex; align-items: center; gap: 2px; padding-left: calc((var(--depth, 1) - 1) * 16px); }
+.file-tree .tree-place { display: flex; flex: 1; min-width: 0; align-items: center; justify-content: flex-start; gap: 8px; min-height: 34px; padding: 0 8px; border-radius: 8px; border: 0; background: none; box-shadow: none; color: var(--text); font-size: 0.86rem; font-weight: 600; text-align: left; }
+.file-tree .tree-place:hover { transform: none; background: color-mix(in srgb, var(--glass) 70%, transparent); }
+.file-tree .tree-place[aria-current] { background: color-mix(in srgb, var(--accent) 30%, var(--glass)); }
+.file-tree .tree-place span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-tree .tree-place svg { flex: none; color: var(--muted); }
 .file-tree .tree-folder svg { color: var(--accent); }
-.file-tree .tree-area { margin-top: 4px; }
-.file-tree .tree-area:first-child { margin-top: 0; }
+.file-tree .tree-toggle { flex: none; display: grid; place-items: center; width: 22px; height: 22px; min-height: 0; padding: 0; border-radius: 6px; border: 0; background: none; box-shadow: none; color: var(--muted); }
+.file-tree .tree-toggle:hover:not(:disabled) { transform: none; color: var(--text); background: color-mix(in srgb, var(--glass) 70%, transparent); }
+.file-tree .tree-toggle:disabled { cursor: default; opacity: 1; }
+.file-tree .tree-toggle svg { width: 14px; height: 14px; transition: transform 0.25s cubic-bezier(0.3, 1.3, 0.5, 1); }
+.file-tree .tree-toggle.open svg { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .file-tree .tree-toggle svg { transition: none; } }
+.file-tree .tree-area > .tree-place { padding-left: 32px; }
 .manager.files-expanded .file-cols { display: flex; align-items: center; gap: 10px; padding: 0 8px 0 58px; font-size: 0.72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .manager.files-expanded .file-cols span:first-child { flex: 1; }
 .manager.files-expanded .file-cols span:nth-child(2) { width: 90px; text-align: right; }
 .manager.files-expanded .file-cols span:nth-child(3) { width: 100px; margin-right: 84px; text-align: right; }
 .manager.files-expanded .file-row { min-height: 46px; padding-top: 3px; padding-bottom: 3px; }
 .manager.files-expanded .file-text small { display: none; }
-.manager.files-expanded .file-list.all-mode .file-text small { display: block; }
+/* A label tab in the explorer: the folder of each file as a column instead of under the name. */
+.manager.files-expanded .m-files.flat-view .file-cols .col-place, .manager.files-expanded .file-list.flat .file-place { display: block; flex: 0 0 clamp(120px, 24%, 260px); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 0.8rem; }
+.file-cols .col-place { display: none; }
 .manager.files-expanded .file-size, .manager.files-expanded .file-time { display: block; flex: none; color: var(--muted); font-size: 0.8rem; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
 .manager.files-expanded .file-size { width: 90px; }
 .manager.files-expanded .file-time { width: 100px; }
@@ -852,8 +856,6 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 .tidy-row { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 8px 0 calc(8px + var(--depth, 0) * 16px); border-radius: 8px; font-size: 0.86rem; }
 .tidy-row svg { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); }
 .tidy-row.tidy-folder svg { color: var(--accent); }
-.tidy-row.tidy-area { margin-top: 4px; font-weight: 700; }
-.tidy-row.tidy-area:first-child { margin-top: 0; }
 .tidy-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tidy-row.changed { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .tidy-tag { flex: none; padding: 1px 7px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; color: var(--text); background: color-mix(in srgb, var(--accent) 30%, transparent); }

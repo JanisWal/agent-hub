@@ -285,7 +285,7 @@ class RunTest(unittest.TestCase):
         def fake_run(command, prompt):
             mount = next(part for part in command if "dst=/files" in part)
             folder = Path(mount.split("src=")[1].split(",")[0])
-            seen.append((mount, (folder / "documents" / "Schaltplan.pdf").read_bytes()))
+            seen.append((mount, (folder / "Schaltplan.pdf").read_bytes()))
             return types.SimpleNamespace(stdout=json.dumps({"ok": True, "text": "Read it.\nRESULT: done",
                                                             "tokens_in": 5, "tokens_out": 2}), returncode=0)
         r.run_agent = fake_run

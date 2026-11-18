@@ -230,7 +230,6 @@ def _tidy_dialog(lang: str) -> str:
             "close-label": "files_close", "summary": "tidy_summary", "nothing": "tidy_nothing", "failed": "tidy_failed",
             "fail-auth": "chat_fail_auth", "fail-limit": "chat_fail_limit", "moved-tag": "tidy_moved_tag",
             "new-tag": "tidy_new_tag", "done": "tidy_done", "err-net": "err_network"}
-    keys.update({f"area-{c}": key for c, key in FILE_TABS})
     data = " ".join(f'data-{name}="{esc(i18n.t(lang, key, n="{n}", moved="{moved}", folders="{folders}"))}"'
                     for name, key in keys.items())
     return fill(TIDY_DIALOG, lang, DATA=data, INFO=ui.info_dot(i18n.t(lang, "tidy_contents"), i18n.t(lang, "tidy_contents_tip")))
@@ -282,7 +281,7 @@ def _checks_tile(lang: str, regular: list, now: int) -> str:
 
 FILE_TABS = (("memory", "files_tab_memory"), ("code", "files_tab_code"), ("media", "files_tab_media"),
              ("documents", "files_tab_documents"), ("links", "files_tab_links"))
-TAB_ICON = {"memory": "note", "code": "code", "media": "photo", "documents": "file", "links": "link"}
+TAB_ICON = {"all": "folder", "memory": "note", "code": "code", "media": "photo", "documents": "file", "links": "link"}
 KIND_ICON = {"link": "link", "image": "photo", "video": "film", "audio": "music", "code": "code", "text": "note",
              "photo": "photo", "other": "file", "folder": "folder"}
 
@@ -383,8 +382,9 @@ def _file_row(lang: str, item: filestore.StoredFile, where: list[str] | None = N
     """One file, link or folder: a small bordered card with a rounded square with the type symbol, a preview next to it
     only where there is something to see (a small picture of an image or video, the icon of a website), the name with
     its ending (a click downloads the file, opens the link, opens the editor of a text, or opens the folder), pencil
-    and bin. `where`: the folders above it (shown under "All"); `inside`: what a folder holds. The size and date
-    columns show only in the explorer (the enlarged tile); files.js shows and hides rows by `data-parent`."""
+    and bin. `where`: the folders above it (shown under the name in a label tab, and as the column "Folder" there in
+    the explorer); `inside`: what a folder holds. `data-cat` is the label ('' for a folder). The size and date columns
+    show only in the explorer (the enlarged tile); files.js shows and hides rows by `data-parent` and `data-cat`."""
     kind = item.kind
     edit_label, delete_label = esc(i18n.t(lang, "files_edit")), esc(i18n.t(lang, "files_delete"))
     preview, size = "", ""
@@ -407,6 +407,7 @@ def _file_row(lang: str, item: filestore.StoredFile, where: list[str] | None = N
         size = _size(lang, item.size)
         href, sub, target = f"/files/{item.id}?download=1", esc(size), ""
     place = f'<span class="file-where"> · {esc(" › ".join(where))}</span>' if where else ""
+    folder_col = esc(" › ".join(where)) if where else "–"
     return (
         f'<li class="file-row{" folder" if kind == "folder" else ""}" draggable="true" data-id="{item.id}" '
         f'data-cat="{item.category}" data-kind="{kind}" data-parent="{item.parent_id or ""}" '
@@ -415,6 +416,7 @@ def _file_row(lang: str, item: filestore.StoredFile, where: list[str] | None = N
         f'<span class="file-tile">{icon(KIND_ICON[kind])}</span>{preview}'
         f'<a class="file-text" href="{href}"{target} draggable="false"><span class="check-title">{esc(item.name)}</span>'
         f'<small>{sub}{place}</small></a>'
+        f'<span class="file-place">{folder_col}</span>'
         f'<span class="file-size">{esc(size if kind != "link" else "")}</span>'
         f'<span class="file-time">{esc(_day(lang, item.created_at))}</span>'
         f'<button class="icon-button card-btn" type="button" data-file="edit" aria-label="{edit_label}" '
@@ -437,27 +439,28 @@ def _upload_template(lang: str) -> str:
 
 
 def _files_tile(lang: str, items: list, files_confirm: bool = True) -> str:
-    """The files of the project in five areas as tabs (Janis, 12.11.2026), with folders (18.11.2026): under the tabs
-    the folder bar of the area ("All" and its top folders), in the enlarged tile the explorer (a tree of areas and
-    folders, a path bar, columns). Each area's list holds all its rows; files.js shows the ones of the place chosen.
-    The plus uploads (or adds a link in the Links tab), the folder circle makes a folder; files can also be dragged
-    onto the tile. static/files.js does the rest."""
-    tabs, panels = [], []
+    """The files of the project (Janis, 12.11.2026; one folder tree and labels since 18.11.2026, `file-tags`): the tabs
+    "All" (the folder tree, folder by folder, with the path line and a back arrow) and one per label (every file with
+    that label, flat, its folder named under it). In the enlarged tile the explorer: the tree of folders on the left,
+    each opened on its own, the columns on the right. One list holds every row; files.js shows the ones of the tab and
+    folder chosen. The plus uploads (or adds a link in the Links tab), the folder circle makes a folder; files can also
+    be dragged onto the tile. static/files.js does the rest."""
     inside: dict[int, int] = {}
     for f in items:
         if f.parent_id is not None:
             inside[f.parent_id] = inside.get(f.parent_id, 0) + 1
-    for category, key in FILE_TABS:
-        mine = [f for f in items if f.category == category]
+    tabs = []
+    for category, key in (("all", "files_all"), *FILE_TABS):
         name = esc(i18n.t(lang, key))
+        count = sum(not f.is_folder and category in ("all", f.category) for f in items)
         tabs.append(   # symbol when the tile is narrow, name when it is wide (CSS container query), always one row
             f'<button class="file-tab" type="button" role="tab" data-seg data-cat="{category}" data-name="{name}" title="{name}" '
             f'aria-label="{name}" aria-selected="false">{icon(TAB_ICON[category])}'
-            f'<span class="file-tab-label">{name}</span><span class="file-count">{sum(not f.is_folder for f in mine)}</span></button>'
+            f'<span class="file-tab-label">{name}</span><span class="file-count">{count}</span></button>'
         )
-        body = "".join(_file_row(lang, f, filestore.folder_path(items, f), inside.get(f.id, 0)) for f in mine) + \
-            f'<li class="file-empty muted"{" hidden" if mine else ""}>{esc(i18n.t(lang, "files_hint_" + category))}</li>'
-        panels.append(f'<ul class="file-list" data-cat="{category}" hidden>{body}</ul>')
+    hints = "".join(f'<li class="file-empty muted" data-hint="{c}" hidden>{esc(i18n.t(lang, "files_hint_" + c))}</li>'
+                    for c in ("all", *(c for c, _ in FILE_TABS)))
+    body = "".join(_file_row(lang, f, filestore.folder_path(items, f), inside.get(f.id, 0)) for f in items) + hints
     attrs = " ".join(f'data-{name}="{esc(i18n.t(lang, key, n="{n}", name="{name}"))}"' for name, key in (
         ("add-file", "files_add_file"), ("add-link", "files_add_link"), ("err-net", "files_err_net"),
         ("eta-s", "files_eta_s"), ("eta-m", "files_eta_m"), ("eta-h", "files_eta_h"), ("drop-to", "files_drop_to"),
@@ -465,7 +468,8 @@ def _files_tile(lang: str, items: list, files_confirm: bool = True) -> str:
         ("note-no-ask", "files_note_no_ask"), ("note-ask", "files_note_ask"), ("delete-selected", "files_delete_selected"),
         ("drop", "files_drop"), ("marked", "files_marked"), ("zip-name", "files_zip_name"),
         ("download-marked", "files_download_marked"), ("all", "files_all"), ("folder-empty", "files_folder_empty"),
-        ("back", "files_back"), ("moved", "files_moved"), ("move-to", "files_move_to"), ("new-folder", "files_new_folder")))
+        ("back", "files_back"), ("moved", "files_moved"), ("move-to", "files_move_to"), ("new-folder", "files_new_folder"),
+        ("label-to", "files_label_to"), ("labelled", "files_labelled"), ("open-folder", "files_open_folder")))
     parallel = serversettings.upload()[0]           # how uploads are cut: the owner's choice for the whole server
     attrs += (f' data-block="{filestore.BLOCK_SIZE}" data-parallel="{parallel}" data-max-request="{filestore.max_request()}"'
               f' data-confirm-delete="{1 if files_confirm else 0}"')
@@ -486,16 +490,16 @@ def _files_tile(lang: str, items: list, files_confirm: bool = True) -> str:
         f'data-tip="{esc(i18n.t(lang, "files_new_folder"))}">{icon("folder_plus")}</button>'
         f'<button class="icon-button m-add" id="file-add" type="button">{icon("plus")}</button></span></header>'
         f'<div class="file-tabs" role="tablist"><span class="file-thumb" aria-hidden="true"></span>{"".join(tabs)}</div>'
-        f'<div class="file-folders" role="tablist" aria-label="{esc(i18n.t(lang, "files_folders"))}">'
-        f'<span class="file-thumb folder-thumb" aria-hidden="true"></span></div>'
         f'<p class="error" id="file-error" role="alert" hidden></p>'
         f'<div class="file-body"><nav class="file-tree" aria-label="{esc(i18n.t(lang, "files_folders"))}"></nav>'
         f'<div class="file-main"><nav class="file-crumbs" hidden></nav>'
         f'<div class="file-cols" aria-hidden="true"><span>{esc(i18n.t(lang, "files_col_name"))}</span>'
+        f'<span class="col-place">{esc(i18n.t(lang, "files_col_folder"))}</span>'
         f'<span>{esc(i18n.t(lang, "files_col_size"))}</span><span>{esc(i18n.t(lang, "files_col_added"))}</span></div>'
         f'<div class="file-scroll"><ul class="file-uploads" id="file-uploads" hidden></ul>'
-        f'{"".join(panels)}</div></div></div>'
+        f'<ul class="file-list">{body}</ul></div></div></div>'
         f'<template id="file-icons"><span data-icon="folder">{icon("folder")}</span><span data-icon="back">{icon("arrow_left")}</span>'
+        f'<span data-icon="chevron">{icon("chevron_right")}</span>'
         + "".join(f'<span data-icon="{c}">{icon(TAB_ICON[c])}</span>' for c, _ in FILE_TABS) + '</template>'
         f'<input type="file" id="file-picker" multiple hidden>{_upload_template(lang)}'
         f'<p class="file-status" id="file-status" role="status" aria-live="polite"></p></section>'
@@ -557,14 +561,14 @@ def _versions_list(lang: str, versions: list) -> str:
 
 
 def _trash_list(lang: str, trashed: list) -> str:
-    """The files in the trash: name, area and the days left, a restore and a delete-for-good button. The buttons carry
+    """The files in the trash: name, label ("Folders" for a folder) and the days left, a restore and a delete-for-good button. The buttons carry
     data-ftrash, not data-action (that one belongs to the board's trash, board.js)."""
     if not trashed:
         return f'<p class="muted">{esc(i18n.t(lang, "files_trash_empty"))}</p>'
     restore, purge = esc(i18n.t(lang, "restore")), esc(i18n.t(lang, "delete_now"))
     rows = "".join(
         f'<li class="trash-row" data-id="{item.id}"><span class="trash-title">{esc(item.name)}'
-        f'<small>{esc(i18n.t(lang, dict(FILE_TABS)[item.category]))} · {esc(i18n.t(lang, "files_trash_left", n=left))}</small></span>'
+        f'<small>{esc(i18n.t(lang, dict(FILE_TABS).get(item.category, "files_folders")))} · {esc(i18n.t(lang, "files_trash_left", n=left))}</small></span>'
         f'<button class="icon-button card-btn" type="button" data-ftrash="restore" aria-label="{restore}" title="{restore}">{icon("undo")}</button>'
         f'<button class="icon-button card-btn no" type="button" data-ftrash="purge" aria-label="{purge}" title="{purge}">{icon("cross")}</button></li>'
         for item, left in trashed

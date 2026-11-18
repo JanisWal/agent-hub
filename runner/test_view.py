@@ -32,34 +32,42 @@ class ViewTest(unittest.TestCase):
                 {"id": 13, "name": "Anleitung Relais.pdf", "area": "documents", "size": 12},
                 {"id": 50, "name": "planted.md", "area": "evil", "size": 25}]
 
-    def test_files_come_with_their_names_by_area_read_only_and_only_from_the_jobs_project(self):
+    def test_files_come_with_their_names_read_only_and_only_from_the_jobs_project(self):
         root = self.views.build("run-3", 4, self.files(), [{"name": "Guide", "url": "https://example.com/g"},
-                                                           {"name": "Bad", "url": "javascript:alert(1)"}])
+                                                           {"name": "Bad", "url": "javascript:alert(1)"},
+                                                           {"name": "Data", "url": "https://example.com/d", "path": ["Relais"]}])
         files = root / "files"
-        self.assertEqual((files / "documents" / "Anleitung Relais.pdf").read_bytes(), b"%PDF manual")
-        self.assertEqual((files / "documents" / "Anleitung Relais (2).pdf").read_bytes(), b"other manual")
-        self.assertEqual((files / "media" / "schaltplan.png").read_bytes(), b"\x89PNG picture")   # no way out
-        self.assertFalse((files / "documents" / "planted.md").exists())     # id 50 is not in project 4
-        self.assertIn("planted.md (1 KB, not available)", (files / "INDEX.md").read_text())
+        self.assertEqual((files / "Anleitung Relais.pdf").read_bytes(), b"%PDF manual")
+        self.assertEqual((files / "Anleitung Relais (2).pdf").read_bytes(), b"other manual")
+        self.assertEqual((files / "schaltplan.png").read_bytes(), b"\x89PNG picture")   # no way out
+        self.assertFalse((files / "planted.md").exists())                    # id 50 is not in project 4
+        index = (files / "INDEX.md").read_text()
+        self.assertIn("planted.md (documents, 1 KB, not available)", index)  # an unknown label counts as documents
+        self.assertIn("- schaltplan.png (media, 1 KB)", index)               # every file with its label
         links = (files / "LINKS.md").read_text()
         self.assertIn("- Guide: https://example.com/g", links)
+        self.assertIn("- Relais/Data: https://example.com/d", links)         # a link in a folder
         self.assertNotIn("javascript", links)
-        self.assertEqual(oct((files / "media" / "schaltplan.png").stat().st_mode & 0o777), "0o444")
+        self.assertEqual(oct((files / "schaltplan.png").stat().st_mode & 0o777), "0o444")
         self.assertFalse((root / "code").exists())                          # only the chat gets the code
 
     def test_files_keep_their_folders_and_no_folder_name_leads_out(self):
         items = [{"id": 11, "name": "manual.pdf", "area": "documents", "size": 11, "path": ["Relais", "Alt"]},
-                 {"id": 12, "name": "plan.png", "area": "media", "size": 12, "path": ["..", "../../etc", ".x"]}]
+                 {"id": 12, "name": "plan.png", "area": "media", "size": 12, "path": ["..", "../../etc", ".x"]},
+                 {"id": 13, "name": "INDEX.md", "area": "memory", "size": 12}]
         root = self.views.build("run-6", 4, items, [])
         files = root / "files"
-        self.assertEqual((files / "documents" / "Relais" / "Alt" / "manual.pdf").read_bytes(), b"%PDF manual")
-        self.assertTrue((files / "media" / "file" / "etc" / "x" / "plan.png").is_file())   # each part stays a name
-        self.assertIn("- documents/Relais/Alt/manual.pdf", (files / "INDEX.md").read_text())
+        self.assertEqual((files / "Relais" / "Alt" / "manual.pdf").read_bytes(), b"%PDF manual")
+        self.assertTrue((files / "file" / "etc" / "x" / "plan.png").is_file())   # each part stays a name
+        index = (files / "INDEX.md").read_text()
+        self.assertIn("- Relais/Alt/manual.pdf (documents", index)
+        self.assertIn("- INDEX (2).md (memory", index)                       # a user's INDEX.md never hides the list
+        self.assertEqual((files / "INDEX (2).md").read_bytes(), b"other manual")
 
     def test_big_files_are_named_but_not_copied(self):
         big = [{"id": 11, "name": "film.mp4", "area": "media", "size": view.MAX_FILE + 1}]
         root = self.views.build("chat-1", 4, big, [])
-        self.assertFalse((root / "files" / "media").exists())
+        self.assertFalse((root / "files" / "film.mp4").exists())
         self.assertIn("film.mp4", (root / "files" / "INDEX.md").read_text())
         self.assertIn("too big", (root / "files" / "INDEX.md").read_text())
 
@@ -67,13 +75,13 @@ class ViewTest(unittest.TestCase):
         (self.source / "4" / "14").write_bytes(b"II*\x00 raw photo")
         (self.source / "4" / "14.preview").write_bytes(b"\xff\xd8\xff jpeg of it")
         (self.source / "4" / "14.thumb").write_bytes(b"\xff\xd8\xff small")
-        big = {"id": 14, "name": "Roadster.dng", "area": "media", "size": view.MAX_FILE + 1}
+        big = {"id": 14, "name": "Roadster.dng", "area": "media", "size": view.MAX_FILE + 1, "path": ["Fotos"]}
         root = self.views.build("run-5", 4, [big], [])
-        media = root / "files" / "media"
-        self.assertEqual((media / "Roadster.dng.jpg").read_bytes(), b"\xff\xd8\xff jpeg of it")
-        self.assertFalse((media / "Roadster.dng").exists())          # the original is too big, the JPEG still comes
-        self.assertIn("to look at: media/Roadster.dng.jpg", (root / "files" / "INDEX.md").read_text())
-        self.assertEqual(sorted(p.name for p in media.iterdir()), ["Roadster.dng.jpg"])   # never the small thumb
+        photos = root / "files" / "Fotos"
+        self.assertEqual((photos / "Roadster.dng.jpg").read_bytes(), b"\xff\xd8\xff jpeg of it")
+        self.assertFalse((photos / "Roadster.dng").exists())          # the original is too big, the JPEG still comes
+        self.assertIn("to look at: Fotos/Roadster.dng.jpg", (root / "files" / "INDEX.md").read_text())
+        self.assertEqual(sorted(p.name for p in photos.iterdir()), ["Roadster.dng.jpg"])   # never the small thumb
 
     def test_the_code_is_main_without_git_and_the_view_goes_away(self):
         work = workspace.Workspace(Path(self.tmp.name) / "work")

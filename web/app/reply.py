@@ -6,7 +6,7 @@ the text the user reads. Memory and read markers stay in memory.py; this module 
     <ask kind="choice|text" size="small|large">Question<option>Answer</option>...</ask>
     <task kind="bug|minor|major" title="...">Description and acceptance criteria</task>
     <status level="green|yellow|red" title="A few words">One or two sentences</status>   (title optional)
-    <move id="12" to="media/Backgrounds/Dark"/>   (a plan to structure the files, autofolders.py; 18.11.2026)
+    <move id="12" to="Backgrounds/Dark"/>   (a plan to structure the files, autofolders.py; to="" = the top)
 
 `parse` is a pure function: it knows no user, no project and no database. Whoever stores the result (a later module)
 must save it under the project of the question and nowhere else. Anything that does not fit (unknown value, empty text,
@@ -145,11 +145,12 @@ def icons(answer: str) -> list[tuple[str, str]]:
 
 def moves(answer: str) -> tuple[str, list[tuple[int, str]]]:
     """A plan to structure the files (autofolders.py): (text without the markers, [(row id, target)]), the target as
-    the AI wrote it ("area/folder/folder"; autofolders checks it). Ids are digits only; the first move of an id counts."""
+    the AI wrote it ("folder/folder", "" = the top; autofolders checks it). Ids are digits only; the first move of an
+    id counts; a move without `to` is left out."""
     found: dict[int, str] = {}
     for raw in _MOVE.findall(answer):
         attrs = _attrs(raw)
         target = _line(attrs.get("to", ""), MAX_TARGET).strip("/ ")
-        if attrs.get("id", "").isdigit() and target and len(found) < MAX_MOVES:
+        if attrs.get("id", "").isdigit() and "to" in attrs and len(found) < MAX_MOVES:
             found.setdefault(int(attrs["id"]), target)
     return _MOVE.sub("", answer).strip(), list(found.items())
