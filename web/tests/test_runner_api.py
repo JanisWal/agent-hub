@@ -75,7 +75,7 @@ class RunnerApiTest(unittest.TestCase):
         self.assertEqual((job["user_id"], job["role"], job["model"]), (self.a.id, "programmer", "sonnet"))
         self.assertEqual(sorted(job), sorted([
             "run_id", "user_id", "project_id", "task_id", "role", "model", "branch", "title", "kind",
-            "round", "note", "reports", "net", "effort", "provider", "prompt", "files", "links"]))
+            "round", "note", "reports", "net", "effort", "provider", "prompt", "files", "links", "images"]))
         self.assertEqual(job["effort"], "high")                         # Sonnet's default level
         self.assertIsNone(runner.claim(can_mac="1")["job"])         # one run at a time
         self.assertEqual(runner.finish(job["run_id"], "pass").status_code, 400)   # wrong for the programmer

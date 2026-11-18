@@ -1,9 +1,10 @@
 # Image of one agent run (started by launcher.py as user 10000+id, read-only, see KONZEPT-AGENTEN.md 6a).
 # Claude Code is installed in a folder every user may read: the run user has no home of its own. A run's HOME is an
 # empty folder in memory (launcher._claude_env); it holds no login, only a ticket (runner/tokens.py).
+# poppler-utils (18.11.2026): Claude Code's Read draws PDF pages with pdftoppm; without it longer PDFs can not be read.
 FROM debian:trixie-slim
 RUN apt-get update \
- && apt-get install -y --no-install-recommends curl ca-certificates git ripgrep python3 \
+ && apt-get install -y --no-install-recommends curl ca-certificates git ripgrep python3 poppler-utils \
  && rm -rf /var/lib/apt/lists/*
 ENV HOME=/opt/claude-install
 # Pinned (15.11.2026): a new Claude Code version is tried on a branch first (its options and output may change).

@@ -91,6 +91,7 @@ class Job:
     prompt: str = ""                # the package for the AI (runtask.build_input): rules, memory, project, task
     files: list = field(default_factory=list)   # the user's files for /files (files.for_agents): id, name, area, size
     links: list = field(default_factory=list)   # and the links: name, address
+    images: bool = False            # the model sees pictures (catalog.sees_images): the adapter lets it look at them
 
 
 def _task(row: sqlite3.Row) -> Task:
@@ -548,6 +549,7 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
                       task["note"], reports, net_in(conn, user_id, run["role"]), effort, provider)
             job.prompt = runtask.build_input(conn, job)
             job.files, job.links = files.for_agents(conn, user_id, task["project_id"])
+            job.images = catalog.sees_images(model)
             return job
     return None
 

@@ -8,12 +8,14 @@ model (manager chat, regular checks, the roles) takes the list from here and che
 Format of one provider:
   {"name": "Claude", "default_model": "sonnet",
    "models": [{"id": "sonnet", "name": "Sonnet", "hint": "balanced",
-               "efforts": ["low", "medium", "high", "xhigh", "max"], "default_effort": "high"}, ...]}
+               "efforts": ["low", "medium", "high", "xhigh", "max"], "default_effort": "high", "images": true}, ...]}
 
 `id` is what the provider's program takes (for Claude Code an alias such as "sonnet": it always means the newest
 version, so a new version needs no change here, only a new family does). `name` is shown as it is (a proper name),
 `hint` and the effort levels are keys whose texts are in i18n.py ("model_hint_<hint>", "effort_<level>"); an
-unknown key just shows nothing (hint) or the raw level. Standard library only.
+unknown key just shows nothing (hint) or the raw level. `images` (18.11.2026) says whether the model sees pictures
+(images and PDF pages); it is false when missing, so a model nobody checked is never sent a picture (its API would
+refuse the request). Standard library only.
 
 Several providers (Mistral since 14.11.2026): a model id belongs to exactly one provider (`store` refuses an id another
 provider already has), so a saved choice ("model.chef" = "mistral-small-2603") tells by itself which AI answers
@@ -42,23 +44,24 @@ SEED = {
         "name": "Claude",
         "default_model": "sonnet",
         "models": [
-            {"id": "haiku", "name": "Haiku", "hint": "fast", "efforts": _ALL, "default_effort": "medium"},
-            {"id": "sonnet", "name": "Sonnet", "hint": "balanced", "efforts": _ALL, "default_effort": "high"},
-            {"id": "opus", "name": "Opus", "hint": "thorough", "efforts": _ALL, "default_effort": "medium"},
-            {"id": "fable", "name": "Fable", "hint": "deepest", "efforts": _ALL, "default_effort": "high"},
+            {"id": "haiku", "name": "Haiku", "hint": "fast", "efforts": _ALL, "default_effort": "medium", "images": True},
+            {"id": "sonnet", "name": "Sonnet", "hint": "balanced", "efforts": _ALL, "default_effort": "high", "images": True},
+            {"id": "opus", "name": "Opus", "hint": "thorough", "efforts": _ALL, "default_effort": "medium", "images": True},
+            {"id": "fable", "name": "Fable", "hint": "deepest", "efforts": _ALL, "default_effort": "high", "images": True},
         ],
     },
     # Mistral API (docs.mistral.ai, checked 14.11.2026): exact ids, because the levels (`reasoning_effort`) differ per
     # model and an alias such as "mistral-small-latest" may move to a model with other levels. Small 4 knows none and
     # high, Large 4 low, medium and high ("none" = no thinking: faster, fewer tokens). Medium 3.5 is deprecated.
+    # Both take images (checked 18.11.2026: Small 4 is text and image in, Large 4 natively multimodal).
     "mistral": {
         "name": "Mistral",
         "default_model": "mistral-small-2603",
         "models": [
             {"id": "mistral-small-2603", "name": "Mistral Small", "hint": "fast", "efforts": ["none", "high"],
-             "default_effort": "none"},
+             "default_effort": "none", "images": True},
             {"id": "mistral-large-4", "name": "Mistral Large", "hint": "thorough", "efforts": ["low", "medium", "high"],
-             "default_effort": "high"},
+             "default_effort": "high", "images": True},
         ],
     },
 }
@@ -71,6 +74,7 @@ class Model:
     hint: str | None
     efforts: tuple[str, ...]
     default_effort: str
+    images: bool = False      # sees pictures (images, PDF pages)
 
 
 @dataclass(frozen=True)
@@ -112,7 +116,9 @@ def parse(provider_id: str, data: dict) -> Provider:
             raise ValueError("efforts")
         if default_effort not in efforts:
             raise ValueError("default effort")
-        models.append(Model(model_id, model_name, hint, tuple(efforts), default_effort))
+        if not isinstance(raw.get("images", False), bool):
+            raise ValueError("images")
+        models.append(Model(model_id, model_name, hint, tuple(efforts), default_effort, raw.get("images", False)))
     if len({m.id for m in models}) != len(models):
         raise ValueError("model ids")
     default_model = data.get("default_model")
@@ -176,6 +182,17 @@ def light(provider_id: str = DEFAULT_PROVIDER) -> tuple[str, str]:
     models = provider(provider_id).models
     model = next((m for m in models if m.hint == "fast"), models[0])
     return model.id, model.efforts[0] if model.efforts else model.default_effort
+
+
+# Said in the package when the model can not see pictures (runtask.py, chat.py), the same for every AI.
+BLIND_NOTE = ("The model you run on can not see pictures: when an image or the look of a PDF matters, say so plainly "
+              "instead of guessing what it shows.")
+
+
+def sees_images(model: str | None) -> bool:
+    """Whether the model sees pictures (images, PDF pages); False for a model no provider has."""
+    hit = find(model)
+    return bool(hit and hit[1].images)
 
 
 def check(model: str, effort: str | None = None, provider_id: str | None = None) -> None:
