@@ -402,7 +402,7 @@ class AgentFilesTest(MemoryBase):
         job = self.ask()
         self.assertEqual(job.project_id, self.pa.id)
         self.assertEqual(job.files, [{"id": manual.id, "name": "Anleitung.pdf", "area": "documents", "size": 4, "path": []}])
-        self.assertEqual(job.links, [{"name": "Guide", "url": "https://example.com/guide"}])
+        self.assertEqual(job.links, [{"name": "Guide", "url": "https://example.com/guide", "path": []}])
         self.assertIn("/files", job.prompt)
         self.assertIn("/code", job.prompt)
         with db.connect() as conn:
