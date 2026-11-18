@@ -39,7 +39,7 @@ def _info(item: files.StoredFile) -> dict:
 
 def _folder_id(value: str) -> int | None:
     """A folder number from a form ("" = none); anything else than digits counts as none."""
-    return int(value) if value.isdigit() else None
+    return int(value) if isinstance(value, str) and value.isdigit() else None
 
 
 @router.post("/files/preferences")
