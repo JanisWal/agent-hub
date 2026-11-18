@@ -447,11 +447,11 @@ class PasswordPageTest(unittest.TestCase):
         self.assertIn('name="new" required autofocus', page)
         self.assertIn('<form method="post" action="/logout"><button class="link" type="submit">Abbrechen</button></form>', page)
 
-    def test_normal_page_asks_for_the_old_password_and_cancel_goes_home(self):
+    def test_normal_page_asks_for_the_old_password_and_cancel_goes_to_the_account(self):
         page = userspage.password_page(self.settled)
         self.assertIn('name="old"', page)
         self.assertNotIn('name="new" required autofocus', page)
-        self.assertIn('<a class="link" href="/">Abbrechen</a>', page)
+        self.assertIn('<a class="link" href="/account">Abbrechen</a>', page)   # back where it was opened
 
     def test_start_password_user_chooses_without_the_old_one(self):
         users.change_own_password(self.fresh, "", "Mein!Pass12")
