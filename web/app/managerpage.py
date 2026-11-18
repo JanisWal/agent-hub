@@ -200,7 +200,40 @@ def dialogs(lang: str) -> str:
                 CHEVRON=icon("chevron_down")) + "\n" + fill(FILE_DIALOGS, lang, AREAS=areas, CHEVRON=icon("chevron_down"),
                                                          DOWNLOAD=icon("download"), CROSS=icon("cross"), PENCIL=icon("pencil"),
                                                          MANY=esc(i18n.t(lang, "files_confirm_delete_many", n="{n}")),
-                                                         PREV=icon("arrow_left"), NEXT=icon("chevron_right"))
+                                                         PREV=icon("arrow_left"), NEXT=icon("chevron_right")) \
+        + "\n" + _tidy_dialog(lang)
+
+
+# Structure the folders automatically (autofolders.py, static/filetidy.js; Janis 18.11.2026): the switch, the three
+# dots while the AI works, then the new tree with "Apply". The texts for the tree come as data attributes.
+TIDY_DIALOG = """<dialog class="dialog tidy-dialog" id="file-tidy-dialog" %DATA%>
+  <h2>%t.files_tidy%</h2>
+  <div class="tidy-step" data-step="start">
+    <div class="tidy-switch"><label class="check-line"><input type="checkbox" id="file-tidy-contents"><span>%t.tidy_contents%</span></label>%INFO%</div>
+  </div>
+  <p class="tidy-step tidy-working muted" data-step="working" hidden>%t.tidy_working%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p>
+  <div class="tidy-step" data-step="plan" hidden>
+    <p class="muted tidy-note" id="file-tidy-note"></p>
+    <p class="tidy-summary" id="file-tidy-summary"></p>
+    <ul class="tidy-tree" id="file-tidy-tree"></ul>
+  </div>
+  <p class="error" role="alert" id="file-tidy-error" hidden></p>
+  <div class="actions">
+    <button type="button" id="file-tidy-cancel">%t.cancel%</button>
+    <button class="primary" type="button" id="file-tidy-go">%t.tidy_start%</button>
+  </div>
+</dialog>"""
+
+
+def _tidy_dialog(lang: str) -> str:
+    keys = {"start": "tidy_start", "apply": "tidy_apply", "discard": "tidy_discard", "cancel": "cancel",
+            "close-label": "files_close", "summary": "tidy_summary", "nothing": "tidy_nothing", "failed": "tidy_failed",
+            "fail-auth": "chat_fail_auth", "fail-limit": "chat_fail_limit", "moved-tag": "tidy_moved_tag",
+            "new-tag": "tidy_new_tag", "done": "tidy_done", "err-net": "err_network"}
+    keys.update({f"area-{c}": key for c, key in FILE_TABS})
+    data = " ".join(f'data-{name}="{esc(i18n.t(lang, key, n="{n}", moved="{moved}", folders="{folders}"))}"'
+                    for name, key in keys.items())
+    return fill(TIDY_DIALOG, lang, DATA=data, INFO=ui.info_dot(i18n.t(lang, "tidy_contents"), i18n.t(lang, "tidy_contents_tip")))
 
 
 def _ago(lang: str, last_done: int, now: int) -> str:
@@ -447,7 +480,9 @@ def _files_tile(lang: str, items: list, files_confirm: bool = True) -> str:
         f'<button class="icon-button m-add file-expand" id="file-expand" type="button" aria-pressed="false" '
         f'aria-label="{esc(i18n.t(lang, "files_expand"))}" title="{esc(i18n.t(lang, "files_expand"))}">'
         f'{icon("expand", "ic-expand")}{icon("collapse", "ic-collapse")}</button>'
-        f'<button class="icon-button m-add" id="file-folder-add" type="button" aria-label="{esc(i18n.t(lang, "files_new_folder"))}" '
+        f'<button class="icon-button m-add file-full-only" id="file-tidy" type="button" aria-label="{esc(i18n.t(lang, "files_tidy"))}" '
+        f'data-tip="{esc(i18n.t(lang, "files_tidy"))}">{icon("folder_auto")}</button>'
+        f'<button class="icon-button m-add file-full-only" id="file-folder-add" type="button" aria-label="{esc(i18n.t(lang, "files_new_folder"))}" '
         f'data-tip="{esc(i18n.t(lang, "files_new_folder"))}">{icon("folder_plus")}</button>'
         f'<button class="icon-button m-add" id="file-add" type="button">{icon("plus")}</button></span></header>'
         f'<div class="file-tabs" role="tablist"><span class="file-thumb" aria-hidden="true"></span>{"".join(tabs)}</div>'
