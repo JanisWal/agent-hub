@@ -50,6 +50,14 @@ def later():
                 "3. Klemme 86 an den Schalter, 85 an Masse.\n4. Prüfen, bevor die Sitze wieder eingebaut werden.")
 
 
+# Two projects with a written status of different length (the status tile always opens at its resting height).
+other = projects.create_project(user.id, "Werkstatt")
+with db.connect() as conn:
+    for pid, title, text in ((project.id, "Kabel fehlen noch", "Kurz: die Relais sind da, die Kabel fehlen."),
+                             (other.id, "Viel offen", " ".join(["Der Umbau der Heizung braucht noch Teile, Zeit und einen "
+                                                                "Test bei kaltem Wetter."] * 8))):
+        conn.execute("INSERT INTO project_status (project_id, level, title, text, created_at) VALUES (?, ?, ?, ?, ?)",
+                     (pid, "yellow", title, text, int(time.time())))
 threading.Thread(target=later, daemon=True).start()
 print(f"preview: preview@example.com / {password} , project {project.id}", flush=True)
 import uvicorn  # noqa: E402
