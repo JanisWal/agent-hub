@@ -65,4 +65,4 @@ def save_settings(
         users.set_profile(user.id, display_name, language)
     except ValueError:
         pass  # name too long: keep the old settings
-    return redirect("/")
+    return redirect("/account")

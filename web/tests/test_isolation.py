@@ -362,6 +362,14 @@ class IsolationTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             chat.send(self.b.id, self.project.id, "Planted in A")                 # B can not ask in A's project
 
+    def test_b_deleting_the_own_account_never_touches_a(self):
+        from app import users as accounts
+        token = accounts.create_session(self.a.id)
+        accounts.delete_self(self.b)
+        self.assertIsNotNone(accounts.get_user(token))                          # A stays signed in
+        self.assertIsNotNone(projects.get_project(self.a.id, self.project.id))
+        self.assertIsNone(accounts.get_by_id(self.b.id))
+
     def test_b_cannot_read_anything_of_a(self):
         self.assertIsNone(projects.get_project(self.b.id, self.project.id))
         self.assertIsNone(projects.display_page(self.b.id, self.project.id))

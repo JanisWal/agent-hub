@@ -170,4 +170,4 @@ def change_password(
             wait = throttle.seconds_locked(ip)
             return locked_answer(wait) if wait else answer(403, i18n.t(lang, "wrong_password"))
         return answer(400, i18n.t(lang, _PASSWORD_ERRORS[problem.code]))
-    return redirect("/")
+    return redirect("/" if user.must_change else "/account")

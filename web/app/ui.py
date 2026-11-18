@@ -107,23 +107,11 @@ SETTINGS = """<div class="drawer" id="settings">
           aria-expanded="false" aria-controls="settings-panel" aria-label="%t.settings_toggle%">%GEAR%%ARROW%</button>
   <div class="drawer-box glass" id="settings-panel">
    <div class="drawer-scroll">
-    <form method="post" action="/settings" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
-      <label class="setting">
-        <span class="setting-label">%t.display_name%</span>
-        <input name="display_name" maxlength="40" value="%NAME_VALUE%" placeholder="%NAME_SHOWN%" autocomplete="nickname">
-      </label>
-      <label class="setting has-select">
-        <span class="setting-label">%t.language%</span>
-        <select name="language">
-          <option value="de" %DE%>Deutsch</option>
-          <option value="en" %EN%>English</option>
-        </select>%CHEVRON%
-      </label>
+    <div class="drawer-main">
       %SERVICES%
+      <a class="admin-btn" href="/account">%t.account_title%</a>
       %ADMIN%
-      <button class="primary save" type="submit">%t.save%</button>
-    </form>
-    %ACCOUNT_LINKS%
+    </div>
     <form method="post" action="/logout"><button class="link" type="submit">%t.logout%</button></form>
    </div>
   </div>
@@ -304,15 +292,10 @@ def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | Non
 
 
 def _admin_button(user: User) -> str:
-    """The way to the administration page: only for owner and admins, a quiet button above "Save"."""
+    """The way to the administration page: only for owner and admins, a quiet button under "Account"."""
     if not user.is_admin:
         return ""
     return f'<a class="admin-btn" href="/admin">{esc(i18n.t(user.language, "admin_title"))}</a>'
-
-
-def _account_links(user: User) -> str:
-    """The link under the save button: the own password (everybody). Logging out sits below it."""
-    return f'<a class="link" href="/password">{esc(i18n.t(user.language, "change_password"))}</a>'
 
 
 def settings_bar(user: User, extras: str = "") -> str:
@@ -325,15 +308,9 @@ def settings_bar(user: User, extras: str = "") -> str:
         DRAWER_EXTRAS=extras,
         GEAR=icon("gear"),
         ARROW=icon("arrow_left", "drawer-arrow"),
-        CHEVRON=icon("chevron_down"),
-        NAME_VALUE=esc(user.display_name or ""),
-        NAME_SHOWN=esc(user.name),
-        DE="selected" if lang == "de" else "",
-        EN="selected" if lang == "en" else "",
         SERVICES=_service_rows(lang, claude_link.status(user.id), {p: ai_link.status(user.id, p) for p in ai_link.PROVIDERS},
                                aichoice.default(user.id), tuple(aichoice.connected(user.id))),
         ADMIN=_admin_button(user),
-        ACCOUNT_LINKS=_account_links(user),
         CLAUDE_DIALOG=fill(CLAUDE_DIALOG, lang),
         KEY_DIALOGS=_key_dialogs(lang),
     )
