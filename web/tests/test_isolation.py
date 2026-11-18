@@ -347,13 +347,17 @@ class IsolationTest(unittest.TestCase):
         projects.update_details(self.a.id, self.project.id, "Secret project of A", "Secret description of A")
         chat.send(self.a.id, self.project.id, "Question of A")
         job = chat.claim_next()
+        chat.add_thoughts(job.chat_id, "Secret thought of A")
         chat.finish(job.chat_id, True, "Secret answer for A")
         chat.send(self.b.id, self.mine.id, "Question of B")
         text = chat.claim_next().prompt
+        from app.routes import chat as chat_routes                               # B's page never gets A's thoughts
+        self.assertEqual(chat_routes.messages(self.project.id, user=self.b)["messages"], [])
+        self.assertNotIn("Secret thought", str(chat_routes.messages(self.mine.id, user=self.b)))
         self.assertIn("Project of B", text)
         self.assertIn("Item of B", text)
         for secret in ("Secret project", "Secret description", "Open of A", "Idea of A", "Question of A",
-                       "Secret answer"):
+                       "Secret answer", "Secret thought"):
             self.assertNotIn(secret, text)
         with self.assertRaises(ValueError):
             chat.send(self.b.id, self.project.id, "Planted in A")                 # B can not ask in A's project

@@ -5,7 +5,8 @@ an adapter only knows its program. Both programs run in a throwaway container wi
 - claude: Claude Code (runner/Dockerfile), ticket to the gateway on port 3130.
 - mistral: Mistral Vibe (runner/Dockerfile.vibe), ticket to the gateway on port 3131.
 Interface: `secret(runner, user_id)` (the credential the ticket stands for, or None), `chat_command(...)`,
-`run_command(...)` and `parse(stdout) -> (ok, text, tokens_in, tokens_out, login_problem)`. `images` says whether the
+`run_command(...)`, `parse(stdout) -> (ok, text, tokens_in, tokens_out, login_problem)` and `thought(line)`: the
+thought text in one line of a chat's output while it runs ("" if the line has none; shown in the chat). `images` says whether the
 model sees pictures (catalog of the hub); Claude Code looks at images and PDFs with its own Read tool, Vibe through the
 tool of look_mcp.py.
 """
@@ -31,6 +32,9 @@ class Claude:
 
     def parse_chat(self, stdout: str):
         return launcher.parse_chat_output(stdout)
+
+    def thought(self, line: str) -> str:
+        return launcher.claude_thought(line)
 
     def parse_run(self, stdout: str):
         """(ok, text, tokens_in, tokens_out, login_problem) of an agent run of Claude Code."""
@@ -64,6 +68,9 @@ class Mistral:
         return launcher.parse_vibe(stdout)
 
     parse_run = parse_chat
+
+    def thought(self, line: str) -> str:
+        return launcher.vibe_thought(line)
 
 
 ADAPTERS = {"claude": Claude(), "mistral": Mistral()}

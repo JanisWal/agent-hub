@@ -223,7 +223,10 @@ def build_chat_command(*, chat_id: int, user_id: int, model: str, ticket: str, m
         *_claude_env(ticket), "-e", "PYTHONDONTWRITEBYTECODE=1",
         *_proxy_env(spec["proxy"]),
         image,
-        "claude", "-p", *model_args, "--output-format", "json", "--no-session-persistence",
+        # stream-json: one line per event, so the runner can show the thoughts while they come (Janis, 18.11.2026);
+        # the summaries are only displayed, the thinking itself is the same and costs the same.
+        "claude", "-p", *model_args, "--output-format", "stream-json", "--verbose", "--include-partial-messages",
+        "--thinking-display", "summarized", "--no-session-persistence",
         # Exactly the tools of the mode. In -p mode nobody can confirm a permission, so exactly these are
         # allowed; --max-turns keeps a search or a program from running away (and eating quota).
         "--tools", ",".join(tools),
@@ -243,14 +246,67 @@ def claude_tokens(data: dict) -> tuple[int, int]:
     return tokens_in, int(usage.get("output_tokens") or 0)
 
 
+def claude_result(stdout: str) -> dict:
+    """The result object of `claude -p`: the whole output (--output-format json, agent runs) or the last line of type
+    "result" (stream-json, the chat). ValueError if there is none."""
+    text = (stdout or "").strip()
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict):
+            return data
+    except ValueError:
+        pass
+    for line in reversed(text.splitlines()):
+        try:
+            data = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(data, dict) and data.get("type") == "result":
+            return data
+    raise ValueError("no result")
+
+
+def claude_thought(line: str) -> str:
+    """Thought text in one line of `claude -p --output-format stream-json --include-partial-messages`: a piece of a
+    thinking block (summarized by the API), a new block starts a new paragraph; "" for anything else."""
+    if '"thinking' not in line:   # most lines are text, tools and status: no need to read them
+        return ""
+    try:
+        data = json.loads(line)
+    except ValueError:
+        return ""
+    event = data.get("event") if isinstance(data, dict) and data.get("type") == "stream_event" else None
+    if not isinstance(event, dict):
+        return ""
+    if event.get("type") == "content_block_start":
+        block = event.get("content_block")
+        return "\n\n" if isinstance(block, dict) and block.get("type") == "thinking" else ""
+    delta = event.get("delta") if event.get("type") == "content_block_delta" else None
+    if isinstance(delta, dict) and delta.get("type") == "thinking_delta":
+        return str(delta.get("thinking") or "")
+    return ""
+
+
+def vibe_thought(line: str) -> str:
+    """Thought text in one line of vibe_entry.py ({"thought": ...}, one finished block of reasoning); "" otherwise."""
+    if '"thought"' not in line:
+        return ""
+    try:
+        data = json.loads(line)
+    except ValueError:
+        return ""
+    thought = data.get("thought") if isinstance(data, dict) else None
+    return "\n\n" + thought if isinstance(thought, str) and thought.strip() else ""
+
+
 def parse_chat_output(stdout: str) -> tuple[bool, str, int, int, bool]:
-    """(ok, text, tokens_in, tokens_out, login_problem) from the JSON of `claude -p`.
+    """(ok, text, tokens_in, tokens_out, login_problem) from the JSON of `claude -p` (claude_result).
 
     `ok` is False for anything but a clear, non-error answer. `login_problem` is True when the
     error looks like a lost sign-in. Nothing is guessed: an unreadable output is a failure.
     """
     try:
-        data = json.loads(stdout)
+        data = claude_result(stdout)
         text = str(data.get("result", "")).strip()
         tokens_in, tokens_out = claude_tokens(data)
         failed = bool(data.get("is_error"))

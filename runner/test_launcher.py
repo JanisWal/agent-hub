@@ -246,6 +246,45 @@ class TokenTest(unittest.TestCase):
 
 
 class ChatOutputTest(unittest.TestCase):
+    def test_the_chat_streams_with_thought_summaries(self):
+        cmd = L.build_chat_command(chat_id=5, user_id=2, model="haiku", ticket=TICKET)
+        at = cmd.index("--output-format")
+        self.assertEqual(cmd[at + 1], "stream-json")
+        for flag in ("--verbose", "--include-partial-messages"):
+            self.assertIn(flag, cmd)
+        self.assertEqual(cmd[cmd.index("--thinking-display") + 1], "summarized")
+        run = L.build_command(run_id=1, user_id=2, model="haiku", work_dir="/opt/agent-hub/work/1", ticket=TICKET)
+        self.assertEqual(run[run.index("--output-format") + 1], "json")      # agent runs keep the one JSON object
+
+    def test_the_result_line_of_a_stream(self):
+        lines = [{"type": "system", "subtype": "init"},
+                 {"type": "stream_event", "event": {"type": "content_block_delta", "delta": {"type": "text_delta", "text": "Hi"}}},
+                 {"type": "result", "subtype": "success", "is_error": False, "result": " Hi! ",
+                  "usage": {"input_tokens": 3, "output_tokens": 2}}]
+        out = "\n".join(json.dumps(x) for x in lines) + "\n"
+        self.assertEqual(L.parse_chat_output(out), (True, "Hi!", 3, 2, False))
+        self.assertFalse(L.parse_chat_output("\n".join(json.dumps(x) for x in lines[:2]))[0])   # no result: failure
+        broken = '{"type": "system"}\nnot json\n' + json.dumps(lines[2])
+        self.assertTrue(L.parse_chat_output(broken)[0])
+
+    def test_thought_pieces(self):
+        def line(event):
+            return json.dumps({"type": "stream_event", "event": event})
+        start = line({"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": ""}})
+        piece = line({"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "Farbe "}})
+        self.assertEqual(L.claude_thought(start), "\n\n")                  # a new block starts a paragraph
+        self.assertEqual(L.claude_thought(piece), "Farbe ")
+        for other in (line({"type": "content_block_delta", "delta": {"type": "text_delta", "text": "thinking"}}),
+                      line({"type": "content_block_delta", "delta": {"type": "signature_delta", "signature": "x"}}),
+                      line({"type": "content_block_start", "content_block": {"type": "text", "text": "thinking"}}),
+                      json.dumps({"type": "assistant", "message": {"content": [{"type": "thinking", "thinking": "x"}]}}),
+                      json.dumps({"type": "result", "result": "thinking"}), '"thinking', "[1]", ""):
+            self.assertEqual(L.claude_thought(other), "", other)
+        self.assertEqual(L.vibe_thought(json.dumps({"thought": "Rot?"})), "\n\nRot?")
+        for other in (json.dumps({"ok": True, "text": "thought"}), json.dumps({"thought": 3}), json.dumps({"thought": " "}),
+                      '{"thought": broken', ""):
+            self.assertEqual(L.vibe_thought(other), "", other)
+
     def test_answer(self):
         out = json.dumps({"result": " Hi! ", "usage": {"input_tokens": 3, "cache_read_input_tokens": 4,
                                                           "output_tokens": 2}})

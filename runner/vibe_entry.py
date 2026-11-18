@@ -2,8 +2,10 @@
 
 The launcher passes only checked values in the environment (model, level, kind of job, limits) and the ticket as
 MISTRAL_API_KEY. This script writes Vibe's settings into the home folder in memory, runs `vibe --prompt` with the
-package from stdin and prints ONE line of JSON for the runner, the same shape for every job:
+package from stdin and prints ONE line of JSON for the runner, the same shape for every job, as its last line:
     {"ok": bool, "text": str, "tokens_in": int, "tokens_out": int, "outcome": str, "error": str}
+Before it, while Vibe runs, one line {"thought": str} per finished block of reasoning of the model (shown in the chat,
+18.11.2026; Vibe's `--output streaming` prints one line per entry).
 
 Vibe's API address is the egress gateway (the only way to Mistral; it puts the real key in). Its other addresses
 (managed settings, sessions, console) point to the gateway as well, which refuses them: nothing goes to Mistral but
@@ -74,11 +76,40 @@ supports_images = {"true" if images else "false"}
 {server}'''
 
 
+def entries(stdout: str) -> list:
+    """Vibe's entries: one JSON list (--output json) or one entry per line (--output streaming)."""
+    try:
+        whole = json.loads(stdout or "[]")
+        return whole if isinstance(whole, list) else []
+    except ValueError:
+        pass
+    found = []
+    for line in stdout.splitlines():
+        try:
+            found.append(json.loads(line))
+        except ValueError:
+            continue
+    return found
+
+
+def thought(line: str, seen: set) -> str:
+    """The text of a finished reasoning entry in one line of `--output streaming`, once per entry; "" otherwise."""
+    try:
+        entry = json.loads(line)
+    except ValueError:
+        return ""
+    if (not isinstance(entry, dict) or entry.get("type") != "reasoning" or entry.get("generationStatus") != "completed"
+            or entry.get("id") in seen or not isinstance(entry.get("text"), str)):
+        return ""
+    seen.add(entry.get("id"))
+    return entry["text"].strip()
+
+
 def summary(stdout: str, export: dict, code: int) -> dict:
     """The answer text (the last message of the assistant), tokens and how the run ended."""
     text = ""
     try:
-        for entry in json.loads(stdout or "[]"):
+        for entry in entries(stdout):
             if entry.get("type") == "message" and entry.get("role") == "assistant":
                 parts = [c.get("text", "") for c in entry.get("content") or [] if c.get("type") == "text"]
                 if any(p.strip() for p in parts):
@@ -110,17 +141,27 @@ def main() -> int:
     workdir = Path("/work") if job == "run" else HOME / "scratch"
     workdir.mkdir(parents=True, exist_ok=True)
     out = HOME / "out"
-    command = ["vibe", "-p", "--output", "json", "--auto-approve", "--trust", "--workdir", str(workdir),
+    command = ["vibe", "-p", "--output", "streaming", "--auto-approve", "--trust", "--workdir", str(workdir),
                "--max-turns", turns, "--time-limit", seconds, "--output-dir", str(out)]
     for tool in OFF_ALWAYS + OFF_JOB[job]:
         command += ["--disabled-tools", tool]
     env = dict(os.environ, VIBE_HOME=str(vibe_home))
-    done = subprocess.run(command, stdin=sys.stdin, capture_output=True, text=True, env=env)
+    lines, seen = [], set()
+    with open(HOME / "stderr.txt", "w+") as errors:   # a file, so a full pipe never stops Vibe
+        proc = subprocess.Popen(command, stdin=sys.stdin, stdout=subprocess.PIPE, stderr=errors, text=True, env=env)
+        for line in proc.stdout:
+            lines.append(line)
+            said = thought(line, seen)
+            if said:
+                print(json.dumps({"thought": said}), flush=True)
+        code = proc.wait()
+        errors.seek(0)
+        stderr = errors.read()
     try:
         export = json.loads((out / "export.json").read_text())
     except (OSError, ValueError):
-        export = {"error": (done.stderr or "").strip()[-500:]}
-    print(json.dumps(summary(done.stdout, export, done.returncode)))
+        export = {"error": stderr.strip()[-500:]}
+    print(json.dumps(summary("".join(lines), export, code)))
     return 0
 
 

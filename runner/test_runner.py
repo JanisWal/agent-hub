@@ -5,6 +5,7 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import types
 import unittest
@@ -312,6 +313,28 @@ class Done:
         self.stdout, self.returncode = stdout, returncode
 
 
+class RunChatTest(unittest.TestCase):
+    """The real _run_chat: the lines come while the program runs, the prompt goes in whole, the timeout holds."""
+
+    def setUp(self):
+        self.runner = runner.Runner(FakeApi(), "/data/claude", vault=FakeVault({}), tickets=FakeTickets(),
+                                    background=False)
+
+    def test_lines_while_it_runs_and_a_long_prompt(self):
+        seen = []
+        script = "import sys; data = sys.stdin.read(); print('first', flush=True); print(len(data))"
+        done = self.runner._run_chat([sys.executable, "-c", script], "x" * 300000, seen.append)
+        self.assertEqual((seen, done.stdout, done.returncode), (["first\n", "300000\n"], "first\n300000\n", 0))
+
+    def test_the_timeout_holds(self):
+        old, runner.CHAT_TIMEOUT = runner.CHAT_TIMEOUT, 0.5
+        try:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                self.runner._run_chat([sys.executable, "-c", "import time; print('x', flush=True); time.sleep(30)"], "")
+        finally:
+            runner.CHAT_TIMEOUT = old
+
+
 class ChatRunTest(unittest.TestCase):
     """The chat window: the runner answers one question in a container."""
 
@@ -321,7 +344,7 @@ class ChatRunTest(unittest.TestCase):
         self.vault, self.tickets = FakeVault({2: TOKEN}), FakeTickets()
         self.answer = Done(json.dumps({"result": "Hi!", "usage": {"input_tokens": 7, "output_tokens": 2}}))
 
-        def run_chat(command, prompt):
+        def run_chat(command, prompt, on_line=None):
             self.commands.append((command, prompt))
             if isinstance(self.answer, Exception):
                 raise self.answer
@@ -329,6 +352,38 @@ class ChatRunTest(unittest.TestCase):
 
         self.runner = runner.Runner(self.api, "/data/claude", vault=self.vault, tickets=self.tickets,
                                     run_chat=run_chat, background=False)
+
+    def test_thoughts_go_to_the_hub_while_it_answers(self):
+        now = [100.0]
+        self.runner.clock = lambda: now[0]
+        pieces = [json.dumps({"type": "stream_event", "event": {"type": "content_block_delta",
+                              "delta": {"type": "thinking_delta", "thinking": text}}}) for text in ("Eins ", "zwei ", "drei")]
+
+        def run_chat(command, prompt, on_line=None):
+            for piece, at in zip(pieces, (100.5, 102.0, 102.5)):
+                now[0] = at
+                on_line(piece + "\n")
+            return Done(json.dumps({"result": "Hi!"}))
+
+        self.runner.run_chat = run_chat
+        self.runner.handle_chat()
+        self.assertEqual(self.api.posted("/chat/5/thoughts"), [{"text": "Eins zwei "}, {"text": "drei"}])
+        self.assertEqual(self.api.posted("/chat/5/finish")[0]["answer"], "Hi!")
+        names = [path for _, path, _ in self.api.calls if path.startswith("/runner/chat/5/")]
+        self.assertEqual(names[-1], "/runner/chat/5/finish")                # the last thoughts come before the answer
+
+    def test_a_lost_thought_is_no_failure(self):
+        def call(method, path, **form):
+            if path.endswith("/thoughts"):
+                raise OSError("hub away")
+            return FakeApi.call(self.api, method, path, **form)
+
+        self.api.call = call
+        self.runner.run_chat = lambda command, prompt, on_line=None: on_line(json.dumps(
+            {"type": "stream_event", "event": {"type": "content_block_delta", "delta": {"type": "thinking_delta",
+             "thinking": "x"}}})) or Done(json.dumps({"result": "Hi!"}))
+        self.runner.handle_chat()
+        self.assertEqual(self.api.posted("/chat/5/finish")[0]["success"], "1")
 
     def test_answer_goes_back_with_tokens(self):
         self.runner.handle_chat()

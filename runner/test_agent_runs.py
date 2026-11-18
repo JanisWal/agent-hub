@@ -94,6 +94,17 @@ class VibeCommandTest(unittest.TestCase):
         self.assertEqual((out["ok"], out["text"], out["tokens_in"], out["tokens_out"]), (True, "Final", 7, 3))
         self.assertFalse(vibe_entry.summary("", {"outcome": "turn_limit"}, 3)["ok"])
 
+    def test_vibe_streams_its_entries_and_each_thought_once(self):
+        reasoning = {"id": "r1", "type": "reasoning", "generationStatus": "completed", "text": " Was will er? "}
+        lines = [json.dumps({"id": "u", "type": "message", "role": "user", "content": [{"type": "text", "text": "Q"}]}),
+                 json.dumps(dict(reasoning, generationStatus="generating", text="Was")), json.dumps(reasoning),
+                 json.dumps(reasoning), "not json",
+                 json.dumps({"id": "a", "type": "message", "role": "assistant", "content": [{"type": "text", "text": "Rot."}]})]
+        seen = set()
+        self.assertEqual([vibe_entry.thought(x, seen) for x in lines], ["", "", "Was will er?", "", "", ""])
+        out = vibe_entry.summary("\n".join(lines), {"outcome": "finished"}, 0)
+        self.assertEqual((out["ok"], out["text"]), (True, "Rot."))
+
     def test_vibe_gets_the_look_tool_and_sees_pictures_only_when_the_model_can(self):
         tomllib = __import__("tomllib")
         seeing = tomllib.loads(vibe_entry.config("mistral-small-2603", "off", images=True))
