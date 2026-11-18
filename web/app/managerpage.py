@@ -227,7 +227,7 @@ TIDY_DIALOG = """<dialog class="dialog tidy-dialog" id="file-tidy-dialog" %DATA%
 
 def _tidy_dialog(lang: str) -> str:
     keys = {"start": "tidy_start", "apply": "tidy_apply", "discard": "tidy_discard", "cancel": "cancel",
-            "close": "files_close", "summary": "tidy_summary", "nothing": "tidy_nothing", "failed": "tidy_failed",
+            "close-label": "files_close", "summary": "tidy_summary", "nothing": "tidy_nothing", "failed": "tidy_failed",
             "fail-auth": "chat_fail_auth", "fail-limit": "chat_fail_limit", "moved-tag": "tidy_moved_tag",
             "new-tag": "tidy_new_tag", "done": "tidy_done", "err-net": "err_network"}
     keys.update({f"area-{c}": key for c, key in FILE_TABS})

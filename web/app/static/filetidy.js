@@ -26,7 +26,7 @@
   function say(message) { errorBox.textContent = message || ""; errorBox.hidden = !message; }
   function show(step) { steps.forEach(function (el) { el.hidden = el.dataset.step !== step; }); }
   function icon(name) {
-    var source = iconBox && iconBox.querySelector('[data-icon="' + name + '"] svg');
+    var source = iconBox && iconBox.content.querySelector('[data-icon="' + name + '"] svg');   // a <template> of files.js
     return source ? source.cloneNode(true) : document.createElement("span");
   }
   function call(url, body) {
@@ -72,7 +72,7 @@
     if (state === "queued" || state === "running") {
       show("working");
       goButton.hidden = true;
-      cancelButton.textContent = text.close;
+      cancelButton.textContent = text.closeLabel;
       contents.checked = !!data.contents;
       pollTimer = setTimeout(look, 2000);
     } else if (state === "done") {

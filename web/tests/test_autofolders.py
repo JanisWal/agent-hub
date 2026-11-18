@@ -168,3 +168,5 @@ class AutoFoldersTest(unittest.TestCase):
             self.assertIn(i18n.t(lang, "tidy_contents"), dialog)
             self.assertIn("info-dot", dialog)
             self.assertNotIn("%t.", dialog)
+            tag = dialog[dialog.index('id="file-tidy-dialog"'):].split(">", 1)[0]
+            self.assertNotIn("data-close=", tag)   # core.js would close the dialog on every click inside it
