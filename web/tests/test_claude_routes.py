@@ -118,8 +118,7 @@ class DrawerTest(unittest.TestCase):
         # never submitting it
         self.assertLess(html.index('id="claude-open"'), html.index("ChatGPT"))
         self.assertLess(html.index("ChatGPT"), html.index('id="chat-clear-open"'))
-        self.assertLess(html.index('<form method="post" action="/settings"'), html.index('id="chat-clear-open"'))
-        self.assertLess(html.index('id="chat-clear-open"'), html.index('class="primary save"'))
+        self.assertLess(html.index('id="chat-clear-open"'), html.index('href="/account"'))
         # Cancel is the default focus, the red button is the only one that deletes
         dialog = html[html.index('id="chat-clear-dialog"'):]
         self.assertLess(dialog.index("autofocus"), dialog.index('id="chat-clear-yes"'))

@@ -81,8 +81,7 @@ class AdministrationTest(unittest.TestCase):
 
     def test_the_drawer_order(self):
         bar = ui.settings_bar(self.admin)
-        parts = ['name="display_name"', 'name="language"', 'id="claude-open"', 'id="chat-clear-open"',
-                 'class="admin-btn"', 'class="primary save"', 'href="/password"', 'action="/logout"']
+        parts = ['id="claude-open"', 'id="chat-clear-open"', 'href="/account"', 'href="/admin"', 'action="/logout"']
         positions = [bar.index(part) for part in parts]
         self.assertEqual(positions, sorted(positions))
 

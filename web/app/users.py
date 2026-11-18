@@ -277,12 +277,26 @@ def delete_user(actor: User, user_id: int, now: int | None = None) -> None:
     back as a normal user: admin rights are given anew by the owner."""
     target = _managed(actor, user_id)
     with db.connect() as conn:
-        conn.execute("UPDATE users SET deleted_at = ?, role = 'user' WHERE id = ?",
-                     (int(now if now is not None else time.time()), target.id))
-        conn.execute("DELETE FROM sessions WHERE user_id = ?", (target.id,))
-        conn.execute("DELETE FROM password_resets WHERE user_id = ?", (target.id,))
-        claude_link.wipe_user(conn, target.id)   # the runner deletes the saved Claude token ...
-        ai_link.wipe_user(conn, target.id)       # ... and the saved API keys
+        _lock(conn, target.id, now)
+
+
+def delete_self(user: User, now: int | None = None) -> None:
+    """The user deletes his own account (account page, Janis 18.11.2026): locked like `delete_user`, gone for good after
+    DELETED_DAYS. The owner hands the role on first (UserError "owner"): the server always keeps one."""
+    if user.role == "owner":
+        raise UserError("owner")
+    with db.connect() as conn:
+        _lock(conn, user.id, now)
+
+
+def _lock(conn: sqlite3.Connection, user_id: int, now: int | None) -> None:
+    """Lock a deleted account: no login, no sessions, no reset links, no saved AI credentials."""
+    conn.execute("UPDATE users SET deleted_at = ?, role = 'user' WHERE id = ?",
+                 (int(now if now is not None else time.time()), user_id))
+    conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+    conn.execute("DELETE FROM password_resets WHERE user_id = ?", (user_id,))
+    claude_link.wipe_user(conn, user_id)   # the runner deletes the saved Claude token ...
+    ai_link.wipe_user(conn, user_id)       # ... and the saved API keys
 
 
 def is_deleted(email: str) -> bool:

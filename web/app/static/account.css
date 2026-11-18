@@ -1,0 +1,8 @@
+/* The account page (accountpage.py): the rows of the system block (system.css). The name and language fields fill the
+   whole row up to the "i"; the delete button is red like every dangerous action. */
+.acc-profile .sys-fields { grid-column: 1 / -2; grid-template-columns: 1fr 1fr; }
+.acc-profile .sys-field input { min-height: 24px; font-size: 0.95rem; }
+/* Narrow: the system rows put their fields on a second line under the name; this row has no name, so the fields stay
+   next to their "i". */
+@media (max-width: 560px) { .acc-profile .sys-fields { grid-column: 1; grid-row: 1; } }
+@media (pointer: coarse) { .acc-profile .sys-field input { font-size: max(16px, 1rem); } }   /* no zoom while typing */

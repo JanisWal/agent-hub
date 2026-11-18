@@ -645,14 +645,9 @@ a.primary { display: flex; align-items: center; justify-content: center; text-de
   .drawer-scroll > a.link, .drawer-scroll > form > .link { min-height: 32px; margin-top: 0; }
   .drawer-box form + a.link { margin-top: 6px; }
 }
-/* Low and wide (not a phone held upright): the setting blocks stand two by two, the box gets wider. */
+/* Low and wide (not a phone held upright): the box gets wider. */
 @media (max-height: 640px) and (min-width: 561px) {
   .drawer { --w: min(420px, calc(100vw - 96px)); }
-  .drawer-scroll > form:first-child { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8px; }
-  .drawer-box .setting.service, .drawer-box .clear-btn, .drawer-box .save, .drawer-box .admin-btn, .ai-more { grid-column: 1 / -1; }
-  .drawer-box .clear-btn { order: 1; }   /* under the Claude block and its list of other AIs */
-  .drawer-box .admin-btn { order: 2; }
-  .drawer-box .save { order: 3; }
 }
 .count { min-width: 22px; padding: 0 7px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; line-height: 22px; text-align: center; color: var(--muted); background: var(--field); }
 

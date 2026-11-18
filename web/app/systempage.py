@@ -40,6 +40,7 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
       <div class="sys-fields">%AI_FIELD%</div>
       %AI_INFO%
     </div>
+    %SKINS%
     %REBOOT%
     %POWEROFF%
   </div>
@@ -91,5 +92,6 @@ def render(user: User) -> str:
     return fill(SYSTEM, lang, UPLOAD_FIELDS=fields, UPLOAD_INFO=info_dot(t("sys_upload"), upload_info),
                 AI_FIELD=ai_field, AI_INFO=info_dot(t("sys_ai"), t("sys_ai_info")),
                 BACKUP=_action(lang, "sys_backup", "data-backup"),
+                SKINS=_action(lang, "sys_skins", "disabled"),   # placeholder (Janis, 18.11.2026): comes later
                 REBOOT=_action(lang, "sys_reboot", 'data-power="reboot"'),
                 POWEROFF=_action(lang, "sys_poweroff", 'data-power="poweroff"'))

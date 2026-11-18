@@ -85,7 +85,7 @@ PASSWORD = """<section class="glass">
 # The current password is asked for only when somebody changes a password he already chose.
 OLD_FIELD = '<label>%t.pw_old%<input type="password" name="old" required autofocus autocomplete="current-password"></label>'
 # Somebody with a start password cannot go "back" (every page sends him here again): cancel logs him out.
-CANCEL_LINK = '<a class="link" href="/">%t.cancel%</a>'
+CANCEL_LINK = '<a class="link" href="/account">%t.cancel%</a>'
 CANCEL_LOGOUT = '<form method="post" action="/logout"><button class="link" type="submit">%t.cancel%</button></form>'
 
 

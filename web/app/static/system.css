@@ -27,6 +27,8 @@
 .sys-fields { grid-column: 2 / -2; display: grid; grid-template-columns: subgrid; gap: var(--space); }
 /* One action per row (Janis, 14.11.2026): the button carries the name and takes the width, the "i" next to it explains. */
 .sys-action .sys-btn { grid-column: 1 / -2; min-height: 46px; }
+/* Not there yet (Skins, colour mode) or not allowed (the owner deleting the own account): greyed out, no lift. */
+.sys-btn:disabled { cursor: default; opacity: 0.55; filter: none; transform: none; }
 .sys-field.setting { min-width: 0; margin: 0; padding: 6px 12px; background: color-mix(in srgb, var(--bg) 40%, var(--field)); }
 .sys-field .setting-label { padding-right: 24px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .sys-field select { min-height: 24px; font-size: 0.95rem; }
