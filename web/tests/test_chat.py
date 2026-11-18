@@ -42,6 +42,35 @@ class ChatQueueTest(Base):
         self.assertEqual([(m.status, m.answer) for m in shown], [("done", "Hi!")])
         chat.send(self.a.id, self.pa.id, "And now?")                   # the next question is allowed
 
+    def test_thoughts_are_kept_while_it_runs_and_shown_with_the_answer(self):
+        self.connect(self.a)
+        message = chat.send(self.a.id, self.pa.id, "Hello?")
+        self.assertFalse(chat.add_thoughts(message.id, "too early"))       # only while it is being answered
+        job = chat.claim_next()
+        self.assertTrue(chat.add_thoughts(job.chat_id, "\n\nErst lesen, "))
+        self.assertTrue(chat.add_thoughts(job.chat_id, "dann antworten."))
+        self.assertFalse(chat.add_thoughts(job.chat_id, ""))
+        running = routes.messages(self.pa.id, user=self.a)["messages"][0]
+        self.assertEqual((running["status"], running["thoughts"]), ("running", "Erst lesen, dann antworten."))
+        self.assertTrue(chat.add_thoughts(job.chat_id, "x" * (chat.MAX_THOUGHTS + 10)))
+        self.assertEqual(len(chat.list_messages(self.a.id, self.pa.id)[0].thoughts), chat.MAX_THOUGHTS)
+        chat.finish(job.chat_id, True, "Hi!")
+        self.assertFalse(chat.add_thoughts(job.chat_id, "late"))
+        self.assertTrue(routes.messages(self.pa.id, user=self.a)["messages"][0]["thoughts"].startswith("Erst lesen"))
+        later = chat.send(self.a.id, self.pa.id, "And?")                    # never part of the next question's context
+        with db.connect() as conn:
+            row = conn.execute("SELECT * FROM chat_messages WHERE id = ?", (later.id,)).fetchone()
+            self.assertNotIn("Erst lesen", chat.build_input(conn, row))
+        self.assertEqual(routes.messages(self.pb.id, user=self.a)["messages"], [])   # A sees nothing of B's project
+
+    def test_a_failed_answer_shows_no_thoughts(self):
+        self.connect(self.a)
+        job_id = chat.send(self.a.id, self.pa.id, "q").id
+        chat.claim_next()
+        chat.add_thoughts(job_id, "Hmm")
+        chat.finish(job_id, False, "timeout")
+        self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"][0]["thoughts"], "")
+
     def test_rules(self):
         with self.assertRaises(ValueError) as problem:
             chat.send(self.a.id, self.pa.id, "x")                      # no AI connected at all
@@ -354,7 +383,9 @@ class ChatRoutesTest(Base):
         job = runner_routes.chat_claim()["job"]
         self.assertEqual(sorted(job), ["chat_id", "effort", "files", "images", "links", "mode", "model", "project_id", "prompt",
                                        "provider", "user_id"])
+        self.assertEqual(runner_routes.chat_thoughts(job["chat_id"], "Hm."), {"ok": True})
         self.assertEqual(runner_routes.chat_finish(job["chat_id"], "1", "Hello back", 3, 4), {"ok": True})
+        self.assertEqual(runner_routes.chat_thoughts(job["chat_id"], "late").status_code, 409)
         self.assertEqual(runner_routes.chat_finish(job["chat_id"], "1", "again", 0, 0).status_code, 409)
         self.assertEqual(chat.list_messages(self.a.id, self.pa.id)[0].answer, "Hello back")
         for route in runner_routes.router.routes:                       # the new routes hang on the token, too

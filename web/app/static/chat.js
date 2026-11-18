@@ -81,6 +81,71 @@
     return item;
   }
 
+  // The thoughts of the AI (Janis, 18.11.2026): open while it works, folded above the answer once it is there, a click
+  // opens them again. The log is rebuilt on every poll, so the user's choice, the last shown state (a change turns
+  // the arrow with a spring) and where a box was scrolled are kept here by message id. Thoughts are plain text.
+  var opened = {};
+  var shownOpen = {};
+  var scrolled = {};   // id -> scrollTop; missing = at the start (done) or following the end (running)
+
+  function turn(mark, from, to) {
+    var set = function (v) { mark.style.transform = "rotate(" + (v - 45) + "deg)"; };
+    set(from ? 90 : 0);
+    if (from !== to && window.Motion) Motion.spring(from ? 90 : 0, Motion.MOVE, set).to(to ? 90 : 0);
+    else set(to ? 90 : 0);
+  }
+
+  function fadeIn(el) {
+    if (!window.Motion || Motion.reduced()) return;
+    el.style.opacity = "0";
+    Motion.spring(0, Motion.MOVE, function (v) { el.style.opacity = String(v); }, 0.01).to(1);
+  }
+
+  function addThoughts(item, m, running) {
+    if (!m.thoughts) return;
+    var open = m.id in opened ? opened[m.id] : running;
+    var toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "chat-think";
+    var mark = document.createElement("span");
+    mark.className = "chat-think-mark";
+    mark.setAttribute("aria-hidden", "true");
+    toggle.appendChild(mark);
+    toggle.appendChild(document.createTextNode(box.dataset.thoughts));
+    var text = document.createElement("div");
+    text.className = "chat-thoughts";
+    text.id = "chat-thoughts-" + m.id;
+    text.textContent = m.thoughts;
+    if (running) text.dataset.running = "1";
+    toggle.setAttribute("aria-controls", text.id);
+    function show(now, before) {
+      text.hidden = !now;
+      toggle.setAttribute("aria-expanded", now ? "true" : "false");
+      turn(mark, before, now);
+      if (now && before === false) fadeIn(text);
+      shownOpen[m.id] = now;
+    }
+    show(open, m.id in shownOpen ? shownOpen[m.id] : open);
+    toggle.addEventListener("click", function () {
+      opened[m.id] = text.hidden;
+      show(opened[m.id], !opened[m.id]);
+      if (opened[m.id]) place(text, m.id);
+    });
+    text.addEventListener("scroll", function () {
+      var atEnd = text.scrollHeight - text.scrollTop - text.clientHeight < 20;
+      if (text.dataset.running && atEnd) delete scrolled[m.id]; else scrolled[m.id] = text.scrollTop;
+    });
+    var body = item.querySelector(".chat-text");
+    item.insertBefore(toggle, body);
+    item.insertBefore(text, body);
+  }
+
+  // Where a thoughts box stands after a rebuild: where the user left it, else at the newest line while the AI thinks.
+  function place(text, id) {
+    if (id in scrolled) text.scrollTop = scrolled[id];
+    else if (text.dataset.running) text.scrollTop = text.scrollHeight;
+  }
+
   // "Claude is answering" with the AI of the chosen model (ui.model_picker puts its name on the option as data-ai).
   function waitingText() {
     var chosen = document.querySelector('#manager-model option:checked');
@@ -94,19 +159,26 @@
       log.appendChild(line("you", box.dataset.you, m.prompt));
       if (m.status === "queued" || m.status === "running") {
         open = true;
-        log.appendChild(line("claude wait", box.dataset.claude, waitingText()));
+        var waiting = line("claude wait", box.dataset.claude, waitingText());
+        addThoughts(waiting, m, true);
+        log.appendChild(waiting);
       } else if (m.status === "failed") {
         // Only a short text per kind of failure (chat.FAILURES), never what Claude Code said.
         var kind = { auth: "failAuth", timeout: "failTimeout", steps: "failSteps", limit: "failLimit" }[m.failure] || "failOther";
         log.appendChild(line("claude failed", box.dataset.claude, box.dataset.failed + ": " + box.dataset[kind]));
       } else {
-        log.appendChild(line("claude", box.dataset.claude, m.answer, true));
+        var answer = line("claude", box.dataset.claude, m.answer, true);
+        addThoughts(answer, m, false);
+        log.appendChild(answer);
         if (m.memory) log.appendChild(line("note", "", box.dataset.memory));   // the answer updated MEMORY.md
         // Another AI of the user answered because the first could not (aichoice.py): say which and why.
         if (m.via) log.appendChild(line("note", "", box.dataset.fallback.replace("{name}", m.via).replace("{other}", m.instead)));
       }
     });
     send.disabled = open;
+    Array.prototype.forEach.call(log.querySelectorAll(".chat-thoughts:not([hidden])"), function (text) {
+      place(text, Number(text.id.slice("chat-thoughts-".length)));
+    });
     toEnd();
     clearTimeout(timer);
     if (open) timer = setTimeout(load, 2000);

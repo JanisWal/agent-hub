@@ -41,6 +41,7 @@ MANAGER = """<section class="manager" id="manager-view" data-view-panel="manager
 # ui.model_picker) are settings of the manager, so they hold for everything the manager does (manager.js saves them).
 CHAT = """<section class="mtile glass m-chat" id="chat" data-you="%t.chat_you%" data-claude="%t.station_manager%"
              data-waiting="%WAITING%" data-ai="%AI%" data-failed="%t.chat_failed%" data-memory="%t.chat_memory_saved%"
+             data-thoughts="%t.chat_thoughts%"
              data-fail-auth="%t.chat_fail_auth%" data-fail-timeout="%t.chat_fail_timeout%"
              data-fail-steps="%t.chat_fail_steps%" data-fail-limit="%t.chat_fail_limit%" data-fail-other="%t.chat_fail_other%"
              data-fallback="%FALLBACK%">

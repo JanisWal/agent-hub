@@ -198,6 +198,21 @@ html .card.drag-clone::after { display: none; }
 .chat-text pre { margin: 6px 0; padding: 8px 10px; overflow-x: auto; white-space: pre; background: var(--field); border: 1px solid var(--glass-border); border-radius: 10px; font-size: 0.8rem; }
 .chat-text code { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 0.85em; }
 .chat-text strong { font-weight: 700; }
+/* The thoughts of the AI above its answer (chat.js): a quiet line that opens and folds them, the text muted and
+   indented by a thin line, scrolling inside so a long train of thought never makes the chat long. */
+.chat-think {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 7px; min-height: 32px; margin: 0; padding: 0 2px;
+  border: 0; border-radius: 8px; background: none; color: var(--muted); font: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+}
+.chat-think:hover { color: var(--text); }
+.chat-think:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
+.chat-think-mark { flex: none; width: 6px; height: 6px; margin: 0 1px; border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor; transform: rotate(-45deg); }
+.chat-thoughts {
+  max-height: 12em; overflow-y: auto; overscroll-behavior: contain; margin: 0 0 6px; padding: 1px 0 1px 10px;
+  border-left: 2px solid var(--glass-border); color: var(--muted); font-size: 0.84rem; line-height: 1.45;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.chat-thoughts[hidden] { display: none; }
 /* Input and "Send" (Janis, 14.11.2026): the field starts with one line and grows with the text up to three
    (chat.js), small type so more of the question is in view; "Send" is small and stays at the bottom line. */
 .chat-form { display: flex; gap: 6px; align-items: flex-end; }

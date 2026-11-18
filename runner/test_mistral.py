@@ -177,7 +177,7 @@ class RunnerTest(unittest.TestCase):
                "effort": "none", "provider": "mistral"}
         hub, tickets, seen = FakeHub(job=job), FakeTickets(), []
         r = make(hub, FakeKeys({(5, "mistral"): KEY}), tickets=tickets)
-        r.run_chat = lambda command, prompt: seen.append((command, prompt)) or types.SimpleNamespace(
+        r.run_chat = lambda command, prompt, on_line=None: seen.append((command, prompt)) or types.SimpleNamespace(
             stdout=vibe_line(), returncode=0)
         r.handle_chat()
         command, prompt = seen[0]
@@ -194,7 +194,7 @@ class RunnerTest(unittest.TestCase):
         job = {"chat_id": 9, "user_id": 5, "model": "mistral-small-2603", "prompt": "P", "provider": "mistral"}
         keys, hub = FakeKeys({(5, "mistral"): KEY}), FakeHub(job=job)
         r = make(hub, keys)
-        r.run_chat = lambda command, prompt: types.SimpleNamespace(
+        r.run_chat = lambda command, prompt, on_line=None: types.SimpleNamespace(
             stdout=vibe_line(ok=False, text="", outcome="infrastructure_failure", error="HTTP 401 Unauthorized"),
             returncode=0)
         r.handle_chat()

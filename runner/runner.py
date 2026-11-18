@@ -34,6 +34,7 @@ LOGIN_TIMEOUT_AFTER_CODE = 90   # seconds Claude Code gets to accept the code
 LINK_TIMEOUT = 30               # seconds until the sign-in prints its link
 CHAT_TIMEOUT = 200              # seconds a chat answer may take (a web search takes several steps)
 RUN_TIMEOUT = 1100              # seconds an agent run may take (the hub gives up after 20 minutes)
+THOUGHTS_EVERY = 1.5            # seconds between two reports of new thoughts of a chat answer
 POWER_TIMEOUT = 240             # seconds a manual backup may take (the nightly one needs a few seconds)
 
 
@@ -55,6 +56,29 @@ class Api:
             if error.code in (400, 409):
                 return {"ok": False}
             raise
+
+
+class Thoughts:
+    """The thoughts of one chat answer while it runs: read from the output by the adapter, sent to the hub at most every
+    THOUGHTS_EVERY seconds (and once at the end). They are only shown, so a piece that does not arrive is no failure."""
+
+    def __init__(self, api, chat_id: int, adapter, clock=time.time):
+        self.api, self.chat_id, self.adapter, self.clock = api, int(chat_id), adapter, clock
+        self.waiting, self.sent = "", clock()
+
+    def line(self, line: str) -> None:
+        self.waiting += self.adapter.thought(line)
+        if self.waiting.strip() and self.clock() - self.sent >= THOUGHTS_EVERY:
+            self.flush()
+
+    def flush(self) -> None:
+        text, self.waiting = self.waiting, ""
+        self.sent = self.clock()
+        if text.strip():
+            try:
+                self.api.call("POST", f"/runner/chat/{self.chat_id}/thoughts", text=text)
+            except (OSError, ValueError):
+                pass
 
 
 class Runner:
@@ -156,8 +180,36 @@ class Runner:
                 print(f"runner: deleted the expired token of user {int(user_id)}", file=sys.stderr, flush=True)
 
     # --- the manager chat (web/app/chat.py): one question, one answer, no project files
-    def _run_chat(self, command: list[str], prompt: str):
-        return subprocess.run(command, input=prompt, capture_output=True, text=True, timeout=CHAT_TIMEOUT)
+    def _run_chat(self, command: list[str], prompt: str, on_line=None):
+        """Like subprocess.run with a timeout, but every line of the output goes to `on_line` while the container
+        runs (the thoughts of the AI). The prompt is written from a thread, so a full pipe never blocks reading."""
+        proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                text=True)
+
+        def feed():
+            try:
+                proc.stdin.write(prompt)
+                proc.stdin.close()
+            except OSError:   # the container ended before it read everything
+                pass
+
+        threading.Thread(target=feed, daemon=True).start()
+        late = threading.Event()
+        timer = threading.Timer(CHAT_TIMEOUT, lambda: (late.set(), proc.kill()))
+        timer.daemon = True
+        timer.start()
+        lines = []
+        try:
+            for line in proc.stdout:
+                lines.append(line)
+                if on_line is not None:
+                    on_line(line)
+            proc.wait()
+        finally:
+            timer.cancel()
+        if late.is_set():
+            raise subprocess.TimeoutExpired(command, CHAT_TIMEOUT)
+        return subprocess.CompletedProcess(command, proc.returncode, "".join(lines), "")
 
     # --- API keys (web/app/ai_link.py): check a pasted key with the provider, keep it encrypted, delete old ones
     def handle_keys(self) -> None:
@@ -251,7 +303,9 @@ class Runner:
             command = adapter.chat_command(chat_id=chat_id, user_id=user_id, model=job["model"], ticket=ticket,
                                            mode=job.get("mode", "all"), effort=job.get("effort") or "",
                                            files_dir=files_dir, code_dir=code_dir, images=job.get("images") is True)
-            done = self.run_chat(command, job["prompt"])
+            thoughts = Thoughts(self.api, chat_id, adapter, self.clock)
+            done = self.run_chat(command, job["prompt"], thoughts.line)
+            thoughts.flush()
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(done.stdout)
             if not ok and done.returncode:
                 text = f"{text} (exit code {done.returncode})".strip()

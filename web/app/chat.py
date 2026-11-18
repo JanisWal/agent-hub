@@ -20,6 +20,7 @@ from . import agents, aichoice, catalog, checks, db, devices, files, memory, rep
 # The manager is the role "chef": model and effort level are settings of the user (agents.py, list in catalog.py).
 MAX_PROMPT = 2000
 MAX_CONTEXT = 12000       # characters of project context in front of a question
+MAX_THOUGHTS = 20000      # characters of thoughts kept per question (what the AI showed while it thought)
 HISTORY = 6               # earlier questions and answers of the project the manager remembers
 HISTORY_CUT = 1500        # characters kept of each of them
 ITEMS = 40                # open board items listed at most
@@ -126,6 +127,7 @@ class Message:
     effort: str = ""
     provider: str = "claude"       # the AI that answered (or is to answer)
     tried: str = ""                # AIs that could not answer it before, comma separated (the fallback)
+    thoughts: str = ""             # what the AI thought on the way (add_thoughts), shown folded above the answer
 
 
 @dataclass
@@ -145,7 +147,7 @@ class ChatJob:
 
 def _message(row: sqlite3.Row) -> Message:
     return Message(row["id"], row["project_id"], row["prompt"], row["status"], row["answer"], row["created_at"],
-                   row["mode"], row["model"], bool(row["memory_saved"]), row["effort"], row["provider"], row["tried"])
+                   row["mode"], row["model"], bool(row["memory_saved"]), row["effort"], row["provider"], row["tried"], row["thoughts"])
 
 
 def failure_kind(reason: str) -> str:
@@ -367,6 +369,18 @@ def claim_next(now: int | None = None) -> ChatJob | None:
                            row["effort"], row["provider"], row["project_id"], stored, links,
                            catalog.sees_images(row["model"]))
     return None
+
+
+def add_thoughts(chat_id: int, text: str) -> bool:
+    """Runner: more of what the AI thinks while it answers (Janis, 18.11.2026: show the thoughts in the chat). Added to
+    a question that is running, up to MAX_THOUGHTS characters; False if it is not running any more. The thoughts are
+    only shown; they never go into the manager's context or into the archive."""
+    if not text:
+        return False
+    with db.connect() as conn:
+        cur = conn.execute("UPDATE chat_messages SET thoughts = substr(thoughts || ?, 1, ?)"
+                           " WHERE id = ? AND status = 'running'", (text, MAX_THOUGHTS, chat_id))
+    return cur.rowcount == 1
 
 
 def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: int = 0) -> bool:

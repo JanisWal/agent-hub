@@ -28,7 +28,7 @@ def messages(project_id: int, user: users.User = Depends(api_user)):
     return ok(claude=claude_link.status(user.id), messages=[
         {"id": m.id, "prompt": m.prompt, "status": m.status, "answer": "" if m.status == "failed" else m.answer,
          "failure": chat.failure_kind(m.answer) if m.status == "failed" else "", "mode": m.mode, "model": m.model,
-         "memory": m.memory_saved,
+         "memory": m.memory_saved, "thoughts": "" if m.status == "failed" else m.thoughts.strip(),
          # the fallback (aichoice.py): another AI of the user answered; "instead" is the one asked first
          "via": _name(m.provider) if m.tried and m.status == "done" else "",
          "instead": _name(m.tried.split(",")[0]) if m.tried else ""}
