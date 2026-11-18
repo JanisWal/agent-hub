@@ -93,7 +93,7 @@ def assess(user_id: int, project_id: int, now: int | None = None) -> Assessment 
             " JOIN agent_tasks t ON t.id = r.task_id WHERE t.project_id = :p",
             "SELECT MAX(created_at), SUM(created_at > :w) FROM chat_messages WHERE project_id = :p AND kind = 'chat'",
             "SELECT MAX(created_at), COUNT(DISTINCT CASE WHEN created_at > :w THEN created_at / 3600 END) FROM files"
-            " WHERE project_id = :p AND category != 'memory' AND trashed_at IS NULL",
+            " WHERE project_id = :p AND category != 'memory' AND trashed_at IS NULL AND is_folder = 0",
             "SELECT MAX(COALESCE(done_at, created_at)), SUM(COALESCE(done_at, created_at) > :w) FROM todos WHERE project_id = :p",
         ):
             stamps.append(conn.execute(sql, {"w": week, "p": project_id}).fetchone())

@@ -159,10 +159,10 @@ def _find(conn: sqlite3.Connection, user_id: int, project_id: int, name: str,
     there are several. Only the user's own projects are searched. `memory_only`: only the area Memory, the one the
     manager may write to (Janis, 16.11.2026: a manual of the same name in another area stays untouched); a file the
     manager asked for with <read> may come from any area."""
-    area = " AND f.category = 'memory'" if memory_only else ""
+    area = " AND f.category = 'memory' AND f.parent_id IS NULL" if memory_only else ""   # the memory: top of Memory
     return conn.execute(
         "SELECT f.* FROM files f JOIN projects p ON p.id = f.project_id"
-        " WHERE f.project_id = ? AND p.user_id = ? AND f.status = 'ready' AND f.url IS NULL"
+        " WHERE f.project_id = ? AND p.user_id = ? AND f.status = 'ready' AND f.url IS NULL AND f.is_folder = 0"
         f" AND f.name = ? COLLATE NOCASE{area} ORDER BY f.id LIMIT 1",
         (project_id, user_id, name),
     ).fetchone()
@@ -316,7 +316,7 @@ def write_by_user(user_id: int, file_id: int, text: str) -> bool:
     with db.connect() as conn:
         row = conn.execute(
             "SELECT f.* FROM files f JOIN projects p ON p.id = f.project_id WHERE f.id = ? AND p.user_id = ?"
-            " AND f.status = 'ready' AND f.category = 'memory'", (file_id, user_id)).fetchone()
+            " AND f.status = 'ready' AND f.category = 'memory' AND f.is_folder = 0", (file_id, user_id)).fetchone()
     if row is not None and _MEMORY_NAME.fullmatch(row["name"]):
         old = files.read_text(user_id, file_id)
         if old is not None and old != text:
@@ -381,8 +381,8 @@ def _folder_rows(conn: sqlite3.Connection, user_id: int, project_id: int) -> lis
     """The Markdown files of the area Memory: MEMORY.md first, ARCHIVE.md last, the others by name between."""
     rows = conn.execute(
         "SELECT f.* FROM files f JOIN projects p ON p.id = f.project_id WHERE f.project_id = ? AND p.user_id = ?"
-        " AND f.status = 'ready' AND f.url IS NULL AND f.category = 'memory' AND lower(f.name) LIKE '%.md'",
-        (project_id, user_id)).fetchall()
+        " AND f.status = 'ready' AND f.url IS NULL AND f.category = 'memory' AND lower(f.name) LIKE '%.md'"
+        " AND f.is_folder = 0 AND f.parent_id IS NULL", (project_id, user_id)).fetchall()
     def order(r) -> tuple:
         name = r["name"].lower()
         return (0 if name == MEMORY_NAME.lower() else 2 if name == ARCHIVE_NAME.lower() else 1, name)
@@ -451,8 +451,8 @@ def listing(conn: sqlite3.Connection, user_id: int, project_id: int) -> str:
     """The other files and links of the project for the manager (not the memory folder), newest first, one per line."""
     rows = conn.execute(
         "SELECT f.* FROM files f JOIN projects p ON p.id = f.project_id"
-        " WHERE f.project_id = ? AND p.user_id = ? AND f.status = 'ready'"
-        " AND NOT (f.url IS NULL AND f.category = 'memory' AND lower(f.name) LIKE '%.md')"
+        " WHERE f.project_id = ? AND p.user_id = ? AND f.status = 'ready' AND f.is_folder = 0"
+        " AND NOT (f.url IS NULL AND f.category = 'memory' AND f.parent_id IS NULL AND lower(f.name) LIKE '%.md')"
         " ORDER BY f.id DESC LIMIT ?",
         (project_id, user_id, MAX_LIST),
     ).fetchall()

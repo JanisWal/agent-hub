@@ -14,6 +14,11 @@ and the part of a broken request that arrived is kept. The browser picks the siz
 measures; `finish_upload` checks that every block is in. Files live in FILES_DIR/<project id>/<file id>, outside the web folder, never under
 their display name (a name can not reach a path). Like every data module, each function gets the `user_id` and
 the project must be his: foreign things are "not found" (None, False or FileError). Standard library only.
+
+Folders (Janis, 18.11.2026): a folder is a row with `is_folder` = 1 and no file on disk; every row has `parent_id`,
+the folder it lies in (NULL = the top of its area). A folder belongs to one area, and everything in it to the same.
+Names are unique per place (area and folder), ignoring case. Moving, deleting, restoring and purging a folder take
+everything inside along; the trash shows only the top of what went in together.
 """
 import os
 import shutil
@@ -88,6 +93,8 @@ class StoredFile:
     url: str | None
     status: str
     created_at: int
+    parent_id: int | None = None
+    is_folder: bool = False
 
     @property
     def ext(self) -> str:
@@ -96,7 +103,9 @@ class StoredFile:
     @property
     def kind(self) -> str:
         """For the icon and the preview: link, image, video, audio, photo (TIFF, HEIC, raw: a preview, but no viewer,
-        not every browser can show them), code, text or other."""
+        not every browser can show them), code, text, folder or other."""
+        if self.is_folder:
+            return "folder"
         if self.url is not None:
             return "link"
         ext = self.ext
@@ -114,7 +123,7 @@ class StoredFile:
 
     @property
     def editable(self) -> bool:
-        return self.url is None and self.ext in EDITABLE
+        return self.url is None and not self.is_folder and self.ext in EDITABLE
 
 
 def category_for(name: str) -> str:
@@ -168,7 +177,7 @@ def _clean_url(url: str) -> str:
 
 def _to_file(row: sqlite3.Row) -> StoredFile:
     return StoredFile(row["id"], row["project_id"], row["name"], row["category"], row["size"], row["url"],
-                      row["status"], row["created_at"])
+                      row["status"], row["created_at"], row["parent_id"], bool(row["is_folder"]))
 
 
 def _owned(conn: sqlite3.Connection, user_id: int, file_id: int) -> sqlite3.Row | None:
@@ -188,14 +197,123 @@ def path_of(project_id: int, file_id: int) -> Path:
 
 
 def list_files(user_id: int, project_id: int) -> list[StoredFile]:
-    """The finished files and links of a project, newest first; empty if the project is not the user's."""
+    """The finished files, links and folders of a project: folders first by name, then the rest newest first; empty
+    if the project is not the user's."""
     with db.connect() as conn:
         rows = conn.execute(
             "SELECT f.* FROM files f JOIN projects p ON p.id = f.project_id"
-            " WHERE f.project_id = ? AND p.user_id = ? AND f.status = 'ready' ORDER BY f.id DESC",
+            " WHERE f.project_id = ? AND p.user_id = ? AND f.status = 'ready'"
+            " ORDER BY f.is_folder DESC, CASE WHEN f.is_folder THEN lower(f.name) END, f.id DESC",
             (project_id, user_id),
         ).fetchall()
     return [_to_file(r) for r in rows]
+
+
+def folder_path(items: list[StoredFile], item: StoredFile) -> list[str]:
+    """The names of the folders above a row, outermost first ([] at the top of its area), from a list_files list."""
+    folders = {f.id: f for f in items if f.is_folder}
+    path, seen, parent = [], set(), item.parent_id
+    while parent in folders and parent not in seen:   # `seen`: never loop, even on broken data
+        seen.add(parent)
+        path.append(folders[parent].name)
+        parent = folders[parent].parent_id
+    return path[::-1]
+
+
+def _folder(conn: sqlite3.Connection, project_id: int, folder_id: int | None) -> sqlite3.Row | None:
+    """A finished folder of this project (the caller has checked the project is the user's)."""
+    if folder_id is None:
+        return None
+    return conn.execute("SELECT * FROM files WHERE id = ? AND project_id = ? AND is_folder = 1 AND status = 'ready'",
+                        (folder_id, project_id)).fetchone()
+
+
+def _subtree(conn: sqlite3.Connection, row_id: int) -> list[int]:
+    """The row and everything below it (a file: only itself)."""
+    return [r[0] for r in conn.execute(
+        "WITH RECURSIVE t(id) AS (SELECT ? UNION SELECT f.id FROM files f JOIN t ON f.parent_id = t.id) SELECT id FROM t",
+        (row_id,))]
+
+
+def create_folder(user_id: int, project_id: int, category: str, name: str, parent_id: int | None = None,
+                  reuse: bool = False, now: int | None = None) -> StoredFile:
+    """A new folder at the top of an area or inside a folder (then it takes that folder's area). `reuse`: a folder of
+    that name in that place is returned instead (an uploaded folder tree joins what is there). Raises FileError:
+    bad_name, bad_category, not_found (not his project or not his folder), name_taken."""
+    name = _clean_name(name)
+    with db.connect() as conn:
+        if not _own_project(conn, user_id, project_id):
+            raise FileError("not_found")
+        if parent_id is not None:
+            parent = _folder(conn, project_id, parent_id)
+            if parent is None:
+                raise FileError("not_found")
+            category = parent["category"]
+        elif category not in CATEGORIES:
+            raise FileError("bad_category")
+        same = conn.execute(
+            "SELECT * FROM files WHERE project_id = ? AND category = ? AND parent_id IS ? AND status = 'ready'"
+            " AND lower(name) = lower(?) ORDER BY id LIMIT 1", (project_id, category, parent_id, name)).fetchone()
+        if same is not None:
+            if reuse and same["is_folder"]:
+                return _to_file(same)
+            raise FileError("name_taken")
+        cur = conn.execute(
+            "INSERT INTO files (project_id, name, category, size, status, created_at, parts, parent_id, is_folder)"
+            " VALUES (?, ?, ?, 0, 'ready', ?, '', ?, 1)",
+            (project_id, name, category, int(now if now is not None else time.time()), parent_id))
+        row = conn.execute("SELECT * FROM files WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return _to_file(row)
+
+
+def _set_area(conn: sqlite3.Connection, row_id: int, category: str) -> None:
+    """A row and everything below it go to another area."""
+    ids = _subtree(conn, row_id)
+    conn.execute(f"UPDATE files SET category = ? WHERE id IN ({','.join('?' * len(ids))})", (category, *ids))
+
+
+def move(user_id: int, project_id: int, ids: list[int], category: str | None = None,
+         folder_id: int | None = None) -> int:
+    """Move files, links and folders (with all inside) of the user's project into a folder or to the top of an area
+    (marked rows dragged onto a folder, a segment or a tab). A name the place has already gets " (2)". Left out: rows
+    that are not his, links into another area than Links and files into Links, a folder into itself or below itself.
+    Returns how many moved. Raises FileError: not_found (not his project or folder), bad_category."""
+    with db.connect() as conn:
+        if not _own_project(conn, user_id, project_id):
+            raise FileError("not_found")
+        if folder_id is not None:
+            target = _folder(conn, project_id, folder_id)
+            if target is None:
+                raise FileError("not_found")
+            category = target["category"]
+        elif category not in CATEGORIES:
+            raise FileError("bad_category")
+        moved = 0
+        for row_id in dict.fromkeys(ids):
+            row = conn.execute("SELECT * FROM files WHERE id = ? AND project_id = ? AND status = 'ready'",
+                               (row_id, project_id)).fetchone()
+            if row is None:
+                continue
+            if row["is_folder"]:
+                if "links" in (category, row["category"]) and category != row["category"]:
+                    continue                               # links and files never mix: folders do not cross into Links
+                if folder_id is not None and folder_id in _subtree(conn, row["id"]):
+                    continue                               # never into itself
+            elif (row["url"] is not None) != (category == "links"):
+                continue
+            if row["parent_id"] == folder_id and row["category"] == category:
+                continue
+            name = row["name"]
+            taken = {r[0].lower() for r in conn.execute(
+                "SELECT name FROM files WHERE project_id = ? AND category = ? AND parent_id IS ? AND status = 'ready'"
+                " AND id != ?", (project_id, category, folder_id, row["id"]))}
+            if name.lower() in taken:
+                name = _free_name(name, taken)
+            conn.execute("UPDATE files SET parent_id = ?, name = ? WHERE id = ?", (folder_id, name, row["id"]))
+            if category != row["category"]:
+                _set_area(conn, row["id"], category)
+            moved += 1
+    return moved
 
 
 AGENT_FILES = 300   # files named in the list for a run or chat at most
@@ -203,21 +321,35 @@ AGENT_FILES = 300   # files named in the list for a run or chat at most
 
 def for_agents(conn: sqlite3.Connection, user_id: int, project_id: int) -> tuple[list[dict], list[dict]]:
     """(files, links) of a project for the read-only /files of a run or chat (runner/view.py, Janis 16.11.2026):
-    files as id, name, area and size (the runner copies them; never a path), links as name and address. Only
-    finished files of the user's own project; nothing in the trash."""
+    files as id, name, area, size and `path` (the names of the folders above it, outermost first; the runner copies
+    them into the same folders; never a path on disk), links as name and address. Only finished files of the user's
+    own project; nothing in the trash."""
+    folders = {r["id"]: r for r in conn.execute(
+        "SELECT f.id, f.name, f.parent_id FROM files f JOIN projects p ON p.id = f.project_id"
+        " WHERE f.project_id = ? AND p.user_id = ? AND f.status = 'ready' AND f.is_folder = 1", (project_id, user_id))}
     rows = conn.execute(
         "SELECT f.* FROM files f JOIN projects p ON p.id = f.project_id"
-        " WHERE f.project_id = ? AND p.user_id = ? AND f.status = 'ready' ORDER BY f.id LIMIT ?",
+        " WHERE f.project_id = ? AND p.user_id = ? AND f.status = 'ready' AND f.is_folder = 0 ORDER BY f.id LIMIT ?",
         (project_id, user_id, AGENT_FILES)).fetchall()
-    stored = [{"id": r["id"], "name": r["name"], "area": r["category"], "size": r["size"]} for r in rows if not r["url"]]
+
+    def path(parent) -> list[str]:
+        names, seen = [], set()
+        while parent in folders and parent not in seen:
+            seen.add(parent)
+            names.append(folders[parent]["name"])
+            parent = folders[parent]["parent_id"]
+        return names[::-1]
+    stored = [{"id": r["id"], "name": r["name"], "area": r["category"], "size": r["size"], "path": path(r["parent_id"])}
+              for r in rows if not r["url"]]
     links = [{"name": r["name"], "url": r["url"]} for r in rows if r["url"]]
     return stored, links
 
 
-def start_upload(user_id: int, project_id: int, name: str, size: int, now: int | None = None) -> StoredFile:
+def start_upload(user_id: int, project_id: int, name: str, size: int, now: int | None = None,
+                 folder_id: int | None = None) -> StoredFile:
     """Make the file for an upload that follows in runs of blocks. It exists at its full size from the start (the rest
-    is filled in), so the runs may come in any order. Raises FileError: bad_name, not_found (not his project),
-    disk_full (the file would not fit and leave MIN_FREE)."""
+    is filled in), so the runs may come in any order. `folder_id`: it goes into that folder (and its area). Raises
+    FileError: bad_name, not_found (not his project or folder), disk_full (the file would not fit and leave MIN_FREE)."""
     name = _clean_name(name)
     now = int(now if now is not None else time.time())
     if size < 0:
@@ -226,13 +358,16 @@ def start_upload(user_id: int, project_id: int, name: str, size: int, now: int |
     with db.connect() as conn:
         if not _own_project(conn, user_id, project_id):
             raise FileError("not_found")
+        folder = _folder(conn, project_id, folder_id)
+        if folder_id is not None and (folder is None or folder["category"] == "links"):
+            raise FileError("not_found")
         _drop_stale(conn, now)
         if free_bytes() - size < MIN_FREE:
             raise FileError("disk_full")
         cur = conn.execute(
-            "INSERT INTO files (project_id, name, category, size, status, created_at, parts)"
-            " VALUES (?, ?, ?, ?, 'uploading', ?, ?)",
-            (project_id, name, category_for(name), size, now, parts),
+            "INSERT INTO files (project_id, name, category, size, status, created_at, parts, parent_id)"
+            " VALUES (?, ?, ?, ?, 'uploading', ?, ?, ?)",
+            (project_id, name, folder["category"] if folder else category_for(name), size, now, parts, folder_id),
         )
         file_id = cur.lastrowid
         row = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
@@ -332,11 +467,19 @@ def finish_upload(user_id: int, file_id: int) -> StoredFile:
     return _to_file(row)
 
 
-def _same_name(conn: sqlite3.Connection, project_id: int, category: str, name: str, but: int | None = None) -> list[int]:
-    """Ids of the finished files of the area with this name, ignoring upper and lower case (as Windows and macOS do)."""
+def _same_name(conn: sqlite3.Connection, project_id: int, category: str, name: str, but: int | None = None,
+               parent: int | None = None) -> list[int]:
+    """Ids of the finished rows of one place (area and folder) with this name, ignoring upper and lower case (as
+    Windows and macOS do)."""
     return [r[0] for r in conn.execute(
-        "SELECT id FROM files WHERE project_id = ? AND category = ? AND status = 'ready' AND lower(name) = lower(?)"
-        " AND id IS NOT ?", (project_id, category, name, but))]
+        "SELECT id FROM files WHERE project_id = ? AND category = ? AND parent_id IS ? AND status = 'ready'"
+        " AND lower(name) = lower(?) AND id IS NOT ?", (project_id, category, parent, name, but))]
+
+
+def _names_in(conn: sqlite3.Connection, project_id: int, category: str, parent: int | None) -> set[str]:
+    return {r[0].lower() for r in conn.execute(
+        "SELECT name FROM files WHERE project_id = ? AND category = ? AND parent_id IS ? AND status = 'ready'",
+        (project_id, category, parent))}
 
 
 def _free_name(name: str, taken: set[str]) -> str:
@@ -349,16 +492,23 @@ def _free_name(name: str, taken: set[str]) -> str:
     raise FileError("bad_name")
 
 
-def check_names(user_id: int, project_id: int, names: list[str], category: str | None = None) -> list[dict] | None:
-    """Before an upload: which of these names already exist in the area the file goes to (the chosen `category`, else
-    the one its ending gives). For each such name: the ids of the files with it and a free name for "keep both".
-    A name that comes twice in the same upload counts as taken too (with no ids). None if the project is not his."""
+def check_names(user_id: int, project_id: int, names: list[str], category: str | None = None,
+                folder_id: int | None = None) -> list[dict] | None:
+    """Before an upload: which of these names already exist in the place the file goes to (the chosen folder, else the
+    top of the chosen `category`, else of the area its ending gives). For each such name: the ids of the files with it
+    and a free name for "keep both". A name that comes twice in the same upload counts as taken too (with no ids).
+    None if the project (or the folder) is not his."""
     if category is not None and category not in CATEGORIES:
         category = None
     found = []
     with db.connect() as conn:
         if not _own_project(conn, user_id, project_id):
             return None
+        if folder_id is not None:
+            folder = _folder(conn, project_id, folder_id)
+            if folder is None:
+                return None
+            category = folder["category"]
         names_by_area: dict[str, set[str]] = {}
         for raw in names:
             try:
@@ -367,12 +517,11 @@ def check_names(user_id: int, project_id: int, names: list[str], category: str |
                 continue
             area = category or category_for(name)
             if area not in names_by_area:
-                names_by_area[area] = {r[0].lower() for r in conn.execute(
-                    "SELECT name FROM files WHERE project_id = ? AND category = ? AND status = 'ready'", (project_id, area))}
+                names_by_area[area] = _names_in(conn, project_id, area, folder_id)
             taken = names_by_area[area]
             if name.lower() in taken:
                 free = _free_name(name, taken)
-                found.append({"name": raw, "ids": _same_name(conn, project_id, area, name), "free": free})
+                found.append({"name": raw, "ids": _same_name(conn, project_id, area, name, parent=folder_id), "free": free})
                 taken.add(free.lower())
             else:
                 taken.add(name.lower())
@@ -420,7 +569,8 @@ def create_text_file(user_id: int, project_id: int, name: str, text: str, now: i
 
 
 def update(user_id: int, file_id: int, name: str, url: str | None = None, category: str | None = None) -> StoredFile:
-    """Rename a file or link; a link may get a new address, any row may be moved to another area. Raises FileError."""
+    """Rename a file, link or folder; a link may get a new address, a file or folder may go to another area (to its
+    top, a folder with all inside; a folder never into or out of Links). Raises FileError."""
     name = _clean_name(name)
     if category is not None and category not in CATEGORIES:
         raise FileError("bad_category")
@@ -430,14 +580,17 @@ def update(user_id: int, file_id: int, name: str, url: str | None = None, catego
             raise FileError("not_found")
         is_link = row["url"] is not None
         new_url = _clean_url(url) if is_link and url is not None else row["url"]
-        if is_link:
+        category = category or row["category"]
+        if is_link or (row["is_folder"] and row["category"] == "links"):
             category = "links"            # a link stays a link, a file never becomes one
         elif category == "links":
             raise FileError("bad_category")
-        if not is_link and _same_name(conn, row["project_id"], category or row["category"], name, but=file_id):
-            raise FileError("name_taken")  # two files of an area never share a name (the upload asks first)
-        conn.execute("UPDATE files SET name = ?, url = ?, category = ? WHERE id = ?",
-                     (name, new_url, category or row["category"], file_id))
+        parent = row["parent_id"] if category == row["category"] else None   # another area: to its top
+        if _same_name(conn, row["project_id"], category, name, but=file_id, parent=parent):
+            raise FileError("name_taken")  # two rows of a place never share a name (the upload asks first)
+        conn.execute("UPDATE files SET name = ?, url = ?, parent_id = ? WHERE id = ?", (name, new_url, parent, file_id))
+        if category != row["category"]:
+            _set_area(conn, file_id, category)
         row = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
     return _to_file(row)
 
@@ -487,68 +640,77 @@ def _remove_stored(project_id: int, file_id: int) -> None:
 
 def delete(user_id: int, file_id: int, now: int | None = None) -> bool:
     """Put a file or link into the trash (Janis, 14.11.2026): it leaves every list and the manager's view, and it is
-    gone for good after TRASH_DAYS unless it is restored. An unfinished upload goes at once. False if not the user's."""
+    gone for good after TRASH_DAYS unless it is restored. A folder goes with everything inside (one moment, so they
+    come back together). An unfinished upload goes at once. False if not the user's."""
     now = int(now if now is not None else time.time())
     with db.connect() as conn:
         row = _owned(conn, user_id, file_id)
         if row is None:
             return False
         if row["status"] == "ready":
-            conn.execute("UPDATE files SET status = 'trash', trashed_at = ? WHERE id = ?", (now, file_id))
+            ids = _subtree(conn, file_id)
+            conn.execute(f"UPDATE files SET status = 'trash', trashed_at = ? WHERE status = 'ready'"
+                         f" AND id IN ({','.join('?' * len(ids))})", (now, *ids))
             return True
     return purge(user_id, file_id)
 
 
 def purge(user_id: int, file_id: int) -> bool:
-    """Delete for good (from the trash, or an unfinished upload). False if not the user's or a finished file."""
+    """Delete for good (from the trash, or an unfinished upload), a folder with everything inside. False if not the
+    user's or a finished file."""
     with db.connect() as conn:
         row = _owned(conn, user_id, file_id)
         if row is None or row["status"] == "ready":
             return False
-        conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
-    _remove_stored(row["project_id"], file_id)
+        ids = _subtree(conn, file_id)
+        conn.execute(f"DELETE FROM files WHERE id IN ({','.join('?' * len(ids))})", ids)
+    for gone in ids:
+        _remove_stored(row["project_id"], gone)
     return True
 
 
 def restore(user_id: int, file_id: int) -> StoredFile | None:
-    """Take a file back out of the trash into its area; a name that is taken there by now gets " (2)". None if it is
-    not the user's or not in the trash."""
+    """Take a file or folder back out of the trash to its place (a folder with what went into the trash with it); if
+    its folder is gone, to the top of its area. A name that is taken there by now gets " (2)". None if it is not the
+    user's or not in the trash."""
     with db.connect() as conn:
         row = _owned(conn, user_id, file_id)
         if row is None or row["status"] != "trash":
             return None
+        parent = row["parent_id"] if _folder(conn, row["project_id"], row["parent_id"]) else None
         name = row["name"]
-        if _same_name(conn, row["project_id"], row["category"], name):
-            taken = {r[0].lower() for r in conn.execute(
-                "SELECT name FROM files WHERE project_id = ? AND category = ? AND status = 'ready'",
-                (row["project_id"], row["category"]))}
-            name = _free_name(name, taken)
-        conn.execute("UPDATE files SET status = 'ready', trashed_at = NULL, name = ? WHERE id = ?", (name, file_id))
+        if _same_name(conn, row["project_id"], row["category"], name, parent=parent):
+            name = _free_name(name, _names_in(conn, row["project_id"], row["category"], parent))
+        ids = [i for i in _subtree(conn, file_id) if i != file_id]
+        conn.execute("UPDATE files SET status = 'ready', trashed_at = NULL, name = ?, parent_id = ? WHERE id = ?",
+                     (name, parent, file_id))
+        if ids:
+            conn.execute(f"UPDATE files SET status = 'ready', trashed_at = NULL WHERE status = 'trash' AND trashed_at = ?"
+                         f" AND id IN ({','.join('?' * len(ids))})", (row["trashed_at"], *ids))
         row = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
     return _to_file(row)
 
 
 def list_trash(user_id: int, project_id: int, now: int | None = None) -> list[tuple[StoredFile, int]]:
-    """The trash of a project, last deleted first, each with the days it still stays; empty if not the user's.
-    What is older than TRASH_DAYS is deleted for good on the way."""
+    """The trash of a project, last deleted first, each with the days it still stays; empty if not the user's. Of what
+    went in together with a folder only the folder is shown. What is older than TRASH_DAYS is deleted for good on the
+    way."""
     purge_old_trash(now)
     now = int(now if now is not None else time.time())
     with db.connect() as conn:
         rows = conn.execute(
             "SELECT f.* FROM files f JOIN projects p ON p.id = f.project_id"
-            " WHERE f.project_id = ? AND p.user_id = ? AND f.status = 'trash' ORDER BY f.trashed_at DESC, f.id DESC",
+            " WHERE f.project_id = ? AND p.user_id = ? AND f.status = 'trash' AND NOT EXISTS (SELECT 1 FROM files u"
+            " WHERE u.id = f.parent_id AND u.status = 'trash' AND u.trashed_at = f.trashed_at)"
+            " ORDER BY f.trashed_at DESC, f.id DESC",
             (project_id, user_id),
         ).fetchall()
     return [(_to_file(r), max(1, TRASH_DAYS - (now - (r["trashed_at"] or now)) // 86400)) for r in rows]
 
 
 def empty_trash(user_id: int, project_id: int) -> int:
-    """Delete everything in the project's trash for good. Returns how many."""
-    with db.connect() as conn:
-        ids = [r[0] for r in conn.execute(
-            "SELECT f.id FROM files f JOIN projects p ON p.id = f.project_id"
-            " WHERE f.project_id = ? AND p.user_id = ? AND f.status = 'trash'", (project_id, user_id))]
-    return sum(purge(user_id, i) for i in ids)
+    """Delete everything in the project's trash for good. Returns how many rows the trash showed."""
+    return sum(purge(user_id, item.id) for item, _ in list_trash(user_id, project_id))
 
 
 def purge_old_trash(now: int | None = None) -> int:
@@ -568,31 +730,45 @@ def open_file(user_id: int, file_id: int) -> tuple[Path, StoredFile] | None:
     """The path and row of a finished file of the user, or None (links have no file)."""
     with db.connect() as conn:
         row = _owned(conn, user_id, file_id)
-    if row is None or row["status"] != "ready" or row["url"] is not None:
+    if row is None or row["status"] != "ready" or row["url"] is not None or row["is_folder"]:
         return None
     path = path_of(row["project_id"], file_id)
     return (path, _to_file(row)) if path.is_file() else None
 
 
 def zip_entries(user_id: int, project_id: int, ids: list[int]) -> list[tuple[Path, str]] | None:
-    """For a ZIP of several files (dragging marked files out): (path, name in the ZIP) of the user's finished files of
-    this project among `ids`, in that order. Links have no file and are left out; a name that comes twice (from two
-    areas) gets " (2)". None if the project is not his."""
+    """For a ZIP of several files (dragging marked files out, a folder): (path, name in the ZIP) of the user's finished
+    files of this project among `ids`, in that order; a folder brings everything inside under its own name
+    ("Folder/Sub/file.png"). Links have no file and are left out; a name that comes twice in one place gets " (2)".
+    None if the project is not his."""
     with db.connect() as conn:
         if not _own_project(conn, user_id, project_id):
             return None
         rows = {r["id"]: r for r in conn.execute(
-            f"SELECT * FROM files WHERE project_id = ? AND status = 'ready' AND url IS NULL"
-            f" AND id IN ({','.join('?' * len(ids))})", (project_id, *ids))} if ids else {}
-    entries, taken = [], set()
+            "SELECT * FROM files WHERE project_id = ? AND status = 'ready' AND url IS NULL", (project_id,))}
+    children: dict[int, list] = {}
+    for row in sorted(rows.values(), key=lambda r: (not r["is_folder"], r["name"].lower())):
+        children.setdefault(row["parent_id"], []).append(row)
+    entries, taken, seen = [], set(), set()
+
+    def add(row, prefix: str) -> None:
+        if row["id"] in seen:
+            return
+        seen.add(row["id"])
+        name = row["name"]
+        if (prefix + name).lower() in taken:
+            name = _free_name(name, {t[len(prefix):] for t in taken if t.startswith(prefix.lower())})
+        taken.add((prefix + name).lower())
+        if row["is_folder"]:
+            for child in children.get(row["id"], []):
+                add(child, f"{prefix}{name}/")
+            return
+        path = path_of(project_id, row["id"])
+        if path.is_file():
+            entries.append((path, prefix + name))
     for file_id in dict.fromkeys(ids):
-        row = rows.get(file_id)
-        path = path_of(project_id, file_id) if row else None
-        if path is None or not path.is_file():
-            continue
-        name = row["name"] if row["name"].lower() not in taken else _free_name(row["name"], taken)
-        taken.add(name.lower())
-        entries.append((path, name))
+        if file_id in rows:
+            add(rows[file_id], "")
     return entries
 
 

@@ -47,6 +47,15 @@ class ViewTest(unittest.TestCase):
         self.assertEqual(oct((files / "media" / "schaltplan.png").stat().st_mode & 0o777), "0o444")
         self.assertFalse((root / "code").exists())                          # only the chat gets the code
 
+    def test_files_keep_their_folders_and_no_folder_name_leads_out(self):
+        items = [{"id": 11, "name": "manual.pdf", "area": "documents", "size": 11, "path": ["Relais", "Alt"]},
+                 {"id": 12, "name": "plan.png", "area": "media", "size": 12, "path": ["..", "../../etc", ".x"]}]
+        root = self.views.build("run-6", 4, items, [])
+        files = root / "files"
+        self.assertEqual((files / "documents" / "Relais" / "Alt" / "manual.pdf").read_bytes(), b"%PDF manual")
+        self.assertTrue((files / "media" / "file" / "etc" / "x" / "plan.png").is_file())   # each part stays a name
+        self.assertIn("- documents/Relais/Alt/manual.pdf", (files / "INDEX.md").read_text())
+
     def test_big_files_are_named_but_not_copied(self):
         big = [{"id": 11, "name": "film.mp4", "area": "media", "size": view.MAX_FILE + 1}]
         root = self.views.build("chat-1", 4, big, [])
