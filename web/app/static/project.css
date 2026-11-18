@@ -202,9 +202,10 @@ html .card.drag-clone::after { display: none; }
    indented by a thin line, scrolling inside so a long train of thought never makes the chat long. */
 .chat-think {
   align-self: flex-start; display: inline-flex; align-items: center; gap: 7px; min-height: 32px; margin: 0; padding: 0 2px;
-  border: 0; border-radius: 8px; background: none; color: var(--muted); font: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer;
+  min-width: 0; border: 0; border-radius: 8px; background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+  color: var(--muted); font: inherit; font-size: 0.8rem; font-weight: 600; cursor: pointer;
 }
-.chat-think:hover { color: var(--text); }
+.chat-think:hover { color: var(--text); transform: none; }   /* a line of text, not a glass button: no lift */
 .chat-think:focus-visible { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent); }
 .chat-think-mark { flex: none; width: 6px; height: 6px; margin: 0 1px; border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor; transform: rotate(-45deg); }
 .chat-thoughts {
