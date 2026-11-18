@@ -280,9 +280,11 @@
   function placeThumb(instant) { segment.place(instant); }
 
   // --- one folder tree for the project, labels as tabs (Janis, 18.11.2026, `file-tags`): "All" goes folder by folder
-  // (`current`, "" = the top) with the path line and a back arrow; a label tab shows every file with that label, flat,
-  // its folder under the name. In the explorer the tree on the left opens each folder on its own (`openIds`); at first
-  // only the way to the open folder. Tree and list scroll apart: choosing a folder never moves the tree.
+  // (`current`, "" = the top) with the path line and a back arrow; in the small tile a label tab shows every file with
+  // that label, flat, its folder under the name. The explorer (Janis, 18.11.2026, `file-sections`) has no tabs: the
+  // path line is on top, and the tree on the left has "All" (the whole tree) and one section per label, which holds
+  // the folders with a file of that label somewhere inside; there a label is gone through folder by folder as well.
+  // Each section and folder opens on its own (`openIds`, "cat:id"); tree and list scroll apart.
   var current = load("files-folder") || "";
   var openIds = {};
   try { openIds = JSON.parse(load("files-open") || "{}") || {}; } catch (e) { openIds = {}; }
@@ -291,7 +293,12 @@
   function folders() {
     var map = {};
     rows().forEach(function (r) {
-      if (r.dataset.folder === "1") map[r.dataset.id] = { id: r.dataset.id, name: r.dataset.name, parent: r.dataset.parent };
+      if (r.dataset.folder === "1") map[r.dataset.id] = { id: r.dataset.id, name: r.dataset.name, parent: r.dataset.parent, labels: {} };
+    });
+    rows().forEach(function (r) {           // every folder above a file holds its label
+      if (r.dataset.folder === "1") return;
+      var id = r.dataset.parent, seen = {};
+      while (id && map[id] && !seen[id]) { seen[id] = true; map[id].labels[r.dataset.cat] = true; id = map[id].parent; }
     });
     return map;
   }
@@ -315,20 +322,22 @@
     if (text) { var label = document.createElement("span"); label.textContent = text; b.appendChild(label); }
     return b;
   }
+  function walking() { return active === "all" || expanded(); }   // folder by folder (else the flat label list)
   function buildCrumbs() {
     crumbsBox.textContent = "";
     var path = chain(folders(), here());
-    crumbsBox.hidden = active !== "all" || !(expanded() || path.length);
+    crumbsBox.hidden = !walking() || !(expanded() || path.length);
     if (crumbsBox.hidden) return;
+    var rootName = active === "all" ? tile.dataset.all : tabName(active);
     if (path.length) {                  // back to the folder above (or the top)
-      var up = path.length > 1 ? path[path.length - 2] : { id: "", name: tile.dataset.all };
+      var up = path.length > 1 ? path[path.length - 2] : { id: "", name: rootName };
       var back = placeButton("file-up-level", "", up.id, iconOf("back"));
       back.setAttribute("aria-label", tile.dataset.back);
       back.dataset.tip = tile.dataset.back;
       back.dataset.label = up.name;
       crumbsBox.appendChild(back);
     }
-    var root = placeButton("", tile.dataset.all, "", "");
+    var root = placeButton("", rootName, "", "");
     if (!path.length) root.setAttribute("aria-current", "location");
     crumbsBox.appendChild(root);
     path.forEach(function (f, i) {
@@ -338,59 +347,86 @@
     });
     crumbsBox.scrollLeft = crumbsBox.scrollWidth;
   }
+  function toggleButton(key, has) {
+    var toggle = placeButton("tree-toggle" + (openIds[key] && has ? " open" : ""), "", "", has ? iconOf("chevron") : "");
+    toggle.dataset.key = key;
+    toggle.disabled = !has;
+    toggle.setAttribute("aria-label", tile.dataset.openFolder);
+    toggle.setAttribute("aria-expanded", openIds[key] && has ? "true" : "false");
+    return toggle;
+  }
   function buildTree() {
     if (!expanded()) { tree.textContent = ""; return; }
     var keep = tree.scrollTop;          // rebuilt in place: the tree stays where it was scrolled to
     var map = folders();
     var kids = {};
     Object.keys(map).forEach(function (id) { (kids[map[id].parent] = kids[map[id].parent] || []).push(map[id]); });
-    var open = active === "all" ? here() : null;
+    Object.keys(kids).forEach(function (p) { kids[p].sort(function (a, b) { return a.name.localeCompare(b.name); }); });
+    var open = here();
     var top = document.createElement("ul");
-    var root = document.createElement("li");
-    root.className = "tree-area";
-    var head = placeButton("tree-place", tile.dataset.all, "", iconOf("folder"));
-    if (open === "") head.setAttribute("aria-current", "location");
-    root.appendChild(head);
-    top.appendChild(root);
-    (function add(parent, depth, into) {
-      if (depth > 24) return;
-      (kids[parent] || []).sort(function (a, b) { return a.name.localeCompare(b.name); }).forEach(function (f) {
-        var item = document.createElement("li");
-        var line = document.createElement("div");
-        line.className = "tree-line";
-        line.style.setProperty("--depth", depth);
-        var has = !!(kids[f.id] || []).length;
-        var toggle = placeButton("tree-toggle" + (openIds[f.id] ? " open" : ""), "", f.id, has ? iconOf("chevron") : "");
-        toggle.disabled = !has;
-        toggle.setAttribute("aria-label", tile.dataset.openFolder);
-        toggle.setAttribute("aria-expanded", openIds[f.id] && has ? "true" : "false");
-        line.appendChild(toggle);
-        var b = placeButton("tree-place tree-folder", f.name, f.id, iconOf("folder"));
-        if (open === f.id) b.setAttribute("aria-current", "location");
-        line.appendChild(b);
-        item.appendChild(line);
-        into.appendChild(item);
-        if (has && openIds[f.id]) {
-          var sub = document.createElement("ul");
-          item.appendChild(sub);
-          add(f.id, depth + 1, sub);
-        }
-      });
-    })("", 1, top);
+    tabs.forEach(function (tab) {       // "All", then one section per label
+      var cat = tab.dataset.cat;
+      var fits = function (f) { return cat === "all" || !!f.labels[cat]; };
+      var section = document.createElement("li");
+      section.className = "tree-area";
+      var line = document.createElement("div");
+      line.className = "tree-line";
+      line.style.setProperty("--depth", 0);
+      line.appendChild(toggleButton(cat + ":", (kids[""] || []).some(fits)));
+      var head = placeButton("tree-place tree-section", tab.dataset.name, "", iconOf(cat === "all" ? "folder" : cat));
+      head.dataset.cat = cat;
+      if (cat === active && open === "") head.setAttribute("aria-current", "location");
+      line.appendChild(head);
+      section.appendChild(line);
+      if (openIds[cat + ":"]) {
+        var sub = document.createElement("ul");
+        section.appendChild(sub);
+        (function add(parent, depth, into) {
+          if (depth > 24) return;
+          (kids[parent] || []).filter(fits).forEach(function (f) {
+            var item = document.createElement("li");
+            var row = document.createElement("div");
+            row.className = "tree-line";
+            row.style.setProperty("--depth", depth);
+            var key = cat + ":" + f.id;
+            var has = (kids[f.id] || []).some(fits);
+            row.appendChild(toggleButton(key, has));
+            var b = placeButton("tree-place tree-folder", f.name, f.id, iconOf("folder"));
+            b.dataset.cat = cat;
+            if (cat === active && open === f.id) b.setAttribute("aria-current", "location");
+            row.appendChild(b);
+            item.appendChild(row);
+            into.appendChild(item);
+            if (has && openIds[key]) {
+              var deeper = document.createElement("ul");
+              item.appendChild(deeper);
+              add(f.id, depth + 1, deeper);
+            }
+          });
+        })("", 1, sub);
+      }
+      top.appendChild(section);
+    });
     tree.textContent = "";
     tree.appendChild(top);
     tree.scrollTop = keep;
   }
-  // Shows the rows of the tab: under "All" what lies directly in the open folder (folders first); under a label every
-  // file with that label, flat, with its folder named under it.
+  // Shows the rows of the place: under "All" what lies directly in the open folder (folders first); under a label in
+  // the explorer the same, but only folders that hold a file of the label and only files with it; under a label in
+  // the small tile every file with that label, flat, with its folder named under it.
   function applyView() {
-    var flat = active !== "all";
+    var flat = !walking();
     var folder = here();
+    var map = folders();
     current = folder;
     store("files-folder", current);
     var visible = 0;
     rows().forEach(function (r) {
-      var on = flat ? r.dataset.folder !== "1" && r.dataset.cat === active : r.dataset.parent === folder;
+      var on;
+      if (flat) on = r.dataset.folder !== "1" && r.dataset.cat === active;
+      else if (r.dataset.parent !== folder) on = false;
+      else if (active === "all") on = true;
+      else on = r.dataset.folder === "1" ? !!(map[r.dataset.id] && map[r.dataset.id].labels[active]) : r.dataset.cat === active;
       r.hidden = !on;
       if (on) visible++;
     });
@@ -414,21 +450,24 @@
     buildCrumbs();
     buildTree();
   }
-  function choose(folder) {
+  // Open a folder ("" = the top) of a section (`cat`, default the one open); the way there opens in the tree.
+  function choose(folder, cat) {
     current = folder || "";
-    chain(folders(), current).forEach(function (f) { if (f.id !== current) openIds[f.id] = true; });   // the way there opens
+    var section = cat || (expanded() || active === "all" ? active : "all");
+    openIds[section + ":"] = true;
+    chain(folders(), current).forEach(function (f) { if (f.id !== current) openIds[section + ":" + f.id] = true; });
     store("files-open", JSON.stringify(openIds));
-    if (active !== "all") show("all", false, true);
+    if (section !== active) show(section, false, true);
     else applyView();
     scroller.scrollTop = 0;              // the list starts at the top of the folder; the tree stays where it is
   }
-  function toggleFolder(id) {
-    if (openIds[id]) delete openIds[id]; else openIds[id] = true;
+  function toggleFolder(key) {
+    if (openIds[key]) delete openIds[key]; else openIds[key] = true;
     store("files-open", JSON.stringify(openIds));
     buildTree();
   }
   function spot() {                    // where the plus, pasting and a drop beside every target put files
-    return { folder: active === "all" ? here() : "", label: "" };
+    return { folder: walking() ? here() : "", label: "" };
   }
 
   function show(category, instant, keepScroll) {
@@ -445,7 +484,8 @@
   }
   tabs.forEach(function (tab) { tab.addEventListener("click", function () { show(tab.dataset.cat); }); });
   var saved = load("files-tab");
-  chain(folders(), here()).forEach(function (f) { if (f.id !== current) openIds[f.id] = true; });
+  openIds[(saved || "all") + ":"] = true;
+  chain(folders(), here()).forEach(function (f) { if (f.id !== current) openIds[(saved || "all") + ":" + f.id] = true; });
   show(tabs.some(function (tab) { return tab.dataset.cat === saved; }) ? saved : "all", true);   // segment.js follows resizes
 
   var notice = load("files-notice");
@@ -695,6 +735,9 @@
         : { node: node, folder: "", label: cat, name: node.dataset.name };
     }
     if (node.classList.contains("file-row")) return { node: node, folder: node.dataset.id, label: "", name: node.dataset.name };
+    if (node.classList.contains("tree-section") && node.dataset.cat !== "all") {   // a section of the explorer: its label
+      return { node: node, folder: "", label: node.dataset.cat, name: node.textContent };
+    }
     return { node: node, folder: node.dataset.folder || "", label: "", name: node.dataset.label || node.textContent || tile.dataset.all };
   }
   function canMove(target) {           // never a folder into itself; links get no other label
@@ -902,9 +945,9 @@
     var step = event.target.closest(".file-crumbs button");
     if (step) { choose(step.dataset.folder); return; }
     var toggle = event.target.closest(".file-tree .tree-toggle");
-    if (toggle) { if (!toggle.disabled) toggleFolder(toggle.dataset.folder); return; }
+    if (toggle) { if (!toggle.disabled) toggleFolder(toggle.dataset.key); return; }
     var entry = event.target.closest(".file-tree .tree-place");
-    if (entry) { choose(entry.dataset.folder); return; }
+    if (entry) { choose(entry.dataset.folder, entry.dataset.cat); return; }
     if (row && event.button === 0 && (event.shiftKey || event.ctrlKey || event.metaKey)) {   // marks only, nothing opens
       event.preventDefault();
       markRow(row, event);
@@ -1308,6 +1351,7 @@
       expandButton.setAttribute("aria-label", label);
       expandButton.dataset.tip = label;
       store("files-expanded", on ? "1" : "0");
+      if (on) openIds[active + ":"] = true;           // the explorer opens on the section of the tab
       measureTop();
       placeThumb(true);
       applyView();
