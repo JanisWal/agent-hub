@@ -5,6 +5,7 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import types
 import unittest
@@ -310,6 +311,28 @@ class RunnerTest(unittest.TestCase):
 class Done:
     def __init__(self, stdout, returncode=0):
         self.stdout, self.returncode = stdout, returncode
+
+
+class RunChatTest(unittest.TestCase):
+    """The real _run_chat: the lines come while the program runs, the prompt goes in whole, the timeout holds."""
+
+    def setUp(self):
+        self.runner = runner.Runner(FakeApi(), "/data/claude", vault=FakeVault({}), tickets=FakeTickets(),
+                                    background=False)
+
+    def test_lines_while_it_runs_and_a_long_prompt(self):
+        seen = []
+        script = "import sys; data = sys.stdin.read(); print('first', flush=True); print(len(data))"
+        done = self.runner._run_chat([sys.executable, "-c", script], "x" * 300000, seen.append)
+        self.assertEqual((seen, done.stdout, done.returncode), (["first\n", "300000\n"], "first\n300000\n", 0))
+
+    def test_the_timeout_holds(self):
+        old, runner.CHAT_TIMEOUT = runner.CHAT_TIMEOUT, 0.5
+        try:
+            with self.assertRaises(subprocess.TimeoutExpired):
+                self.runner._run_chat([sys.executable, "-c", "import time; print('x', flush=True); time.sleep(30)"], "")
+        finally:
+            runner.CHAT_TIMEOUT = old
 
 
 class ChatRunTest(unittest.TestCase):
