@@ -1,9 +1,9 @@
 """The own account (accountpage.py): the page, and deleting the account (everybody but the owner)."""
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from .. import accountpage, i18n, ui, users
-from ..deps import COOKIE_NAME, api_user, error, ok, page_user, reauth
+from ..deps import COOKIE_NAME, api_user, error, page_user, reauth
 
 router = APIRouter()
 
@@ -24,6 +24,6 @@ def delete_account(request: Request, confirm: str = Form(""), user: users.User =
         users.delete_self(user)
     except users.UserError:
         return error(user.language, "account_delete_owner", 409)
-    response = ok()
-    response.delete_cookie(COOKIE_NAME)
+    response = JSONResponse({"ok": True})
+    response.delete_cookie(COOKIE_NAME)   # this browser forgets the login, too
     return response
