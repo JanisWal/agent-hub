@@ -6,6 +6,7 @@ the text the user reads. Memory and read markers stay in memory.py; this module 
     <ask kind="choice|text" size="small|large">Question<option>Answer</option>...</ask>
     <task kind="bug|minor|major" title="...">Description and acceptance criteria</task>
     <status level="green|yellow|red" title="A few words">One or two sentences</status>   (title optional)
+    <move id="12" to="media/Backgrounds/Dark"/>   (a plan to structure the files, autofolders.py; 18.11.2026)
 
 `parse` is a pure function: it knows no user, no project and no database. Whoever stores the result (a later module)
 must save it under the project of the question and nowhere else. Anything that does not fit (unknown value, empty text,
@@ -35,6 +36,9 @@ _TASK = re.compile(r"<task(\s[^<>]*)?>(.*?)</task>", re.DOTALL)
 _STATUS = re.compile(r"<status(\s[^<>]*)?>(.*?)</status>", re.DOTALL)
 _DEVICE = re.compile(r"<device(\s[^<>]*)?>(.*?)</device>", re.DOTALL)
 _ICON = re.compile(r"<icon(\s[^<>]*)?>(.*?)</icon>", re.DOTALL)
+_MOVE = re.compile(r"<move(\s[^<>]*?)/?>(?:\s*</move>)?")
+MAX_MOVES = 500
+MAX_TARGET = 600
 MAX_DEVICE_ASKS = 3
 _OPTION = re.compile(r"<option>(.*?)</option>", re.DOTALL)
 _ATTR = re.compile(r"([a-z]+)=\"([^\"<>]*)\"")
@@ -137,3 +141,15 @@ def device_asks(answer: str) -> tuple[str, list[tuple[str, str, str]]]:
 def icons(answer: str) -> list[tuple[str, str]]:
     """Pictograms the AI chose for devices in a status round, <icon device="NAME">dev_x</icon>: [(name, icon)]."""
     return [(_line(_attrs(raw).get("device", ""), 60), _line(inner, 40)) for raw, inner in _ICON.findall(answer)][:20]
+
+
+def moves(answer: str) -> tuple[str, list[tuple[int, str]]]:
+    """A plan to structure the files (autofolders.py): (text without the markers, [(row id, target)]), the target as
+    the AI wrote it ("area/folder/folder"; autofolders checks it). Ids are digits only; the first move of an id counts."""
+    found: dict[int, str] = {}
+    for raw in _MOVE.findall(answer):
+        attrs = _attrs(raw)
+        target = _line(attrs.get("to", ""), MAX_TARGET).strip("/ ")
+        if attrs.get("id", "").isdigit() and target and len(found) < MAX_MOVES:
+            found.setdefault(int(attrs["id"]), target)
+    return _MOVE.sub("", answer).strip(), list(found.items())

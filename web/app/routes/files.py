@@ -11,7 +11,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from starlette.requests import ClientDisconnect
 
-from .. import files, i18n, memory, users
+from .. import autofolders, chat, files, i18n, memory, users
 from ..deps import api_user, error, fail, ok
 
 router = APIRouter()
@@ -85,6 +85,42 @@ def move(project_id: int, ids: str = Form(""), category: str = Form(""), folder:
         return ok(moved=files.move(user.id, project_id, wanted, category or None, _folder_id(folder)))
     except files.FileError as problem:
         return _fail(user, problem)
+
+
+# Structure the folders automatically (autofolders.py): ask for a plan, look at it, apply or drop it.
+TIDY_REFUSED = {"wait": "tidy_err_wait", "none": "chat_err_none", "empty": "tidy_err_empty"}
+
+
+@router.post("/projects/{project_id}/files/structure")
+def structure_request(project_id: int, contents: str = Form("0"), user: users.User = Depends(api_user)):
+    """The AI is asked for a plan (with "include contents" it may look into the files)."""
+    result = autofolders.request(user.id, project_id, contents == "1")
+    if result == "missing":
+        return fail(404)
+    return ok() if result == "queued" else error(user.language, TIDY_REFUSED[result], 409)
+
+
+@router.get("/projects/{project_id}/files/structure")
+def structure_state(project_id: int, user: users.User = Depends(api_user)):
+    """Where the plan stands and, once answered, the tree after it (nothing is moved by looking)."""
+    plan = autofolders.state(user.id, project_id)
+    if plan is None:
+        return fail(404)
+    nodes = [{"depth": n.depth, "name": n.name, "kind": n.kind, "area": n.area, "moved": n.moved, "new": n.new}
+             for n in plan.nodes]
+    return ok(status=plan.status, contents=plan.contents, note=plan.note, moved=plan.moved, folders=plan.folders,
+              failure=chat.failure_kind(plan.answer) if plan.status == "failed" else "", nodes=nodes)
+
+
+@router.post("/projects/{project_id}/files/structure/apply")
+def structure_apply(project_id: int, user: users.User = Depends(api_user)):
+    moved = autofolders.apply(user.id, project_id)
+    return fail(404) if moved is None else ok(moved=moved)
+
+
+@router.post("/projects/{project_id}/files/structure/discard")
+def structure_discard(project_id: int, user: users.User = Depends(api_user)):
+    return ok() if autofolders.discard(user.id, project_id) else fail(404)
 
 
 @router.post("/files/{file_id}/chunk")

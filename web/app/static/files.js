@@ -113,6 +113,7 @@
     }).catch(reload);
   }
   document.addEventListener("hub:files-changed", function () { refresh(); });   // restored from the trash (mvault.js)
+  document.addEventListener("hub:files-notice", function (event) { flash(event.detail); });   // filetidy.js applied a plan
   var refreshTimer = null;
   function refreshSoon() { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 300); }
 

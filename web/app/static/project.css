@@ -810,6 +810,10 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 
 /* the explorer */
 .manager.files-expanded .file-folders { display: none; }
+/* Only in the explorer (Janis, 18.11.2026, list item 3h): "New folder" and "Structure folders automatically". The
+   small tile has no room for them; the other circles close up, and the view transition of the tile glides them. */
+.m-files .file-full-only { display: none; }
+.manager.files-expanded .m-files .file-full-only { display: inline-flex; }
 .manager.files-expanded .file-tree { display: block; flex: 0 0 clamp(200px, 22%, 280px); min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: 6px; border-radius: 14px; border: 1px solid var(--file-line); background: color-mix(in srgb, var(--glass) 40%, transparent); }
 .file-tree ul { list-style: none; margin: 0; padding: 0; }
 .file-tree button { display: flex; align-items: center; justify-content: flex-start; gap: 8px; width: 100%; min-height: 34px; padding: 0 8px 0 calc(8px + var(--depth, 0) * 16px); border-radius: 8px; border: 0; background: none; box-shadow: none; color: var(--text); font-size: 0.86rem; font-weight: 600; text-align: left; }
@@ -836,3 +840,20 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
   .manager.files-expanded .file-time, .manager.files-expanded .file-cols span:nth-child(3) { display: none; }
   .manager.files-expanded .file-cols span:nth-child(2) { margin-right: 84px; }
 }
+
+/* Structure the folders automatically (filetidy.js): the switch with its "i", then the new tree, which scrolls inside
+   the dialog. Moved rows and new folders get the accent and a small word, so it does not hang on the colour alone. */
+.tidy-switch { display: flex; align-items: center; gap: 6px; }
+.tidy-working { display: flex; align-items: center; gap: 4px; margin: 0; min-height: 36px; }
+.tidy-note { margin: 0 0 6px; }
+.tidy-summary { margin: 0 0 8px; font-weight: 600; }
+.tidy-tree { list-style: none; margin: 0; padding: 6px; max-height: min(52vh, 440px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--text) 16%, transparent); background: color-mix(in srgb, var(--glass) 40%, transparent); }
+.tidy-tree:empty { display: none; }
+.tidy-row { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 0 8px 0 calc(8px + var(--depth, 0) * 16px); border-radius: 8px; font-size: 0.86rem; }
+.tidy-row svg { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; color: var(--muted); }
+.tidy-row.tidy-folder svg { color: var(--accent); }
+.tidy-row.tidy-area { margin-top: 4px; font-weight: 700; }
+.tidy-row.tidy-area:first-child { margin-top: 0; }
+.tidy-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tidy-row.changed { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.tidy-tag { flex: none; padding: 1px 7px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; color: var(--text); background: color-mix(in srgb, var(--accent) 30%, transparent); }

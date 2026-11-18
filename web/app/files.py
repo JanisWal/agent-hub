@@ -244,26 +244,32 @@ def create_folder(user_id: int, project_id: int, category: str, name: str, paren
     with db.connect() as conn:
         if not _own_project(conn, user_id, project_id):
             raise FileError("not_found")
-        if parent_id is not None:
-            parent = _folder(conn, project_id, parent_id)
-            if parent is None:
-                raise FileError("not_found")
-            category = parent["category"]
-        elif category not in CATEGORIES:
-            raise FileError("bad_category")
-        same = conn.execute(
-            "SELECT * FROM files WHERE project_id = ? AND category = ? AND parent_id IS ? AND status = 'ready'"
-            " AND lower(name) = lower(?) ORDER BY id LIMIT 1", (project_id, category, parent_id, name)).fetchone()
-        if same is not None:
-            if reuse and same["is_folder"]:
-                return _to_file(same)
-            raise FileError("name_taken")
-        cur = conn.execute(
-            "INSERT INTO files (project_id, name, category, size, status, created_at, parts, parent_id, is_folder)"
-            " VALUES (?, ?, ?, 0, 'ready', ?, '', ?, 1)",
-            (project_id, name, category, int(now if now is not None else time.time()), parent_id))
-        row = conn.execute("SELECT * FROM files WHERE id = ?", (cur.lastrowid,)).fetchone()
-    return _to_file(row)
+        return make_folder(conn, project_id, category, name, parent_id, reuse, now)
+
+
+def make_folder(conn: sqlite3.Connection, project_id: int, category: str, name: str, parent_id: int | None = None,
+                reuse: bool = False, now: int | None = None) -> StoredFile:
+    """create_folder on an open connection; the caller has checked that the project is the user's."""
+    name = _clean_name(name)
+    if parent_id is not None:
+        parent = _folder(conn, project_id, parent_id)
+        if parent is None:
+            raise FileError("not_found")
+        category = parent["category"]
+    elif category not in CATEGORIES:
+        raise FileError("bad_category")
+    same = conn.execute(
+        "SELECT * FROM files WHERE project_id = ? AND category = ? AND parent_id IS ? AND status = 'ready'"
+        " AND lower(name) = lower(?) ORDER BY id LIMIT 1", (project_id, category, parent_id, name)).fetchone()
+    if same is not None:
+        if reuse and same["is_folder"]:
+            return _to_file(same)
+        raise FileError("name_taken")
+    cur = conn.execute(
+        "INSERT INTO files (project_id, name, category, size, status, created_at, parts, parent_id, is_folder)"
+        " VALUES (?, ?, ?, 0, 'ready', ?, '', ?, 1)",
+        (project_id, name, category, int(now if now is not None else time.time()), parent_id))
+    return _to_file(conn.execute("SELECT * FROM files WHERE id = ?", (cur.lastrowid,)).fetchone())
 
 
 def _set_area(conn: sqlite3.Connection, row_id: int, category: str) -> None:
@@ -281,38 +287,44 @@ def move(user_id: int, project_id: int, ids: list[int], category: str | None = N
     with db.connect() as conn:
         if not _own_project(conn, user_id, project_id):
             raise FileError("not_found")
-        if folder_id is not None:
-            target = _folder(conn, project_id, folder_id)
-            if target is None:
-                raise FileError("not_found")
-            category = target["category"]
-        elif category not in CATEGORIES:
-            raise FileError("bad_category")
-        moved = 0
-        for row_id in dict.fromkeys(ids):
-            row = conn.execute("SELECT * FROM files WHERE id = ? AND project_id = ? AND status = 'ready'",
-                               (row_id, project_id)).fetchone()
-            if row is None:
-                continue
-            if row["is_folder"]:
-                if "links" in (category, row["category"]) and category != row["category"]:
-                    continue                               # links and files never mix: folders do not cross into Links
-                if folder_id is not None and folder_id in _subtree(conn, row["id"]):
-                    continue                               # never into itself
-            elif (row["url"] is not None) != (category == "links"):
-                continue
-            if row["parent_id"] == folder_id and row["category"] == category:
-                continue
-            name = row["name"]
-            taken = {r[0].lower() for r in conn.execute(
-                "SELECT name FROM files WHERE project_id = ? AND category = ? AND parent_id IS ? AND status = 'ready'"
-                " AND id != ?", (project_id, category, folder_id, row["id"]))}
-            if name.lower() in taken:
-                name = _free_name(name, taken)
-            conn.execute("UPDATE files SET parent_id = ?, name = ? WHERE id = ?", (folder_id, name, row["id"]))
-            if category != row["category"]:
-                _set_area(conn, row["id"], category)
-            moved += 1
+        return move_rows(conn, project_id, ids, category, folder_id)
+
+
+def move_rows(conn: sqlite3.Connection, project_id: int, ids: list[int], category: str | None = None,
+              folder_id: int | None = None) -> int:
+    """move on an open connection; the caller has checked that the project is the user's."""
+    if folder_id is not None:
+        target = _folder(conn, project_id, folder_id)
+        if target is None:
+            raise FileError("not_found")
+        category = target["category"]
+    elif category not in CATEGORIES:
+        raise FileError("bad_category")
+    moved = 0
+    for row_id in dict.fromkeys(ids):
+        row = conn.execute("SELECT * FROM files WHERE id = ? AND project_id = ? AND status = 'ready'",
+                           (row_id, project_id)).fetchone()
+        if row is None:
+            continue
+        if row["is_folder"]:
+            if "links" in (category, row["category"]) and category != row["category"]:
+                continue                               # links and files never mix: folders do not cross into Links
+            if folder_id is not None and folder_id in _subtree(conn, row["id"]):
+                continue                               # never into itself
+        elif (row["url"] is not None) != (category == "links"):
+            continue
+        if row["parent_id"] == folder_id and row["category"] == category:
+            continue
+        name = row["name"]
+        taken = {r[0].lower() for r in conn.execute(
+            "SELECT name FROM files WHERE project_id = ? AND category = ? AND parent_id IS ? AND status = 'ready'"
+            " AND id != ?", (project_id, category, folder_id, row["id"]))}
+        if name.lower() in taken:
+            name = _free_name(name, taken)
+        conn.execute("UPDATE files SET parent_id = ?, name = ? WHERE id = ?", (folder_id, name, row["id"]))
+        if category != row["category"]:
+            _set_area(conn, row["id"], category)
+        moved += 1
     return moved
 
 

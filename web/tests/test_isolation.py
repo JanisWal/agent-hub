@@ -244,6 +244,41 @@ class IsolationTest(unittest.TestCase):
         self.assertNotIn("secret.md", page)
         self.assertNotIn("Secret link", page)
 
+    def test_b_cannot_ask_for_see_apply_or_drop_a_folder_plan_of_a(self):
+        from pathlib import Path
+        from app import autofolders, chat, claude_link, statusnote
+        files.FILES_DIR = Path(self.tmp.name) / "files"
+        files.free_bytes = lambda: 10 * 1024 ** 3
+        secret = files.create_text_file(self.a.id, self.project.id, "secret.txt", "secret")
+        files.create_text_file(self.b.id, self.mine.id, "mine.txt", "mine")
+        for user in (self.a, self.b):
+            claude_link.begin(user.id)
+            claude_link.complete(user.id, True)
+        statusnote._LAST_SCAN["at"] = 2 ** 40               # no status round in between
+        self.assertEqual(autofolders.request(self.a.id, self.project.id), "queued")
+        before = snapshot()
+        self.assertEqual(autofolders.request(self.b.id, self.project.id), "missing")
+        self.assertIsNone(autofolders.state(self.b.id, self.project.id))
+        self.assertIsNone(autofolders.apply(self.b.id, self.project.id))
+        self.assertFalse(autofolders.discard(self.b.id, self.project.id))
+        for call in (file_routes.structure_request(self.project.id, "1", self.b), file_routes.structure_state(self.project.id, self.b),
+                     file_routes.structure_apply(self.project.id, self.b), file_routes.structure_discard(self.project.id, self.b)):
+            self.assertEqual(call.status_code, 404)
+        job = chat.claim_next()
+        self.assertNotIn("mine.txt", job.prompt)                  # A's list holds only A's files
+        chat.finish(job.chat_id, True, "")
+        # B's own plan names A's file: the hub only ever moves rows of B's project
+        self.assertEqual(autofolders.request(self.b.id, self.mine.id), "queued")
+        job = chat.claim_next()
+        self.assertNotIn("secret.txt", job.prompt)
+        chat.finish(job.chat_id, True, f'<move id="{secret.id}" to="documents/Stolen"/>')
+        self.assertEqual(autofolders.apply(self.b.id, self.mine.id), 0)
+        with db.connect() as conn:
+            self.assertIsNone(conn.execute("SELECT 1 FROM files WHERE name = 'Stolen'").fetchone())
+        after = snapshot()
+        self.assertEqual(after["files"], before["files"])
+        self.assertEqual(autofolders.state(self.a.id, self.project.id).status, "done")   # A's plan is still there
+
     def test_b_cannot_see_use_or_move_the_folders_of_a(self):
         from pathlib import Path
         files.FILES_DIR = Path(self.tmp.name) / "files"

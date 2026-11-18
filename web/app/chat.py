@@ -15,7 +15,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import agents, aichoice, catalog, checks, db, devices, files, memory, reply, statusnote
+from . import agents, aichoice, autofolders, catalog, checks, db, devices, files, memory, reply, statusnote
 
 # The manager is the role "chef": model and effort level are settings of the user (agents.py, list in catalog.py).
 MAX_PROMPT = 2000
@@ -101,7 +101,7 @@ KEEP = 10                # messages shown per project
 MAX_STORED = 100         # messages kept per user, the oldest go first
 # "all": web and code together, code with the open internet; "apart": web search, code without internet.
 # Which one is the user's setting agents.net_in ("together"/"apart"). Old messages may still say "web".
-MODES = ("all", "apart")   # what a user may choose; "brief" (no tools) is only for status rounds (statusnote.py)
+MODES = ("all", "apart")   # what a user may choose; "brief" (no tools) is only for status rounds and folder plans (statusnote.py, autofolders.py)
 NET_TO_MODE = {"together": "all", "apart": "apart"}
 # Why a question failed, read from the reason the runner sent (Janis, 14.11.2026: show a short text, not what Claude
 # Code says). The reason stays in the answer column for looking into problems; the page only gets the kind.
@@ -364,6 +364,13 @@ def claim_next(now: int | None = None) -> ChatJob | None:
                 return ChatJob(row["id"], row["user_id"], row["model"],
                                statusnote.prompt_for(conn, row["user_id"], row["project_id"], now), "brief",
                                row["effort"], row["provider"], 0)
+            if row["kind"] == autofolders.KIND:   # the list on stdin; with "include contents" the files, too
+                contents = row["mode"] != "brief"
+                stored, links = files.for_agents(conn, row["user_id"], row["project_id"]) if contents else ([], [])
+                return ChatJob(row["id"], row["user_id"], row["model"],
+                               autofolders.prompt_for(conn, row["user_id"], row["project_id"], contents), row["mode"],
+                               row["effort"], row["provider"], row["project_id"] if contents else 0, stored, links,
+                               contents and catalog.sees_images(row["model"]))
             stored, links = files.for_agents(conn, row["user_id"], row["project_id"])
             return ChatJob(row["id"], row["user_id"], row["model"], build_input(conn, row), row["mode"],
                            row["effort"], row["provider"], row["project_id"], stored, links,
@@ -406,6 +413,9 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
         if row["kind"] == "status":   # a status round: its note is kept apart, the message itself goes
             statusnote.save(conn, row, ok, answer)
             conn.execute("DELETE FROM chat_messages WHERE id = ?", (chat_id,))
+            return True
+        if row["kind"] == autofolders.KIND:   # a plan for the folders: it waits for the user's "Apply"
+            autofolders.save(conn, row, ok, answer, tokens_in, tokens_out)
             return True
         parsed = memory.parse_answer(answer) if ok else None
         failed = (memory.edit_failures(memory.check_edits(row["user_id"], row["project_id"], parsed.edits))
