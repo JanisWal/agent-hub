@@ -33,7 +33,13 @@ def _fail(user: users.User, problem: files.FileError) -> JSONResponse:
 
 
 def _info(item: files.StoredFile) -> dict:
-    return {"id": item.id, "name": item.name, "category": item.category, "size": item.size}
+    return {"id": item.id, "name": item.name, "category": item.category, "size": item.size, "parent": item.parent_id,
+            "folder": item.is_folder}
+
+
+def _folder_id(value: str) -> int | None:
+    """A folder number from a form ("" = none); anything else than digits counts as none."""
+    return int(value) if value.isdigit() else None
 
 
 @router.post("/files/preferences")
@@ -44,17 +50,39 @@ def preferences(confirm: str = Form("1"), user: users.User = Depends(api_user)):
 
 
 @router.post("/projects/{project_id}/files/check")
-def check_names(project_id: int, names: list[str] = Form([]), category: str = Form(""),
+def check_names(project_id: int, names: list[str] = Form([]), category: str = Form(""), folder: str = Form(""),
                 user: users.User = Depends(api_user)):
-    """Before an upload: which names exist already in the area the files go to, each with a free name (files.check_names)."""
-    taken = files.check_names(user.id, project_id, names[:1000], category or None)
+    """Before an upload: which names exist already in the place the files go to, each with a free name (files.check_names)."""
+    taken = files.check_names(user.id, project_id, names[:1000], category or None, _folder_id(folder))
     return fail(404) if taken is None else ok(taken=taken)
 
 
 @router.post("/projects/{project_id}/files/start")
-def start_upload(project_id: int, name: str = Form(""), size: int = Form(0), user: users.User = Depends(api_user)):
+def start_upload(project_id: int, name: str = Form(""), size: int = Form(0), folder: str = Form(""),
+                 user: users.User = Depends(api_user)):
     try:
-        return ok(**_info(files.start_upload(user.id, project_id, name, size)))
+        return ok(**_info(files.start_upload(user.id, project_id, name, size, folder_id=_folder_id(folder))))
+    except files.FileError as problem:
+        return _fail(user, problem)
+
+
+@router.post("/projects/{project_id}/folders")
+def create_folder(project_id: int, name: str = Form(""), category: str = Form(""), parent: str = Form(""),
+                  reuse: str = Form("0"), user: users.User = Depends(api_user)):
+    """A new folder (the folder circle, or one folder of an uploaded tree: reuse=1 joins one of that name)."""
+    try:
+        return ok(**_info(files.create_folder(user.id, project_id, category, name, _folder_id(parent), reuse == "1")))
+    except files.FileError as problem:
+        return _fail(user, problem)
+
+
+@router.post("/projects/{project_id}/files/move")
+def move(project_id: int, ids: str = Form(""), category: str = Form(""), folder: str = Form(""),
+         user: users.User = Depends(api_user)):
+    """Marked rows dragged onto a folder, a segment of the folder bar, a tree entry or a tab (files.move)."""
+    wanted = [int(part) for part in ids.split(",")[:1000] if part.strip().isdigit()]
+    try:
+        return ok(moved=files.move(user.id, project_id, wanted, category or None, _folder_id(folder)))
     except files.FileError as problem:
         return _fail(user, problem)
 

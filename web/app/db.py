@@ -302,7 +302,9 @@ NEW_COLUMNS = {
                    "provider": "TEXT NOT NULL DEFAULT 'claude'"},   # which AI does the run (aichoice.py)
     "agent_tasks": {"merged": "INTEGER NOT NULL DEFAULT 0"},   # the runner merged the approved branch (agents.py)
     "files": {"parts": "TEXT NOT NULL DEFAULT ''",           # one flag per chunk of an unfinished upload (files.py)
-              "trashed_at": "INTEGER"},                      # when it went into the trash (files.py, TRASH_DAYS)
+              "trashed_at": "INTEGER",                       # when it went into the trash (files.py, TRASH_DAYS)
+              "parent_id": "INTEGER",                        # the folder it lies in; NULL = top of its area (18.11.2026)
+              "is_folder": "INTEGER NOT NULL DEFAULT 0"},    # the row is a folder (no file on disk)
     "checks": {"days": "TEXT NOT NULL DEFAULT '1111111'"},   # weekdays of a daily check, Monday first (checks.py)
     "power_requests": {"result": "TEXT"},                    # how a manual backup ended: 'ok' or 'failed' (power.py)
     "claude_connections": {"expires_at": "INTEGER"},         # when the user's Claude token runs out (claude_link.py)
@@ -363,6 +365,7 @@ def _prepare(conn: sqlite3.Connection) -> None:
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
                 except sqlite3.OperationalError:
                     pass  # another process added it first
+    conn.execute("CREATE INDEX IF NOT EXISTS files_by_parent ON files (project_id, parent_id)")   # needs the new column
     if not had_archive:   # once: the answered questions from before the archive go into it (after the new columns exist)
         conn.execute(
             "INSERT INTO chat_archive (user_id, project_id, prompt, answer, status, model, effort, created_at, answered_at)"
