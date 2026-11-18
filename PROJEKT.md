@@ -1,6 +1,6 @@
 # Agent-Hub – Projektsheet
 
-Stand: 15.11.2026, nachts (nach der Durchsicht des ganzen Codes: `hardening`, `account-trash`, `cleanup`, `small-fixes`, danach `pin-claude-code`, `web-nonroot`, `mail-outlook`; Content-Security-Policy, Konto löschen mit 30 Tagen Frist, Altlasten entfernt, Kleinigkeiten der Merkliste; 453 Web- und 115 Runner-Tests grün, HTTP-Test mit zwei Konten grün) · Autor: Janis (mit Claude) · Zweck: Philosophie, Ziel, Entscheidungen und Reihenfolge, damit jeder Claude-Chat im Projekt denselben Stand hat.
+Stand: 18.11.2026, abends (zuletzt `ai-see-files`, `file-folders`, `chat-thoughts`, `account-page`, `fewer-info-dots`, `status-size`; Übergabe in CHAT-ZUSAMMENFASSUNG.md). Davor: 15.11.2026, nachts (nach der Durchsicht des ganzen Codes: `hardening`, `account-trash`, `cleanup`, `small-fixes`, danach `pin-claude-code`, `web-nonroot`, `mail-outlook`; Content-Security-Policy, Konto löschen mit 30 Tagen Frist, Altlasten entfernt, Kleinigkeiten der Merkliste; 453 Web- und 115 Runner-Tests grün, HTTP-Test mit zwei Konten grün) · Autor: Janis (mit Claude) · Zweck: Philosophie, Ziel, Entscheidungen und Reihenfolge, damit jeder Claude-Chat im Projekt denselben Stand hat.
 
 ## Auf einen Blick (zuerst lesen, für neue Chats)
 
