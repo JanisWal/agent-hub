@@ -5,7 +5,13 @@
 // or a viewer for pictures, video and sound, delete after a confirmation. Needs core.js and motion.js.
 //
 // The upload itself is upload.js (pieces, resume, retries); its settings come from the administration page. Before an
-// upload the server says which names already exist in the area; then a dialog asks: keep both, replace or skip.
+// upload the server says which names already exist in the place; then a dialog asks: keep both, replace or skip.
+//
+// Folders (Janis, 18.11.2026): every list holds all rows of its area (folders first); this script shows the ones of
+// the place chosen. Small tile: the folder bar under the tabs ("All" = every file of the area, then its top folders),
+// sub-folders as rows, the path line with a back arrow. Enlarged tile: the explorer, a tree of areas and folders, the
+// path bar and columns. Dropped folders keep their structure; marked rows dragged onto a folder, a segment, a tree
+// entry or a tab move there.
 (function () {
   var tile = document.getElementById("files");
   var project = document.querySelector(".project");
@@ -41,6 +47,14 @@
   var selected = {};          // ids marked (shift click: a range, ctrl or cmd click: one)
   var anchorId = null;        // the row a shift click counts the range from
   var lang = document.documentElement.lang || "de";
+  var folderBar = tile.querySelector(".file-folders");
+  var folderThumb = folderBar.querySelector(".folder-thumb");
+  var crumbsBox = tile.querySelector(".file-crumbs");
+  var tree = tile.querySelector(".file-tree");
+  var iconBox = document.getElementById("file-icons");
+  var managerBox = document.getElementById("manager-view");
+  var dialogMode = "edit";    // the pencil dialog: "edit", "link" (a new link) or "folder" (a new folder)
+  var moving = null;          // ids of rows dragged inside the tile (to move them), or null
 
   function store(key, value) { try { sessionStorage.setItem(key, value); } catch (e) {} }
   function load(key) { try { return sessionStorage.getItem(key); } catch (e) { return null; } }
@@ -92,6 +106,7 @@
         if (next) tab.querySelector(".file-count").textContent = next.textContent;
       });
     }).then(function () {
+      applyView(true);
       if (typeof showMarks === "function") showMarks();
       ensureThumbs();
       document.dispatchEvent(new CustomEvent("hub:trash-changed"));   // a deleted file is in the trash list now (mvault.js)
@@ -264,6 +279,187 @@
     pick: function (tab) { show(tab.dataset.cat); }
   });
   function placeThumb(instant) { segment.place(instant); }
+
+  // --- folders: which place is open per area ("" = All in the small tile, the top of the area in the explorer)
+  var place = {};
+  try { place = JSON.parse(load("files-place") || "{}") || {}; } catch (e) { place = {}; }
+  function expanded() { return !!managerBox && managerBox.classList.contains("files-expanded"); }
+  function panelOf(cat) { return panels.filter(function (p) { return p.dataset.cat === cat; })[0]; }
+  function rowsIn(cat) { return Array.prototype.slice.call(panelOf(cat).querySelectorAll(".file-row")); }
+  function foldersIn(cat) {
+    var map = {};
+    rowsIn(cat).forEach(function (r) {
+      if (r.dataset.folder === "1") map[r.dataset.id] = { id: r.dataset.id, name: r.dataset.name, parent: r.dataset.parent };
+    });
+    return map;
+  }
+  function chain(map, id) {            // the folders from the top of the area down to `id`
+    var out = [], seen = {};
+    while (id && map[id] && !seen[id]) { seen[id] = true; out.unshift(map[id]); id = map[id].parent; }
+    return out;
+  }
+  function here() { var id = place[active] || ""; return id && foldersIn(active)[id] ? id : ""; }
+  function areaName(cat) { return tabs.filter(function (t) { return t.dataset.cat === cat; })[0].dataset.name; }
+  function iconOf(name) {
+    var node = iconBox.content.querySelector('[data-icon="' + name + '"]');
+    return node ? node.innerHTML : "";
+  }
+  function placeButton(cls, text, folder, svg) {
+    var b = document.createElement("button");
+    b.type = "button";
+    b.className = cls;
+    b.dataset.folder = folder;
+    if (svg) b.innerHTML = svg;
+    if (text) { var label = document.createElement("span"); label.textContent = text; b.appendChild(label); }
+    return b;
+  }
+  var folderSegment = null;
+  function folderSegments() { return Array.prototype.slice.call(folderBar.querySelectorAll(".file-folder")); }
+  function buildBar(instant) {
+    var top = chain(foldersIn(active), here())[0];
+    var chosen = top ? top.id : "";
+    var wanted = [{ id: "", name: tile.dataset.all }].concat(rowsIn(active).filter(function (r) {
+      return r.dataset.folder === "1" && !r.dataset.parent;
+    }).map(function (r) { return { id: r.dataset.id, name: r.dataset.name }; }));
+    var old = folderSegments();
+    var same = old.length === wanted.length && old.every(function (b, i) {
+      return b.dataset.folder === wanted[i].id && b.textContent === wanted[i].name && b.dataset.cat === active;
+    });
+    if (!same) {                        // only rebuilt when the folders changed, so the glass can glide
+      old.forEach(function (b) { b.remove(); });
+      wanted.forEach(function (f) {
+        var b = document.createElement("button");
+        b.type = "button";
+        b.className = "file-folder";
+        b.setAttribute("role", "tab");
+        b.dataset.seg = "";
+        b.dataset.folder = f.id;
+        b.dataset.cat = active;
+        b.textContent = f.name;
+        folderBar.appendChild(b);
+      });
+      instant = true;
+    }
+    folderSegments().forEach(function (b) { b.setAttribute("aria-selected", b.dataset.folder === chosen ? "true" : "false"); });
+    fitBar(instant);
+  }
+  // Equal parts while every name fits; else each as wide as its name; else the bar scrolls (Janis, 13.11.2026).
+  function fitBar(instant) {
+    folderBar.classList.remove("by-name");
+    var over = folderSegments().some(function (b) { return b.scrollWidth > b.clientWidth + 1; });
+    folderBar.classList.toggle("by-name", over);
+    if (folderSegment) folderSegment.place(instant !== false);
+    var on = folderSegments().filter(function (b) { return b.getAttribute("aria-selected") === "true"; })[0];
+    if (on && over) on.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+  function buildCrumbs() {
+    crumbsBox.textContent = "";
+    var path = chain(foldersIn(active), here());
+    var big = expanded();
+    crumbsBox.hidden = !(big || path.length >= 2);
+    if (crumbsBox.hidden) return;
+    if (!big) {                         // the small tile: a back arrow to the folder above
+      var back = placeButton("file-up-level", "", path[path.length - 2].id, iconOf("back"));
+      back.setAttribute("aria-label", tile.dataset.back);
+      back.dataset.tip = tile.dataset.back;
+      back.dataset.label = path[path.length - 2].name;
+      crumbsBox.appendChild(back);
+    } else {
+      var root = placeButton("", areaName(active), "", "");
+      if (!path.length) root.setAttribute("aria-current", "location");
+      crumbsBox.appendChild(root);
+    }
+    path.forEach(function (f, i) {
+      var b = placeButton("", f.name, f.id, "");
+      if (i === path.length - 1) b.setAttribute("aria-current", "location");
+      crumbsBox.appendChild(b);
+    });
+    crumbsBox.scrollLeft = crumbsBox.scrollWidth;
+  }
+  function buildTree() {
+    if (!expanded()) { tree.textContent = ""; return; }
+    var list = document.createElement("ul");
+    var open = here();
+    tabs.forEach(function (tab) {
+      var cat = tab.dataset.cat;
+      var rows = rowsIn(cat).filter(function (r) { return r.dataset.folder === "1"; });
+      var area = document.createElement("li");
+      area.className = "tree-area";
+      var head = placeButton("", tab.dataset.name, "", iconOf(cat));
+      head.dataset.cat = cat;
+      if (cat === active && !open) head.setAttribute("aria-current", "location");
+      area.appendChild(head);
+      var sub = document.createElement("ul");
+      (function add(parent, depth) {
+        if (depth > 24) return;
+        rows.forEach(function (r) {
+          if (r.dataset.parent !== parent) return;
+          var item = document.createElement("li");
+          var b = placeButton("tree-folder", r.dataset.name, r.dataset.id, iconOf("folder"));
+          b.dataset.cat = cat;
+          b.style.setProperty("--depth", depth);
+          if (cat === active && open === r.dataset.id) b.setAttribute("aria-current", "location");
+          item.appendChild(b);
+          sub.appendChild(item);
+          add(r.dataset.id, depth + 1);
+        });
+      })("", 1);
+      area.appendChild(sub);
+      list.appendChild(area);
+    });
+    tree.textContent = "";
+    tree.appendChild(list);
+  }
+  // Shows the rows of the open place: under "All" (small tile, no folder open) every file of the area with its folder
+  // named under it; otherwise what lies directly in the open folder (or at the top of the area), folders first.
+  function applyView(instant) {
+    var panel = panelOf(active);
+    var current = here();
+    var flat = !expanded() && !current;
+    place[active] = current;
+    store("files-place", JSON.stringify(place));
+    var visible = 0;
+    rowsIn(active).forEach(function (r) {
+      var on = flat ? r.dataset.folder !== "1" : r.dataset.parent === current;
+      r.hidden = !on;
+      if (on) visible++;
+    });
+    panel.classList.toggle("all-mode", flat);
+    var hint = panel.querySelector(".file-empty:not(.folder-empty)");
+    var empty = panel.querySelector(".folder-empty");
+    if (hint) hint.hidden = visible > 0 || !!current;
+    if (!visible && current) {
+      if (!empty) {
+        empty = document.createElement("li");
+        empty.className = "file-empty folder-empty muted";
+        empty.textContent = tile.dataset.folderEmpty;
+        panel.appendChild(empty);
+      }
+      empty.hidden = false;
+    } else if (empty) {
+      empty.hidden = true;
+    }
+    buildBar(instant);
+    buildCrumbs();
+    buildTree();
+  }
+  function choose(folder) {
+    place[active] = folder || "";
+    applyView(false);
+    scroller.scrollTop = 0;
+  }
+  function spot() {                    // where the plus, pasting and a drop beside every target put files
+    var folder = here();
+    return folder ? { cat: active, folder: folder } : { cat: null, folder: "" };
+  }
+  folderSegment = Segment.attach(folderBar, {
+    thumb: folderThumb,
+    items: folderSegments,
+    current: function () { return folderSegments().filter(function (b) { return b.getAttribute("aria-selected") === "true"; })[0]; },
+    pick: function (b) { choose(b.dataset.folder); }
+  });
+  if (window.ResizeObserver) new ResizeObserver(function () { fitBar(true); }).observe(folderBar);
+
   function show(category, instant) {
     active = category;
     tabs.forEach(function (tab) { tab.setAttribute("aria-selected", tab.dataset.cat === category ? "true" : "false"); });
@@ -276,6 +472,7 @@
     placeThumb(instant);
     if (!instant) scroller.scrollTop = 0;              // a new tab starts at its top
     store("files-tab", category);
+    applyView(true);
   }
   tabs.forEach(function (tab) { tab.addEventListener("click", function () { show(tab.dataset.cat); }); });
   var saved = load("files-tab");
@@ -390,45 +587,110 @@
   });
   sameDialog.addEventListener("close", function () { answerSame("skip"); });
 
-  function startJobs(list, category, taken, choice) {
+  function startJobs(list, category, taken, choice, folder) {
     var hits = taken.slice();
     var replaced = {};
     list.forEach(function (file) {
       var at = -1;
       for (var i = 0; i < hits.length && at < 0; i++) if (hits[i].name === file.name) at = i;
-      if (at < 0) return uploader.add(file, { category: category });
+      if (at < 0) return uploader.add(file, { category: category, folder: folder });
       var hit = hits.splice(at, 1)[0];
       if (choice === "skip") return;
       var ids = hit.ids.filter(function (id) { return !replaced[id]; });
       if (choice === "replace" && ids.length) {
         ids.forEach(function (id) { replaced[id] = true; });
-        return uploader.add(file, { category: category, replace: ids });
+        return uploader.add(file, { category: category, folder: folder, replace: ids });
       }
-      uploader.add(file, { category: category, name: hit.free });    // keep both (or a second copy within this upload)
+      uploader.add(file, { category: category, folder: folder, name: hit.free });   // keep both (or a second copy)
     });
   }
 
-  function addJobs(list, category) {
+  // `folder`: into that folder (its area is `category`); "" = the top of `category`, or by the ending without one.
+  function addJobs(list, category, folder) {
     say(errorBox, "");
     if (category) show(category);
     var body = new FormData();
     list.forEach(function (file) { body.append("names", file.name); });
     if (category) body.append("category", category);
-    call("/projects/" + projectId + "/files/check", body)
+    if (folder) body.append("folder", folder);
+    return call("/projects/" + projectId + "/files/check", body)
       .then(function (data) { return data.taken || []; }, function () { return []; })   // the check failing must not stop an upload
       .then(function (taken) {
-        if (!taken.length) return startJobs(list, category, [], null);
-        return askSame(taken).then(function (choice) { startJobs(list, category, taken, choice); });
+        if (!taken.length) return startJobs(list, category, [], null, folder);
+        return askSame(taken).then(function (choice) { startJobs(list, category, taken, choice, folder); });
       });
   }
 
+  // A folder dropped from outside (Janis, 13.11.2026: they came as empty files): its tree is read in the browser, the
+  // folders are made on the server one after the other (an existing one of the same name is joined), then the files
+  // of each folder go up into it. Everything lands in the area of the place it was dropped on.
+  function walk(entry, path, found) {
+    if (entry.isFile) {
+      return new Promise(function (resolve) {
+        entry.file(function (file) { found.files.push({ file: file, path: path }); resolve(); }, function () { resolve(); });
+      });
+    }
+    if (!entry.isDirectory) return Promise.resolve();
+    var dir = path.concat([entry.name]);
+    found.dirs.push(dir);
+    var reader = entry.createReader();
+    return new Promise(function (resolve) {
+      var all = [];
+      (function more() {                // readEntries gives at most 100 at a time
+        reader.readEntries(function (batch) {
+          if (!batch.length) { resolve(all); return; }
+          all = all.concat(Array.prototype.slice.call(batch));
+          more();
+        }, function () { resolve(all); });
+      })();
+    }).then(function (children) {
+      return children.reduce(function (done, child) { return done.then(function () { return walk(child, dir, found); }); }, Promise.resolve());
+    });
+  }
+  function uploadTree(entries, where) {
+    say(errorBox, "");
+    var cat = where.cat && where.cat !== "links" ? where.cat : active !== "links" ? active : "documents";
+    var found = { files: [], dirs: [] };
+    var ids = { "": where.cat === cat ? where.folder || "" : "" };
+    entries.reduce(function (done, entry) { return done.then(function () { return walk(entry, [], found); }); }, Promise.resolve())
+      .then(function () {
+        return found.dirs.reduce(function (done, dir) {
+          return done.then(function () {
+            return call("/projects/" + projectId + "/folders", fields({
+              name: dir[dir.length - 1], category: cat, parent: ids[dir.slice(0, -1).join("/")] || "", reuse: "1"
+            })).then(function (made) { ids[dir.join("/")] = String(made.id); });
+          });
+        }, Promise.resolve());
+      })
+      .then(function () {
+        var groups = {};
+        found.files.forEach(function (f) { var key = f.path.join("/"); (groups[key] = groups[key] || []).push(f.file); });
+        return Object.keys(groups).reduce(function (done, key) {
+          return done.then(function () { return ids[key] !== undefined ? addJobs(groups[key], cat, ids[key]) : null; });
+        }, Promise.resolve());
+      })
+      .then(refreshSoon, function (problem) { say(errorBox, problem.message); refreshSoon(); });
+  }
+
+  function moveRows(ids, target) {
+    call("/projects/" + projectId + "/files/move", fields({ ids: ids.join(","), category: target.cat, folder: target.folder || "" }))
+      .then(function (answer) {
+        selected = {};
+        anchorId = null;
+        flash(tile.dataset.moved.replace("{n}", answer.moved));
+        return refresh();
+      }, function (problem) { say(errorBox, problem.message); });
+  }
+
   addButton.addEventListener("click", function () {
-    if (active === "links") openDialog(null); else picker.click();
+    if (active === "links") openDialog(null, "link"); else picker.click();
   });
+  document.getElementById("file-folder-add").addEventListener("click", function () { openDialog(null, "folder"); });
   picker.addEventListener("change", function () {
     var list = Array.prototype.slice.call(picker.files);
+    var where = spot();
     picker.value = "";
-    if (list.length) addJobs(list, null);
+    if (list.length) addJobs(list, where.cat, where.folder);
   });
 
   // Files pasted with Ctrl+V or Cmd+V (not while writing in a field, and only while this view is showing).
@@ -438,7 +700,8 @@
     var list = event.clipboardData ? Array.prototype.slice.call(event.clipboardData.files) : [];
     if (typing || !list.length || !tile.offsetParent) return;
     event.preventDefault();
-    addJobs(list, null);
+    var where = spot();
+    addJobs(list, where.cat, where.folder);
   });
 
   // --- drag files onto the tile: the tabs pop up like glass drops, the one under the pointer pops more
@@ -446,18 +709,34 @@
     if (!tab.__pop) tab.__pop = Motion.spring(1, Motion.LIFT, function (v) { tab.style.transform = "scale(" + v + ")"; }, 0.002);
     tab.__pop.to(scale);
   }
-  var hot = null;
+  var hot = null;                      // the place under the pointer: { node, cat, folder, name }
   var dragging = false;
   function hasFiles(event) { return event.dataTransfer && Array.prototype.indexOf.call(event.dataTransfer.types, "Files") >= 0; }
-  function setHot(tab) {
-    if (tab === hot && dragging) return;
-    hot = tab;
-    dragText = tab ? tile.dataset.dropTo.replace("{name}", tab.dataset.name) : dropText;
+  // Places that take a drop: a tab (the top of its area), a segment of the folder bar, a folder row, an entry of the
+  // tree and a step of the path.
+  var PLACES = ".file-tab, .file-folder, .file-row.folder, .file-tree button, .file-crumbs button";
+  function targetOf(element) {
+    var node = element && element.closest ? element.closest(PLACES) : null;
+    if (!node || !tile.contains(node)) return null;
+    if (node.classList.contains("file-tab")) return { node: node, cat: node.dataset.cat, folder: "", name: node.dataset.name };
+    if (node.classList.contains("file-row")) return { node: node, cat: node.dataset.cat, folder: node.dataset.id, name: node.dataset.name };
+    var cat = node.dataset.cat || active;
+    var name = node.dataset.label || node.textContent || areaName(cat);
+    if (node.classList.contains("file-folder") && !node.dataset.folder) name = areaName(cat);
+    return { node: node, cat: cat, folder: node.dataset.folder || "", name: name };
+  }
+  function canMove(target) {           // never a folder into itself
+    return !!target && moving.indexOf(target.folder) < 0;
+  }
+  function setHot(target) {
+    var node = target ? target.node : null;
+    if (dragging && (hot ? hot.node : null) === node && node) return;
+    hot = target;
+    dragText = target ? tile.dataset[moving ? "moveTo" : "dropTo"].replace("{name}", target.name) : moving ? "" : dropText;
     renderStatus();
-    tabs.forEach(function (other) {
-      other.classList.toggle("hot", other === tab);
-      pop(other, !dragging ? 1 : other === tab ? 1.16 : 1.06);
-    });
+    Array.prototype.forEach.call(tile.querySelectorAll(".hot"), function (el) { if (el !== node) el.classList.remove("hot"); });
+    if (node) node.classList.add("hot");
+    tabs.forEach(function (other) { pop(other, !dragging ? 1 : other === node ? 1.16 : 1.06); });
   }
   function endDrag() {
     dragging = false;
@@ -465,26 +744,41 @@
     hot = null;
     dragText = "";
     renderStatus();
-    tabs.forEach(function (tab) { tab.classList.remove("hot"); pop(tab, 1); });
+    Array.prototype.forEach.call(tile.querySelectorAll(".hot"), function (el) { el.classList.remove("hot"); });
+    tabs.forEach(function (tab) { pop(tab, 1); });
   }
   tile.addEventListener("dragover", function (event) {
-    if (!hasFiles(event)) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "copy";
+    if (!hasFiles(event) && !moving) return;
+    var target = targetOf(event.target);
+    if (moving && !canMove(target)) target = null;
     dragging = true;
     tile.classList.add("dropping");
-    setHot(event.target.closest ? event.target.closest(".file-tab") : null);
+    if (moving && !target) { setHot(null); return; }      // rows only drop on a place
+    event.preventDefault();
+    event.dataTransfer.dropEffect = moving ? "move" : "copy";
+    setHot(target);
   });
   tile.addEventListener("dragleave", function (event) {
     if (!tile.contains(event.relatedTarget)) endDrag();
   });
   tile.addEventListener("drop", function (event) {
+    if (moving) {
+      event.preventDefault();
+      var into = hot;
+      var ids = moving;
+      endDrag();
+      if (into) moveRows(ids, into);
+      return;
+    }
     if (!hasFiles(event)) return;
     event.preventDefault();
-    var category = hot ? hot.dataset.cat : null;
+    var items = event.dataTransfer.items ? Array.prototype.slice.call(event.dataTransfer.items) : [];
+    var entries = items.map(function (item) { return item.webkitGetAsEntry ? item.webkitGetAsEntry() : null; }).filter(Boolean);
     var list = Array.prototype.slice.call(event.dataTransfer.files);
+    var where = hot ? { cat: hot.cat, folder: hot.folder } : spot();
     endDrag();
-    if (list.length) addJobs(list, category);
+    if (entries.some(function (entry) { return entry.isDirectory; })) uploadTree(entries, where);
+    else if (list.length) addJobs(list, where.cat, where.folder);
   });
 
   // --- drag files out of the tile onto the desktop or a folder: the browser downloads them there (Chrome and Edge
@@ -533,12 +827,13 @@
     setTimeout(function () { stack.remove(); }, 0);              // the browser took its picture already
     return stack;
   }
-  tile.addEventListener("dragend", release);
+  tile.addEventListener("dragend", function () { moving = null; endDrag(); release(); });
 
   tile.addEventListener("dragstart", function (event) {
     var row = event.target.closest ? event.target.closest(".file-row") : null;
     if (!row) return;
     var rows = row.classList.contains("selected") ? Array.prototype.slice.call(tile.querySelectorAll(".file-row.selected")) : [row];
+    moving = rows.map(function (r) { return r.dataset.id; });   // dropped on a place in the tile, they move there
     var fileRows = rows.filter(function (r) { return r.dataset.kind !== "link"; });
     var carried = fileRows.length > 1 ? fileRows : !fileRows.length && rows.length > 1 ? rows : null;
     if (carried) {
@@ -549,6 +844,9 @@
       var zipName = tile.dataset.zipName.replace("{n}", fileRows.length) + ".zip";
       event.dataTransfer.setData("DownloadURL", "application/zip:" + zipName + ":" + location.origin +
                                  zipUrl(fileRows.map(function (r) { return r.dataset.id; })));
+    } else if (fileRows.length === 1 && fileRows[0].dataset.folder === "1") {   // a folder comes as its ZIP
+      event.dataTransfer.setData("DownloadURL", "application/zip:" + fileRows[0].dataset.name + ".zip:" + location.origin +
+                                 zipUrl([fileRows[0].dataset.id]));
     } else if (fileRows.length === 1) {
       event.dataTransfer.setData("DownloadURL", "application/octet-stream:" + fileRows[0].dataset.name + ":" +
                                  location.origin + "/files/" + fileRows[0].dataset.id);
@@ -557,36 +855,44 @@
       event.dataTransfer.setData("text/uri-list", urls);
       event.dataTransfer.setData("text/plain", urls);
     }
-    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.effectAllowed = "copyMove";
   });
 
   // --- the pencil dialog: a new link, or rename and move (the content is read and edited in the reader)
-  function openDialog(row) {
+  function openDialog(row, mode) {
     editing = row;
-    var link = !row || row.dataset.kind === "link";
-    dialog.querySelector("h2").textContent = dialog.dataset[!row ? "titleLink" : link ? "titleEditLink" : "titleEdit"];
+    dialogMode = row ? "edit" : mode || "link";
+    var folder = dialogMode === "folder" || (!!row && row.dataset.folder === "1");
+    var link = !folder && (!row || row.dataset.kind === "link");
+    dialog.querySelector("h2").textContent = dialog.dataset[!row ? (folder ? "titleFolder" : "titleLink")
+      : folder ? "titleEditFolder" : link ? "titleEditLink" : "titleEdit"];
     document.getElementById("file-dialog-button").textContent = dialog.dataset[row ? "btnEdit" : "btnNew"];
     nameInput.value = row ? row.dataset.name : "";
     urlInput.value = row ? row.dataset.url || "" : "";
     urlBox.hidden = !link;
     urlInput.required = link;
-    areaBox.hidden = link;
+    areaBox.hidden = link || !row || row.dataset.cat === "links";   // a new folder is made where you are
     areaSelect.value = row ? row.dataset.cat : active;
     say(dialogError, "");
     dialog.showModal();
     (link && !row ? urlInput : nameInput).focus();
   }
+  function isFolder(row) { return !!row && row.dataset.folder === "1"; }
   dialog.addEventListener("close", function () { form.reset(); AgentHub.clear(form); say(dialogError, ""); editing = null; });
 
   form.addEventListener("submit", function (event) {
     event.preventDefault();
     var request;
-    var next = !editing || editing.dataset.kind === "link" ? "links" : areaSelect.value;   // the tab to show afterwards
-    if (!editing) {
+    var next = !editing ? (dialogMode === "folder" ? active : "links")      // the tab to show afterwards
+      : editing.dataset.kind === "link" || editing.dataset.cat === "links" ? "links" : areaSelect.value;
+    if (!editing && dialogMode === "folder") {
+      request = call("/projects/" + projectId + "/folders", fields({ name: nameInput.value, category: active, parent: here() }));
+    } else if (!editing) {
       request = call("/projects/" + projectId + "/links", fields({ url: urlInput.value, name: nameInput.value }));
     } else {
       var values = { name: nameInput.value };
-      if (editing.dataset.kind === "link") values.url = urlInput.value; else values.category = areaSelect.value;
+      if (editing.dataset.kind === "link") values.url = urlInput.value;
+      else if (editing.dataset.cat !== "links") values.category = areaSelect.value;
       request = call("/files/" + editing.dataset.id, fields(values));
     }
     request.then(function () { show(next); dialog.close(); return refresh(); },
@@ -603,16 +909,21 @@
       if (button.dataset.file === "edit") {
         openDialog(row);
       } else {
-        if (tile.dataset.confirmDelete === "0") {          // the trash circle is red: no question
+        if (tile.dataset.confirmDelete === "0" && !isFolder(row)) {   // the trash circle is red: no question (a folder asks)
           call("/files/" + row.dataset.id + "/delete").then(refresh, refresh);
           return;
         }
         pendingId = row.dataset.id;
-        confirmDialog.querySelector("h2").textContent = confirmDialog.dataset[row.dataset.kind === "link" ? "textLink" : "textFile"];
+        confirmDialog.querySelector("h2").textContent = confirmDialog.dataset[isFolder(row) ? "textFolder"
+          : row.dataset.kind === "link" ? "textLink" : "textFile"];
         confirmDialog.showModal();
       }
       return;
     }
+    var step = event.target.closest(".file-crumbs button, .file-folder");
+    if (step) { choose(step.dataset.folder); return; }
+    var entry = event.target.closest(".file-tree button");
+    if (entry) { if (entry.dataset.cat !== active) show(entry.dataset.cat); choose(entry.dataset.folder); return; }
     if (row && event.button === 0 && (event.shiftKey || event.ctrlKey || event.metaKey)) {   // marks only, nothing opens
       event.preventDefault();
       markRow(row, event);
@@ -621,6 +932,7 @@
     var name = event.target.closest(".file-text");
     var picture = event.target.closest(".file-tile, .file-preview");
     if (!row || (!name && !picture)) return;
+    if (isFolder(row)) { event.preventDefault(); choose(row.dataset.id); return; }       // a folder opens
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;   // with a key held the browser decides
     var viewable = ["image", "photo", "video", "audio"].indexOf(row.dataset.kind) >= 0;
     if (row.dataset.editable === "1") { event.preventDefault(); openReader(row); }
@@ -638,7 +950,7 @@
   var viewerNext = document.getElementById("file-viewer-next");
   function viewable(row) { return ["image", "photo", "video", "audio"].indexOf(row.dataset.kind) >= 0; }
   function neighbours() {      // the pictures, videos and sounds of the list that is showing, in the order shown
-    return Array.prototype.filter.call(tile.querySelectorAll(".file-list:not([hidden]) .file-row"), viewable);
+    return Array.prototype.filter.call(tile.querySelectorAll(".file-list:not([hidden]) .file-row:not([hidden])"), viewable);
   }
   function showInViewer(row) {
     var kind = row.dataset.kind;
@@ -874,7 +1186,8 @@
   downloadButton.addEventListener("click", function () {
     var ids = markedFileIds();
     if (!ids.length) return;
-    location.assign(ids.length === 1 ? "/files/" + ids[0] + "?download=1" : zipUrl(ids));   // a download, the page stays
+    var one = ids.length === 1 && !isFolder(tile.querySelector('.file-row[data-id="' + ids[0] + '"]'));
+    location.assign(one ? "/files/" + ids[0] + "?download=1" : zipUrl(ids));   // a download, the page stays
   });
 
   function renderTrashMode() {
@@ -896,7 +1209,7 @@
     var id = row.dataset.id;
     var more = event.ctrlKey || event.metaKey;
     if (event.shiftKey && anchorId && anchorId !== id) {
-      var ids = Array.prototype.map.call(tile.querySelectorAll(".file-list:not([hidden]) .file-row"), function (r) { return r.dataset.id; });
+      var ids = Array.prototype.map.call(tile.querySelectorAll(".file-list:not([hidden]) .file-row:not([hidden])"), function (r) { return r.dataset.id; });
       var from = ids.indexOf(anchorId);
       var to = ids.indexOf(id);
       if (from >= 0 && to >= 0) {
@@ -968,6 +1281,7 @@
       expandButton.dataset.tip = label;
       store("files-expanded", on ? "1" : "0");
       placeThumb(true);
+      applyView(true);
     }
     if (animate !== false && document.startViewTransition && !Motion.reduced()) {
       tile.style.viewTransitionName = "files-tile";             // this tile glides, the page around it blends

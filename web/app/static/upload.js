@@ -184,7 +184,9 @@
       activeKeys[job.key] = true;
       function fresh() {
         var name = (job.meta && job.meta.name) || job.file.name;   // files.js may give another name ("keep both")
-        return call(urls.start, form({ name: name, size: job.file.size })).then(function (info) { job.id = info.id; remember(job); });
+        var values = { name: name, size: job.file.size };
+        if (job.meta && job.meta.folder) values.folder = job.meta.folder;   // into a folder (18.11.2026)
+        return call(urls.start, form(values)).then(function (info) { job.id = info.id; remember(job); });
       }
       var begin = known ? call(urls.progress(known), null, "GET").then(function (data) {
         if (data.size !== job.file.size) throw new Error("other file");
