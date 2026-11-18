@@ -54,6 +54,18 @@ class ViewTest(unittest.TestCase):
         self.assertIn("film.mp4", (root / "files" / "INDEX.md").read_text())
         self.assertIn("too big", (root / "files" / "INDEX.md").read_text())
 
+    def test_a_photo_brings_the_jpeg_the_browser_made_so_every_ai_can_look_at_it(self):
+        (self.source / "4" / "14").write_bytes(b"II*\x00 raw photo")
+        (self.source / "4" / "14.preview").write_bytes(b"\xff\xd8\xff jpeg of it")
+        (self.source / "4" / "14.thumb").write_bytes(b"\xff\xd8\xff small")
+        big = {"id": 14, "name": "Roadster.dng", "area": "media", "size": view.MAX_FILE + 1}
+        root = self.views.build("run-5", 4, [big], [])
+        media = root / "files" / "media"
+        self.assertEqual((media / "Roadster.dng.jpg").read_bytes(), b"\xff\xd8\xff jpeg of it")
+        self.assertFalse((media / "Roadster.dng").exists())          # the original is too big, the JPEG still comes
+        self.assertIn("to look at: media/Roadster.dng.jpg", (root / "files" / "INDEX.md").read_text())
+        self.assertEqual(sorted(p.name for p in media.iterdir()), ["Roadster.dng.jpg"])   # never the small thumb
+
     def test_the_code_is_main_without_git_and_the_view_goes_away(self):
         work = workspace.Workspace(Path(self.tmp.name) / "work")
         repo = work.ensure_repo(4)

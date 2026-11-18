@@ -8,6 +8,10 @@ package from stdin and prints ONE line of JSON for the runner, the same shape fo
 Vibe's API address is the egress gateway (the only way to Mistral; it puts the real key in). Its other addresses
 (managed settings, sessions, console) point to the gateway as well, which refuses them: nothing goes to Mistral but
 model calls, and no telemetry, update checks or notifications at all.
+
+Pictures (18.11.2026): Vibe's own file tool reads text only. HUB_IMAGES=1 marks the model as one that sees images
+(`supports_images`), and every job with tools gets the MCP server look_mcp.py with its tool `look`: images and PDF
+pages come back as pictures, which Vibe passes to the model (without the mark it puts "[Image]" in their place).
 """
 import json
 import os
@@ -24,7 +28,19 @@ OFF_ALWAYS = ("ask_user_question", "powershell*", "git_bash*", "task")
 OFF_JOB = {"chat-all": (), "chat-apart": ("web_fetch",), "chat-brief": ("*",), "run": ()}   # brief: the status, no tools
 
 
-def config(model: str, level: str) -> str:
+LOOK = "/opt/hub/look_mcp.py"
+LOOK_HINT = ("Use it to look at images and PDFs (their pages as pictures); read text files with read_file.")
+
+
+def config(model: str, level: str, images: bool = False, look: bool = True) -> str:
+    server = f'''
+[[mcp_servers]]
+name = "hub"
+transport = "stdio"
+command = ["/usr/local/bin/python", "{LOOK}"]
+prompt = "{LOOK_HINT}"
+env = {{ HUB_IMAGES = "{1 if images else 0}" }}
+''' if look else ""
     return f'''active_model = "hub"
 enable_telemetry = false
 enable_otel = false
@@ -54,7 +70,8 @@ name = "{model}"
 provider = "mistral"
 alias = "hub"
 thinking = "{level}"
-'''
+supports_images = {"true" if images else "false"}
+{server}'''
 
 
 def summary(stdout: str, export: dict, code: int) -> dict:
@@ -88,7 +105,8 @@ def main() -> int:
         return 0
     vibe_home = HOME / ".vibe"
     vibe_home.mkdir(parents=True, exist_ok=True)
-    (vibe_home / "config.toml").write_text(config(model, LEVELS.get(effort or "off", "off")))
+    images = os.environ.get("HUB_IMAGES") == "1"
+    (vibe_home / "config.toml").write_text(config(model, LEVELS.get(effort or "off", "off"), images, job != "chat-brief"))
     workdir = Path("/work") if job == "run" else HOME / "scratch"
     workdir.mkdir(parents=True, exist_ok=True)
     out = HOME / "out"

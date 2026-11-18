@@ -300,11 +300,12 @@ def prepare_folder(path: str, user_id: int, recursive: bool = False) -> None:
 def build_vibe_command(*, name: str, user_id: int, model: str, ticket: str, job: str, effort: str = "",
                        net: str = "together", work_dir: str | None = None, image: str = VIBE_IMAGE,
                        network: str = NETWORK, memory: str = "480m", files_dir: str | None = None,
-                       code_dir: str | None = None) -> list[str]:
+                       code_dir: str | None = None, images: bool = False) -> list[str]:
     """The `docker run` command of a Mistral run (Mistral Vibe, runner/vibe_entry.py): the chat ("chat-all",
     "chat-apart": no folder of any project) or an agent run ("run": the task's work folder at /work). Like Claude:
     run user, read-only, nothing but a home in memory, the ticket instead of the key, every request to the gateway,
-    the web only through the proxy of the switch. `name` is "agent-chat-<n>" or "agent-run-<n>"."""
+    the web only through the proxy of the switch. `name` is "agent-chat-<n>" or "agent-run-<n>". `images`: the model
+    sees pictures (the tool look_mcp.py then hands it images and PDF pages)."""
     if job not in VIBE_JOBS or (job == "run") != (work_dir is not None):
         raise ValueError("unknown job")
     if not re.fullmatch(r"agent-(chat|run)-[0-9]+", name):
@@ -327,7 +328,7 @@ def build_vibe_command(*, name: str, user_id: int, model: str, ticket: str, job:
         "--network", network, *mount, *_read_only(files_dir, code_dir),
         "-e", "HOME=/home/vibe", "-e", f"MISTRAL_API_KEY={ticket}", "-e", f"HUB_GATEWAY={MISTRAL_GATEWAY}",
         "-e", f"HUB_MODEL={model}", "-e", f"HUB_EFFORT={effort}", "-e", f"HUB_JOB={job}",
-        "-e", f"HUB_TURNS={turns}", "-e", f"HUB_SECONDS={seconds}",
+        "-e", f"HUB_TURNS={turns}", "-e", f"HUB_SECONDS={seconds}", "-e", f"HUB_IMAGES={1 if images is True else 0}",
         "-e", "NO_PROXY=egress", "-e", "no_proxy=egress", *_proxy_env(proxy),
         image, "python", "/opt/hub/vibe_entry.py",
     ]

@@ -250,7 +250,7 @@ class Runner:
         try:
             command = adapter.chat_command(chat_id=chat_id, user_id=user_id, model=job["model"], ticket=ticket,
                                            mode=job.get("mode", "all"), effort=job.get("effort") or "",
-                                           files_dir=files_dir, code_dir=code_dir)
+                                           files_dir=files_dir, code_dir=code_dir, images=job.get("images") is True)
             done = self.run_chat(command, job["prompt"])
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(done.stdout)
             if not ok and done.returncode:
@@ -302,7 +302,8 @@ class Runner:
         try:
             command = adapter.run_command(run_id=run_id, user_id=user_id, model=job["model"], ticket=ticket,
                                           net=job.get("net", "together"), effort=job.get("effort") or "",
-                                          work_dir=str(folder), files_dir=files_dir)
+                                          work_dir=str(folder), files_dir=files_dir,
+                                          images=job.get("images") is True)
             done = self.run_agent(command, job["prompt"])
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_run(done.stdout)
         except subprocess.TimeoutExpired:

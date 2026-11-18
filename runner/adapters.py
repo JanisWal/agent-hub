@@ -5,7 +5,9 @@ an adapter only knows its program. Both programs run in a throwaway container wi
 - claude: Claude Code (runner/Dockerfile), ticket to the gateway on port 3130.
 - mistral: Mistral Vibe (runner/Dockerfile.vibe), ticket to the gateway on port 3131.
 Interface: `secret(runner, user_id)` (the credential the ticket stands for, or None), `chat_command(...)`,
-`run_command(...)` and `parse(stdout) -> (ok, text, tokens_in, tokens_out, login_problem)`.
+`run_command(...)` and `parse(stdout) -> (ok, text, tokens_in, tokens_out, login_problem)`. `images` says whether the
+model sees pictures (catalog of the hub); Claude Code looks at images and PDFs with its own Read tool, Vibe through the
+tool of look_mcp.py.
 """
 import json
 
@@ -18,11 +20,12 @@ class Claude:
     def secret(self, runner, user_id: int):
         return runner.vault.load(user_id)
 
-    def chat_command(self, *, chat_id, user_id, model, ticket, mode, effort, files_dir=None, code_dir=None):
+    def chat_command(self, *, chat_id, user_id, model, ticket, mode, effort, files_dir=None, code_dir=None,
+                     images=False):
         return launcher.build_chat_command(chat_id=chat_id, user_id=user_id, model=model, ticket=ticket, mode=mode,
                                            effort=effort, files_dir=files_dir, code_dir=code_dir)
 
-    def run_command(self, *, run_id, user_id, model, ticket, net, effort, work_dir, files_dir=None):
+    def run_command(self, *, run_id, user_id, model, ticket, net, effort, work_dir, files_dir=None, images=False):
         return launcher.build_command(run_id=run_id, user_id=user_id, model=model, work_dir=work_dir, ticket=ticket,
                                       net=net, effort=effort, files_dir=files_dir)
 
@@ -46,15 +49,16 @@ class Mistral:
     def secret(self, runner, user_id: int):
         return runner.keys.load(user_id, "mistral")
 
-    def chat_command(self, *, chat_id, user_id, model, ticket, mode, effort, files_dir=None, code_dir=None):
+    def chat_command(self, *, chat_id, user_id, model, ticket, mode, effort, files_dir=None, code_dir=None,
+                     images=False):
         return launcher.build_vibe_command(name=f"agent-chat-{int(chat_id)}", user_id=user_id, model=model,
                                            ticket=ticket, job={"apart": "chat-apart", "brief": "chat-brief"}.get(mode, "chat-all"),
-                                           effort=effort, files_dir=files_dir, code_dir=code_dir)
+                                           effort=effort, files_dir=files_dir, code_dir=code_dir, images=images)
 
-    def run_command(self, *, run_id, user_id, model, ticket, net, effort, work_dir, files_dir=None):
+    def run_command(self, *, run_id, user_id, model, ticket, net, effort, work_dir, files_dir=None, images=False):
         return launcher.build_vibe_command(name=f"agent-run-{int(run_id)}", user_id=user_id, model=model,
                                            ticket=ticket, job="run", effort=effort, net=net, work_dir=work_dir,
-                                           files_dir=files_dir)
+                                           files_dir=files_dir, images=images)
 
     def parse_chat(self, stdout: str):
         return launcher.parse_vibe(stdout)

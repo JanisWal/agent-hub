@@ -94,6 +94,25 @@ class VibeCommandTest(unittest.TestCase):
         self.assertEqual((out["ok"], out["text"], out["tokens_in"], out["tokens_out"]), (True, "Final", 7, 3))
         self.assertFalse(vibe_entry.summary("", {"outcome": "turn_limit"}, 3)["ok"])
 
+    def test_vibe_gets_the_look_tool_and_sees_pictures_only_when_the_model_can(self):
+        tomllib = __import__("tomllib")
+        seeing = tomllib.loads(vibe_entry.config("mistral-small-2603", "off", images=True))
+        self.assertTrue(seeing["models"][0]["supports_images"])
+        server = seeing["mcp_servers"][0]
+        self.assertEqual((server["name"], server["transport"]), ("hub", "stdio"))
+        self.assertEqual(server["command"], ["/usr/local/bin/python", "/opt/hub/look_mcp.py"])
+        self.assertEqual(server["env"], {"HUB_IMAGES": "1"})
+        blind = tomllib.loads(vibe_entry.config("mistral-small-2603", "off"))
+        self.assertFalse(blind["models"][0]["supports_images"])
+        self.assertEqual(blind["mcp_servers"][0]["env"], {"HUB_IMAGES": "0"})   # PDFs still give their text
+        self.assertNotIn("mcp_servers", tomllib.loads(vibe_entry.config("mistral-small-2603", "off", True, look=False)))
+        cmd = launcher.build_vibe_command(name="agent-run-7", user_id=2, model="mistral-small-2603", ticket=TICKET,
+                                          job="run", work_dir="/opt/w", images=True)
+        self.assertIn("HUB_IMAGES=1", cmd)
+        cmd = launcher.build_vibe_command(name="agent-run-7", user_id=2, model="mistral-small-2603", ticket=TICKET,
+                                          job="run", work_dir="/opt/w", images="1")      # only a real True counts
+        self.assertIn("HUB_IMAGES=0", cmd)
+
 
 def git(*args, cwd=None):
     return subprocess.run(["git", "-c", "safe.directory=*", *args], capture_output=True, text=True, cwd=cwd).stdout.strip()

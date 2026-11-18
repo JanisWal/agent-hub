@@ -14,6 +14,10 @@ The folder belongs to root and is readable by everybody (the run user only reads
 `readonly`, so nothing written there can reach the hub. A copy instead of the original: the storage folders are only
 the hub's (0700), and a run must never see the other files of the storage. Files above MAX_FILE and anything beyond
 MAX_TOTAL are left out (named in INDEX.md). The view is deleted when the job ends; `clear` removes leftovers.
+
+A TIFF, HEIC or raw photo can not be shown to a model as it is. The browser already made a big JPEG of it for the
+viewer (`<id>.preview` next to the file in the storage, web/app/files.py); it is copied next to the photo as
+"<name>.jpg", so every AI can look at it (18.11.2026).
 """
 import os
 import shutil
@@ -75,16 +79,23 @@ class Views:
             if src is None or not src.is_file():
                 index.append(f"- {area}/{shown} ({_size(size)}, not available)")
                 continue
-            if size > MAX_FILE or used + size > MAX_TOTAL:
-                index.append(f"- {area}/{shown} ({_size(size)}, too big to give here)")
-                continue
             folder = root / "files" / area
-            folder.mkdir(exist_ok=True)
-            target = _unique(folder, shown)
-            shutil.copyfile(src, target, follow_symlinks=False)
-            os.chmod(target, 0o444)
-            used += size
-            index.append(f"- {area}/{target.name} ({_size(size)})")
+            if size > MAX_FILE or used + size > MAX_TOTAL:
+                line, name = f"- {area}/{shown} ({_size(size)}, too big to give here", shown
+            else:
+                folder.mkdir(exist_ok=True)
+                target = _unique(folder, shown)
+                shutil.copyfile(src, target, follow_symlinks=False)
+                used += size
+                line, name = f"- {area}/{target.name} ({_size(size)}", target.name
+            picture = src.with_name(f"{src.name}.preview")
+            if picture.is_file() and not picture.is_symlink() and used + picture.stat().st_size <= MAX_TOTAL:
+                folder.mkdir(exist_ok=True)
+                jpeg = _unique(folder, f"{name}.jpg")
+                shutil.copyfile(picture, jpeg, follow_symlinks=False)
+                used += jpeg.stat().st_size
+                line += f"; to look at: {area}/{jpeg.name}"
+            index.append(line + ")")
         (root / "files" / "INDEX.md").write_text(
             "# Files of the project (read-only)\n\n" + ("\n".join(index) or "(none)") + "\n", encoding="utf-8")
         lines = [f"- {str(link.get('name', '')).strip() or 'Link'}: {str(link.get('url', '')).strip()}"

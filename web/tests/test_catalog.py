@@ -67,6 +67,34 @@ class CatalogTest(Base):
         with self.assertRaises(ValueError):
             catalog.store("gpt", seed())                               # unknown provider
 
+    def test_which_models_see_pictures_and_what_the_ai_is_told_and_sent(self):
+        for model in ("haiku", "sonnet", "opus", "fable", "mistral-small-2603", "mistral-large-4"):
+            self.assertTrue(catalog.sees_images(model), model)
+        self.assertFalse(catalog.sees_images("unknown-model"))
+        self.assertFalse(catalog.sees_images(None))
+        data = seed()
+        data["models"].append({"id": "nova", "name": "Nova", "efforts": ["low"], "default_effort": "low"})
+        catalog.store("claude", data)
+        self.assertFalse(catalog.sees_images("nova"))                  # nobody said it can: no picture is sent
+        bad = seed()
+        bad["models"][0]["images"] = "yes"
+        with self.assertRaises(ValueError):
+            catalog.store("claude", bad)
+        claude_link.begin(self.a.id)
+        claude_link.complete(self.a.id, True)
+        chat.send(self.a.id, self.pa.id, "What does the picture show?")
+        job = chat.claim_next()
+        self.assertTrue(job.images)
+        self.assertNotIn(catalog.BLIND_NOTE, job.prompt)
+        self.assertIn("Look at images and PDFs yourself", job.prompt)
+        chat.finish(job.chat_id, True, "red")
+        agents.configure(self.a.id, "chef", model="nova", effort="low")
+        chat.send(self.a.id, self.pa.id, "And this one?")
+        job = chat.claim_next()
+        self.assertEqual(job.model, "nova")
+        self.assertFalse(job.images)
+        self.assertIn(catalog.BLIND_NOTE, job.prompt)
+
     def test_an_unknown_hint_is_dropped_but_the_model_stays(self):
         data = seed()
         data["models"][0]["hint"] = "magic"
