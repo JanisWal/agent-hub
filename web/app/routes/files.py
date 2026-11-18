@@ -293,16 +293,23 @@ def download_zip(project_id: int, ids: str = "", user: users.User = Depends(api_
 @router.get("/files/{file_id}")
 def serve(file_id: int, download: int = 0, user: users.User = Depends(api_user)):
     """The file itself. Type from a fixed table, `nosniff`, and a sandbox policy so that even an SVG or HTML
-    file can run nothing here; only images, video and audio are shown (for the viewer), the rest is a download,
-    and `?download=1` makes any file a download."""
+    file can run nothing here; only images, video, audio and PDFs are shown (for the viewer), the rest is a download,
+    and `?download=1` makes any file a download. A PDF is shown by the browser's own viewer, which does not start in a
+    sandbox (Chrome blocks it there); it gets a policy that allows nothing but itself, and the viewer runs a PDF's
+    scripts, if at all, in its own closed engine without access to the page."""
     found = files.open_file(user.id, file_id)
     if found is None:
         return fail(404)
     path, item = found
     media_type, inline = files.content_type(item.name)
+    shown = inline and not download
+    policy = (PDF_POLICY if shown and item.kind == "pdf" else
+              "sandbox; default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'")
     return FileResponse(
         path, media_type=media_type, filename=item.name,
-        content_disposition_type="inline" if inline and not download else "attachment",
-        headers={"Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self'; media-src 'self'; style-src 'unsafe-inline'",
-                 "Cache-Control": "private, max-age=60"},
+        content_disposition_type="inline" if shown else "attachment",
+        headers={"Content-Security-Policy": policy, "Cache-Control": "private, max-age=60"},
     )
+
+
+PDF_POLICY = "default-src 'none'; object-src 'self'; img-src 'self' data: blob:; style-src 'unsafe-inline'; frame-ancestors 'self'"
