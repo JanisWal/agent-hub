@@ -1,7 +1,8 @@
 // Splitters between two tiles of a column (DESIGN.md, "Trenner"; Janis, 14.11.2026): a thin rounded bar that shows
 // when the pointer is over the gap; drag it up or down to give one tile more height than the other, like the divider
 // between two windows. Arrow keys move it in steps, a double click puts it back. The choice is kept per browser
-// (localStorage, a convenience: nothing breaks without it). Only on wide windows, where the tiles share a column.
+// (localStorage, a convenience: nothing breaks without it), except under the status tile, which always opens at its
+// resting height. Only on wide windows, where the tiles share a column.
 (function () {
   "use strict";
   var KEY = "split:";
@@ -91,17 +92,24 @@
                high: Math.max(high, Math.min((folded(a) - fa) / inner, 1)) };
     }
     function clamp(value, box) { return Math.min(Math.max(value, box.low), box.high); }
-    var saved = load(name);
+    // A tile with an extra (the status) always opens at its resting height, never at a height pulled for another
+    // project with a longer or shorter text (Janis, 18.11.2026): its choice lasts only while the page is open.
+    var kept = !extra(a), pulled = null;
+    function chosen() { return kept ? load(name) : pulled; }
+    function keep(value) { if (kept) store(name, value); else pulled = value; }
+    if (!kept) store(name, null);   // a height saved before 18.11.2026 is not read any more; remove after 01.01.2027
+    var saved = chosen();
     // A tile with an extra rests folded at first (its text hidden): that is its place until the user pulls it out.
     function rest() {
-      if (!extra(a) || load(name) > 0 || !col.offsetParent || !col.getBoundingClientRect().height) return;
+      if (!extra(a) || chosen() > 0 || !col.offsetParent || !col.getBoundingClientRect().height) return;
       var box = limits();
       apply(box.low);
     }
     if (saved > 0 && saved < 1) apply(saved); else rest();
-    window.addEventListener("resize", function () { if (load(name) > 0) fade(); else rest(); });
+    window.addEventListener("resize", function () { if (chosen() > 0) fade(); else rest(); });
     window.addEventListener("load", rest);
-    document.addEventListener("agenthub:view", function () { setTimeout(rest, 30); });
+    // When the view shows: at once before the next frame is painted (no jump), and once more when it has settled.
+    document.addEventListener("agenthub:view", function () { requestAnimationFrame(rest); setTimeout(rest, 30); });
     // Shown again (another station) or resized: measure anew.
     if (window.ResizeObserver) new ResizeObserver(function () { fade(); }).observe(col);
     window.addEventListener("load", fade);   // fonts and pictures may change the heights after the first look
@@ -127,11 +135,11 @@
       drag = null;
       split.classList.remove("active");
       document.documentElement.classList.remove("splitting");
-      store(name, parseFloat(col.style.getPropertyValue("--split")) || null);
+      keep(parseFloat(col.style.getPropertyValue("--split")) || null);
     }
     split.addEventListener("pointerup", end);
     split.addEventListener("pointercancel", end);
-    split.addEventListener("dblclick", function () { store(name, null); apply(null); rest(); });
+    split.addEventListener("dblclick", function () { keep(null); apply(null); rest(); });
     split.addEventListener("keydown", function (event) {
       var step = { ArrowUp: -0.05, ArrowDown: 0.05 }[event.key];
       if (step === undefined) return;
@@ -141,7 +149,7 @@
         : (a.getBoundingClientRect().height - box.fixed) / box.total;
       var next = clamp(now + step, box);
       apply(next);
-      store(name, next);
+      keep(next);
     });
   });
 })();

@@ -19,11 +19,12 @@ def _upload_field(lang: str, name: str, label_key: str, choices: tuple, current:
             f'<select name="{name}">{options}</select>{icon("chevron_down")}</label>')
 
 
-def _action(lang: str, key: str, attr: str) -> str:
+def _action(lang: str, key: str, attr: str, info: bool = True) -> str:
     """A row that is one action (Janis, 14.11.2026): the button says what it does, the "i" next to it says the rest.
-    No title above it that only repeats the button."""
+    No title above it that only repeats the button. `info`: only where the action needs explaining (Janis, 18.11.2026)."""
+    dot = info_dot(i18n.t(lang, key), i18n.t(lang, key + "_hint")) if info else ""
     return (f'<div class="sys-row sys-action"><button type="button" class="sys-btn" {attr}>{esc(i18n.t(lang, key))}</button>'
-            f'{info_dot(i18n.t(lang, key), i18n.t(lang, key + "_hint"))}</div>')
+            f'{dot}</div>')
 
 
 SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
@@ -92,6 +93,6 @@ def render(user: User) -> str:
     return fill(SYSTEM, lang, UPLOAD_FIELDS=fields, UPLOAD_INFO=info_dot(t("sys_upload"), upload_info),
                 AI_FIELD=ai_field, AI_INFO=info_dot(t("sys_ai"), t("sys_ai_info")),
                 BACKUP=_action(lang, "sys_backup", "data-backup"),
-                SKINS=_action(lang, "sys_skins", "disabled"),   # placeholder (Janis, 18.11.2026): comes later
+                SKINS=_action(lang, "sys_skins", "disabled", info=False),   # placeholder (Janis, 18.11.2026): comes later
                 REBOOT=_action(lang, "sys_reboot", 'data-power="reboot"'),
                 POWEROFF=_action(lang, "sys_poweroff", 'data-power="poweroff"'))
