@@ -57,8 +57,8 @@ class ServerSettingsTest(unittest.TestCase):
         html = systempage.render(self.owner)
         self.assertIn('<option value="8" selected>', html)
         self.assertIn('<option value="64" selected>', html)
-        # one "i" per row (Janis, 14.11.2026): backup, upload, AI runs, skins, restart, shut down; no explaining lines
-        self.assertEqual(html.count('class="info-dot"'), 6)
+        # one "i" per row that needs it (Janis, 14.11.2026): backup, upload, AI runs, restart, shut down (skins: none)
+        self.assertEqual(html.count('class="info-dot"'), 5)
         self.assertNotIn("sys-hint", html)
         self.assertIn("Gleichzeitig: So viele Stücke", html)               # the upload "i" explains both choices
         self.assertEqual(html.count("Backup erstellen<"), 1)               # the button, no title repeating it

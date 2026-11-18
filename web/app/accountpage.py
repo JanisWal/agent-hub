@@ -1,12 +1,12 @@
 """HTML of the account page (Janis, 18.11.2026): everything about one's own account in one place, for every user.
 Name and language, the password, the colour mode for red-green weakness (a placeholder) and deleting the account.
-It uses the rows of the system block (system.css), so it looks like the administration page."""
+It uses the rows of the system block (system.css), so it looks like the administration page; no "i" (all of it is
+plain). How the page is laid out is to be talked over again (Janis, 18.11.2026)."""
 from html import escape as esc
 
 from . import i18n
 from .icons import icon
 from .layout import fill
-from .ui import info_dot
 from .users import User
 
 ACCOUNT = """<div class="admin-wrap one acc-wrap">
@@ -29,17 +29,14 @@ ACCOUNT = """<div class="admin-wrap one acc-wrap">
             </select>%CHEVRON%
           </label>
         </div>
-        %PROFILE_INFO%
       </form>
       <form class="sys-row sys-action" method="get" action="/password">
-        <button type="submit" class="sys-btn">%t.change_password%</button>%PASSWORD_INFO%
+        <button type="submit" class="sys-btn">%t.change_password%</button>
       </form>
       <div class="sys-row sys-action">
-        <button type="button" class="sys-btn" disabled>%t.account_colors%</button>%COLORS_INFO%
+        <button type="button" class="sys-btn" disabled>%t.account_colors%</button>
       </div>
-      <div class="sys-row sys-action">
-        <button type="button" class="sys-btn danger-btn" data-account-delete %DELETE_OFF%>%t.account_delete%</button>%DELETE_INFO%
-      </div>
+      %DELETE%
     </div>
   </section>
 </div>
@@ -57,8 +54,15 @@ ACCOUNT = """<div class="admin-wrap one acc-wrap">
 </dialog>"""
 
 
+# The owner can not delete the account until he hands the role on (users.delete_self): he does not get the row at all
+# (Janis, 18.11.2026: no "i" on this page, so no greyed-out button that would need one).
+DELETE_ROW = """<div class="sys-row sys-action">
+        <button type="button" class="sys-btn danger-btn" data-account-delete>%LABEL%</button>
+      </div>"""
+
+
 def render(user: User) -> str:
-    """Body of /account. The owner can not delete the account until he hands the role on (users.delete_self)."""
+    """Body of /account."""
     lang = user.language
     t = lambda key: i18n.t(lang, key)   # noqa: E731
     owner = user.role == "owner"
@@ -67,9 +71,5 @@ def render(user: User) -> str:
         NAME_VALUE=esc(user.display_name or ""), NAME_SHOWN=esc(user.name),
         DE="selected" if lang == "de" else "", EN="selected" if lang == "en" else "",
         CHEVRON=icon("chevron_down"),
-        PROFILE_INFO=info_dot(t("account_profile"), t("account_profile_hint")),
-        PASSWORD_INFO=info_dot(t("change_password"), t("account_password_hint")),
-        COLORS_INFO=info_dot(t("account_colors"), t("account_colors_hint")),
-        DELETE_OFF="disabled" if owner else "",
-        DELETE_INFO=info_dot(t("account_delete"), t("account_delete_owner" if owner else "account_delete_hint")),
+        DELETE="" if owner else DELETE_ROW.replace("%LABEL%", esc(t("account_delete"))),
     )

@@ -11,6 +11,7 @@
   });
 
   var open = root.querySelector("[data-account-delete]");
+  if (!open) return;   // the owner hands the role on before he can delete the account
   var dialog = document.getElementById("account-delete-dialog");
   var form = dialog.querySelector("form");
   var error = dialog.querySelector("[data-error]");

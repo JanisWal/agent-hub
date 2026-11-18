@@ -37,8 +37,9 @@ class AccountTest(unittest.TestCase):
             self.assertIsNone(re.search(r"%[A-Za-z_.]+%", html), "placeholder left over")
             self.assertIn('action="/settings"', html)
             self.assertIn('action="/password"', html)
-        self.assertIn('data-account-delete >', accountpage.render(self.user))              # usable for a user
-        self.assertIn("data-account-delete disabled", accountpage.render(self.owner))      # the owner hands on first
+        self.assertIn("data-account-delete", accountpage.render(self.user))
+        self.assertNotIn("data-account-delete", accountpage.render(self.owner))            # the owner hands on first
+        self.assertNotIn("info-dot", accountpage.render(self.user))                        # nothing here needs an "i"
 
     def test_the_name_is_escaped(self):
         users.set_profile(self.user.id, '<b>x</b>"', "de")
@@ -93,7 +94,7 @@ class AccountTest(unittest.TestCase):
 
     def test_skins_are_a_placeholder_in_the_system_block(self):
         html = systempage.render(self.owner)
-        self.assertIn(f'disabled>{i18n.t("de", "sys_skins")}</button>', html)
+        self.assertIn(f'disabled>{i18n.t("de", "sys_skins")}</button></div>', html)        # greyed out, no "i"
 
 
 if __name__ == "__main__":
