@@ -511,6 +511,13 @@ class FilesTest(unittest.TestCase):
         image = self.upload("a.png", b"x")
         self.assertIsNone(files.read_text(self.user.id, image.id))
         self.assertFalse(files.write_text(self.user.id, image.id, "x"))
+        # code and data are shown in the reader, but only notes are changed there (Janis, 18.11.2026)
+        for name in ("main.py", "data.csv", "page.html", "Makefile", "server.log"):
+            item = self.upload(name, b"print(1)")
+            self.assertEqual(files.read_text(self.user.id, item.id), "print(1)", name)
+            self.assertTrue(item.readable and not item.editable, name)
+            self.assertFalse(files.write_text(self.user.id, item.id, "x"), name)
+        self.assertFalse(self.upload("a.docx", b"x").readable)
         with self.assertRaises(files.FileError):
             files.write_text(self.user.id, note.id, "x" * (files.TEXT_MAX + 1))
 
@@ -518,14 +525,29 @@ class FilesTest(unittest.TestCase):
     def serve(self, item):
         return file_routes.serve(item.id, 0, self.user)
 
-    def test_only_images_video_and_audio_are_shown_everything_else_is_a_download(self):
+    def test_only_images_video_audio_and_pdfs_are_shown_everything_else_is_a_download(self):
         for name, shown in (("a.png", True), ("a.svg", True), ("a.mp4", True), ("a.mp3", True), ("a.html", False),
-                            ("a.pdf", False), ("a.js", False), ("a.exe", False), ("a.md", False)):
+                            ("a.pdf", True), ("a.js", False), ("a.exe", False), ("a.md", False)):
             response = self.serve(self.upload(name, b"<script>alert(1)</script>"))
             self.assertEqual(response.headers["content-disposition"].startswith("inline"), shown, name)
             if not shown:
                 self.assertEqual(response.media_type, "application/octet-stream", name)
-            self.assertIn("sandbox", response.headers["content-security-policy"])
+            if name != "a.pdf":
+                self.assertIn("sandbox", response.headers["content-security-policy"])
+
+    def test_a_pdf_is_shown_by_the_browsers_viewer_under_a_policy_that_allows_nothing_else(self):
+        item = self.upload("Schaltplan.pdf", b"%PDF-1.4")
+        self.assertEqual(item.kind, "pdf")
+        shown = self.serve(item)
+        self.assertEqual(shown.media_type, "application/pdf")
+        policy = shown.headers["content-security-policy"]
+        self.assertNotIn("sandbox", policy)                       # Chrome does not start its PDF viewer in a sandbox
+        self.assertIn("default-src 'none'", policy)
+        self.assertNotIn("script-src", policy)
+        self.assertIn("frame-ancestors 'self'", policy)           # only the hub's own page may show it
+        downloaded = file_routes.serve(item.id, 1, self.user)
+        self.assertTrue(downloaded.headers["content-disposition"].startswith("attachment"))
+        self.assertIn("sandbox", downloaded.headers["content-security-policy"])
 
     # --- the tile
     def tile(self, lang="en"):

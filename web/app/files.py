@@ -60,16 +60,20 @@ MAX_URL = 2000
 CODE = set("py js mjs ts tsx jsx swift java kt c h cpp hpp cs go rs rb php sh bash ps1 sql json yaml yml toml xml html css scss "
            "ini cfg conf gradle plist ino lua pl r m mm".split())
 IMAGE = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp",
-         "avif": "image/avif", "bmp": "image/bmp", "svg": "image/svg+xml"}
+         "avif": "image/avif", "bmp": "image/bmp", "svg": "image/svg+xml", "ico": "image/x-icon"}
 VIDEO = {"mp4": "video/mp4", "m4v": "video/mp4", "mov": "video/quicktime", "webm": "video/webm"}
 AUDIO = {"mp3": "audio/mpeg", "m4a": "audio/mp4", "wav": "audio/wav", "ogg": "audio/ogg", "flac": "audio/flac",
-         "aac": "audio/aac"}
+         "aac": "audio/aac", "opus": "audio/ogg"}
+PDF = {"pdf": "application/pdf"}  # shown by the browser's own PDF viewer (Janis, 18.11.2026: look without downloading)
 # Camera raw files (Janis, 14.11.2026: a DNG is a picture, so it goes to Media) and other pictures the browser can not
 # show everywhere: they still get a small preview, made in the browser (static/tiffthumb.js), never on the server.
 RAW = set("dng cr2 cr3 nef nrw arw srf sr2 orf rw2 raf pef srw x3f 3fr erf kdc mos mrw".split())
 PHOTO = set("heic heif tif tiff".split()) | RAW
-MEDIA_OTHER = set("mkv avi wmv flv 3gp opus".split()) | PHOTO
+MEDIA_OTHER = set("mkv avi wmv flv 3gp".split()) | PHOTO
 EDITABLE = {"md", "txt"}          # the pencil opens an editor for these
+# Plain text the reader shows without editing (code and data files; never rendered: an HTML file shows as its text).
+READABLE = CODE | EDITABLE | set("csv tsv log env gitignore dockerfile makefile properties srt vtt tex rst adoc".split())
+TABLE = {"csv", "tsv"}             # the reader shows these as a table
 
 
 def extension(name: str) -> str:
@@ -106,7 +110,7 @@ class StoredFile:
     @property
     def kind(self) -> str:
         """For the icon and the preview: link, image, video, audio, photo (TIFF, HEIC, raw: a preview, but no viewer,
-        not every browser can show them), code, text, folder or other."""
+        not every browser can show them), pdf, code, text, folder or other."""
         if self.is_folder:
             return "folder"
         if self.url is not None:
@@ -120,13 +124,20 @@ class StoredFile:
             return "audio"
         if ext in PHOTO:
             return "photo"
+        if ext in PDF:
+            return "pdf"
         if ext in CODE:
             return "code"
-        return "text" if ext in EDITABLE else "other"
+        return "text" if ext in READABLE else "other"
 
     @property
     def editable(self) -> bool:
         return self.url is None and not self.is_folder and self.ext in EDITABLE
+
+    @property
+    def readable(self) -> bool:
+        """The reader shows it as text (code, data, notes); only `editable` ones can be changed there."""
+        return self.url is None and not self.is_folder and (self.ext in READABLE or self.name.lower() in READABLE)
 
 
 def category_for(name: str) -> str:
@@ -142,10 +153,11 @@ def category_for(name: str) -> str:
 
 
 def content_type(name: str) -> tuple[str, bool]:
-    """(Content-Type, inline). Only images, video and audio are shown in the browser; the type comes from a fixed
-    table, never from the upload. Everything else is a download with a neutral type."""
+    """(Content-Type, inline). Only images, video, audio and PDFs are shown in the browser; the type comes from a fixed
+    table, never from the upload. Everything else is a download with a neutral type (text comes to the reader through
+    read_text, never as a page of its own)."""
     ext = extension(name)
-    for table in (IMAGE, VIDEO, AUDIO):
+    for table in (IMAGE, VIDEO, AUDIO, PDF):
         if ext in table:
             return table[ext], True
     return "application/octet-stream", False
@@ -829,9 +841,9 @@ def zip_stream(entries: list[tuple[Path, str]], piece: int = 1024 ** 2) -> Itera
 
 
 def read_text(user_id: int, file_id: int) -> str | None:
-    """The text of an editable file (Markdown or plain text), or None. Raises FileError(too_big) for a huge one."""
+    """The text of a readable file (notes, code, data), or None. Raises FileError(too_big) for a huge one."""
     found = open_file(user_id, file_id)
-    if found is None or not found[1].editable:
+    if found is None or not found[1].readable:
         return None
     if found[0].stat().st_size > TEXT_MAX:
         raise FileError("too_big")

@@ -915,9 +915,11 @@
     if (!row || (!name && !picture)) return;
     if (isFolder(row)) { event.preventDefault(); choose(row.dataset.id); return; }       // a folder opens
     if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return;   // with a key held the browser decides
-    var viewable = ["image", "photo", "video", "audio"].indexOf(row.dataset.kind) >= 0;
-    if (row.dataset.editable === "1") { event.preventDefault(); openReader(row); }
-    else if (picture && viewable) { event.preventDefault(); openViewer(row); }
+    var showable = viewable(row);
+    // Look without downloading (Janis, 18.11.2026): text, code and data open in the reader, a PDF in the viewer, also
+    // by its name; a picture, video or sound by its symbol (its name still downloads it).
+    if (row.dataset.readable === "1") { event.preventDefault(); openReader(row); }
+    else if (row.dataset.kind === "pdf" || (picture && showable)) { event.preventDefault(); openViewer(row); }
     else if (picture && row.dataset.kind === "link") { window.open(row.dataset.url, "_blank", "noopener,noreferrer"); }
     else if (picture) { location.href = "/files/" + row.dataset.id + "?download=1"; }
   });
@@ -929,15 +931,17 @@
   var viewerId = null;
   var viewerPrev = document.getElementById("file-viewer-prev");
   var viewerNext = document.getElementById("file-viewer-next");
-  function viewable(row) { return ["image", "photo", "video", "audio"].indexOf(row.dataset.kind) >= 0; }
+  function viewable(row) { return ["image", "photo", "video", "audio", "pdf"].indexOf(row.dataset.kind) >= 0; }
   function neighbours() {      // the pictures, videos and sounds of the list that is showing, in the order shown
     return Array.prototype.filter.call(tile.querySelectorAll(".file-list:not([hidden]) .file-row:not([hidden])"), viewable);
   }
   function showInViewer(row) {
     var kind = row.dataset.kind;
     var picture = kind === "image" || kind === "photo";
-    var node = document.createElement(picture ? "img" : kind);
-    if (picture) node.alt = ""; else { node.controls = true; node.preload = "metadata"; node.playsInline = true; }
+    var node = document.createElement(picture ? "img" : kind === "pdf" ? "iframe" : kind);
+    if (picture) node.alt = "";
+    else if (kind === "pdf") { node.className = "viewer-pdf"; node.title = row.dataset.name; }   // the browser's own PDF viewer
+    else { node.controls = true; node.preload = "metadata"; node.playsInline = true; }
     if (kind === "photo") {
       // TIFF, HEIC, raw: the big preview the server keeps; without one yet it is made now, once (the file is fetched
       // whole), shown and kept for the next time. The spinner dots show meanwhile.
@@ -1004,6 +1008,7 @@
   var readerName = "";
   var readerSource = "";
   var readerLoaded = false;
+  var readerEditable = false;
 
   // Inline marks of Markdown: **bold**, `code`, [text](link) and bare links; built from DOM nodes only, never from HTML.
   var INLINE = /\*\*([^*\n]+)\*\*|\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s)<>\]]+)|`([^`\n]+)`/g;
@@ -1072,21 +1077,63 @@
     }
   }
 
+  // A CSV or TSV file as a table (at most TABLE_ROWS rows; quotes as in RFC 4180), built from DOM nodes only.
+  var TABLE_ROWS = 2000;
+  function parseTable(text, separator) {
+    var rows = [], row = [], cell = "", quoted = false;
+    for (var i = 0; i < text.length && rows.length < TABLE_ROWS; i++) {
+      var ch = text[i];
+      if (quoted) {
+        if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+        else if (ch === '"') quoted = false;
+        else cell += ch;
+      } else if (ch === '"' && cell === "") quoted = true;
+      else if (ch === separator) { row.push(cell); cell = ""; }
+      else if (ch === "\n" || ch === "\r") {
+        if (ch === "\r" && text[i + 1] === "\n") i++;
+        row.push(cell); rows.push(row); row = []; cell = "";
+      } else cell += ch;
+    }
+    if (cell || row.length) { row.push(cell); rows.push(row); }
+    return rows;
+  }
+  function table(target, text, separator) {
+    var rows = parseTable(text, separator);
+    var box = document.createElement("table");
+    rows.forEach(function (cells, i) {
+      var tr = document.createElement("tr");
+      cells.forEach(function (value) {
+        var td = document.createElement(i === 0 ? "th" : "td");
+        td.textContent = value;
+        tr.appendChild(td);
+      });
+      box.appendChild(tr);
+    });
+    target.appendChild(box);
+  }
   function showReader() {
     readerBody.textContent = "";
-    readerBody.classList.toggle("plain", !/\.md$/i.test(readerName));
-    if (/\.md$/i.test(readerName)) markdown(readerBody, readerSource); else readerBody.textContent = readerSource;
+    var ext = (readerName.split(".").pop() || "").toLowerCase();
+    var md = ext === "md", sheet = ext === "csv" || ext === "tsv";
+    readerBody.classList.toggle("plain", !md && !sheet);
+    readerBody.classList.toggle("code", !md && !sheet && ext !== "txt");    // code and data in a fixed-width font
+    readerBody.classList.toggle("sheet", sheet);
+    if (md) markdown(readerBody, readerSource);
+    else if (sheet) table(readerBody, readerSource, ext === "tsv" ? "\t" : (readerSource.split("\n")[0].split(";").length >
+                                                                         readerSource.split("\n")[0].split(",").length ? ";" : ","));
+    else readerBody.textContent = readerSource;
   }
   function readerMode(edit) {
     readerBody.hidden = edit;
     readerText.hidden = !edit;
     readerActions.hidden = !edit;
-    readerEdit.hidden = edit || !readerLoaded;
+    readerEdit.hidden = edit || !readerLoaded || !readerEditable;   // code and data are only read here
     if (edit) { readerText.value = readerSource; readerText.focus(); }
   }
   function openReader(row) {
     readerId = row.dataset.id;
     readerName = row.dataset.name;
+    readerEditable = row.dataset.editable === "1";
     readerTitle.textContent = readerName;
     readerSource = "";
     readerLoaded = false;

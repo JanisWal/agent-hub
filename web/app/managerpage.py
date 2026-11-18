@@ -283,7 +283,7 @@ FILE_TABS = (("memory", "files_tab_memory"), ("code", "files_tab_code"), ("media
              ("documents", "files_tab_documents"), ("links", "files_tab_links"))
 TAB_ICON = {"all": "folder", "memory": "note", "code": "code", "media": "photo", "documents": "file", "links": "link"}
 KIND_ICON = {"link": "link", "image": "photo", "video": "film", "audio": "music", "code": "code", "text": "note",
-             "photo": "photo", "other": "file", "folder": "folder"}
+             "photo": "photo", "pdf": "file", "other": "file", "folder": "folder"}
 
 FILE_DIALOGS = """<dialog class="dialog" id="file-dialog" data-title-link="%t.files_new_link%" data-title-edit="%t.files_edit%"
         data-title-edit-link="%t.files_edit_link%" data-title-folder="%t.files_new_folder%"
@@ -412,7 +412,7 @@ def _file_row(lang: str, item: filestore.StoredFile, where: list[str] | None = N
         f'<li class="file-row{" folder" if kind == "folder" else ""}" draggable="true" data-id="{item.id}" '
         f'data-cat="{item.category}" data-kind="{kind}" data-parent="{item.parent_id or ""}" '
         f'data-folder="{1 if kind == "folder" else 0}" '
-        f'data-name="{esc(item.name)}" data-url="{esc(item.url or "")}" data-editable="{1 if item.editable else 0}">'
+        f'data-name="{esc(item.name)}" data-url="{esc(item.url or "")}" data-editable="{1 if item.editable else 0}" data-readable="{1 if item.readable else 0}">'
         f'<span class="file-tile">{icon(KIND_ICON[kind])}</span>{preview}'
         f'<a class="file-text" href="{href}"{target} draggable="false"><span class="check-title">{esc(item.name)}</span>'
         f'<small>{sub}{place}</small></a>'
