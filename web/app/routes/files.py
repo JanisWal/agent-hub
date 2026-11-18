@@ -50,16 +50,16 @@ def preferences(confirm: str = Form("1"), user: users.User = Depends(api_user)):
 
 
 @router.post("/projects/{project_id}/files/check")
-def check_names(project_id: int, names: list[str] = Form([]), category: str = Form(""), folder: str = Form(""),
-                user: users.User = Depends(api_user)):
+def check_names(project_id: int, names: list[str] = Form([]), category: str = Form(""),
+                user: users.User = Depends(api_user), folder: str = Form("")):
     """Before an upload: which names exist already in the place the files go to, each with a free name (files.check_names)."""
     taken = files.check_names(user.id, project_id, names[:1000], category or None, _folder_id(folder))
     return fail(404) if taken is None else ok(taken=taken)
 
 
 @router.post("/projects/{project_id}/files/start")
-def start_upload(project_id: int, name: str = Form(""), size: int = Form(0), folder: str = Form(""),
-                 user: users.User = Depends(api_user)):
+def start_upload(project_id: int, name: str = Form(""), size: int = Form(0), user: users.User = Depends(api_user),
+                 folder: str = Form("")):
     try:
         return ok(**_info(files.start_upload(user.id, project_id, name, size, folder_id=_folder_id(folder))))
     except files.FileError as problem:

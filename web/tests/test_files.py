@@ -152,7 +152,7 @@ class FilesTest(unittest.TestCase):
         self.assertEqual(file_routes.create_folder(self.project.id, "plans", "documents", "", "1", self.user)["id"], made["id"])
         item = self.upload("x.pdf", b"x")
         self.assertEqual(file_routes.move(self.project.id, f"{item.id},junk", "", str(made["id"]), self.user)["moved"], 1)
-        started = file_routes.start_upload(self.project.id, "y.pdf", 1, str(made["id"]), self.user)
+        started = file_routes.start_upload(self.project.id, "y.pdf", 1, self.user, folder=str(made["id"]))
         self.assertEqual(started["parent"], made["id"])
 
     # --- sorting by ending

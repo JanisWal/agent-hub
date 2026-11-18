@@ -238,6 +238,11 @@ class IsolationTest(unittest.TestCase):
         self.assertIsNone(files.open_thumb(self.b.id, item.id))
         self.assertFalse(files.save_thumb(self.b.id, item.id, b"\xff\xd8\xff planted"))   # A's file
         self.assertEqual(file_routes.thumb(item.id, self.b).status_code, 404)
+        self.assertEqual(snapshot(), before)
+        self.assertEqual(files.read_text(self.a.id, item.id), "secret")
+        page = projectpage.render(self.b, self.mine, [], [], files.list_files(self.b.id, self.mine.id))
+        self.assertNotIn("secret.md", page)
+        self.assertNotIn("Secret link", page)
 
     def test_b_cannot_see_use_or_move_the_folders_of_a(self):
         from pathlib import Path
@@ -268,11 +273,6 @@ class IsolationTest(unittest.TestCase):
         with db.connect() as conn:
             stored, _ = files.for_agents(conn, self.b.id, self.project.id)
         self.assertEqual(stored, [])
-        self.assertEqual(snapshot(), before)
-        self.assertEqual(files.read_text(self.a.id, item.id), "secret")
-        page = projectpage.render(self.b, self.mine, [], [], files.list_files(self.b.id, self.mine.id))
-        self.assertNotIn("secret.md", page)
-        self.assertNotIn("Secret link", page)
 
     def test_b_cannot_read_restore_or_edit_the_memory_versions_of_a(self):
         from pathlib import Path
