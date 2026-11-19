@@ -15,7 +15,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import aichoice, board, catalog, db, files, memory, runtask, serversettings, workflow
+from . import aichoice, board, catalog, db, files, memory, reply, runtask, serversettings, workflow
 
 # Models and effort levels are not fixed here: they come from catalog.py (Janis, 14.11.2026). A role without a
 # choice gets the provider's default model and that model's default level. Since 15.11.2026 the choice is kept per
@@ -35,6 +35,7 @@ RUN_SECONDS = 20 * 60                    # a run that reports nothing for so lon
 # How many AI containers run at once (chat answers and agent runs together) is a setting of the owner
 # (serversettings.ai_parallel, Janis 15.11.2026): 1 on a small server, more or no limit on a big one.
 MAX_REPORT = 20000                       # characters of a report that are kept
+FOUND_MAX = 3                            # items a run may put on the board (runtask.FOUND_RULE)
 ACTIVE = workflow.STAGES                 # stages in which a task is still moving
 OPEN_STATUSES = ACTIVE + ("escalated",)  # a board item with such a task is "taken"
 
@@ -308,6 +309,9 @@ def _enter(conn: sqlite3.Connection, user_id: int, task_id: int, step: workflow.
     if step.status in ("done", "escalated", "cancelled"):
         conn.execute("UPDATE agent_runs SET status = 'cancelled' WHERE task_id = ? AND status = 'queued'",
                      (task_id,))
+    if step.status == "cancelled":   # the user stopped it: the item stays on the board, but never starts by itself again
+        conn.execute("UPDATE board_items SET auto = 0 WHERE id = (SELECT item_id FROM agent_tasks WHERE id = ?)",
+                     (task_id,))
     if step.status == "done":
         # Finished work is not deleted: its board item moves into the archive (Janis, 07.11.2026).
         conn.execute("UPDATE board_items SET status = 'archived'"
@@ -332,19 +336,50 @@ def start_task(user_id: int, project_id: int, item_id: int, needs: str = "any",
             raise ValueError("Unbekannter Punkt")
         if _taken(conn, item_id):
             raise ValueError("Punkt ist schon in Arbeit")
-        # never the number of a deleted task whose work folder the runner has not deleted yet
-        new_id = db.fresh_id(conn, "agent_tasks", "SELECT MAX(ref) FROM work_wipes WHERE kind = 'task'")
-        cur = conn.execute(
-            "INSERT INTO agent_tasks (id, project_id, item_id, title, kind, needs, status, round,"
-            " created_at, deadline) VALUES (?, ?, ?, ?, ?, ?, 'coding', 1, ?, ?)",
-            (new_id, project_id, item_id, item["title"], item["kind"], needs, now, now + TASK_SECONDS),
-        )
-        _queue(conn, user_id, cur.lastrowid, "coding", now)
-        row = conn.execute("SELECT * FROM agent_tasks WHERE id = ?", (cur.lastrowid,)).fetchone()
+        task_id = _start(conn, user_id, item, needs, now)
+        row = conn.execute("SELECT * FROM agent_tasks WHERE id = ?", (task_id,)).fetchone()
     return _task(row)
 
 
-# --- what the user sees
+def _start(conn: sqlite3.Connection, user_id: int, item: sqlite3.Row, needs: str, now: int) -> int:
+    """The task of an open board item and its first run (the caller checked owner and item)."""
+    # never the number of a deleted task whose work folder the runner has not deleted yet
+    new_id = db.fresh_id(conn, "agent_tasks", "SELECT MAX(ref) FROM work_wipes WHERE kind = 'task'")
+    conn.execute(
+        "INSERT INTO agent_tasks (id, project_id, item_id, title, kind, needs, status, round,"
+        " created_at, deadline) VALUES (?, ?, ?, ?, ?, ?, 'coding', 1, ?, ?)",
+        (new_id, item["project_id"], item["id"], item["title"], item["kind"], needs, now, now + TASK_SECONDS),
+    )
+    _queue(conn, user_id, new_id, "coding", now)
+    return new_id
+
+
+def autostart(conn: sqlite3.Connection, now: int) -> int:
+    """Start the next item that goes to the programmer by itself (board_items.auto: the manager put it on the board
+    from the user's request, or the user accepted a suggestion; Janis 19.11.2026). Per project at most one task on its
+    way at a time (they build on each other and share one repository), bugs first, then small, then major updates,
+    each in the order of the board; only for a user with an AI connected. Returns how many started."""
+    started = 0
+    projects = conn.execute(
+        "SELECT DISTINCT b.project_id, p.user_id FROM board_items b JOIN projects p ON p.id = b.project_id"
+        " JOIN users u ON u.id = p.user_id WHERE b.auto = 1 AND b.status = 'open' AND u.deleted_at IS NULL").fetchall()
+    marks = ",".join("?" * len(ACTIVE))
+    for row in projects:
+        if conn.execute(f"SELECT 1 FROM agent_tasks WHERE project_id = ? AND status IN ({marks})",
+                        (row["project_id"], *ACTIVE)).fetchone():
+            continue
+        if not aichoice.connected_list(conn, row["user_id"]):
+            continue
+        for kind in KIND_ORDER:
+            item = next((i for i in conn.execute(
+                "SELECT * FROM board_items WHERE project_id = ? AND kind = ? AND status = 'open' AND auto = 1"
+                " ORDER BY position, id", (row["project_id"], kind)) if not _taken(conn, i["id"])), None)
+            if item is not None:
+                _start(conn, row["user_id"], item, "any", now)
+                started += 1
+                break
+    return started
+
 
 def list_tasks(user_id: int, project_id: int) -> list[Task]:
     """Newest first; empty if the project is not the user's."""
@@ -520,6 +555,7 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
     with db.connect() as conn:
         _escalate_late(conn, now)
         _skip_waiting_tests(conn, can_mac, now)
+        autostart(conn, now)
         if not slot_free(conn):
             return None
         for run in conn.execute(
@@ -577,6 +613,11 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
             pending_notes = (user_id, task["project_id"], notes, parsed.edits or [])
         else:
             pending_notes = None
+        found = reply.parse(report)                       # what the role noticed outside its task (runtask.FOUND_RULE)
+        report = found.text
+        for item in found.tasks[:FOUND_MAX]:              # a bug goes on the board at once, an addition waits
+            board.add_from_ai(conn, task["project_id"], item.kind, item.title, item.body,
+                              approved=item.kind == "bug", source="claude")
         step = workflow.advance(task["status"], task["round"], bool(task["manual_check"]), result,
                                 _enabled(conn, user_id))
         conn.execute(

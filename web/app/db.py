@@ -288,6 +288,9 @@ NEW_COLUMNS = {
         "files_confirm": "INTEGER NOT NULL DEFAULT 1",    # does deleting a file ask first? (the trash circle of the file tile)
         "deleted_at": "INTEGER",                          # when the account was deleted; gone for good DELETED_DAYS later (users.py)
     },
+    # The context behind a short board item and whether it starts on its own (Janis, 19.11.2026, manager-board):
+    # items the manager put on the board from the chat, and accepted suggestions, go to the programmer by themselves.
+    "board_items": {"details": "TEXT NOT NULL DEFAULT ''", "auto": "INTEGER NOT NULL DEFAULT 0"},
     "projects": {"page": "INTEGER NOT NULL DEFAULT 0", "description": "TEXT NOT NULL DEFAULT ''",
                  "memory_seeded": "INTEGER NOT NULL DEFAULT 0"},   # the fixed memory files were made (memory.py)
     "chat_messages": {"mode": "TEXT NOT NULL DEFAULT 'web'", "model": "TEXT NOT NULL DEFAULT 'haiku'",

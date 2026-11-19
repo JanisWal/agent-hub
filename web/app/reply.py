@@ -4,7 +4,7 @@ Every AI writes the same markers, so nothing depends on one provider. The hub re
 the text the user reads. Memory and read markers stay in memory.py; this module only knows the three new ones:
 
     <ask kind="choice|text" size="small|large">Question<option>Answer</option>...</ask>
-    <task kind="bug|minor|major" title="...">Description and acceptance criteria</task>
+    <task kind="bug|minor|major" title="..." from="user|idea">Context and acceptance criteria</task>   (from: 19.11.2026)
     <status level="green|yellow|red" title="A few words">One or two sentences</status>   (title optional)
     <move id="12" to="Backgrounds/Dark"/>   (a plan to structure the files, autofolders.py; to="" = the top)
 
@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass, field
 
 MAX_ASKS = 3
-MAX_TASKS = 5
+MAX_TASKS = 8          # the manager splits a wish into small pieces (Janis, 19.11.2026)
 MAX_TITLE = 200
 MAX_BODY = 4000
 MAX_QUESTION = 1000
@@ -58,6 +58,7 @@ class Task:
     kind: str                # "bug", "minor" or "major"
     title: str
     body: str
+    origin: str = "idea"     # "user": the user asked for it in the chat; "idea": the AI's own suggestion (the default)
 
 
 @dataclass
@@ -115,7 +116,7 @@ def parse(answer: str) -> Signals:
         attrs = _attrs(raw)
         title, body = _line(attrs.get("title", ""), MAX_TITLE), _block(inner, MAX_BODY)
         if attrs.get("kind") in TASK_KINDS and title and len(tasks) < MAX_TASKS:
-            tasks.append(Task(attrs["kind"], title, body))
+            tasks.append(Task(attrs["kind"], title, body, "user" if attrs.get("from") == "user" else "idea"))
     status = None
     for raw, inner in _STATUS.findall(answer):
         attrs = _attrs(raw)

@@ -47,6 +47,15 @@
     if (add) openItemDialog({ action: "/projects/" + projectId + "/items", kind: add.dataset.kind });
   });
 
+  // A click on a bullet unfolds the context behind it (Janis, 19.11.2026); a double click renames it.
+  document.addEventListener("click", function (event) {
+    var title = event.target.closest(".card .card-title.has-details");
+    if (!title || event.target.closest(".info-dot")) return;
+    var more = title.querySelector(".card-details");
+    more.hidden = !more.hidden;
+    title.classList.toggle("open", !more.hidden);
+  });
+
   document.addEventListener("dblclick", function (event) {
     var title = event.target.closest(".card .card-title");
     if (!title) return;
@@ -54,7 +63,7 @@
     openItemDialog({
       action: "/items/" + card.dataset.id,
       kind: card.closest(".column").dataset.kind,
-      title: title.textContent,
+      title: (title.querySelector(".card-text") || title).textContent,
       edit: true
     });
   });

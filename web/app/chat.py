@@ -15,7 +15,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import agents, aichoice, autofolders, catalog, checks, db, devices, files, memory, reply, statusnote
+from . import agents, aichoice, autofolders, board, catalog, checks, db, devices, files, memory, reply, statusnote
 
 # The manager is the role "chef": model and effort level are settings of the user (agents.py, list in catalog.py).
 MAX_PROMPT = 2000
@@ -32,7 +32,8 @@ NOTE_CUT = 400            # characters kept of each such note
 ROLE = (
     "You are the manager of the software and hardware project described below, in the user's Agent-Hub. "
     "Advise the user: whether something makes sense, how to build it, what to watch out for, also for "
-    "hardware. You change nothing yourself; suggest board items, documents or steps instead. Never tell "
+    "hardware. You change no code yourself: software work goes on the board (see the board rule), the programmer "
+    "does it. Never tell "
     "the user you switched or tested hardware, and never claim to have done anything outside this chat. "
     "%TOOLS% Use tools only when a question needs them, otherwise answer directly (that saves tokens). "
     "Never send the user's files or login anywhere. "
@@ -84,9 +85,27 @@ MEMORY_RULES = (
 )
 
 
+# The board (Janis, 19.11.2026): what the user asks for in the chat goes on the board as a short bullet with the
+# context behind it, and the programmer starts on its own; what the manager adds himself waits for the user's yes.
+BOARD_RULE = (
+    "Board: the board holds only software work (bugs, small updates, major updates); hardware, errands and checks "
+    "never go there. When the user wants software work done, or agrees to it in this chat, split it into small pieces "
+    "that the programmer can do one after the other, each on its own and testable, in the order they build on each "
+    "other, and put each on the board in the fitting column with <task kind=\"bug|minor|major\" title=\"SHORT "
+    "BULLET\" from=\"user\">CONTEXT</task>: bug = something that does not work as meant, minor = a change or small "
+    "addition to what exists, major = a new feature or a larger part. The title is a short bullet (at most about 80 "
+    "characters); CONTEXT is everything the programmer needs, written so that he understands it without this chat: "
+    "what exactly, why, what was decided here, files or parts involved, limits, how to check it is done, and which "
+    "piece comes before. Such items need no confirmation: they go straight to the programmer. An addition you suggest "
+    "on your own (the user did not ask for it) gets from=\"idea\" and waits on the board for the user's yes. At most "
+    "8 per answer, never one that is already on the board (see <project>). Tell the user in one short sentence what "
+    "you put on the board."
+)
+
+
 def role_for(mode: str) -> str:
     """The rules of the manager, the same for every AI: each one answers through a program with tools (adapters)."""
-    return ROLE.replace("%TOOLS%", TOOLS_TEXT.get(mode, TOOLS_TEXT["apart"])) + " " + MEMORY_RULES
+    return ROLE.replace("%TOOLS%", TOOLS_TEXT.get(mode, TOOLS_TEXT["apart"])) + " " + BOARD_RULE + " " + MEMORY_RULES
 # The user's setting of how freely the manager decides (agents.AUTONOMY), as the manager reads it.
 AUTONOMY_TEXT = {
     "auto": "Decide everything yourself with the best option; do not ask the user.",
@@ -435,8 +454,11 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
     saved = False
     text = answer
     asks = []
+    tasks: list = []
     if parsed is not None:
         text, asks = reply.device_asks(parsed.text)
+        signals = reply.parse(text)
+        text, tasks = signals.text, signals.tasks
         if parsed.memory:
             saved = memory.save_memory(row["user_id"], row["project_id"], parsed.memory)
         for name, body in (parsed.files or {}).items():   # the other memory files it wrote (memory folder)
@@ -458,6 +480,9 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
             )
             for name, action, reason in asks:   # they wait for the user's yes in "waiting for you" (devices.py)
                 devices.request_action(conn, row["user_id"], row["project_id"], name, action, reason)
+            for task in tasks:   # on the board of the question's project; the user's request goes to the programmer
+                board.add_from_ai(conn, row["project_id"], task.kind, task.title, task.body,
+                                  approved=task.origin == "user" or task.kind == "bug", source="manager")
     return cur.rowcount == 1
 
 
