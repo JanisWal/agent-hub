@@ -94,7 +94,7 @@ def _task_card(item: Item, lang: str, task, report: str, waiting: str | None) ->
     Janis 19.11.2026: you should see that it works), the last report behind an "i", and the user's buttons (approve
     or another round; a task that needs him: another round or cancel; else cancel). `data-live`: the board looks
     again every few seconds while such a card is on it (board.js)."""
-    key = "task_no_ai" if waiting == "no_ai" else "task_slot" if waiting == "slot" else f"task_{task.status}"
+    key = "task_no_ai" if waiting == "no_ai" else f"task_{task.status}"
     state = esc(i18n.t(lang, key)) + (DOTS if waiting == "running" else "")
     tip = ui.info_dot(i18n.t(lang, "agent_report"), report[:600]) if report else ""
     live = ' data-live="1"' if task.status in agents.ACTIVE and task.status != "awaiting_approval" else ""
@@ -255,7 +255,7 @@ def drawer_buttons(lang: str) -> str:
 def _tasks(user: User, project: Project) -> dict:
     """item id -> (task, last report, waiting reason) for the cards of the board."""
     return {item_id: (task, agents.last_report(user.id, task.id), agents.waiting_reason(user.id, task))
-            for item_id, task in agents.tasks_by_item(user.id, project.id).items()}   # waiting: no_ai, slot, running
+            for item_id, task in agents.tasks_by_item(user.id, project.id).items()}   # waiting: no_ai, running
 
 
 def render(user: User, project: Project, items: list[Item], regular_checks: list | None = None,

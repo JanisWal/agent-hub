@@ -54,8 +54,8 @@ def create_item(
     project_id: int,
     kind: str = Form(""),
     title: str = Form(""),
-    details: str = Form(""),
     user: users.User = Depends(page_user),
+    details: str = Form(""),
 ):
     try:
         board.create_item(user.id, project_id, kind, title, details)
@@ -82,8 +82,8 @@ async def reorder_items(request: Request, user: users.User = Depends(api_user)):
 
 
 @router.post("/items/{item_id}")
-def rename_item(item_id: int, title: str = Form(""), details: str | None = Form(None),
-                user: users.User = Depends(page_user)):
+def rename_item(item_id: int, title: str = Form(""), user: users.User = Depends(page_user),
+                details: str | None = Form(None)):
     try:
         project_id = board.update_title(user.id, item_id, title, details)
     except ValueError:

@@ -145,14 +145,14 @@ class ManagerBoardTest(unittest.TestCase):
 
     def test_an_item_by_hand_carries_its_context_and_can_be_changed(self):
         from app.routes import board as board_routes
-        board_routes.create_item(self.pa.id, "minor", "Anzeige dimmen", "Nachts auf 30 %.", user=self.a)
+        board_routes.create_item(self.pa.id, "minor", "Anzeige dimmen", user=self.a, details="Nachts auf 30 %.")
         item = self.items()["Anzeige dimmen"]
         self.assertEqual((item.details, item.auto, item.source), ("Nachts auf 30 %.", True, "user"))
-        board_routes.rename_item(item.id, "Anzeige nachts dimmen", "Zwischen 22 und 6 Uhr.", user=self.a)
+        board_routes.rename_item(item.id, "Anzeige nachts dimmen", user=self.a, details="Zwischen 22 und 6 Uhr.")
         self.assertEqual(self.items()["Anzeige nachts dimmen"].details, "Zwischen 22 und 6 Uhr.")
-        board_routes.rename_item(item.id, "Anzeige dimmen", None, user=self.a)   # no field sent: the context stays
+        board_routes.rename_item(item.id, "Anzeige dimmen", user=self.a, details=None)   # no field: the context stays
         self.assertEqual(self.items()["Anzeige dimmen"].details, "Zwischen 22 und 6 Uhr.")
-        board_routes.rename_item(item.id, "Fremd", "x", user=self.b)
+        board_routes.rename_item(item.id, "Fremd", user=self.b, details="x")
         self.assertIn("Anzeige dimmen", self.items())
 
     def test_no_ai_no_start_and_nothing_for_a_foreign_project(self):
