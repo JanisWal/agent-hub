@@ -267,8 +267,10 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
     live = [i for i in items if i.status not in ("trash", "archived")]
     tasks = _tasks(user, project)
     settings, ais = agents.settings(user.id), (aichoice.default(user.id),)
+    current = agents.current_task(user.id, project.id)
     roles = "".join(rolepage.render_role(lang, role, settings, agents.role_runs(user.id, project.id, role),
-                                         agents.usage(user.id, project.id, role), ais) for role in rolepage.ROLES)
+                                         agents.usage(user.id, project.id, role), ais, current=current)
+                    for role in rolepage.ROLES)
     waiting = [(t, agents.last_report(user.id, t.id)) for t in agents.waiting_tasks(user.id, project.id)]
     entries = todos.list_todos(user.id, project.id)
     return fill(

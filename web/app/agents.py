@@ -451,6 +451,18 @@ class RoleRun:
 ROLE_RUNS = 30            # runs a role's tab shows at most (newest)
 
 
+def current_task(user_id: int, project_id: int) -> tuple[Task, str] | None:
+    """The task the roles of the user's project work on now (one at a time per project, autostart) and the context
+    of its board item, for the programmer's tab; None if nothing is on its way or the project is not his."""
+    marks = ",".join("?" * len(ACTIVE))
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT t.*, COALESCE(b.details, '') AS details FROM agent_tasks t JOIN projects p ON p.id = t.project_id"
+            f" LEFT JOIN board_items b ON b.id = t.item_id WHERE t.project_id = ? AND p.user_id = ? AND t.status IN ({marks})"
+            " ORDER BY t.id DESC LIMIT 1", (project_id, user_id, *ACTIVE)).fetchone()
+    return None if row is None else (_task(row), row["details"])
+
+
 def role_runs(user_id: int, project_id: int, role: str, limit: int = ROLE_RUNS) -> list[RoleRun]:
     """The newest runs of one role in one project, newest first; empty if the project is not the user's."""
     if role not in workflow.ROLES:

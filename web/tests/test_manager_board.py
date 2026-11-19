@@ -165,6 +165,21 @@ class ManagerBoardTest(unittest.TestCase):
             self.assertIsNone(board.add_from_ai(conn, self.pa.id, "bug", "Heizung per Zeitplan"))   # there already
             self.assertIsNone(board.add_from_ai(conn, self.pa.id, "bug", "X", source="admin"))
 
+    def test_the_programmers_tab_shows_the_task_with_its_context_and_the_parts_to_come(self):
+        self.ask(WISH)
+        agents.claim_next(can_mac=False)                                       # the bug runs now
+        project = projects.get_project(self.a.id, self.pa.id)
+        page = projectpage.render(self.a, project, board.list_items(self.a.id, self.pa.id))
+        view = page[page.index('id="view-programmer"'):page.index('id="view-tester"')]
+        self.assertIn('<p class="p-title">Relais klickt doppelt</p>', view)
+        self.assertIn("Beim Einschalten zweimal.", view)                        # the context from the board
+        for part in ("Verlauf", "Vorschau", "Code", "Änderungen", "Läufe", "Verbrauch"):
+            self.assertIn(f"<h2>{part}</h2>", view)
+        self.assertEqual(view.count('class="p-badge"'), 4)                       # the four placeholders
+        self.assertIn("disabled", view)
+        tester = page[page.index('id="view-tester"'):page.index('id="view-reviewer"')]
+        self.assertNotIn("p-badge", tester)
+
     def test_the_card_shows_the_bullet_and_folds_the_context(self):
         self.ask(WISH)
         project = projects.get_project(self.a.id, self.pa.id)
