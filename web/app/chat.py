@@ -88,12 +88,12 @@ MEMORY_RULES = (
 # The board (Janis, 19.11.2026): what the user asks for in the chat goes on the board as a short bullet with the
 # context behind it, and the programmer starts on its own; what the manager adds himself waits for the user's yes.
 BOARD_RULE = (
-    "Board: the board holds only software work (bugs, small updates, major updates); hardware, errands and checks "
-    "never go there. When the user wants software work done, or agrees to it in this chat, split it into small pieces "
+    "Board: the board holds only software work in three columns (bugs, improvements, new features); hardware, "
+    "errands and checks never go there. When the user wants software work done, or agrees to it in this chat, split it into small pieces "
     "that the programmer can do one after the other, each on its own and testable, in the order they build on each "
     "other, and put each on the board in the fitting column with <task kind=\"bug|minor|major\" title=\"SHORT "
-    "BULLET\" from=\"user\">CONTEXT</task>: bug = something that does not work as meant, minor = a change or small "
-    "addition to what exists, major = a new feature or a larger part. The title is a short bullet (at most about 80 "
+    "BULLET\" from=\"user\">CONTEXT</task>: bug = something that does not work as meant, minor = an improvement "
+    "of what exists (a change or small addition), major = a new feature or a larger part. The title is a short bullet (at most about 80 "
     "characters); CONTEXT is everything the programmer needs, written so that he understands it without this chat: "
     "what exactly, why, what was decided here, files or parts involved, limits, how to check it is done, and which "
     "piece comes before. Such items need no confirmation: they go straight to the programmer. An addition you suggest "
