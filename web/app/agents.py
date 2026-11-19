@@ -613,13 +613,13 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
             pending_notes = (user_id, task["project_id"], notes, parsed.edits or [])
         else:
             pending_notes = None
+        step = workflow.advance(task["status"], task["round"], bool(task["manual_check"]), result,
+                                _enabled(conn, user_id))   # raises ValueError for a result that does not fit
         found = reply.parse(report)                       # what the role noticed outside its task (runtask.FOUND_RULE)
         report = found.text
         for item in found.tasks[:FOUND_MAX]:              # a bug goes on the board at once, an addition waits
             board.add_from_ai(conn, task["project_id"], item.kind, item.title, item.body,
                               approved=item.kind == "bug", source="agent")
-        step = workflow.advance(task["status"], task["round"], bool(task["manual_check"]), result,
-                                _enabled(conn, user_id))
         conn.execute(
             "UPDATE agent_runs SET status = 'done', result = ?, report = ?, tokens_in = ?, tokens_out = ?,"
             " seconds = ?, finished_at = ? WHERE id = ?",
