@@ -86,6 +86,20 @@ class ManagerBoardTest(unittest.TestCase):
         self.assertEqual(job.title, "Temperatur in der Anzeige runden")                # ... the next one comes
         self.assertFalse(self.items()["Relais klickt doppelt"].auto)                    # and the stopped one never again
 
+    def test_an_approval_a_day_later_still_gets_the_managers_documentation(self):
+        item = board.create_item(self.a.id, self.pa.id, "minor", "Anzeige bauen")
+        start = 1_000_000
+        task = agents.start_item(self.a.id, item.id, now=start)
+        for result in ("done", "pass", "ok"):
+            job = agents.claim_next(can_mac=False, now=start + 60)
+            agents.finish_run(job.run_id, result, "Bericht", now=start + 60)
+        later = start + 86400                                                   # the user approves the next day
+        self.assertTrue(agents.decide(self.a.id, task.id, "approve", now=later))
+        with db.connect() as conn:
+            conn.execute("UPDATE agent_tasks SET merged = 1 WHERE id = ?", (task.id,))   # the runner merged
+        job = agents.claim_next(can_mac=False, now=later + 60)
+        self.assertEqual((job.role, agents.get_task(self.a.id, task.id).status), ("chef", "documenting"))
+
     def test_what_a_run_notices_goes_on_the_board(self):
         item = board.create_item(self.a.id, self.pa.id, "minor", "Anzeige bauen")
         agents.start_item(self.a.id, item.id)

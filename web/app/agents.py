@@ -499,6 +499,9 @@ def decide(user_id: int, task_id: int, decision: str, note: str = "", now: int |
         if decision == "approve" and status == "awaiting_approval":
             step = workflow.after_approval(rnd, mc, _enabled(conn, user_id))
             note_value = None
+            # The time the task waited for the user does not count: the manager's documentation gets a fresh limit
+            # (19.11.2026: approved a day later, the task went past its deadline at once and the documentation was cut).
+            conn.execute("UPDATE agent_tasks SET deadline = ? WHERE id = ?", (now + TASK_SECONDS, task_id))
         elif decision == "reject" and status in ("awaiting_approval", "escalated"):
             step = workflow.after_rejection(mc)
             note_value = note.strip()[:1000]
