@@ -407,11 +407,16 @@ def task_runs(user_id: int, task_id: int) -> list[Run]:
 
 
 def waiting_reason(user_id: int, task: Task) -> str | None:
-    """Why a task does not move: "no_ai" (none of his AIs is connected) or None."""
+    """How a task at a role's stage stands: "no_ai" (none of his AIs is connected), "slot" (its run waits for a free
+    AI slot), "running" (a role works on it now) or None (the user's stage, or finished)."""
     if task.status in ACTIVE and task.status in workflow.STAGE_ROLE:
         with db.connect() as conn:
             if not aichoice.connected_list(conn, user_id):
                 return "no_ai"
+            row = conn.execute("SELECT status FROM agent_runs WHERE task_id = ? ORDER BY id DESC LIMIT 1",
+                               (task.id,)).fetchone()
+            if row is not None:
+                return "running" if row["status"] == "running" else "slot" if row["status"] == "queued" else None
     return None
 
 

@@ -37,6 +37,7 @@ PROJECT = """<div class="project" data-id="%PID%">
     <h2 id="item-dialog-title">%t.new_item%</h2>
     <input type="hidden" name="kind" value="bug">
     <label>%t.item_title%<input name="title" required maxlength="200" autocomplete="off"></label>
+    <label>%t.item_details%<textarea name="details" rows="5" maxlength="4000" placeholder="%t.item_details_hint%"></textarea></label>
     <div class="actions">
       <button type="button" data-close>%t.cancel%</button>
       <button class="primary" type="submit" id="item-dialog-button">%t.create%</button>
@@ -68,21 +69,36 @@ TASK_BUTTONS = {
 }
 
 
+def _pill(lang: str, action: str, label_key: str, css: str) -> str:
+    """A small glass pill with text (Janis, 19.11.2026: accept and reject of a suggestion)."""
+    return f'<button class="pill-btn {css}" type="button" data-action="{action}">{esc(i18n.t(lang, label_key))}</button>'
+
+
 def _title(item: Item, lang: str, extra: str = "") -> str:
     """The bullet of a card; under it who put it there (the manager) and, folded, the context behind it (Janis,
     19.11.2026: a short bullet with the context in the background). A click on the bullet unfolds it (board.js)."""
-    by = f'<small class="card-from">{esc(i18n.t(lang, "card_from_manager"))}</small>' if item.source == "manager" else ""
+    who = i18n.t(lang, "card_from_manager") if item.source == "manager" else ""
+    if item.status == "proposed":   # a suggestion stands in the same list, marked as one
+        who = i18n.t(lang, "card_proposal") + (f" · {who}" if who else "")
+    by = f'<small class="card-from">{esc(who)}</small>' if who else ""
     more = f'<span class="card-details" hidden>{esc(item.details)}</span>' if item.details else ""
     return (f'<span class="card-title{" has-details" if item.details else ""}"><span class="card-text">{esc(item.title)}</span>'
             f'{by}{extra}{more}</span>')
 
 
+DOTS = '<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>'
+
+
 def _task_card(item: Item, lang: str, task, report: str, waiting: str | None) -> str:
-    """A card whose item is with the agents: its stage under the title, the last report behind an "i", and the
-    user's buttons (approve or another round; a task that needs him: another round or cancel; else cancel)."""
-    state = esc(i18n.t(lang, "task_no_ai" if waiting == "no_ai" else f"task_{task.status}"))
+    """A card whose item is with the agents: its stage under the title (with moving dots while a role works on it,
+    Janis 19.11.2026: you should see that it works), the last report behind an "i", and the user's buttons (approve
+    or another round; a task that needs him: another round or cancel; else cancel). `data-live`: the board looks
+    again every few seconds while such a card is on it (board.js)."""
+    key = "task_no_ai" if waiting == "no_ai" else "task_slot" if waiting == "slot" else f"task_{task.status}"
+    state = esc(i18n.t(lang, key)) + (DOTS if waiting == "running" else "")
     tip = ui.info_dot(i18n.t(lang, "agent_report"), report[:600]) if report else ""
-    title = _title(item, lang, f'<small class="card-task" data-status="{esc(task.status)}">{state}{tip}</small>')
+    live = ' data-live="1"' if task.status in agents.ACTIVE and task.status != "awaiting_approval" else ""
+    title = _title(item, lang, f'<small class="card-task" data-status="{esc(task.status)}"{live}>{state}{tip}</small>')
     pair = TASK_BUTTONS.get(task.status)
     buttons = ("".join(_action_button(lang, *b) for b in pair) if pair
                else _action_button(lang, "agent-cancel", "agent_cancel", "cross", "quiet no"))
@@ -93,28 +109,23 @@ def _card(item: Item, lang: str, tasks: dict | None = None) -> str:
     entry = (tasks or {}).get(item.id)
     if entry is not None and item.status == "open" and entry[0].status in agents.OPEN_STATUSES:
         return _task_card(item, lang, *entry)
-    title = _title(item, lang)
     if item.status == "proposed":
-        # Green and red buttons (Janis, 07.11.2026): "go" takes the suggestion over, "stop" rejects it.
-        buttons = _action_button(lang, "reject", "reject", "cross", "stop") + _action_button(
-            lang, "accept", "accept", "check", "go"
-        )
-        return f'<article class="card proposed" data-id="{item.id}">{title}<div class="card-actions">{buttons}</div></article>'
+        # Text pills (Janis, 19.11.2026, instead of the red and green circles): accepting starts it at once.
+        pills = _pill(lang, "reject", "reject", "quiet") + _pill(lang, "accept", "accept", "go")
+        return (f'<article class="card proposed" data-id="{item.id}">{_title(item, lang)}'
+                f'<div class="card-choice">{pills}</div></article>')
     discard = _action_button(lang, "discard", "discard", "trash", "quiet")
-    start = _action_button(lang, "agent-start", "agent_start", "play", "quiet start") if tasks is not None else ""
+    queued = item.auto and tasks is not None   # it goes to the programmer by itself as soon as there is room
+    extra = f'<small class="card-task" data-live="1">{esc(i18n.t(lang, "task_queued"))}</small>' if queued else ""
+    start = (_action_button(lang, "agent-start", "agent_start", "play", "quiet start")
+             if tasks is not None and not item.auto else "")   # only an item from before or one the user stopped
     origin = f" from-{item.source}" if item.source != "user" else ""
-    return f'<article class="card{origin}" data-id="{item.id}">{title}{start}{discard}</article>'
+    return f'<article class="card{origin}" data-id="{item.id}">{_title(item, lang, extra)}{start}{discard}</article>'
 
 
 def _column(kind: str, items: list[Item], lang: str, tasks: dict | None = None) -> str:
     agreed = [i for i in items if i.kind == kind and i.status == "open"]
-    proposed = [i for i in items if i.kind == kind and i.status == "proposed"]
-    suggestions = ""
-    if proposed:
-        suggestions = (
-            f'<p class="group-label">{esc(i18n.t(lang, "suggestions"))}</p>'
-            f'<div class="cards proposed-list">{"".join(_card(i, lang) for i in proposed)}</div>'
-        )
+    proposed = [i for i in items if i.kind == kind and i.status == "proposed"]   # in the same list, below (19.11.2026)
     add = esc(i18n.t(lang, "add_item"))
     return (
         f'<section class="column glass" data-kind="{kind}">'
@@ -122,8 +133,8 @@ def _column(kind: str, items: list[Item], lang: str, tasks: dict | None = None) 
         f'<span class="count">{len(agreed) + len(proposed)}</span>'
         f'<button class="icon-button add" type="button" data-kind="{kind}" aria-label="{add}" title="{add}">'
         f'{icon("plus")}</button></header>'
-        f'<div class="cards open-list" data-kind="{kind}">{"".join(_card(i, lang, tasks) for i in agreed)}</div>'
-        f"{suggestions}</section>"
+        f'<div class="cards open-list" data-kind="{kind}">{"".join(_card(i, lang, tasks) for i in agreed + proposed)}</div>'
+        f"</section>"
     )
 
 
@@ -244,7 +255,7 @@ def drawer_buttons(lang: str) -> str:
 def _tasks(user: User, project: Project) -> dict:
     """item id -> (task, last report, waiting reason) for the cards of the board."""
     return {item_id: (task, agents.last_report(user.id, task.id), agents.waiting_reason(user.id, task))
-            for item_id, task in agents.tasks_by_item(user.id, project.id).items()}
+            for item_id, task in agents.tasks_by_item(user.id, project.id).items()}   # waiting: no_ai, slot, running
 
 
 def render(user: User, project: Project, items: list[Item], regular_checks: list | None = None,

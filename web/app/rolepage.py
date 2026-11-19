@@ -109,7 +109,7 @@ def _net_pill(lang: str, role: str, current: str) -> str:
     """The same round globe button as the manager's (managerpage._net_switch), for this role."""
     label, tip = esc(i18n.t(lang, "net_together")), esc(i18n.t(lang, "net_together_tip"))
     pressed = "true" if current == "together" else "false"
-    return (f'<button type="button" class="m-pill" id="role-{role}-net" data-setting="net" data-on="together" '
+    return (f'<button type="button" class="m-pill m-globe" id="role-{role}-net" data-setting="net" data-on="together" '
             f'data-off="apart" aria-pressed="{pressed}" aria-label="{label}" data-tip="{label}. {tip}">{icon("globe")}</button>')
 
 

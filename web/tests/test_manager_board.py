@@ -134,6 +134,27 @@ class ManagerBoardTest(unittest.TestCase):
         self.assertIn("Of B", self.items(self.b, self.pb))
         self.assertIn("2 Punkt(e) waren schon in Arbeit", chat.list_messages(self.a.id, self.pa.id)[-1].answer)
 
+    def test_accepting_a_suggestion_starts_it_at_once(self):
+        from app.routes import board as board_routes
+        with db.connect() as conn:
+            idea = board.add_from_ai(conn, self.pa.id, "minor", "Helligkeit einstellbar", "Ein Regler.", False, "agent")
+        self.assertEqual(board_routes.item_action(idea, "accept", user=self.b).status_code, 404)   # not B's
+        self.assertEqual(board_routes.item_action(idea, "accept", user=self.a), {"ok": True})
+        task = agents.item_task(self.a.id, idea)
+        self.assertEqual(task.status, "coding")                              # no second step "give to the agents"
+
+    def test_an_item_by_hand_carries_its_context_and_can_be_changed(self):
+        from app.routes import board as board_routes
+        board_routes.create_item(self.pa.id, "minor", "Anzeige dimmen", "Nachts auf 30 %.", user=self.a)
+        item = self.items()["Anzeige dimmen"]
+        self.assertEqual((item.details, item.auto, item.source), ("Nachts auf 30 %.", True, "user"))
+        board_routes.rename_item(item.id, "Anzeige nachts dimmen", "Zwischen 22 und 6 Uhr.", user=self.a)
+        self.assertEqual(self.items()["Anzeige nachts dimmen"].details, "Zwischen 22 und 6 Uhr.")
+        board_routes.rename_item(item.id, "Anzeige dimmen", None, user=self.a)   # no field sent: the context stays
+        self.assertEqual(self.items()["Anzeige dimmen"].details, "Zwischen 22 und 6 Uhr.")
+        board_routes.rename_item(item.id, "Fremd", "x", user=self.b)
+        self.assertIn("Anzeige dimmen", self.items())
+
     def test_no_ai_no_start_and_nothing_for_a_foreign_project(self):
         self.ask(WISH)
         claude_link.disconnect(self.a.id)
@@ -151,7 +172,7 @@ class ManagerBoardTest(unittest.TestCase):
         self.assertIn('<span class="card-text">Heizung per Zeitplan</span>', page)
         self.assertIn("vom Manager", page)
         self.assertIn('<span class="card-details" hidden>Ein Zeitplan je Wochentag', page)
-        self.assertIn("Vorschläge", page)
+        self.assertIn("Vorschlag · vom Manager", page)                       # a suggestion in the list, marked
         self.assertNotIn("Vorschläge von Claude", page)
 
 

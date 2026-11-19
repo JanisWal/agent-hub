@@ -514,7 +514,7 @@ def _net_switch(lang: str, current: str) -> str:
     label, tip = esc(i18n.t(lang, "net_together")), esc(i18n.t(lang, "net_together_tip"))
     pressed = "true" if current == "together" else "false"
     return (
-        f'<button type="button" class="m-pill" id="manager-net" data-setting="net" data-on="together" data-off="apart" '
+        f'<button type="button" class="m-pill m-globe" id="manager-net" data-setting="net" data-on="together" data-off="apart" '
         f'aria-pressed="{pressed}" aria-label="{label}" data-tip="{label}. {tip}">{icon("globe")}</button>'
     )
 

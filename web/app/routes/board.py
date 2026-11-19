@@ -1,7 +1,9 @@
 """The kanban board of a project: items, suggestions and the trash."""
+import time
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 
-from .. import agents, board, users
+from .. import agents, board, db, users
 from ..deps import api_user, fail, ok, page_user, redirect
 
 router = APIRouter()
@@ -15,6 +17,16 @@ def _agent_start(user_id: int, item_id: int) -> bool:
     return True
 
 
+def _accept(user_id: int, item_id: int) -> bool:
+    """Take a suggestion over: it is agreed and goes to the programmer at once (Janis, 19.11.2026: no second step),
+    or into the queue when the project's programmer is busy."""
+    if not board.accept(user_id, item_id):
+        return False
+    with db.connect() as conn:
+        agents.autostart(conn, int(time.time()))
+    return True
+
+
 def _agent_decide(decision: str):
     """The user's decision on the newest task of an item (agents.decide checks that it fits the task's state)."""
     def run(user_id: int, item_id: int) -> bool:
@@ -24,7 +36,7 @@ def _agent_decide(decision: str):
 
 
 ITEM_ACTIONS = {
-    "accept": board.accept,
+    "accept": _accept,
     "reject": board.reject,
     "discard": board.discard,
     "restore": board.restore,
@@ -42,10 +54,11 @@ def create_item(
     project_id: int,
     kind: str = Form(""),
     title: str = Form(""),
+    details: str = Form(""),
     user: users.User = Depends(page_user),
 ):
     try:
-        board.create_item(user.id, project_id, kind, title)
+        board.create_item(user.id, project_id, kind, title, details)
     except ValueError:
         pass  # empty title or foreign project: nothing is created
     return redirect(f"/projects/{project_id}")
@@ -69,9 +82,10 @@ async def reorder_items(request: Request, user: users.User = Depends(api_user)):
 
 
 @router.post("/items/{item_id}")
-def rename_item(item_id: int, title: str = Form(""), user: users.User = Depends(page_user)):
+def rename_item(item_id: int, title: str = Form(""), details: str | None = Form(None),
+                user: users.User = Depends(page_user)):
     try:
-        project_id = board.update_title(user.id, item_id, title)
+        project_id = board.update_title(user.id, item_id, title, details)
     except ValueError:
         project_id = None
     return redirect("/" if project_id is None else f"/projects/{project_id}")
