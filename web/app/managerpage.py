@@ -600,8 +600,8 @@ def _pill(lang: str, label_key: str, css: str, **data) -> str:
 
 # The buttons of a task that waits for the user, left the quieter one (Janis, 19.11.2026: decide right in the tile).
 TASK_PILLS = {
-    "awaiting_approval": (("w_again", "quiet", "reject"), ("w_approve", "go", "approve")),
-    "escalated": (("w_cancel", "quiet", "cancel"), ("w_again", "go", "reject")),
+    "awaiting_approval": (("agent_reject", "quiet", "reject"), ("agent_approve", "go", "approve")),
+    "escalated": (("agent_cancel", "quiet", "cancel"), ("agent_reject", "go", "reject")),
 }
 
 

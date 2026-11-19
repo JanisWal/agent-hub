@@ -63,9 +63,10 @@ def _action_button(lang: str, action: str, label_key: str, icon_name: str, css: 
 
 
 # What a card says about its task (Janis, 15.11.2026): the stage, and the buttons of the user's decision.
+# Since 19.11.2026 as text pills like accept and reject (Janis): the quieter one left, the stronger one right.
 TASK_BUTTONS = {
-    "awaiting_approval": (("agent-reject", "agent_reject", "cross", "stop"), ("agent-approve", "agent_approve", "check", "go")),
-    "escalated": (("agent-cancel", "agent_cancel", "cross", "stop"), ("agent-reject", "agent_reject", "play", "go")),
+    "awaiting_approval": (("agent-reject", "agent_reject", "quiet"), ("agent-approve", "agent_approve", "go")),
+    "escalated": (("agent-cancel", "agent_cancel", "quiet"), ("agent-reject", "agent_reject", "go")),
 }
 
 
@@ -100,9 +101,11 @@ def _task_card(item: Item, lang: str, task, report: str, waiting: str | None) ->
     live = ' data-live="1"' if task.status in agents.ACTIVE and task.status != "awaiting_approval" else ""
     title = _title(item, lang, f'<small class="card-task" data-status="{esc(task.status)}"{live}>{state}{tip}</small>')
     pair = TASK_BUTTONS.get(task.status)
-    buttons = ("".join(_action_button(lang, *b) for b in pair) if pair
-               else _action_button(lang, "agent-cancel", "agent_cancel", "cross", "quiet no"))
-    return f'<article class="card with-task" data-id="{item.id}">{title}<div class="card-actions">{buttons}</div></article>'
+    if pair:
+        pills = "".join(_pill(lang, action, key, css) for action, key, css in pair)
+        return f'<article class="card with-task proposed-like" data-id="{item.id}">{title}<div class="card-choice">{pills}</div></article>'
+    stop = _action_button(lang, "agent-cancel", "agent_cancel", "cross", "quiet no")
+    return f'<article class="card with-task" data-id="{item.id}">{title}<div class="card-actions">{stop}</div></article>'
 
 
 def _card(item: Item, lang: str, tasks: dict | None = None) -> str:
