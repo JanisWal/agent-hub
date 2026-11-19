@@ -15,7 +15,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import aichoice, board, catalog, db, files, memory, reply, runtask, serversettings, workflow
+from . import aichoice, board, catalog, db, files, memory, questions, reply, runtask, serversettings, workflow
 
 # Models and effort levels are not fixed here: they come from catalog.py (Janis, 14.11.2026). A role without a
 # choice gets the provider's default model and that model's default level. Since 15.11.2026 the choice is kept per
@@ -625,6 +625,8 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
         for item in found.tasks[:FOUND_MAX]:              # a bug goes on the board at once, an addition waits
             board.add_from_ai(conn, task["project_id"], item.kind, item.title, item.body,
                               approved=item.kind == "bug", source="agent")
+        for ask in found.asks:                            # the answer comes with the next run of this task
+            questions.add(conn, task["project_id"], run["role"], ask, task["id"])
         conn.execute(
             "UPDATE agent_runs SET status = 'done', result = ?, report = ?, tokens_in = ?, tokens_out = ?,"
             " seconds = ?, finished_at = ? WHERE id = ?",

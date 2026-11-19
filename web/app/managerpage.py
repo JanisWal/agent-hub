@@ -593,32 +593,68 @@ def _device_asks(lang: str, asks: list) -> str:
         for r in asks)
 
 
-def _waiting_tile(lang: str, autonomy: str, waiting: list[tuple[agents.Task, str]], asks: list | None = None) -> str:
-    """ "Waiting for you" (Janis, 16.11.2026: decisions, not work): the tasks that wait for the user's approval or
-    need him, each with its last report. Deciding stays on the board card (one control, one area), the tile leads there."""
-    rows = "".join(
-        f'<li><details class="r-run"><summary><span class="r-title">{esc(task.title)}</span>'
-        f'<span class="r-result {"go" if task.status == "awaiting_approval" else "stop"}">'
-        f'{esc(i18n.t(lang, f"task_{task.status}"))}</span></summary>'
-        f'<div class="r-report">{esc(report[:MAX_REPORT_SHOWN].strip() or i18n.t(lang, "role_no_report"))}</div>'
-        f'</details></li>'
-        for task, report in waiting
+def _pill(lang: str, label_key: str, css: str, **data) -> str:
+    attrs = " ".join(f'data-{k}="{esc(v)}"' for k, v in data.items())
+    return f'<button class="pill-btn {css}" type="button" {attrs}>{esc(i18n.t(lang, label_key))}</button>'
+
+
+# The buttons of a task that waits for the user, left the quieter one (Janis, 19.11.2026: decide right in the tile).
+TASK_PILLS = {
+    "awaiting_approval": (("w_again", "quiet", "reject"), ("w_approve", "go", "approve")),
+    "escalated": (("w_cancel", "quiet", "cancel"), ("w_again", "go", "reject")),
+}
+
+
+def _question_row(lang: str, q) -> str:
+    who = i18n.t(lang, "w_asks_chef") if q.role == "chef" else i18n.t(lang, "w_asks_role", role=i18n.t(lang, f"station_{q.role}"))
+    options = "".join(f'<button class="pill-btn quiet" type="button" data-reply="{esc(o)}">{esc(o)}</button>'
+                      for o in q.options)   # a suggested answer: one click sends it
+    return (
+        f'<li class="w-item w-ask" data-question="{q.id}"><small class="w-who">{esc(who)}</small>'
+        f'<p class="w-text">{esc(q.text)}</p>'
+        + (f'<div class="w-options">{options}</div>' if options else "") +
+        f'<div class="w-reply"><input class="w-input" type="text" maxlength="1000" autocomplete="off" '
+        f'placeholder="{esc(i18n.t(lang, "w_own_answer"))}" aria-label="{esc(i18n.t(lang, "w_own_answer"))}">'
+        f'{_pill(lang, "w_send", "go", send="1")}</div></li>'
     )
-    devices_html = _device_asks(lang, asks or [])
+
+
+def _task_row(lang: str, task, report: str) -> str:
+    pills = "".join(_pill(lang, key, css, decide=decision) for key, css, decision in TASK_PILLS.get(task.status, ()))
+    return (
+        f'<li class="w-item w-task" data-task="{task.id}"><div class="w-head"><span class="w-title">{esc(task.title)}</span>'
+        f'<span class="r-result {"go" if task.status == "awaiting_approval" else "stop"}">'
+        f'{esc(i18n.t(lang, f"task_{task.status}"))}</span></div>'
+        f'<details class="w-report"><summary>{esc(i18n.t(lang, "w_report"))}</summary>'
+        f'<div class="r-report">{esc(report[:MAX_REPORT_SHOWN].strip() or i18n.t(lang, "role_no_report"))}</div></details>'
+        f'<div class="w-reply"><input class="w-input" type="text" maxlength="1000" autocomplete="off" '
+        f'placeholder="{esc(i18n.t(lang, "w_note"))}" aria-label="{esc(i18n.t(lang, "w_note"))}">'
+        f'<span class="w-btns">{pills}</span></div></li>'
+    )
+
+
+def _waiting_tile(lang: str, autonomy: str, waiting: list[tuple[agents.Task, str]], asks: list | None = None,
+                  open_questions: list | None = None) -> str:
+    """ "Waiting for you" (Janis, 16.11.2026: decisions, not work; 19.11.2026: you decide and answer right here): the
+    questions of the manager and the roles (a button per suggested answer and a free field, questions.py), the tasks
+    that wait for approval or need the user (the last report folded, a field for a remark to the programmer, the
+    decision as pills) and the manager's requests for device actions. static/waiting.js sends and swaps the tile."""
+    asks, open_questions = asks or [], open_questions or []
+    items = "".join(_question_row(lang, q) for q in open_questions) + "".join(_task_row(lang, t, r) for t, r in waiting)
+    devices_html = _device_asks(lang, asks)
     body = ((f'<ul class="dev-asks">{devices_html}</ul>' if devices_html else "")
-            + (f'<div class="r-scroll"><ol class="r-runs">{rows}</ol></div>' if rows else "")) \
+            + (f'<div class="r-scroll"><ol class="w-items">{items}</ol></div>' if items else "")) \
         or f'<p class="muted">{esc(i18n.t(lang, "manager_waiting_empty"))}</p>'
-    board = (f'<a class="link inline m-waiting-board" href="#board" data-goto="board">{esc(i18n.t(lang, "me_to_board"))}</a>'
-             if rows else "")    # below the list: the head holds the title, the autonomy and the count
-    return (f'<section class="mtile glass m-waiting" id="waiting"><header><h2>{esc(i18n.t(lang, "manager_waiting"))}</h2>'
-            f'{autonomy}<span class="count">{len(waiting) + len(asks or [])}</span></header>{body}{board}</section>')
+    return (f'<section class="mtile glass m-waiting" id="waiting" data-err-net="{esc(i18n.t(lang, "err_network"))}"><header><h2>{esc(i18n.t(lang, "manager_waiting"))}</h2>'
+            f'{autonomy}<span class="count">{len(waiting) + len(asks) + len(open_questions)}</span></header>{body}'
+            f'<p class="error" role="alert" id="waiting-error" hidden></p></section>')
 
 
 def render(lang: str, settings: dict, regular_checks: list | None = None, now: int | None = None,
            stored_files: list | None = None, files_confirm: bool = True, trashed_files: list | None = None,
            ais: tuple[str, ...] = ("claude",), waiting: list | None = None, versions: list | None = None,
            assessment: statusmod.Assessment | None = None, device_list: list | None = None,
-           note: statusnote.Note | None = None, asks: list | None = None) -> str:
+           note: statusnote.Note | None = None, asks: list | None = None, open_questions: list | None = None) -> str:
     """`settings` is agents.settings(user_id): the manager is the role "chef". `regular_checks` are the
     project's checks (checks.list_checks). `ais`: the providers the user has connected (their models are offered).
     `waiting`: (task, last report) of agents.waiting_tasks, the decisions of "waiting for you"."""
@@ -638,7 +674,7 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
         CHAT=fill(CHAT, lang, MODEL=model, SEND=icon("arrow_up"),
                   WAITING=esc(i18n.t(lang, "chat_waiting", name="{name}")), FALLBACK=esc(i18n.t(lang, "chat_fallback", name="{name}", other="{other}")), AI=esc(catalog.provider(catalog.provider_of(chef["model"])).name), NET=_net_switch(lang, settings["roles"]["chef"]["net"]),
                   INFO=ui.info_dot(i18n.t(lang, "manager_chat"), i18n.t(lang, "manager_chat_hint"))),
-        WAITING_TILE=_waiting_tile(lang, autonomy, waiting or [], asks),
+        WAITING_TILE=_waiting_tile(lang, autonomy, waiting or [], asks, open_questions),
         MVAULT=fill(MVAULT, lang, TRASH_LIST=_trash_list(lang, trashed_files or []),
                     TRASH_INFO=ui.info_dot(i18n.t(lang, "trash"), i18n.t(lang, "files_trash_hint", n=filestore.TRASH_DAYS)),
                     ARCHIVE_INFO=ui.info_dot(i18n.t(lang, "chat_archive"), i18n.t(lang, "chat_archive_hint")),

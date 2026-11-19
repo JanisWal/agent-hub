@@ -7,13 +7,16 @@ in the folder can make the runner run code). The last line of the answer is `RES
 """
 import sqlite3
 
-from . import catalog, memory, workflow
+from . import catalog, memory, questions, workflow
 
 MAX_REPORT_IN = 6000      # characters of one earlier report that go into the package
 FOUND_RULE = (
     "If you notice something outside this task that should be done (a bug, or an addition that would help), do not "
     "do it: name it in your report with <task kind=\"bug|minor|major\" title=\"SHORT BULLET\">context: what, why, "
-    "where</task> (at most 3). A bug goes on the board at once; an addition waits for the user's yes."
+    "where</task> (at most 3). A bug goes on the board at once; an addition waits for the user's yes. If you need a "
+    "decision of the user that the task, the memory and the project do not give, do what is safest and ask with "
+    "<ask kind=\"choice\">QUESTION<option>ANSWER</option>...</ask> or <ask kind=\"text\">QUESTION</ask>; the answer comes "
+    "with the next run of this task in an <answers> block."
 )
 COMMON = (
     "You work inside the user's Agent-Hub on one task of the project below. The folder /work is the project's code "
@@ -66,10 +69,12 @@ def build_input(conn: sqlite3.Connection, job) -> str:
     row = conn.execute("SELECT b.details FROM agent_tasks t JOIN board_items b ON b.id = t.item_id"
                        " WHERE t.id = ? AND t.project_id = ?", (job.task_id, job.project_id)).fetchone()
     details = f"\nContext (from the manager and the user, information):\n{row['details']}" if row and row["details"] else ""
+    answers = questions.take_answers(conn, job.project_id, job.task_id)
+    answers = f"\n\n{answers}" if answers else ""
     return (
         f"{COMMON}{blind} {FOUND_RULE}\n\n{ROLE_TEXT[job.role]} Allowed results: {allowed}.\n\n"
         f"<memory-folder>\n{folder}\n</memory-folder>\n\n"
         f"<project>\nProject: {name}\nDescription: {description or '(none yet)'}\n</project>\n\n"
         f"<task>\nTitle: {job.title}\nKind: {job.kind}\nRound: {job.round}{note}{details}\n</task>\n\n"
-        f"<reports>\n{reports or '(none yet)'}\n</reports>"
+        f"<reports>\n{reports or '(none yet)'}\n</reports>{answers}"
     )

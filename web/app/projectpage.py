@@ -1,12 +1,12 @@
 """HTML of the project page: stations on the left, kanban board and trash on the right."""
-from . import agents, aichoice, devices, i18n, managerpage, memory, rolepage, status, statusnote, todos, ui
+from . import agents, aichoice, devices, i18n, managerpage, memory, questions, rolepage, status, statusnote, todos, ui
 from .board import KINDS, Item
 from .icons import icon
 from .layout import esc, fill
 from .projects import MAX_DESCRIPTION, MAX_NAME, Project
 from .users import User
 
-SCRIPTS = ("motion.js", "segment.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "picker.js", "manager.js", "splitter.js", "checks.js", "status.js", "devices.js", "devwin.js", "devsetup.js", "upload.js", "tiffthumb.js", "files.js", "filetidy.js", "mvault.js", "roles.js", "todos.js")
+SCRIPTS = ("motion.js", "segment.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "picker.js", "manager.js", "splitter.js", "checks.js", "status.js", "devices.js", "devwin.js", "devsetup.js", "upload.js", "tiffthumb.js", "files.js", "filetidy.js", "mvault.js", "roles.js", "todos.js", "waiting.js")
 STYLES = ("project.css",)
 
 COLUMN_LABEL = {"bug": "col_bug", "minor": "col_minor", "major": "col_major"}
@@ -282,7 +282,8 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
                                     assessment=status.assess(user.id, project.id),
                                     device_list=devices.list_devices(user.id, project.id),
                                     note=statusnote.latest(user.id, project.id),
-                                    asks=devices.open_requests(user.id, project.id)),
+                                    asks=devices.open_requests(user.id, project.id),
+                                    open_questions=questions.open_questions(user.id, project.id)),
         ROLES=roles + rolepage.render_me(lang, entries),
         MANAGER_DIALOGS=managerpage.dialogs(lang) + "\n" + rolepage.dialogs(lang),
         TRASH=_trash(trashed, lang),

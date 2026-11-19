@@ -154,6 +154,22 @@ CREATE TABLE IF NOT EXISTS device_log (
 CREATE INDEX IF NOT EXISTS device_log_by_device ON device_log (device_id, id);
 -- What the manager asks to do on a device (devices.request_action, Janis 17.11.2026): it never happens on its own,
 -- it waits in "waiting for you" until the user says yes or no. Goes with the device.
+-- Questions of the manager or a role to the user (questions.py, KONZEPT-AGENTEN 9.4, Janis 19.11.2026): answered in
+-- "waiting for you" with a button or a free text; the answer goes to the manager or into the next run of the task.
+CREATE TABLE IF NOT EXISTS questions (
+    id          INTEGER PRIMARY KEY,
+    project_id  INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    task_id     INTEGER,
+    role        TEXT NOT NULL,
+    text        TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'text',
+    options     TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'open',
+    answer      TEXT NOT NULL DEFAULT '',
+    created_at  INTEGER NOT NULL,
+    answered_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS questions_by_project ON questions (project_id, status, id);
 CREATE TABLE IF NOT EXISTS device_requests (
     id         INTEGER PRIMARY KEY,
     device_id  INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,

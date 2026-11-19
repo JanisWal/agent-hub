@@ -7,7 +7,7 @@ new model the level may have become that model's default (catalog.resolve), and 
 """
 from fastapi import APIRouter, Depends, Form
 
-from .. import agents, users
+from .. import agents, chat, db, i18n, questions, users
 from ..deps import api_user, fail, ok
 
 router = APIRouter()
@@ -32,3 +32,34 @@ def status_again(project_id: int, user: users.User = Depends(api_user)):
     from .. import statusnote
     result = statusnote.request(user.id, project_id)
     return fail(404) if result == "missing" else ok(result=result)
+
+
+# "Waiting for you" (Janis, 19.11.2026): the user answers questions and decides about tasks right in the tile.
+@router.post("/questions/{question_id}/answer")
+def answer_question(question_id: int, answer: str = Form(""), user: users.User = Depends(api_user)):
+    """The answer to a question of the manager or a role (questions.answer). A question of the manager chat goes on
+    at once as the user's next chat message, so the manager works on; while another question of his runs, it waits
+    and comes with the next one. A question of a run comes with the next run of its task."""
+    found = questions.answer(user.id, question_id, answer)
+    if found is None:
+        return fail(404)
+    sent = False
+    if found.task_id is None:
+        text = i18n.t(user.language, "w_answer_prompt", question=found.text[:600], answer=found.answer)
+        try:
+            chat.send(user.id, found.project_id, text[:chat.MAX_PROMPT])
+            sent = True
+        except ValueError:      # a question still runs, or no AI: the answer waits for the next question
+            pass
+        if sent:
+            with db.connect() as conn:
+                questions.mark_delivered(conn, found.id)
+    return ok(sent=sent)
+
+
+@router.post("/tasks/{task_id}/decide")
+def decide_task(task_id: int, decision: str = Form(""), note: str = Form(""), user: users.User = Depends(api_user)):
+    """Approve, another round (with the user's remark for the programmer) or cancel, from "waiting for you"."""
+    if decision not in ("approve", "reject", "cancel"):
+        return fail(400)
+    return ok() if agents.decide(user.id, task_id, decision, note) else fail(404)

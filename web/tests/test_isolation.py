@@ -10,7 +10,7 @@ import unittest
 
 from fastapi import HTTPException
 
-from app import board, checks, dashboard, db, devices, status, files, memory, power, projectpage, projects, resets, throttle, todos, ui, users
+from app import agents, board, checks, dashboard, db, devices, status, files, memory, power, projectpage, projects, resets, throttle, todos, ui, users
 from app.routes import board as board_routes, checks as check_routes, todos as todo_routes, files as file_routes, projects as project_routes, resets as reset_routes
 
 
@@ -278,6 +278,19 @@ class IsolationTest(unittest.TestCase):
         after = snapshot()
         self.assertEqual(after["files"], before["files"])
         self.assertEqual(autofolders.state(self.a.id, self.project.id).status, "done")   # A's plan is still there
+
+    def test_b_cannot_answer_a_question_or_decide_a_task_of_a(self):
+        from app import questions, reply
+        from app.routes import manager as manager_routes
+        with db.connect() as conn:
+            qid = questions.add(conn, self.project.id, "chef", reply.Ask("Secret question of A?", "text", "small"))
+        self.assertEqual(questions.open_questions(self.b.id, self.project.id), [])
+        self.assertIsNone(questions.answer(self.b.id, qid, "planted"))
+        self.assertEqual(manager_routes.answer_question(qid, "planted", user=self.b).status_code, 404)
+        task = agents.start_task(self.a.id, self.project.id, self.open.id)
+        self.assertEqual(manager_routes.decide_task(task.id, "cancel", "", user=self.b).status_code, 404)
+        self.assertEqual(agents.get_task(self.a.id, task.id).status, "coding")
+        self.assertEqual([q.text for q in questions.open_questions(self.a.id, self.project.id)], ["Secret question of A?"])
 
     def test_b_cannot_see_use_or_move_the_folders_of_a(self):
         from pathlib import Path
