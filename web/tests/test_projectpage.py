@@ -84,7 +84,7 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn("proposed", idea)
         self.assertLess(idea.index("card-btn stop"), idea.index("card-btn go"))   # reject left, take over right
         agent_bug = page[page.index("Found by Claude") - 160:page.index("Found by Claude") + 40]
-        self.assertIn("from-claude", agent_bug)
+        self.assertIn("from-agent", agent_bug)
         self.assertNotIn("proposed", agent_bug)
 
     def test_stations_follow_the_cycle(self):

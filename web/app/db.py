@@ -288,6 +288,9 @@ NEW_COLUMNS = {
         "files_confirm": "INTEGER NOT NULL DEFAULT 1",    # does deleting a file ask first? (the trash circle of the file tile)
         "deleted_at": "INTEGER",                          # when the account was deleted; gone for good DELETED_DAYS later (users.py)
     },
+    # The context behind a short board item and whether it starts on its own (Janis, 19.11.2026, manager-board):
+    # items the manager put on the board from the chat, and accepted suggestions, go to the programmer by themselves.
+    "board_items": {"details": "TEXT NOT NULL DEFAULT ''", "auto": "INTEGER NOT NULL DEFAULT 0"},
     "projects": {"page": "INTEGER NOT NULL DEFAULT 0", "description": "TEXT NOT NULL DEFAULT ''",
                  "memory_seeded": "INTEGER NOT NULL DEFAULT 0"},   # the fixed memory files were made (memory.py)
     "chat_messages": {"mode": "TEXT NOT NULL DEFAULT 'web'", "model": "TEXT NOT NULL DEFAULT 'haiku'",
@@ -400,6 +403,9 @@ def _prepare(conn: sqlite3.Connection) -> None:
         # everybody logs in once more.
         conn.execute("ALTER TABLE sessions RENAME COLUMN token TO token_hash")
         conn.execute("DELETE FROM sessions")
+    if "details" not in before["board_items"]:
+        # Once (19.11.2026, manager-board): an item an agent found was marked "claude"; no AI names in the data.
+        conn.execute("UPDATE board_items SET source = 'agent' WHERE source = 'claude'")
     if "pass_enc" not in before["devices"]:
         # Once (17.11.2026): a password used to sit in key_enc (auth 'password'); key and password are kept apart now.
         conn.execute("UPDATE devices SET pass_enc = key_enc, key_enc = '', auth = 'key' WHERE auth = 'password' AND key_enc != ''")

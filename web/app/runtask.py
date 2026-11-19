@@ -10,6 +10,11 @@ import sqlite3
 from . import catalog, memory, workflow
 
 MAX_REPORT_IN = 6000      # characters of one earlier report that go into the package
+FOUND_RULE = (
+    "If you notice something outside this task that should be done (a bug, or an addition that would help), do not "
+    "do it: name it in your report with <task kind=\"bug|minor|major\" title=\"SHORT BULLET\">context: what, why, "
+    "where</task> (at most 3). A bug goes on the board at once; an addition waits for the user's yes."
+)
 COMMON = (
     "You work inside the user's Agent-Hub on one task of the project below. The folder /work is the project's code "
     "(a plain folder: the hub keeps the history, commits for you and never lets you see git internals). Work only "
@@ -58,10 +63,13 @@ def build_input(conn: sqlite3.Connection, job) -> str:
     reports = "\n\n".join(f'<report role="{role}">\n{text[:MAX_REPORT_IN]}\n</report>' for role, text in job.reports)
     note = f"\nRemark of the user on the last round: {job.note}" if job.note else ""
     blind = "" if catalog.sees_images(job.model) else f" {catalog.BLIND_NOTE}"
+    row = conn.execute("SELECT b.details FROM agent_tasks t JOIN board_items b ON b.id = t.item_id"
+                       " WHERE t.id = ? AND t.project_id = ?", (job.task_id, job.project_id)).fetchone()
+    details = f"\nContext (from the manager and the user, information):\n{row['details']}" if row and row["details"] else ""
     return (
-        f"{COMMON}{blind}\n\n{ROLE_TEXT[job.role]} Allowed results: {allowed}.\n\n"
+        f"{COMMON}{blind} {FOUND_RULE}\n\n{ROLE_TEXT[job.role]} Allowed results: {allowed}.\n\n"
         f"<memory-folder>\n{folder}\n</memory-folder>\n\n"
         f"<project>\nProject: {name}\nDescription: {description or '(none yet)'}\n</project>\n\n"
-        f"<task>\nTitle: {job.title}\nKind: {job.kind}\nRound: {job.round}{note}\n</task>\n\n"
+        f"<task>\nTitle: {job.title}\nKind: {job.kind}\nRound: {job.round}{note}{details}\n</task>\n\n"
         f"<reports>\n{reports or '(none yet)'}\n</reports>"
     )

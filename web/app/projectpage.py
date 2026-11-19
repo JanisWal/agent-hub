@@ -68,13 +68,21 @@ TASK_BUTTONS = {
 }
 
 
+def _title(item: Item, lang: str, extra: str = "") -> str:
+    """The bullet of a card; under it who put it there (the manager) and, folded, the context behind it (Janis,
+    19.11.2026: a short bullet with the context in the background). A click on the bullet unfolds it (board.js)."""
+    by = f'<small class="card-from">{esc(i18n.t(lang, "card_from_manager"))}</small>' if item.source == "manager" else ""
+    more = f'<span class="card-details" hidden>{esc(item.details)}</span>' if item.details else ""
+    return (f'<span class="card-title{" has-details" if item.details else ""}"><span class="card-text">{esc(item.title)}</span>'
+            f'{by}{extra}{more}</span>')
+
+
 def _task_card(item: Item, lang: str, task, report: str, waiting: str | None) -> str:
     """A card whose item is with the agents: its stage under the title, the last report behind an "i", and the
     user's buttons (approve or another round; a task that needs him: another round or cancel; else cancel)."""
     state = esc(i18n.t(lang, "task_no_ai" if waiting == "no_ai" else f"task_{task.status}"))
     tip = ui.info_dot(i18n.t(lang, "agent_report"), report[:600]) if report else ""
-    title = (f'<span class="card-title">{esc(item.title)}'
-             f'<small class="card-task" data-status="{esc(task.status)}">{state}{tip}</small></span>')
+    title = _title(item, lang, f'<small class="card-task" data-status="{esc(task.status)}">{state}{tip}</small>')
     pair = TASK_BUTTONS.get(task.status)
     buttons = ("".join(_action_button(lang, *b) for b in pair) if pair
                else _action_button(lang, "agent-cancel", "agent_cancel", "cross", "quiet no"))
@@ -85,7 +93,7 @@ def _card(item: Item, lang: str, tasks: dict | None = None) -> str:
     entry = (tasks or {}).get(item.id)
     if entry is not None and item.status == "open" and entry[0].status in agents.OPEN_STATUSES:
         return _task_card(item, lang, *entry)
-    title = f'<span class="card-title">{esc(item.title)}</span>'
+    title = _title(item, lang)
     if item.status == "proposed":
         # Green and red buttons (Janis, 07.11.2026): "go" takes the suggestion over, "stop" rejects it.
         buttons = _action_button(lang, "reject", "reject", "cross", "stop") + _action_button(
@@ -94,7 +102,7 @@ def _card(item: Item, lang: str, tasks: dict | None = None) -> str:
         return f'<article class="card proposed" data-id="{item.id}">{title}<div class="card-actions">{buttons}</div></article>'
     discard = _action_button(lang, "discard", "discard", "trash", "quiet")
     start = _action_button(lang, "agent-start", "agent_start", "play", "quiet start") if tasks is not None else ""
-    origin = " from-claude" if item.source == "claude" else ""
+    origin = f" from-{item.source}" if item.source != "user" else ""
     return f'<article class="card{origin}" data-id="{item.id}">{title}{start}{discard}</article>'
 
 
@@ -104,7 +112,7 @@ def _column(kind: str, items: list[Item], lang: str, tasks: dict | None = None) 
     suggestions = ""
     if proposed:
         suggestions = (
-            f'<p class="group-label">{esc(i18n.t(lang, "claude_suggestions"))}</p>'
+            f'<p class="group-label">{esc(i18n.t(lang, "suggestions"))}</p>'
             f'<div class="cards proposed-list">{"".join(_card(i, lang) for i in proposed)}</div>'
         )
     add = esc(i18n.t(lang, "add_item"))

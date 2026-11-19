@@ -200,7 +200,8 @@ Ziel von Janis: Jede KI soll austauschbar sein. Es wird eine Anfrage gestellt, e
 | `<memory file="NAME.md">…</memory>` | eine Erinnerungsdatei ganz neu schreiben (höchstens 3 je Antwort) | gebaut |
 | `<read>Name</read>` | eine weitere Datei anfordern (Übergang bis zum eingehängten Ordner, PROJEKT.md 11b) | gebaut |
 | `<ask kind="choice\|text" size="small\|large">Frage<option>…</option>…</ask>` | eine Rückfrage an den Nutzer (9.4) | geplant |
-| `<task kind="bug\|minor\|major" title="…">Beschreibung, Abnahmekriterien</task>` | eine Aufgabe fürs Board (9.5) | geplant |
+| `<task kind="bug\|minor\|major" title="…" from="user\|idea">Kontext, Abnahmekriterien</task>` | ein Stichpunkt fürs Board mit Kontext dahinter (9.5) | **gebaut 19.11.2026** (`manager-board`: Manager-Chat und Berichte der Läufe) |
+| `<task-edit id="N" kind="…" title="…">neuer Kontext</task-edit>` | der Manager korrigiert einen Punkt, den der Programmierer noch nicht angefangen hat | **gebaut 19.11.2026** |
 | `<status level="green\|yellow\|red">ein Satz</status>` | der Projektstand (9.7) | geplant |
 | `RESULT: <wert>` als letzte Zeile | Ergebnis eines Agentenlaufs (`workflow.py`) | gebaut |
 
@@ -216,6 +217,7 @@ Grenzen (Vorschlag, beim Bau festzulegen): höchstens 3 `<ask>`, 5 `<task>`, 1 `
 
 ### 9.5 Selbstständigkeit und Aufgaben verteilen (Board)
 
+- **So gebaut (19.11.2026, `manager-board`, Janis):** Der Manager zerlegt im Chat, was umgesetzt werden soll, in **kleine, einzeln machbare Häppchen** und legt jedes als kurzen **Stichpunkt** mit **Kontext im Hintergrund** (`board_items.details`) in die passende Spalte. Was der Nutzer im Chat will (`from="user"`), braucht **keine Bestätigung**; ebenso Punkte, die der Nutzer von Hand anlegt. Beide laufen **von selbst** los (`board_items.auto`, `agents.autostart`): je Projekt eine Aufgabe zur Zeit, Bugs vor kleinen vor großen Updates, in der Reihenfolge des Boards. Was der Manager selbst vorschlägt (`from="idea"`) oder einer Rolle im Lauf auffällt (`<task>` im Bericht, `runtask.FOUND_RULE`), wartet als **Vorschlag** auf das Ja des Nutzers; ein Bug kommt direkt aufs Board. Ein angenommener Vorschlag läuft dann von selbst. Ein abgebrochener Punkt startet nie wieder von selbst. Der Manager sieht die Punkte mit Nummer und Stand (wartet, in Arbeit, Vorschlag) und darf einen noch nicht angefangenen mit `<task-edit>` korrigieren. Der Programmierer bekommt den Kontext im `<task>`-Block seines Auftrags.
 - **Aufgaben, die der Manager vorschlägt, kommen immer aufs Board** (`<task>` → Board-Punkt mit Hinweis „vom Manager“, Janis, 14.11.2026). Die Selbstständigkeit entscheidet nur über die **Genehmigung**:
 
 | | Entscheidet selbst | Fragt bei Großem | Fragt auch bei Kleinem |
@@ -253,7 +255,7 @@ Grenzen (Vorschlag, beim Bau festzulegen): höchstens 3 `<ask>`, 5 `<task>`, 1 `
 1. Antwortformat und strenges Lesen im Manager-Chat: `<ask>`, `<status>`, `<task>` (Parser wie `memory.parse_answer`, Tests mit Fremdprojekten in `test_isolation.py`). **Teilweise (15.11.2026, `reply-format`):** der strenge Leser steht (`web/app/reply.py`, reine Funktion, Grenzen wie in 9.3); offen: Speichern, Anschluss an Chat und Manager-Runde, Fremdprojekt-Tests.
 2. Kachel „Wartet auf dich“ mit Antworten (Knöpfe, freies Feld, groß bei großen Fragen) und der Regeltext der Selbstständigkeit. **Offen.**
 3. Status-Kachel und Projektkachel. **Offen.**
-4. Schleife der Agentenläufe samt Verteilen der Aufgaben (Board → Kette), Arbeitsordner je Aufgabe. **Gebaut 15.11.2026** (`ai-default`): Start auf der Board-Karte, Freigabe auf der Karte, Merge durch den Runner, Manager dokumentiert. Noch nicht: der Manager verteilt Aufgaben selbst (`<task>`, Punkt 1).
+4. Schleife der Agentenläufe samt Verteilen der Aufgaben (Board → Kette), Arbeitsordner je Aufgabe. **Gebaut 15.11.2026** (`ai-default`): Start auf der Board-Karte, Freigabe auf der Karte, Merge durch den Runner, Manager dokumentiert. **Seit 19.11.2026** (`manager-board`): der Manager verteilt die Aufgaben selbst (`<task>`), Punkte starten von selbst.
 5. Zeitplan der Manager-Runden nach Fälligkeit. **Offen.**
 6. Modell je Rolle mit Automatik. **Teilweise:** Modell und Stufe je Rolle und je KI gebaut, „Automatisch“ offen.
 7. Ein zweiter Anbieter-Adapter als Beweis, dass alles ohne Claude geht. **Gebaut 15.11.2026** (Mistral Vibe).
