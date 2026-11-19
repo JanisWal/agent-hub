@@ -15,7 +15,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import agents, aichoice, autofolders, board, catalog, checks, db, devices, files, memory, reply, statusnote
+from . import agents, aichoice, autofolders, board, catalog, checks, db, devices, files, i18n, memory, reply, statusnote
 
 # The manager is the role "chef": model and effort level are settings of the user (agents.py, list in catalog.py).
 MAX_PROMPT = 2000
@@ -97,9 +97,12 @@ BOARD_RULE = (
     "characters); CONTEXT is everything the programmer needs, written so that he understands it without this chat: "
     "what exactly, why, what was decided here, files or parts involved, limits, how to check it is done, and which "
     "piece comes before. Such items need no confirmation: they go straight to the programmer. An addition you suggest "
-    "on your own (the user did not ask for it) gets from=\"idea\" and waits on the board for the user's yes. At most "
-    "8 per answer, never one that is already on the board (see <project>). Tell the user in one short sentence what "
-    "you put on the board."
+    "on your own (the user did not ask for it) gets from=\"idea\" and waits on the board for the user's yes. If an "
+    "item turns out to be a misunderstanding and the programmer has not started it (marked waiting or suggestion in "
+    "the list), correct it with <task-edit id=\"NUMBER\" kind=\"...\" title=\"...\">NEW CONTEXT</task-edit> "
+    "(leave out what stays). At most "
+    "8 per answer, never one that is already on the board (listed in the project block). Tell the user in one short "
+    "sentence what you put on the board."
 )
 
 
@@ -198,7 +201,9 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
     if project is None:
         return f"{role_for(row['mode'])}\n\n{row['prompt']}"
     items = conn.execute(
-        "SELECT kind, title FROM board_items WHERE project_id = ? AND status IN ('open', 'proposed')"
+        "SELECT b.id, b.kind, b.title, b.status, EXISTS (SELECT 1 FROM agent_tasks t WHERE t.item_id = b.id AND t.status IN"
+        f" ({','.join(repr(s) for s in agents.OPEN_STATUSES)})) AS busy FROM board_items b"
+        " WHERE b.project_id = ? AND b.status IN ('open', 'proposed')"
         " ORDER BY kind, position, id LIMIT ?", (project_id, ITEMS),
     ).fetchall()
     regular = conn.execute(   # the project is the user's (checked above)
@@ -223,7 +228,9 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
     autonomy = AUTONOMY_TEXT.get(agents.autonomy_in(conn, user_id), AUTONOMY_TEXT[agents.DEFAULT_AUTONOMY])
     head = (f"Project: {project['name']}\nDescription: {project['description'] or '(none yet)'}\n"
             f"How freely you decide: {autonomy} {AUTONOMY_RULE}")
-    board = "\n".join(f"- [{i['kind']}] {i['title']}" for i in items) or "(no open items)"
+    def state(i) -> str:   # the manager may correct what the programmer has not started (BOARD_RULE)
+        return "suggestion" if i["status"] == "proposed" else "in progress" if i["busy"] else "waiting"
+    board_list = "\n".join(f"- #{i['id']} [{i['kind']}] {i['title']} ({state(i)})" for i in items) or "(no open items)"
     now = int(time.time())
     def cycle_text(c) -> str:   # a daily check on some weekdays only says which ones
         if c["cycle"] == "daily" and c["days"] != checks.ALL_DAYS:
@@ -253,7 +260,7 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
 
     def context() -> str:
         memory = "\n\n".join(talks) or "(no earlier questions)"
-        return (f"{head}\n\nOpen board items:\n{board}\n\nRegular checks (your recurring to-dos, not board items):\n"
+        return (f"{head}\n\nOpen board items:\n{board_list}\n\nRegular checks (your recurring to-dos, not board items):\n"
                 f"{routine}\n\nDevices of the project (its inventory: use it to know which device the user means; you never get "
                 f"their keys and never use their shell). {DEVICE_RULE}\n{device_list}"
                 f"\n\nFor you (work the user does himself, by hand; you advise and keep the state):\n{own_work}"
@@ -455,10 +462,11 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
     text = answer
     asks = []
     tasks: list = []
+    edits: list = []
     if parsed is not None:
         text, asks = reply.device_asks(parsed.text)
         signals = reply.parse(text)
-        text, tasks = signals.text, signals.tasks
+        text, tasks, edits = signals.text, signals.tasks, signals.edits
         if parsed.memory:
             saved = memory.save_memory(row["user_id"], row["project_id"], parsed.memory)
         for name, body in (parsed.files or {}).items():   # the other memory files it wrote (memory folder)
@@ -483,6 +491,12 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
             for task in tasks:   # on the board of the question's project; the user's request goes to the programmer
                 board.add_from_ai(conn, row["project_id"], task.kind, task.title, task.body,
                                   approved=task.origin == "user" or task.kind == "bug", source="manager")
+            late = [e for e in edits if not board.edit_from_ai(conn, row["project_id"], e.item_id, e.kind, e.title, e.body)]
+            if late:   # the programmer was faster (or it is no item of this project): the user reads that it stayed
+                lang = (conn.execute("SELECT language FROM users WHERE id = ?", (row["user_id"],)).fetchone() or {"language": "de"})["language"]
+                note = "\n\n" + i18n.t(lang if lang in ("de", "en") else "de", "chat_edit_late", n=len(late))
+                conn.execute("UPDATE chat_messages SET answer = substr(answer || ?, 1, ?) WHERE id = ?",
+                             (note, MAX_ANSWER, chat_id))
     return cur.rowcount == 1
 
 

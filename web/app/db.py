@@ -403,6 +403,9 @@ def _prepare(conn: sqlite3.Connection) -> None:
         # everybody logs in once more.
         conn.execute("ALTER TABLE sessions RENAME COLUMN token TO token_hash")
         conn.execute("DELETE FROM sessions")
+    if "details" not in before["board_items"]:
+        # Once (19.11.2026, manager-board): an item an agent found was marked "claude"; no AI names in the data.
+        conn.execute("UPDATE board_items SET source = 'agent' WHERE source = 'claude'")
     if "pass_enc" not in before["devices"]:
         # Once (17.11.2026): a password used to sit in key_enc (auth 'password'); key and password are kept apart now.
         conn.execute("UPDATE devices SET pass_enc = key_enc, key_enc = '', auth = 'key' WHERE auth = 'password' AND key_enc != ''")

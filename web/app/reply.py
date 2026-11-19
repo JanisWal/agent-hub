@@ -6,6 +6,7 @@ the text the user reads. Memory and read markers stay in memory.py; this module 
     <ask kind="choice|text" size="small|large">Question<option>Answer</option>...</ask>
     <task kind="bug|minor|major" title="..." from="user|idea">Context and acceptance criteria</task>   (from: 19.11.2026)
     <status level="green|yellow|red" title="A few words">One or two sentences</status>   (title optional)
+    <task-edit id="12" kind="minor" title="...">New context</task-edit>   (19.11.2026; kind, title, context optional)
     <move id="12" to="Backgrounds/Dark"/>   (a plan to structure the files, autofolders.py; to="" = the top)
 
 `parse` is a pure function: it knows no user, no project and no database. Whoever stores the result (a later module)
@@ -33,6 +34,7 @@ LARGE_QUESTION = 300   # a question this long opens large even if the AI said sm
 
 _ASK = re.compile(r"<ask(\s[^<>]*)?>(.*?)</ask>", re.DOTALL)
 _TASK = re.compile(r"<task(\s[^<>]*)?>(.*?)</task>", re.DOTALL)
+_EDIT = re.compile(r"<task-edit(\s[^<>]*)?>(.*?)</task-edit>", re.DOTALL)
 _STATUS = re.compile(r"<status(\s[^<>]*)?>(.*?)</status>", re.DOTALL)
 _DEVICE = re.compile(r"<device(\s[^<>]*)?>(.*?)</device>", re.DOTALL)
 _ICON = re.compile(r"<icon(\s[^<>]*)?>(.*?)</icon>", re.DOTALL)
@@ -62,6 +64,14 @@ class Task:
 
 
 @dataclass
+class Edit:
+    item_id: int             # the number of a board item (the hub checks it is one of the question's project)
+    kind: str = ""           # "" = unchanged
+    title: str = ""
+    body: str = ""           # the new context; "" = unchanged
+
+
+@dataclass
 class Status:
     level: str               # "green", "yellow" or "red"
     text: str
@@ -74,6 +84,7 @@ class Signals:
     asks: list[Ask] = field(default_factory=list)
     tasks: list[Task] = field(default_factory=list)
     status: Status | None = None   # the last valid one
+    edits: list[Edit] = field(default_factory=list)   # changes to items the programmer has not started
 
 
 def _attrs(raw: str | None) -> dict:
@@ -123,8 +134,14 @@ def parse(answer: str) -> Signals:
         level, text = attrs.get("level"), _line(inner, MAX_STATUS)
         if level in LEVELS and text:
             status = Status(level, text, _line(attrs.get("title", ""), MAX_STATUS_TITLE))
-    text = _STATUS.sub("", _TASK.sub("", _ASK.sub("", answer))).strip()
-    return Signals(text, asks, tasks, status)
+    edits: list[Edit] = []
+    for raw, inner in _EDIT.findall(answer):
+        attrs = _attrs(raw)
+        if attrs.get("id", "").isdigit() and len(edits) < MAX_TASKS:
+            kind = attrs.get("kind", "") if attrs.get("kind") in TASK_KINDS else ""
+            edits.append(Edit(int(attrs["id"]), kind, _line(attrs.get("title", ""), MAX_TITLE), _block(inner, MAX_BODY)))
+    text = _EDIT.sub("", _STATUS.sub("", _TASK.sub("", _ASK.sub("", answer)))).strip()
+    return Signals(text, asks, tasks, status, edits)
 
 
 def device_asks(answer: str) -> tuple[str, list[tuple[str, str, str]]]:

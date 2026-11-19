@@ -65,16 +65,13 @@ class ManagerBoardTest(unittest.TestCase):
         self.assertEqual(self.items(self.b, self.pb), {})                              # only the question's project
 
     def test_items_start_by_themselves_one_after_the_other_bugs_first(self):
-        hand = board.create_item(self.a.id, self.pa.id, "bug", "Von Hand")              # keeps its start button
         self.ask(WISH)
         job = agents.claim_next(can_mac=False)
         self.assertEqual((job.role, job.title), ("programmer", "Relais klickt doppelt"))   # a bug goes first
         self.assertIn("Context (from the manager and the user, information):\nBeim Einschalten zweimal.", job.prompt)
         self.assertIn("<task kind=", job.prompt)                                        # it may name what it notices
         self.assertIsNone(agents.claim_next(can_mac=False))                            # one task per project at a time
-        tasks = agents.tasks_by_item(self.a.id, self.pa.id)
-        self.assertNotIn(hand.id, tasks)
-        self.assertEqual(len(tasks), 1)
+        self.assertEqual(len(agents.tasks_by_item(self.a.id, self.pa.id)), 1)
         # it went through to the user's approval: the project's next item waits until the task is out of the way
         for role, result in (("programmer", "done"), ("tester", "pass"), ("reviewer", "ok")):
             if job is None:
@@ -97,13 +94,45 @@ class ManagerBoardTest(unittest.TestCase):
                   "<task kind=\"bug\" title=\"Absturz bei leerem Plan\">plan.json leer: KeyError.</task>\nRESULT: done")
         self.assertTrue(agents.finish_run(job.run_id, "done", report))
         items = self.items()
-        self.assertEqual((items["Helligkeit einstellbar"].status, items["Helligkeit einstellbar"].source), ("proposed", "claude"))
+        self.assertEqual((items["Helligkeit einstellbar"].status, items["Helligkeit einstellbar"].source), ("proposed", "agent"))
         self.assertEqual((items["Absturz bei leerem Plan"].status, items["Absturz bei leerem Plan"].auto), ("open", True))
         stored = agents.task_runs(self.a.id, agents.item_task(self.a.id, item.id).id)[0].report
         self.assertNotIn("<task", stored)
         # the user says yes to the suggestion: it goes to the programmer by itself
         self.assertTrue(board.accept(self.a.id, items["Helligkeit einstellbar"].id))
         self.assertTrue(self.items()["Helligkeit einstellbar"].auto)
+
+    def test_an_item_made_by_hand_starts_by_itself_too(self):
+        hand = board.create_item(self.a.id, self.pa.id, "minor", "Von Hand")      # agreed by hand (Janis, 19.11.2026)
+        self.assertTrue(hand.auto)
+        self.assertEqual(agents.claim_next(can_mac=False).title, "Von Hand")
+
+    def test_the_manager_corrects_an_item_the_programmer_has_not_started(self):
+        self.ask(WISH)
+        items = self.items()
+        chat.send(self.a.id, self.pa.id, "Hmm")
+        prompt = chat.claim_next().prompt
+        plan = items["Heizung per Zeitplan"]
+        self.assertIn(f"- #{plan.id} [major] Heizung per Zeitplan (waiting)", prompt)
+        self.assertIn("Dunkler Modus für die Anzeige (suggestion)", prompt)
+        job_id = chat.list_messages(self.a.id, self.pa.id)[-1].id
+        self.assertTrue(chat.finish(job_id, True, f'Korrigiert.<task-edit id="{plan.id}" kind="minor" title="Zeitplan je Tag">'
+                                                  f'Nur Werktage.</task-edit>'))
+        fixed = self.items()["Zeitplan je Tag"]
+        self.assertEqual((fixed.id, fixed.kind, fixed.details), (plan.id, "minor", "Nur Werktage."))
+        self.assertNotIn("<task-edit", chat.list_messages(self.a.id, self.pa.id)[-1].answer)
+        # once the programmer has it, it stays as it is, and the user reads why; nothing of another project changes
+        started = agents.claim_next(can_mac=False)
+        self.assertEqual(started.title, "Relais klickt doppelt")
+        self.assertTrue(agents.finish_run(started.run_id, "done", "Gebaut."))   # with the tester now; the slot is free
+        bug = self.items()["Relais klickt doppelt"]
+        mine = board.create_item(self.b.id, self.pb.id, "bug", "Of B")
+        chat.send(self.a.id, self.pa.id, "Doch anders")
+        job = chat.claim_next()
+        chat.finish(job.chat_id, True, f'<task-edit id="{bug.id}" title="Anders"></task-edit><task-edit id="{mine.id}" title="Planted"></task-edit>')
+        self.assertIn("Relais klickt doppelt", self.items())
+        self.assertIn("Of B", self.items(self.b, self.pb))
+        self.assertIn("2 Punkt(e) waren schon in Arbeit", chat.list_messages(self.a.id, self.pa.id)[-1].answer)
 
     def test_no_ai_no_start_and_nothing_for_a_foreign_project(self):
         self.ask(WISH)

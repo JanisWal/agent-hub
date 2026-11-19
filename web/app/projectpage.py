@@ -102,7 +102,7 @@ def _card(item: Item, lang: str, tasks: dict | None = None) -> str:
         return f'<article class="card proposed" data-id="{item.id}">{title}<div class="card-actions">{buttons}</div></article>'
     discard = _action_button(lang, "discard", "discard", "trash", "quiet")
     start = _action_button(lang, "agent-start", "agent_start", "play", "quiet start") if tasks is not None else ""
-    origin = " from-claude" if item.source == "claude" else ""
+    origin = f" from-{item.source}" if item.source != "user" else ""
     return f'<article class="card{origin}" data-id="{item.id}">{title}{start}{discard}</article>'
 
 
@@ -112,7 +112,7 @@ def _column(kind: str, items: list[Item], lang: str, tasks: dict | None = None) 
     suggestions = ""
     if proposed:
         suggestions = (
-            f'<p class="group-label">{esc(i18n.t(lang, "claude_suggestions"))}</p>'
+            f'<p class="group-label">{esc(i18n.t(lang, "suggestions"))}</p>'
             f'<div class="cards proposed-list">{"".join(_card(i, lang) for i in proposed)}</div>'
         )
     add = esc(i18n.t(lang, "add_item"))

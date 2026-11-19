@@ -617,7 +617,7 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
         report = found.text
         for item in found.tasks[:FOUND_MAX]:              # a bug goes on the board at once, an addition waits
             board.add_from_ai(conn, task["project_id"], item.kind, item.title, item.body,
-                              approved=item.kind == "bug", source="claude")
+                              approved=item.kind == "bug", source="agent")
         step = workflow.advance(task["status"], task["round"], bool(task["manual_check"]), result,
                                 _enabled(conn, user_id))
         conn.execute(

@@ -56,7 +56,7 @@ class BoardTest(unittest.TestCase):
     def test_agent_bug_needs_no_approval(self):
         self.add("Mine")
         bug = board.create_suggestion(self.me.id, self.project.id, "bug", "Found by Claude")
-        self.assertEqual((bug.status, bug.source), ("open", "claude"))
+        self.assertEqual((bug.status, bug.source), ("open", "agent"))
         self.assertEqual(self.titles("open", "bug"), ["Found by Claude", "Mine"])   # on top
         self.assertEqual(self.titles("proposed"), [])
         self.assertTrue(board.discard(self.me.id, bug.id))
