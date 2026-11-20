@@ -86,7 +86,7 @@ class CatalogTest(Base):
         job = chat.claim_next()
         self.assertTrue(job.images)
         self.assertNotIn(catalog.BLIND_NOTE, job.prompt)
-        self.assertIn("Look at images and PDFs yourself", job.prompt)
+        self.assertIn("look at images and PDFs yourself", job.prompt)
         chat.finish(job.chat_id, True, "red")
         agents.configure(self.a.id, "chef", model="nova", effort="low")
         chat.send(self.a.id, self.pa.id, "And this one?")
