@@ -1,6 +1,6 @@
 # Agent-Hub – Konzept: Claude-Instanzen und Zusammenarbeit der Agenten
 
-Stand: 14.11.2026 (Abschnitt 9: Konzept für den KI-unabhängigen Ablauf) · zuerst 07.11.2026, Branch `agent-core` · Ergänzt PROJEKT.md (Abschnitte 3 und 5). Hier steht die Logik hinter dem Bereich „Projekte“; das Aussehen kommt später (DESIGN.md).
+Stand: 20.11.2026 (Abschnitt 9.3a: Pakete je Rolle, 9.2a: Werkzeuge je KI; Abschnitte 2, 6a und „Dateizugriff 13.11.“ sind Geschichte, der heutige Stand steht jeweils oben im Hinweis) · davor 14.11.2026 (Abschnitt 9: Konzept für den KI-unabhängigen Ablauf) · zuerst 07.11.2026, Branch `agent-core` · Ergänzt PROJEKT.md (Abschnitte 3 und 5). Hier steht die Logik hinter dem Bereich „Projekte“; das Aussehen kommt später (DESIGN.md).
 
 ## 1. Überblick
 
@@ -102,6 +102,8 @@ Schutz, weil die Seite öffentlich ist: (1) Anfragen durch den Tunnel (Header `C
 
 ## 6a. Ein Container je Lauf (entschieden)
 
+> **Stand 20.11.2026:** Läufe hängen keinen Claude-Ordner mehr ein (nur ein Ticket, seit 14.11.2026); neben dem Lauf gibt es den Testlauf (`launcher.build_test_command`, `hub-test.sh`, ohne KI und ohne Ticket) und den Lauf ohne Werkzeuge (`prompts.brief_run`). Der Rest des Abschnitts beschreibt den Bau vom 07.11.2026.
+
 **Messung auf dem Pi (07.11.2026):** Docker und containerd laufen ohnehin (zusammen etwa 210 MiB, schon in den 349 MiB „benutzt“ enthalten). Ein Wegwerf-Container mit allen Beschränkungen startet in 1,2 bis 2,8 Sekunden (fünf Läufe, bei einem Lauf von Minuten unerheblich) und kostet außer seinem Prozess keinen Dauerspeicher. Frei sind rund 540 MiB; ein Claude-Code-Lauf brauchte im ersten Test mindestens 225 MiB. Darum bleibt `MAX_RUNNING = 1`, der Container je Lauf ändert nichts an der Speicherrechnung.
 
 Aufbau:
@@ -158,6 +160,8 @@ Rückweg: `docker compose stop runner`, die Verknüpfung ist dann „nicht errei
 
 ## Dateizugriff der Agenten (Stand 13.11.2026)
 
+> **Stand 20.11.2026:** gebaut als Kopie statt Hartlinks (`runner/view.py`, seit 16.11.2026), je Inhalt zwischengespeichert und mit dem Projekt gelöscht; `<read>` bleibt nur für KIs ohne Dateiwerkzeug. Der Text unten ist der Entwurf.
+
 Janis will, dass die KI **alle** Dateien eines Projekts selbst lesen kann (Text, **Bilder, PDF**, samt Unterordnern), zum Beispiel „nutze den Stil dieses Bildes“. Das ist der Entwurf aus PROJEKT.md Abschnitt 5 („Zugriff des Managers: der Lauf bekommt den Ordner eingehängt“). Die Übergangslösung `<read>Name</read>` über den Hub (nur Text) fällt danach weg.
 
 - **Aufbau:** Der Hub legt je Lauf einen Ordnerbaum mit den **echten Namen** an (`data/chatfiles/<Nr.>/<Bereich>/<Ordner>/<Name>`), aus **Hartlinks** auf die gespeicherten Dateien (die liegen unter Nummern). Der Runner hängt den Baum **nur lesbar** in den Lauf ein (`/project`). Der Host-Pfad des Datenordners kommt als Einstellung in die `compose.yml` (`HUB_DATA_HOST`). Nach der Antwort wird der Baum gelöscht.
@@ -207,6 +211,26 @@ Ziel von Janis: Jede KI soll austauschbar sein. Es wird eine Anfrage gestellt, e
 
 Grenzen (Vorschlag, beim Bau festzulegen): höchstens 3 `<ask>`, 5 `<task>`, 1 `<status>` je Antwort; Titel bis 200 Zeichen, Beschreibung bis 4 000, Frage bis 1 000, bis 6 Antwortmöglichkeiten zu je 200 Zeichen.
 
+### 9.2a Werkzeuge je KI (Janis, 20.11.2026, gebaut)
+
+- Im Katalog steht je Anbieter für jedes Werkzeug (`read`, `write`, `shell`, `search`, `fetch`, `look`), woher es kommt: `own` (das Programm der KI hat es), `hub` (der Hub reicht sein eigenes, vielleicht schwächeres Werkzeug), `none`. Heute: Claude Code alles `own`; Mistral Vibe alles `own`, nur `look` vom Hub (`runner/look_mcp.py`).
+- Das Paket nennt nur die Werkzeuge, die es gibt (`prompts.tools_text`). Eine KI ohne Dateiwerkzeug bekommt die Liste der Dateien und fragt mit `<read>`; eine KI ganz ohne Werkzeuge bekommt alles Nötige im Paket.
+- Geplant (PROJEKT.md 11a, Stufe 2, Punkt 7): `runner/hub_tools.py` für Programme mit MCP, denen Werkzeuge fehlen, und `runner/hubloop.py` für KIs, die nur eine API haben (die Schleife fährt der Hub im Container selbst).
+
+### 9.3a Pakete je Rolle (Janis, 20.11.2026, gebaut in `web/app/prompts.py`)
+
+Jede Rolle bekommt nur, was sie braucht; die Regeln stehen vorne (gleich für eine Rolle, der Anbieter kann sie zwischenspeichern), dann Erinnerung, Lage, Auftrag.
+
+| Rolle | Regeln und Markierungen | Kontext |
+|---|---|---|
+| Manager im Chat | Board (`<task>`, `<task-edit>`), Rückfragen (`<ask>`), Erinnerung (`<memory-edit>` mit `<section>`, `<memory file>`); Geräte (`<device>`) nur bei Geräten mit freigegebenen Aktionen; `<read>` nur ohne Dateiwerkzeug | MEMORY.md ganz, andere Erinnerungsdateien bis 8000 Zeichen, ARCHIVE.md nur genannt; Board, Prüfungen, Geräte, „Für dich“ nur, wenn es welche gibt; letzte 6 Fragen |
+| Programmierer | Rolle, Funde (`<task>`, `<ask>`), `RESULT`, `hub-test.sh` pflegen | RULES.md, Aufgabe mit Kontext, Berichte seit seinem letzten Lauf |
+| Tester (nur ohne `hub-test.sh`) | Rolle, Funde, `RESULT` | Aufgabe, Diff, Bericht des Programmierers |
+| Prüfer | Rolle, Funde, `RESULT`; bei kleinem Diff ohne Werkzeuge | RULES.md, Aufgabe, Diff, Testergebnis |
+| Manager nach der Freigabe | Erinnerung, `RESULT`; ohne Werkzeuge | MEMORY.md, ROADMAP.md, Aufgabe, Berichte, Übersicht des Diffs |
+
+Der Hub liest aus einer Antwort nur die Markierungen der Rolle (`prompts.ALLOWED`). Hat der Manager im Web gelesen, warten seine neuen Board-Punkte auf das Ja.
+
 ### 9.4 Rückfragen, unabhängig von der KI („Wartet auf dich“)
 
 - **So gebaut (19.11.2026, `board-smooth`):** Tabelle `questions` (`questions.py`), höchstens 10 offene je Projekt, gleiche Frage nur einmal. Manager-Chat und Läufe lesen `<ask>`; die Kachel zeigt die Frage mit den Antworten als Pillen und einem freien Feld. Eine Antwort an den Manager geht sofort als nächste Chat-Nachricht los („Antwort auf deine Rückfrage …“); läuft gerade eine Frage, kommt sie mit der nächsten im Block `<answers>`. Eine Antwort an eine Rolle kommt mit dem nächsten Lauf dieser Aufgabe. **Abweichung vom Plan:** die Aufgabe wartet nicht auf die Antwort (die Rolle tut, was am sichersten ist, und fragt; die Antwort wirkt ab dem nächsten Lauf). Freigeben, „Noch eine Runde“ mit Bemerkung und Abbrechen gibt es ebenfalls direkt in der Kachel.
@@ -251,7 +275,7 @@ Grenzen (Vorschlag, beim Bau festzulegen): höchstens 3 `<ask>`, 5 `<task>`, 1 `
 - **Später, fortgeschritten (Janis):** die Wahl berücksichtigt das restliche Kontingent und die Zeit bis zum Zurücksetzen (viel übrig kurz vor dem Zurücksetzen = großzügiger, wenig übrig = sparsam). Setzt die Verbrauchsanzeige voraus (PROJEKT.md 11a, Punkt 7).
 - Der Prüfer soll, sobald eine zweite KI verbunden ist, eine andere KI nutzen als der Programmierer (PROJEKT.md 11a, Punkt 4b).
 
-### 9.9 Reihenfolge der Umsetzung (Stand 15.11.2026)
+### 9.9 Reihenfolge der Umsetzung (Stand 15.11.2026; seit 20.11.2026 zusätzlich 9.2a und 9.3a gebaut)
 
 1. Antwortformat und strenges Lesen im Manager-Chat: `<ask>`, `<status>`, `<task>` (Parser wie `memory.parse_answer`, Tests mit Fremdprojekten in `test_isolation.py`). **Teilweise (15.11.2026, `reply-format`):** der strenge Leser steht (`web/app/reply.py`, reine Funktion, Grenzen wie in 9.3); offen: Speichern, Anschluss an Chat und Manager-Runde, Fremdprojekt-Tests.
 2. Kachel „Wartet auf dich“ mit Antworten (Knöpfe, freies Feld) und der Regeltext der Selbstständigkeit. **Gebaut 19.11.2026** (`board-smooth`); offen: groß öffnen bei langen Fragen.
@@ -265,4 +289,4 @@ Grenzen (Vorschlag, beim Bau festzulegen): höchstens 3 `<ask>`, 5 `<task>`, 1 `
 
 - **Dateinamen immer englisch:** `MEMORY.md`, `PROJECT.md`, `ROADMAP.md`, `RULES.md`. **Inhalt** (Überschriften, Text) in der Sprache, die beim Anlegen des Projekts eingestellt ist. Begründung: Die Namen sind technische Schlüssel, auf die Regelteil, Hub und Tests sich beziehen, und sehen in jedem Projekt gleich aus; den Inhalt lesen Menschen. Verworfen: übersetzte Namen (jede Stelle bräuchte beide), gemischte Namen (MEMORY neben REGELN). Vorschlag von Claude am 14.11.2026, von Janis im selben Zug angenommen.
 - **`ARCHIVE.md` (seit 15.11.2026, live):** die Geschichte des Projekts (was es gab, was verworfen oder geändert wurde, warum). Sie wächst nur: Der Hub hängt an, was der Manager hineinschreibt, mit Datum (PROJEKT.md, Änderungsprotokoll `memory-archive`).
-- **Noch umzusetzen:** `memory.SKELETON` legt heute für deutsche Projekte `PROJEKT.md` und `REGELN.md` an; das wird auf die englischen Namen umgestellt, und in bestehenden Projekten werden diese beiden Dateien einmalig umbenannt (Inhalt bleibt).
+- **Umgesetzt 20.11.2026:** `memory.SKELETON` legt in jeder Sprache `PROJECT.md` und `RULES.md` an; bestehende Projekte wurden einmalig umbenannt (Inhalt blieb, `db._prepare`, Merker `done.memory_names`).
