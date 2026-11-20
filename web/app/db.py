@@ -349,26 +349,10 @@ NEW_COLUMNS = {
                 "pass_enc": "TEXT NOT NULL DEFAULT ''"},  # the password for the human, sealed (key_enc: the key, for the AI)
 }
 
-# The three statements below run once, when a database from before the feature is opened for the
-# first time (see `_prepare`), never again: they must not undo later changes.
-
-# Projects from before pages existed (page = 0) get their page from their order, 6 per page.
-ASSIGN_PAGES = """
-UPDATE projects SET page = 1 + (
-    SELECT COUNT(*) FROM projects q
-    WHERE q.user_id = projects.user_id
-      AND (q.position < projects.position OR (q.position = projects.position AND q.id < projects.id))
-) / 6
-WHERE page = 0
-"""
-
-# Users from before roles existed: admins stay admins, and the oldest admin becomes the owner.
-ASSIGN_ROLES = (
-    "UPDATE users SET role = 'admin' WHERE is_admin = 1 AND role = 'user'",
-    "UPDATE users SET role = 'owner' WHERE id = (SELECT MIN(id) FROM users WHERE role = 'admin')"
-    " AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'owner')",
-)
-
+# One-time conversions of old data run in `_prepare`, never again. Each carries its date and goes once no database
+# and no backup from before it can be left (backups keep up to 35 days); the roles, pages and session hashes of
+# 06./07.11.2026 went on 20.11.2026, they are older than the first backup (11.11.2026). The ones left (14. to 20.11.2026)
+# can go after 25.12.2026.
 BUSY_SECONDS = 15
 _ready: set[str] = set()  # database files whose schema is already current in this process
 
@@ -378,12 +362,12 @@ def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
 
 
 def _prepare(conn: sqlite3.Connection) -> None:
-    """Bring a database up to date: create missing tables, add missing columns, and do the
-    one-time conversions of old data (roles, pages, session tokens, the old `is_admin` column)."""
+    """Bring a database up to date: create missing tables, add missing columns, and do the one-time conversions of
+    old data (each with its date)."""
     had_archive = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'chat_archive'").fetchone() is not None
     had_one_tree = conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'files_by_place'").fetchone() is not None
     conn.executescript(SCHEMA)
-    before = {table: _columns(conn, table) for table in {"users", "projects", "sessions", *NEW_COLUMNS}}
+    before = {table: _columns(conn, table) for table in {"users", *NEW_COLUMNS}}
     for table, columns in NEW_COLUMNS.items():
         for name, definition in columns.items():
             if name not in before[table]:
@@ -402,28 +386,15 @@ def _prepare(conn: sqlite3.Connection) -> None:
             " SELECT m.user_id, m.project_id, m.prompt, m.answer, m.status, m.model, m.effort, m.created_at, m.created_at"
             " FROM chat_messages m JOIN projects p ON p.id = m.project_id JOIN users u ON u.id = m.user_id"
             " WHERE m.status IN ('done', 'failed')")
-    if "is_admin" in before["users"]:
-        if "role" not in before["users"]:   # roles come from the old admin flag, once
-            for statement in ASSIGN_ROLES:
-                conn.execute(statement)
-        conn.execute("ALTER TABLE users DROP COLUMN is_admin")   # `role` says it all now
     if "theme" in before["users"]:
         # Until 15.11.2026 the server kept a copy of the style each user saw, only so mails could use it. Mails now
         # follow the reader's mail program (mailtext.py), so the copy goes, once. Remove this once no database can
         # have the column any more.
         conn.execute("ALTER TABLE users DROP COLUMN theme")
-    if "page" not in before["projects"]:
-        conn.execute(ASSIGN_PAGES)
     if "expires_at" not in before["claude_connections"]:
         # Since 14.11.2026 runs use the one-year token of `claude setup-token`, kept encrypted by the runner. A login
         # of the old kind (Claude Code's own files, which ran out after a day) is not used any more: link again.
         conn.execute("UPDATE claude_connections SET status = 'expired' WHERE status = 'connected'")
-    if "token" in before["sessions"]:
-        # Sessions used to be stored as the cookie value itself, now only as its hash (a copy of the
-        # database or a backup must not contain usable logins). Old sessions cannot be converted:
-        # everybody logs in once more.
-        conn.execute("ALTER TABLE sessions RENAME COLUMN token TO token_hash")
-        conn.execute("DELETE FROM sessions")
     if "details" not in before["board_items"]:
         # Once (19.11.2026, manager-board): an item an agent found was marked "claude"; no AI names in the data.
         conn.execute("UPDATE board_items SET source = 'agent' WHERE source = 'claude'")

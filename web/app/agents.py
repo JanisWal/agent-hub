@@ -642,6 +642,9 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
         if workflow.STAGE_ROLE.get(task["status"]) != run["role"]:
             return False
         user_id = _owner(conn, task["id"])
+        if result not in workflow.RESULTS.get(run["role"], ()) or result == "skipped":   # skipped: the hub's own
+            report = (report + f"\n\n(The run gave the result {result[:20]!r}, which this role does not have.)").strip()
+            result = "failed"
         if run["role"] == "chef" and result == "done":    # the manager keeps the memory files up after the work
             parsed = memory.parse_answer(report)
             report = parsed.text

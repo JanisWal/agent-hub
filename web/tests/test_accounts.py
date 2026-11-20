@@ -265,23 +265,6 @@ class AccountsTest(unittest.TestCase):
         self.assertEqual(code("Mein!Pass12", "nodigits!Aa"), "policy")
         self.assertEqual(code("Mein!Pass12", "Mein!Pass12"), "same")
 
-    # --- old databases
-    def test_old_database_gets_an_owner(self):
-        path = os.path.join(self.tmp.name, "old.db")
-        conn = sqlite3.connect(path)
-        conn.executescript(
-            "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE,"
-            " password_hash TEXT NOT NULL, is_admin INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);"
-            "INSERT INTO users (email, password_hash, is_admin, created_at) VALUES ('a@x.de', 'h', 1, 1);"
-            "INSERT INTO users (email, password_hash, is_admin, created_at) VALUES ('b@x.de', 'h', 1, 2);"
-            "INSERT INTO users (email, password_hash, is_admin, created_at) VALUES ('c@x.de', 'h', 0, 3);"
-        )
-        conn.commit()
-        conn.close()
-        db.DB_PATH = path
-        roles = {u.email: u.role for u in users.list_users(users.User(0, "", True, 0, role="owner"))}
-        self.assertEqual(roles, {"a@x.de": "owner", "b@x.de": "admin", "c@x.de": "user"})
-
     # --- pages
     def test_pages_are_filled_and_escape_text(self):
         hostile = users.create_user('<img src=x onerror=1>@example.com', "Start1234")

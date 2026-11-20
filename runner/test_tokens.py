@@ -66,16 +66,6 @@ class VaultTest(unittest.TestCase):
         self.assertFalse(self.vault.forget(2))
         self.assertIsNone(self.vault.load(2))
 
-    def test_old_login_files_are_cleared_but_not_the_token(self):
-        folder = self.base / "2"
-        (folder / ".claude").mkdir(parents=True)
-        (folder / ".credentials.json").write_text('{"refreshToken": "old"}')
-        (folder / ".claude" / "settings.json").write_text("{}")
-        self.vault.save(2, TOKEN)
-        self.vault.clear_old(2)
-        self.assertEqual(sorted(p.name for p in folder.iterdir()), [tokens.TOKEN_FILE])
-        self.assertEqual(self.vault.load(2), TOKEN)
-
 
 class TicketTest(unittest.TestCase):
     def setUp(self):

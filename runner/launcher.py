@@ -20,13 +20,6 @@ from pathlib import Path
 # lower case, never starting with "-" (the same patterns as catalog.py).
 _MODEL = re.compile(r"[a-z][a-z0-9.-]{0,47}")
 _EFFORT = re.compile(r"[a-z]{1,12}")
-ROLES = ("chef", "programmer", "tester", "reviewer")   # same as web/app/workflow.py; the chef also documents
-RESULTS = {
-    "programmer": ("done", "failed"),
-    "tester": ("pass", "fail", "not_testable", "failed"),
-    "reviewer": ("ok", "objections", "failed"),
-    "chef": ("done", "failed"),
-}
 IMAGE = "agent-hub-agent"         # built from runner/Dockerfile
 VIBE_IMAGE = "agent-hub-vibe"     # built from runner/Dockerfile.vibe (Mistral Vibe)
 NETWORK = "agent-hub-agents"      # separate from the "web" network: a run cannot reach the hub
@@ -469,12 +462,10 @@ def parse_vibe(stdout: str) -> tuple[bool, str, int, int, bool]:
     return False, reason[:2000], tokens_in, tokens_out, login
 
 
-def result_of(role: str, text: str, failed: bool = False) -> tuple[str, str]:
+def result_of(text: str, failed: bool = False) -> tuple[str, str]:
     """(result, report) from an agent's answer, the same for every AI: a line `RESULT: <value>` among its last
-    RESULT_LOOK lines (markdown around it does not count). Anything else (no marker, a value that does not fit the
-    role, a failed run) is "failed": the task then goes to the user instead of guessing."""
-    if role not in RESULTS:
-        raise ValueError("unknown role")
+    RESULT_LOOK lines (markdown around it does not count). No marker or a failed run is "failed". Whether the value
+    fits the role, the hub decides (web/app/workflow.py RESULTS; a value that does not fit is "failed" there)."""
     lines = text.rstrip().splitlines()
     match, at = None, None
     filled = [i for i, line in enumerate(lines) if line.strip()][-RESULT_LOOK:]
@@ -484,6 +475,6 @@ def result_of(role: str, text: str, failed: bool = False) -> tuple[str, str]:
             at = i
             break
     report = "\n".join(lines[:at] + lines[at + 1:] if match else lines).strip()[:MAX_REPORT]
-    if failed or match is None or match.group(1) not in RESULTS[role]:
+    if failed or match is None:
         return "failed", report or "The agent gave no valid result."
     return match.group(1), report

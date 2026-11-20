@@ -328,7 +328,7 @@ class OutputTest(unittest.TestCase):
     def result(self, role, out):
         from runner import adapters
         ok, text, tokens_in, tokens_out, _ = adapters.Claude().parse_run(out)
-        return (*L.result_of(role, text, failed=not ok), tokens_in, tokens_out)
+        return (*L.result_of(text, failed=not ok), tokens_in, tokens_out)
 
     def test_result_marker_report_and_tokens(self):
         result = self.result("tester", answer("All good.\nChecked 3 things.\nRESULT: pass"))
@@ -338,14 +338,14 @@ class OutputTest(unittest.TestCase):
         cases = [
             ("programmer", "not json at all"),
             ("programmer", answer("Done, but no marker")),
-            ("programmer", answer("x\nRESULT: pass")),                 # a tester value for the programmer
-            ("tester", answer("x\nRESULT: done")),
             ("programmer", answer("x\nRESULT: done", is_error=True)),
             ("programmer", answer("")),
             ("reviewer", json.dumps(["list"])),
         ]
         for role, out in cases:
             self.assertEqual(self.result(role, out)[0], "failed", (role, out))
+        # whether a value fits the role, the hub decides (agents.finish_run): the runner passes it on as it is
+        self.assertEqual(self.result("programmer", answer("x\nRESULT: pass"))[0], "pass")
 
     def test_marker_near_the_end(self):
         result, report = self.result("programmer", answer("Built.\n**RESULT: done**\nand then more text"))[:2]
@@ -355,10 +355,8 @@ class OutputTest(unittest.TestCase):
         self.assertEqual(self.result("programmer", answer(far))[0], "failed")     # not near the end: no guess
         self.assertEqual(self.result("programmer", answer("The RESULT: done line follows"))[0], "failed")
 
-    def test_report_is_capped_and_role_checked(self):
+    def test_report_is_capped(self):
         self.assertEqual(len(self.result("chef", answer("x" * 50000 + "\nRESULT: done"))[1]), L.MAX_REPORT)
-        with self.assertRaises(ValueError):
-            self.result("janitor", answer("x"))
 
 
 class ConsistencyTest(unittest.TestCase):
@@ -366,16 +364,12 @@ class ConsistencyTest(unittest.TestCase):
 
     def test_same_lists_as_the_hub(self):
         try:
-            from app import catalog, workflow
+            from app import catalog
         except ImportError:
             self.skipTest("hub code not available")
         # models and levels are a list of the hub; the launcher only checks the same safe patterns
         self.assertEqual(L._MODEL.pattern, catalog._ID.pattern)
         self.assertEqual(L._EFFORT.pattern, catalog._EFFORT.pattern)
-        self.assertEqual(L.ROLES, workflow.ROLES)
-        # "skipped" is the chief's own result (a test left out without the Mac), no run reports it
-        self.assertEqual({k: set(v) for k, v in L.RESULTS.items()},
-                         {k: set(v) - {"skipped"} for k, v in workflow.RESULTS.items()})
 
 
 if __name__ == "__main__":

@@ -18,18 +18,15 @@ TOKEN = "sk-ant-oat01-" + "t" * 80
 
 
 class FakeVault:
-    """The encrypted store without encryption: what was saved for whom, and which old files were cleared."""
+    """The encrypted store without encryption: what was saved for whom."""
     def __init__(self, saved=None):
-        self.saved, self.cleared = dict(saved or {}), []
+        self.saved = dict(saved or {})
 
     def save(self, user_id, token):
         self.saved[user_id] = token
 
     def load(self, user_id):
         return self.saved.get(user_id)
-
-    def clear_old(self, user_id):
-        self.cleared.append(user_id)
 
     def forget(self, user_id):
         return self.saved.pop(user_id, None) is not None
@@ -187,7 +184,6 @@ class RunnerTest(unittest.TestCase):
         self.runner.handle_logins()
         self.assertEqual(self.api.posted("/2/done"), [{"success": "1"}])
         self.assertEqual(self.vault.saved, {2: TOKEN})                         # kept (encrypted) for this user only
-        self.assertEqual(self.vault.cleared, [2])                              # the files of the old login go
         self.assertTrue(self.made[2].closed)
         self.assertEqual(self.runner.sessions, {})
 
