@@ -13,7 +13,7 @@ Vibe's API address is the egress gateway (the only way to Mistral; it puts the r
 model calls, and no telemetry, update checks or notifications at all.
 
 Pictures (18.11.2026): Vibe's own file tool reads text only. HUB_IMAGES=1 marks the model as one that sees images
-(`supports_images`), and every job with tools gets the MCP server look_mcp.py with its tool `look`: images and PDF
+(`supports_images`), and every job with tools gets the MCP server hub_tools.py with its tool `look`: images and PDF
 pages come back as pictures, which Vibe passes to the model (without the mark it puts "[Image]" in their place).
 """
 import json
@@ -32,7 +32,7 @@ OFF_JOB = {"chat-all": (), "chat-apart": ("web_fetch",), "chat-brief": ("*",), "
            "run-brief": ("*",)}   # brief: the status, a small review, the documentation: no tools
 
 
-LOOK = "/opt/hub/look_mcp.py"
+LOOK = "/opt/hub/hub_tools.py"   # the hub's tools; Vibe brings the others itself (catalog: look = "hub")
 LOOK_HINT = ("Use it to look at images and PDFs (their pages as pictures); read text files with read_file.")
 
 
@@ -43,7 +43,7 @@ name = "hub"
 transport = "stdio"
 command = ["/usr/local/bin/python", "{LOOK}"]
 prompt = "{LOOK_HINT}"
-env = {{ HUB_IMAGES = "{1 if images else 0}" }}
+env = {{ HUB_IMAGES = "{1 if images else 0}", HUB_TOOLS = "look" }}
 ''' if look else ""
     return f'''active_model = "hub"
 enable_telemetry = false

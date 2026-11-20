@@ -180,7 +180,7 @@ def _key_provider(provider: str) -> None:
 @router.post("/keys/claim")
 def keys_claim():
     """The keys users pasted, each handed over once (never stored by the hub)."""
-    return ok(keys=[{"user_id": uid, "provider": p, "key": key} for uid, p, key in ai_link.take_keys()])
+    return ok(keys=ai_link.take_keys())
 
 
 @router.post("/keys/{user_id}/{provider}/done")

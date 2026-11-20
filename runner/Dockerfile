@@ -16,4 +16,6 @@ RUN mkdir -p "$HOME" && curl -fsSL https://claude.ai/install.sh | bash -s 2.1.31
  && chmod -R a+rX /opt/claude-install
 ENV PATH="/opt/claude-install/.local/bin:${PATH}" \
     DISABLE_AUTOUPDATER=1
+# The hub's tool loop and tools for an AI that has only an API (20.11.2026, runner/hubloop.py, runner/hub_tools.py).
+COPY hubloop.py hub_tools.py /opt/hub/
 WORKDIR /work

@@ -28,7 +28,7 @@ from pathlib import Path
 
 import threading
 
-from . import adapters, launcher, login, mistral, tokens, view, workspace
+from . import adapters, custom, launcher, login, mistral, tokens, view, workspace
 
 LOGIN_TIMEOUT_AFTER_CODE = 90   # seconds Claude Code gets to accept the code
 LINK_TIMEOUT = 30               # seconds until the sign-in prints its link
@@ -98,7 +98,7 @@ class Runner:
         self.run_chat = run_chat or self._run_chat
         self.run_power = run_power or self._run_power
         self.keys = keys or tokens.ProviderKeys(claude_base, os.environ.get("HUB_TOKEN_KEY"))
-        self.verifiers = verifiers or {"mistral": mistral}   # check a pasted API key with its provider: verify()
+        self.verifiers = verifiers or {"mistral": mistral, "custom": custom}   # check a pasted key with its AI: verify()
         self.work = work or workspace.Workspace(os.environ.get("HUB_WORK_DIR", "/opt/agent-hub/work"))
         self.run_agent = run_agent or self._run_agent
         self.run_tests = self._run_tests
@@ -222,7 +222,8 @@ class Runner:
             adapter = self.verifiers.get(provider)
             success = False
             if adapter is not None and tokens.KEY_PATTERNS.get(provider) and tokens.KEY_PATTERNS[provider].fullmatch(api_key):
-                result = adapter.verify(api_key)
+                result = (adapter.verify(api_key, str(item.get("endpoint") or ""), item.get("lan") is True)
+                          if provider == "custom" else adapter.verify(api_key))
                 if result == "ok":
                     try:
                         self.keys.save(user_id, provider, api_key)
@@ -347,13 +348,14 @@ class Runner:
             return
         files_dir, code_dir, root = (self._view(f"chat-{chat_id}", job, code=True) if job.get("project_id")
                                      else (None, None, None))
-        ticket = self.tickets.issue(secret, provider)
+        ticket = self.tickets.issue(secret, provider, **adapter.route(job))
         secret = None
         thoughts = Thoughts(self.api, chat_id, adapter, self.clock)
         try:
             command = adapter.chat_command(chat_id=chat_id, user_id=user_id, model=job["model"], ticket=ticket,
                                            mode=job.get("mode", "all"), effort=job.get("effort") or "",
-                                           files_dir=files_dir, code_dir=code_dir, images=job.get("images") is True)
+                                           files_dir=files_dir, code_dir=code_dir, images=job.get("images") is True,
+                                           route=job.get("route"))
             done = self.run_chat(command, job["prompt"], thoughts.line)
             thoughts.flush()
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(done.stdout)
@@ -427,14 +429,14 @@ class Runner:
             print(f"runner: work folder of task {task_id}: {type(error).__name__}", file=sys.stderr, flush=True)
             return self._finish_run(run_id, "failed", "The work folder could not be prepared.")
         files_dir, _, root = self._view(f"run-{run_id}", job)
-        ticket = self.tickets.issue(secret, provider)
+        ticket = self.tickets.issue(secret, provider, **adapter.route(job))
         secret = None
         started = self.clock()
         try:
             command = adapter.run_command(run_id=run_id, user_id=user_id, model=job["model"], ticket=ticket,
                                           net=job.get("net", "together"), effort=job.get("effort") or "",
                                           work_dir=str(folder), files_dir=files_dir,
-                                          images=job.get("images") is True)
+                                          images=job.get("images") is True, route=job.get("route"))
             done = self.run_agent(command, job["prompt"])
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_run(done.stdout)
         except subprocess.TimeoutExpired:
@@ -463,11 +465,11 @@ class Runner:
         """A run that needs no tools (the reviewer of a small change, the manager's documentation): one answer, no
         work folder, no files, nothing to commit."""
         run_id, user_id = int(job["run_id"]), int(job["user_id"])
-        ticket = self.tickets.issue(secret, adapter.provider)
+        ticket = self.tickets.issue(secret, adapter.provider, **adapter.route(job))
         started = self.clock()
         try:
             command = adapter.brief_command(run_id=run_id, user_id=user_id, model=job["model"], ticket=ticket,
-                                            effort=job.get("effort") or "")
+                                            effort=job.get("effort") or "", route=job.get("route"))
             done = self.run_agent(command, job["prompt"])
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(done.stdout)
         except subprocess.TimeoutExpired:

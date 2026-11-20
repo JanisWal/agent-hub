@@ -16,6 +16,27 @@ def info_dot(label: str, text: str) -> str:
             f'{icon("info")}</button>')
 
 
+def ai_name(lang: str, provider: str) -> str:
+    """The name of an AI as the page shows it: from the catalog, the user's own AI in the user's language."""
+    if provider == "custom":
+        return i18n.t(lang, "ai_custom_name")
+    return catalog.provider(provider).name if provider in catalog.PROVIDERS else provider
+
+
+def tools_line(lang: str, provider: str) -> str:
+    """Where the tools of an AI come from (catalog.tools_of), in one short line: own, from the hub, missing."""
+    tools = catalog.tools_of(provider)
+    def names(source: str) -> list[str]:
+        return [i18n.t(lang, f"tool_{t}") for t in catalog.TOOLS if tools.get(t) == source]
+    own, hub, missing = names("own"), names("hub"), names("none")
+    parts = [i18n.t(lang, "tools_own")] if own else []
+    if hub:
+        parts.append(i18n.t(lang, "tools_all_hub") if not own else i18n.t(lang, "tools_from_hub", names=", ".join(hub)))
+    if missing:
+        parts.append(i18n.t(lang, "tools_without", names=", ".join(missing)))
+    return i18n.t(lang, "tools_line", list=", ".join(parts))
+
+
 def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model: str = "picker_model",
                  label_effort: str = "picker_effort", css: str = "m-select", setting: bool = True,
                  providers: tuple[str, ...] = (catalog.DEFAULT_PROVIDER,)) -> str:
@@ -40,16 +61,19 @@ def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model
     def label(key: str) -> str:
         return esc(i18n.t(lang, key))
 
-    def model_text(m: catalog.Model) -> str:
+    def model_name(prov: catalog.Provider, m: catalog.Model) -> str:
+        return ai_name(lang, "custom") if prov.id == "custom" else m.name   # its real model is the user's own
+
+    def model_text(prov: catalog.Provider, m: catalog.Model) -> str:
         hint = texts.get(f"model_hint_{m.hint}", "") if m.hint else ""
-        return esc(f"{m.name} · {hint}" if hint else m.name)
+        return esc(f"{model_name(prov, m)} · {hint}" if hint else model_name(prov, m))
 
     def effort_text(level: str) -> str:
         return esc(texts.get(f"effort_{level}", level))
 
     # The closed box shows only the name (option label, saves room in a tile header); the list shows name and hint.
-    models = "".join(f'<option value="{m.id}" label="{esc(m.name)}" data-ai="{esc(prov.name)}"'
-                     f'{" selected" if m.id == model else ""}>{model_text(m)}</option>' for prov, m in all_models)
+    models = "".join(f'<option value="{m.id}" label="{esc(model_name(prov, m))}" data-ai="{esc(ai_name(lang, prov.id))}"'
+                     f'{" selected" if m.id == model else ""}>{model_text(prov, m)}</option>' for prov, m in all_models)
     efforts = "".join(
         f'<option value="{e}"{" selected" if e == effort else ""}{"" if e in chosen.efforts else " hidden"}>'
         f'{effort_text(e)}</option>' for e in levels)
@@ -78,6 +102,38 @@ KEY_STATES = {
     "connecting": ("pending", "key_checking", "connect"),
     "expired": ("expired", "key_refused", "claude_renew"),
 }
+
+# The user's own AI (ai_link.py, 20.11.2026): the same steps as KEY_DIALOG (ailink.js), with address and model; the key
+# may stay empty (a local model). Plain fields, no browser checks (DESIGN.md 9): the server says what does not fit.
+CUSTOM_DIALOG = """<dialog class="dialog" id="key-dialog-custom" data-provider="custom">
+  <h2>%t.custom_title%</h2>
+  <form data-step="key" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
+    <p class="muted">%t.custom_steps%</p>
+    <label>%t.custom_endpoint%<input type="text" name="endpoint" required maxlength="300" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…/v1"></label>
+    <label>%t.custom_model%<input type="text" name="model" required maxlength="100" autocomplete="off" spellcheck="false"></label>
+    <label>%t.custom_key%<input type="password" name="key" maxlength="400" autocomplete="off" spellcheck="false"></label>
+    <div class="actions">
+      <button type="button" data-close>%t.cancel%</button>
+      <button class="primary" type="submit">%t.claude_confirm%</button>
+    </div>
+  </form>
+  <div data-step="check" hidden><p class="muted" role="status">%t.key_wait%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p></div>
+  <div data-step="done" hidden>
+    <p class="muted">%t.custom_done%</p>
+    <div class="actions"><button class="primary" type="button" data-finish>%t.close%</button></div>
+  </div>
+  <div data-step="failed" hidden>
+    <p class="error" role="alert">%t.custom_failed%</p>
+    <div class="actions"><button type="button" data-finish>%t.close%</button></div>
+  </div>
+  <div data-step="disconnect" hidden>
+    <p class="muted">%t.key_disconnect_text%</p>
+    <div class="actions">
+      <button type="button" data-close autofocus>%t.cancel%</button>
+      <button class="danger-btn" type="button" data-disconnect>%t.claude_disconnect%</button>
+    </div>
+  </div>
+</dialog>"""
 
 LOGIN = """<section class="glass">
   <h1>%t.login%</h1>
@@ -231,8 +287,9 @@ def _claude_row(lang: str, state: str, first: bool = True, as_default: bool = Fa
     return (
         f'<div class="setting service {style}" id="claude-row" data-ai="claude" '
         f'data-expired="{esc(i18n.t(lang, "claude_expired"))}" data-renew="{esc(i18n.t(lang, "claude_renew"))}">'
-        f'<span class="setting-label">{esc(catalog.provider("claude").name)}</span>{corner}'
-        f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>{action}</span></div>'
+        f'<span class="setting-label">{esc(ai_name(lang, "claude"))}</span>{corner}'
+        f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>{action}</span>'
+        f'<span class="service-tools">{esc(tools_line(lang, "claude"))}</span></div>'
     )
 
 
@@ -244,8 +301,9 @@ def _key_row(lang: str, provider: str, state: str, first: bool = False, as_defau
     corner = _toggle(lang) if first else (_make_default(lang, provider) if as_default and state == "connected" else "")
     return (
         f'<div class="setting service {style}" id="key-row-{provider}" data-ai="{provider}">'
-        f'<span class="setting-label">{esc(catalog.provider(provider).name)}</span>{corner}'
-        f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>{action}</span></div>'
+        f'<span class="setting-label">{esc(ai_name(lang, provider))}</span>{corner}'
+        f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>{action}</span>'
+        f'<span class="service-tools">{esc(tools_line(lang, provider))}</span></div>'
     )
 
 
@@ -259,7 +317,9 @@ def _placeholder_row(lang: str, name: str) -> str:
 
 def _key_dialogs(lang: str) -> str:
     def dialog(provider: str) -> str:
-        name = catalog.provider(provider).name                # the AI's name comes from the catalog, never from here
+        if provider == "custom":   # address, model and an optional key instead of a page to make a key on
+            return fill(CUSTOM_DIALOG, lang)
+        name = ai_name(lang, provider)                        # the AI's name comes from the catalog, never from here
         return fill(KEY_DIALOG, lang, ID=provider, PAGE=esc(KEY_PAGES[provider]),
                     **{part.upper(): esc(i18n.t(lang, f"key_{part}", name=name)) for part in ("title", "steps", "open", "done")})
     return "\n".join(dialog(p) for p in ai_link.PROVIDERS)

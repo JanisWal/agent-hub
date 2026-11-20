@@ -672,7 +672,7 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
         # "Claude answers": the name of the AI in use comes from its provider (catalog.py), never from the code; chat.js
         # puts in the AI of the chosen model (data-ai of the option), so "{name}" stays in the text here
         CHAT=fill(CHAT, lang, MODEL=model, SEND=icon("arrow_up"),
-                  WAITING=esc(i18n.t(lang, "chat_waiting", name="{name}")), FALLBACK=esc(i18n.t(lang, "chat_fallback", name="{name}", other="{other}")), AI=esc(catalog.provider(catalog.provider_of(chef["model"])).name), NET=_net_switch(lang, settings["roles"]["chef"]["net"]),
+                  WAITING=esc(i18n.t(lang, "chat_waiting", name="{name}")), FALLBACK=esc(i18n.t(lang, "chat_fallback", name="{name}", other="{other}")), AI=esc(ui.ai_name(lang, catalog.provider_of(chef["model"]))), NET=_net_switch(lang, settings["roles"]["chef"]["net"]),
                   INFO=ui.info_dot(i18n.t(lang, "manager_chat"), i18n.t(lang, "manager_chat_hint"))),
         WAITING_TILE=_waiting_tile(lang, autonomy, waiting or [], asks, open_questions),
         MVAULT=fill(MVAULT, lang, TRASH_LIST=_trash_list(lang, trashed_files or []),

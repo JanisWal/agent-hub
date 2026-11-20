@@ -111,7 +111,7 @@ class VibeCommandTest(unittest.TestCase):
         self.assertTrue(seeing["models"][0]["supports_images"])
         server = seeing["mcp_servers"][0]
         self.assertEqual((server["name"], server["transport"]), ("hub", "stdio"))
-        self.assertEqual(server["command"], ["/usr/local/bin/python", "/opt/hub/look_mcp.py"])
+        self.assertEqual(server["command"], ["/usr/local/bin/python", "/opt/hub/hub_tools.py"])
         self.assertEqual(server["env"], {"HUB_IMAGES": "1"})
         blind = tomllib.loads(vibe_entry.config("mistral-small-2603", "off"))
         self.assertFalse(blind["models"][0]["supports_images"])

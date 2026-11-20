@@ -580,6 +580,8 @@ main { padding-bottom: 96px; } /* room for the toggle */
 .select-option:hover, .select-option.active { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .select-option[aria-selected="true"]::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 .service-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; column-gap: var(--space); min-height: 28px; }
+/* Where the tools of an AI come from (ui.tools_line, 20.11.2026): one quiet line under its state */
+.service-tools { display: block; font-size: 12px; line-height: 1.35; color: var(--muted); }
 .status { display: inline-flex; align-items: center; gap: var(--space); font-weight: 600; white-space: nowrap; color: var(--muted); }
 .setting input::placeholder { color: var(--muted); opacity: 0.8; font-weight: 500; }
 .status::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); opacity: 0.5; }

@@ -14,6 +14,10 @@ run can reach nothing but this proxy. The proxy listens twice, with two policies
   api.anthropic.com over TLS. So the real token never enters a run: code in a run can not read it or send it out.
 - "gateway mistral" (port 3131, since 15.11.2026): the same for Mistral Vibe: its API key never enters a run, the
   ticket (which names its AI, runner/tokens.py) is swapped for the key and the request goes to api.mistral.ai.
+- "gateway custom" (port 3132, since 20.11.2026): the user's own AI (any OpenAI-compatible API, runner/hubloop.py). The
+  address stands in the ticket, never in the request: only the model calls go there, over TLS to a public address, or
+  for the owner's own AI also in the home network (10/8, 192.168/16, Tailscale 100.64/10; never the Docker networks
+  172.16/12, loopback or link-local), there plain http is allowed too.
 
 The proxy resolves names itself and connects to the address it checked (no second lookup that could
 answer differently). It never looks into the traffic (HTTPS passes through) and logs only the
@@ -22,6 +26,7 @@ decision and the host name.
 import asyncio
 import ipaddress
 import os
+import re
 import ssl
 import sys
 from dataclasses import dataclass
@@ -35,10 +40,11 @@ IDLE_TIMEOUT = 120
 TOTAL_TIMEOUT = 300
 MAX_CLIENTS = 32
 # The gateways: AI -> (upstream host, port). A ticket only works at the gateway of its own AI.
-GATEWAYS = {"claude": ("api.anthropic.com", 3130), "mistral": ("api.mistral.ai", 3131)}
+GATEWAYS = {"claude": ("api.anthropic.com", 3130), "mistral": ("api.mistral.ai", 3131), "custom": ("", 3132)}
+HOME_NETS = tuple(ipaddress.ip_network(n) for n in ("10.0.0.0/8", "192.168.0.0/16", "100.64.0.0/10"))
 # What a run may ask of its AI (20.11.2026): Claude only the model calls; Mistral everything but what costs money apart
 # from the model calls or stores data with the provider (Vibe's own calls were not all known, so a list of what never).
-GATEWAY_PATHS = {"claude": ("/v1/messages", "/v1/models")}
+GATEWAY_PATHS = {"claude": ("/v1/messages", "/v1/models"), "custom": ("/v1/chat/completions", "/v1/models")}
 GATEWAY_NEVER = {"mistral": ("/v1/files", "/v1/libraries", "/v1/batch", "/v1/fine_tuning", "/v1/billing",
                              "/v1/workspaces", "/v1/audio")}
 GATEWAY_HEAD_LIMIT = 65536
@@ -75,6 +81,39 @@ def is_public(address: str) -> bool:
     if ip.version == 6 and ip.ipv4_mapped is not None:
         ip = ip.ipv4_mapped
     return ip.is_global and not ip.is_multicast
+
+
+def home_address(address: str) -> bool:
+    """True for an address of a home network (HOME_NETS) the owner's own AI may be reached at."""
+    try:
+        ip = ipaddress.ip_address(address.split("%")[0])
+    except ValueError:
+        return False
+    if ip.version == 6 and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return ip.version == 4 and any(ip in net for net in HOME_NETS)
+
+
+@dataclass(frozen=True)
+class Target:
+    """Where the gateway of the user's own AI sends a request: from the ticket's address (tokens.ENDPOINT)."""
+    host: str
+    port: int
+    tls: bool
+    base: str          # the path before /chat/completions, e.g. "/v1" or "/api/v1"
+    lan: bool
+
+    @classmethod
+    def of(cls, endpoint: str, lan: bool) -> "Target | None":
+        match = re.fullmatch(r"(https?)://([A-Za-z0-9.-]{1,253})(?::([0-9]{1,5}))?(/[A-Za-z0-9._~/-]{0,200})?",
+                             endpoint or "")
+        if not match:
+            return None
+        scheme, host, port, base = match.groups()
+        port = int(port or (443 if scheme == "https" else 80))
+        if not 0 < port < 65536 or (scheme == "http" and not lan):
+            return None
+        return cls(host.lower().rstrip("."), port, scheme == "https", (base or "").rstrip("/"), lan)
 
 
 def parse_connect(head: bytes) -> tuple[str, int] | None:
@@ -220,9 +259,11 @@ def path_allowed(provider: str, path: str) -> bool:
 
 def rewrite(method: str, path: str, headers: list[tuple[str, str]], token: str, length: int,
             upstream: str) -> bytes:
-    """The request as it goes to the AI: the real token instead of the ticket, one request per connection."""
+    """The request as it goes to the AI: the real token instead of the ticket, one request per connection. No
+    Authorization at all for an API without a key (tokens.NO_KEY)."""
     keep = [(n, v) for n, v in headers if n.lower() not in _DROP]
-    out = [f"{method} {path} HTTP/1.1", f"Host: {upstream}", f"Authorization: Bearer {token}",
+    auth = [] if token == tokens.NO_KEY else [f"Authorization: Bearer {token}"]
+    out = [f"{method} {path} HTTP/1.1", f"Host: {upstream}", *auth,
            *(f"{n}: {v}" for n, v in keep), f"Content-Length: {length}", "Connection: close", "", ""]
     return "\r\n".join(out).encode("latin-1")
 
@@ -237,15 +278,17 @@ async def _gateway_reply(writer: asyncio.StreamWriter, status: str, message: str
         pass
 
 
-async def _open_upstream(upstream: str):
-    addresses = await asyncio.wait_for(_resolve(upstream, 443), CONNECT_TIMEOUT)
-    context = ssl.create_default_context()
+async def _open_upstream(upstream):
+    """A connection to the AI: `upstream` is a host name (TLS on 443) or a Target (the user's own AI)."""
+    target = upstream if isinstance(upstream, Target) else Target(upstream, 443, True, "", False)
+    addresses = await asyncio.wait_for(_resolve(target.host, target.port), CONNECT_TIMEOUT)
+    context = ssl.create_default_context() if target.tls else None
     for address in addresses:   # connect to an address we checked, with the certificate checked for the name
-        if not is_public(address):
+        if not (is_public(address) or (target.lan and home_address(address))):
             continue
         try:
             return await asyncio.wait_for(asyncio.open_connection(
-                address, 443, ssl=context, server_hostname=upstream), CONNECT_TIMEOUT)
+                address, target.port, ssl=context, server_hostname=target.host if context else None), CONNECT_TIMEOUT)
         except (asyncio.TimeoutError, OSError, ssl.SSLError):
             continue
     raise OSError("no upstream")
@@ -286,9 +329,13 @@ async def gateway(client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter
             await _gateway_reply(client_w, "413 Payload Too Large", "bad length")
             return
         auth = values.get("authorization", "")
-        token = (tokens.lookup(tickets_dir, auth[7:].strip(), provider=provider)
+        found = (tokens.lookup_route(tickets_dir, auth[7:].strip(), provider=provider)
                  if auth.lower().startswith("bearer ") else None)
+        token = found[0] if found else None
         upstream = GATEWAYS[provider][0]
+        target = Target.of(found[1], found[2]) if found and provider == "custom" else None
+        if provider == "custom" and found and target is None:
+            token = None                                   # an address the gateway does not take: like no ticket
         if token is None:   # 403, not 401: an unknown ticket is the hub's matter, not a lost sign-in of the user.
             # Mistral Vibe reads a 403 as "invalid API key" (the runner would delete the user's key), so the Mistral
             # gateway says 502: a fault of the hub, the saved key stays (15.11.2026).
@@ -296,9 +343,12 @@ async def gateway(client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter
             await _gateway_reply(client_w, "403 Forbidden" if provider == "claude" else "502 Bad Gateway",
                                  "no valid ticket")
             return
+        if target is not None:   # the path at the user's AI: its base and what follows /v1 in the request
+            path = target.base + path[len("/v1"):]
+            upstream = target.host if target.port in (80, 443) else f"{target.host}:{target.port}"
         body = await asyncio.wait_for(client_r.readexactly(length), GATEWAY_IDLE) if length else b""
         try:
-            upstream_r, upstream_w = await open_upstream(upstream)
+            upstream_r, upstream_w = await open_upstream(target or upstream)
         except (asyncio.TimeoutError, OSError):
             await _gateway_reply(client_w, "502 Bad Gateway", f"{provider} not reachable")
             return
@@ -352,8 +402,10 @@ async def main() -> None:
                             os.environ.get("HUB_TICKETS_DIR", "/tickets")),
         await serve_gateway(bind, int(os.environ.get("EGRESS_MISTRAL_PORT", "3131")),
                             os.environ.get("HUB_TICKETS_DIR", "/tickets"), provider="mistral"),
+        await serve_gateway(bind, int(os.environ.get("EGRESS_CUSTOM_PORT", "3132")),
+                            os.environ.get("HUB_TICKETS_DIR", "/tickets"), provider="custom"),
     ]
-    print("egress: listening (web 3128, api 3129, gateway claude 3130, gateway mistral 3131)", file=sys.stderr,
+    print("egress: listening (web 3128, api 3129, gateways claude 3130, mistral 3131, own AI 3132)", file=sys.stderr,
           flush=True)
     await asyncio.gather(*(s.serve_forever() for s in servers))
 

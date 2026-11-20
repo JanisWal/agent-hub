@@ -30,6 +30,8 @@ WEB_PROXY = "http://egress:3128"   # any public host on 443, never the home netw
 API_PROXY = "http://egress:3129"   # only Anthropic (sign-ins)
 GATEWAY = "http://egress:3130"     # the Claude API with the user's token put in by the proxy (runner/egress.py)
 MISTRAL_GATEWAY = "http://egress:3131"   # the same for Mistral (its key put in by the proxy)
+CUSTOM_GATEWAY = "http://egress:3132"    # the user's own AI (any OpenAI-compatible API; address and key from the ticket)
+_REMOTE_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,99}")   # a model name at such an API (web/app/ai_link.py)
 # Mistral runs: limits per job (turns, seconds); the proxy follows the same switch as Claude.
 # "run-brief": a run that needs no tools (the reviewer of a small change, the manager's documentation; 20.11.2026).
 VIBE_JOBS = {"chat-all": (12, 180), "chat-apart": (10, 180), "chat-brief": (1, 90), "run": (60, 1050),
@@ -414,7 +416,7 @@ def build_vibe_command(*, name: str, user_id: int, model: str, ticket: str, job:
     "chat-apart": no folder of any project) or an agent run ("run": the task's work folder at /work). Like Claude:
     run user, read-only, nothing but a home in memory, the ticket instead of the key, every request to the gateway,
     the web only through the proxy of the switch. `name` is "agent-chat-<n>" or "agent-run-<n>". `images`: the model
-    sees pictures (the tool look_mcp.py then hands it images and PDF pages)."""
+    sees pictures (the tool `look` of hub_tools.py then hands it images and PDF pages)."""
     if job not in VIBE_JOBS or (job == "run") != (work_dir is not None):
         raise ValueError("unknown job")
     if not _NAME.fullmatch(name):
@@ -444,21 +446,58 @@ def build_vibe_command(*, name: str, user_id: int, model: str, ticket: str, job:
     ]
 
 
+def build_hubloop_command(*, name: str, user_id: int, model: str, ticket: str, job: str, net: str = "together",
+                          work_dir: str | None = None, image: str = IMAGE, network: str = NETWORK, memory: str = "480m",
+                          files_dir: str | None = None, code_dir: str | None = None) -> list[str]:
+    """The `docker run` command of the user's own AI (runner/hubloop.py: the hub's tool loop for an AI that has only an
+    API). Like the other runs: run user, read-only, a home in memory, the ticket instead of the key, every request to
+    the gateway, the web only through the proxy of the job. `model` is the model name at the user's API (checked
+    pattern); `job` as for Vibe (VIBE_JOBS)."""
+    if job not in VIBE_JOBS or (job == "run") != (work_dir is not None):
+        raise ValueError("unknown job")
+    if not _NAME.fullmatch(name):
+        raise ValueError("bad name")
+    if not isinstance(ticket, str) or not _TICKET.fullmatch(ticket):
+        raise ValueError("bad ticket")
+    if not isinstance(model, str) or not _REMOTE_MODEL.fullmatch(model):
+        raise ValueError("bad model")
+    proxy = ({"chat-all": WEB_PROXY, "chat-apart": API_PROXY, "chat-brief": API_PROXY, "run-brief": API_PROXY}.get(job)
+             or RUN_PROXY.get(net))
+    if proxy is None:
+        raise ValueError("unknown net mode")
+    _check_container(memory, image, network)
+    uid = run_uid(user_id)
+    turns, seconds = VIBE_JOBS[job]
+    mount = ["--mount", f"type=bind,src={_folder(work_dir, 'work_dir')},dst=/work", "--workdir", "/work"] if work_dir else []
+    return [
+        "docker", "run", "--rm", "--init", "-i", "--name", name, "--user", f"{uid}:{uid}",
+        "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+        "--read-only", "--tmpfs", "/tmp:rw,size=128m,mode=1777", "--tmpfs", "/home/run:rw,size=64m,mode=1777",
+        "--memory", memory, "--memory-swap", memory, "--pids-limit", "256", "--cpus", "2",
+        "--network", network, *mount, *_read_only(files_dir, code_dir),
+        "-e", "HOME=/home/run", "-e", f"HUB_KEY={ticket}", "-e", f"HUB_GATEWAY={CUSTOM_GATEWAY}",
+        "-e", f"HUB_MODEL={model}", "-e", f"HUB_JOB={job}", "-e", f"HUB_TURNS={turns}", "-e", f"HUB_SECONDS={seconds}",
+        "-e", "PYTHONDONTWRITEBYTECODE=1", "-e", "NO_PROXY=egress", "-e", "no_proxy=egress", *_proxy_env(proxy),
+        image, "python3", "/opt/hub/hubloop.py",
+    ]
+
+
 def parse_vibe(stdout: str) -> tuple[bool, str, int, int, bool]:
-    """(ok, text, tokens_in, tokens_out, login_problem) from the one JSON line of vibe_entry.py. A refused key (401
-    from Mistral) is a login problem; anything unreadable is a failure, never a guess."""
+    """(ok, text, tokens_in, tokens_out, login_problem) from the one JSON line of vibe_entry.py or hubloop.py (the same
+    shape). A refused key (401 from the AI) is a login problem; anything unreadable is a failure, never a guess."""
     try:
         data = json.loads((stdout or "").strip().splitlines()[-1])
         ok, text = bool(data.get("ok")), str(data.get("text") or "")
         tokens_in, tokens_out = int(data.get("tokens_in") or 0), int(data.get("tokens_out") or 0)
         error = str(data.get("error") or "")
     except (ValueError, IndexError, AttributeError, TypeError):
-        return False, "No readable answer from Mistral Vibe.", 0, 0, False
+        return False, "No readable answer from the AI's program.", 0, 0, False
     login = bool(re.search(r"\b401\b|unauthori[sz]ed|invalid api key", error, re.I))
     if ok:
         return True, text.strip()[:MAX_REPORT], tokens_in, tokens_out, False
-    reason = ("Not logged in: Mistral refused the key (401)" if login
-              else f"Mistral Vibe stopped ({data.get('outcome')}): {error}".strip())
+    reason = ("Not logged in: the AI refused the key (401)" if login
+              else ("Too many steps: the step limit was reached." if data.get("outcome") == "steps"
+                    else f"The AI's program stopped ({data.get('outcome')}): {error}".strip()))
     return False, reason[:2000], tokens_in, tokens_out, login
 
 

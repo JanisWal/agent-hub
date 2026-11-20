@@ -4,6 +4,7 @@ Every route works on the logged-in user's own connection: the user comes from th
 any request. The key is handed to the runner once and never stored here (ai_link.submit_key).
 """
 from fastapi import APIRouter, Depends, Form
+from fastapi.responses import JSONResponse
 
 from .. import ai_link, aichoice, users
 from ..deps import api_user, fail, ok
@@ -29,14 +30,16 @@ def status(provider: str, user: users.User = Depends(api_user)):
 
 
 @router.post("/{provider}/connect")
-def connect(provider: str, key: str = Form(""), user: users.User = Depends(api_user)):
-    """The key the user pasted: 400 if it does not look like one, 409 while an earlier one is being checked."""
+def connect(provider: str, key: str = Form(""), endpoint: str = Form(""), model: str = Form(""),
+            user: users.User = Depends(api_user)):
+    """The key the user pasted (for the own AI also its address and model name): 400 with the field that does not fit
+    (`field`), 409 while an earlier one is being checked."""
     if not _provider(provider):
         return fail(404)
     try:
-        accepted = ai_link.submit_key(user.id, provider, key)
-    except ValueError:
-        return fail(400)
+        accepted = ai_link.submit_key(user.id, provider, key, endpoint=endpoint, model=model)
+    except ValueError as problem:
+        return JSONResponse({"ok": False, "field": str(problem)}, status_code=400)
     return ok(status=ai_link.status(user.id, provider)) if accepted else fail(409)
 
 
