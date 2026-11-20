@@ -81,7 +81,7 @@ class TodosTest(unittest.TestCase):
         todos.finish(self.user.id, done, "Laid along the frame")
         chat.send(self.user.id, self.project.id, "What is next?")
         text = chat.claim_next().prompt
-        self.assertIn("For you (work the user does himself", text)
+        self.assertIn("For you (work the user does by hand", text)
         self.assertIn("- Buy fuse (open)", text)
         self.assertIn("- Lay cable (done; what the user did: Laid along the frame)", text)
 

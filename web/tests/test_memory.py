@@ -124,9 +124,8 @@ class ArchiveTest(MemoryBase):
     def test_the_manager_only_adds_with_the_date_and_never_replaces(self):
         memory.ensure_skeleton(self.a.id, self.pa.id, "de")
         job = self.ask()
-        self.assertIn('<file name="ARCHIVE.md">', job.prompt)
-        self.assertIn("ADDED at its end", job.prompt)                               # the rule says how it works
-        self.assertLess(job.prompt.index('<file name="ROADMAP.md">'), job.prompt.index('<file name="ARCHIVE.md">'))
+        self.assertIn('<file name="ARCHIVE.md" size=', job.prompt)                 # only named: it only grows
+        self.assertIn("is added to the history under today's date", job.prompt)   # the rule says how it works
         self.assertTrue(chat.finish(job.chat_id, True,
                                     'Ok.<memory file="ARCHIVE.md">- Verworfen: eigene Websuche. Grund: Struktur</memory>'))
         self.assertTrue(memory.save_memory(self.a.id, self.pa.id, "# Archiv\n(alles weg)", "ARCHIVE.md"))
@@ -204,8 +203,6 @@ class MemoryTest(MemoryBase):
     def test_an_ai_that_can_not_open_files_gets_the_list_and_read(self):
         seed = dict(catalog.SEED["claude"], tools={t: "none" for t in catalog.TOOLS})
         catalog.store("claude", seed)
-        self.put(self.a, self.pa, "MEMORY.md", b"# Status\nHeater works")
-        chat.finish(self.stored()["id"], True, "ok")
         self.put(self.a, self.pa, "MEMORY.md", b"# Status\nHeater works")
         self.put(self.a, self.pa, "notes.md", b"abc")
         self.put(self.a, self.pa, "scan.pdf", b"abc")

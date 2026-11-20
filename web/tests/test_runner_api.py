@@ -75,13 +75,17 @@ class RunnerApiTest(unittest.TestCase):
         self.assertEqual((job["user_id"], job["role"], job["model"]), (self.a.id, "programmer", "sonnet"))
         self.assertEqual(sorted(job), sorted([
             "run_id", "user_id", "project_id", "task_id", "role", "model", "branch", "title", "kind",
-            "round", "note", "reports", "net", "effort", "provider", "prompt", "files", "links", "images"]))
+            "round", "note", "reports", "net", "effort", "provider", "prompt", "mode", "files", "links", "images"]))
         self.assertEqual(job["effort"], "high")                         # Sonnet's default level
         self.assertIsNone(runner.claim(can_mac="1")["job"])         # one run at a time
-        self.assertEqual(runner.finish(job["run_id"], "pass").status_code, 400)   # wrong for the programmer
-        self.assertEqual(runner.finish(job["run_id"], "done", "ok", 5, 6, 7), {"ok": True})
-        self.assertEqual(runner.finish(job["run_id"], "done").status_code, 409)   # only once
-        self.assertEqual(runner.claim()["job"]["role"], "tester")
+        plain = dict(diff_stat=None, diff=None, tests_exit=-1, tests="")   # what the runner leaves out
+        self.assertEqual(runner.finish(job["run_id"], "done", "ok", 5, 6, 7, "a.py | 1 +", "+x", 0, "ok"), {"ok": True})
+        self.assertEqual(runner.finish(job["run_id"], "done", "", 0, 0, 0, **plain).status_code, 409)   # only once
+        nxt = runner.claim()["job"]
+        self.assertEqual(nxt["role"], "reviewer")                         # the hub's tests were green: no AI tester
+        self.assertIn("+x", nxt["prompt"])
+        self.assertEqual(runner.finish(nxt["run_id"], "done", "", 0, 0, 0, **plain), {"ok": True})   # not a reviewer's word
+        self.assertEqual(agents.list_tasks(self.a.id, self.project.id)[0].status, "escalated")
 
     def test_login_channel(self):
         claude_link.begin(self.a.id)

@@ -279,7 +279,9 @@ class ChainTest(Base):
         agents.configure(self.a.id, "programmer", net="apart")
         roles = agents.settings(self.a.id)["roles"]
         self.assertEqual((roles["programmer"]["net"], roles["chef"]["net"], roles["tester"]["net"]),
-                         ("apart", "together", "together"))                    # per agent, the others untouched
+                         ("apart", "together", "apart"))                       # per agent; the tester is offline by default
+        agents.configure(self.a.id, "tester", net="together")
+        self.assertEqual(agents.settings(self.a.id)["roles"]["tester"]["net"], "together")   # unless the user wants it
         self.assertEqual(agents.settings(self.b.id)["roles"]["programmer"]["net"], "together")   # per user
         agents.start_task(self.a.id, self.project.id, self.item.id)
         self.assertEqual(agents.claim_next(can_mac=True).net, "apart")        # the run learns the switch of its role
@@ -292,9 +294,8 @@ class ChainTest(Base):
         self.connect(self.a)
         agents.start_task(self.a.id, self.project.id, self.item.id)
         job = agents.claim_next(can_mac=True)
-        with self.assertRaises(ValueError):
-            agents.finish_run(job.run_id, "pass")        # a tester result for the programmer
-        self.assertTrue(agents.finish_run(job.run_id, "done"))
+        self.assertTrue(agents.finish_run(job.run_id, "pass"))   # a tester result for the programmer: a failed run
+        self.assertEqual(agents.list_tasks(self.a.id, self.project.id)[0].status, "escalated")
         self.assertFalse(agents.finish_run(job.run_id, "done"))   # a run ends only once
 
 

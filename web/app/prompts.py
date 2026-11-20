@@ -215,7 +215,7 @@ def manager_chat(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
                 return "daily on " + ", ".join(checks.DAY_NAMES[n] for n in checks.day_numbers(c["days"]))
             return c["cycle"]
         sections.append("Regular checks (your recurring to-dos, not board items):\n" + "\n".join(
-            f"- {c['text']} ({cycle(c)}, {'due' if checks.is_due(c['cycle'], c['last_done'], now, c['days']) else 'not due'})"
+            f"- {c['text']} ({cycle(c)}, {'due' if checks.is_due(c['cycle'], c['last_done'], now, c['days']) else 'not due yet'})"
             for c in regular))
     if machines:
         def address(d) -> str:
