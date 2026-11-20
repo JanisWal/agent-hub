@@ -347,8 +347,13 @@ class OutputTest(unittest.TestCase):
         for role, out in cases:
             self.assertEqual(self.result(role, out)[0], "failed", (role, out))
 
-    def test_marker_must_be_the_last_line(self):
-        self.assertEqual(self.result("programmer", answer("RESULT: done\nand then more text"))[0], "failed")
+    def test_marker_near_the_end(self):
+        result, report = self.result("programmer", answer("Built.\n**RESULT: done**\nand then more text"))
+        self.assertEqual((result, report), ("done", "Built.\nand then more text"))   # a word after it is fine
+        self.assertEqual(self.result("programmer", answer("RESULT: done.\n"))[0], "done")
+        far = "RESULT: done\n" + "\n".join(f"line {n}" for n in range(L.RESULT_LOOK))
+        self.assertEqual(self.result("programmer", answer(far))[0], "failed")     # not near the end: no guess
+        self.assertEqual(self.result("programmer", answer("The RESULT: done line follows"))[0], "failed")
 
     def test_report_is_capped_and_role_checked(self):
         self.assertEqual(len(self.result("chef", answer("x" * 50000 + "\nRESULT: done"))[1]), L.MAX_REPORT)
