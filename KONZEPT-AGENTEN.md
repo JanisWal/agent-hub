@@ -215,7 +215,7 @@ Grenzen (Vorschlag, beim Bau festzulegen): höchstens 3 `<ask>`, 5 `<task>`, 1 `
 
 - Im Katalog steht je Anbieter für jedes Werkzeug (`read`, `write`, `shell`, `search`, `fetch`, `look`), woher es kommt: `own` (das Programm der KI hat es), `hub` (der Hub reicht sein eigenes, vielleicht schwächeres Werkzeug), `none`. Heute: Claude Code alles `own`; Mistral Vibe alles `own`, nur `look` vom Hub (`runner/look_mcp.py`).
 - Das Paket nennt nur die Werkzeuge, die es gibt (`prompts.tools_text`). Eine KI ohne Dateiwerkzeug bekommt die Liste der Dateien und fragt mit `<read>`; eine KI ganz ohne Werkzeuge bekommt alles Nötige im Paket.
-- Geplant (PROJEKT.md 11a, Stufe 2, Punkt 7): `runner/hub_tools.py` für Programme mit MCP, denen Werkzeuge fehlen, und `runner/hubloop.py` für KIs, die nur eine API haben (die Schleife fährt der Hub im Container selbst).
+- **Gebaut am 20.11.2026 (`own-ai`):** `runner/hub_tools.py` (look, Dateien lesen, suchen, schreiben, Shell, Webseiten) als MCP-Server für Programme, denen Werkzeuge fehlen, und `runner/hubloop.py` für KIs, die nur eine API im OpenAI-Format haben (die Schleife fährt der Hub im Container selbst, Werkzeugaufrufe der API oder als Text). Die „Eigene KI“ ist der Anbieter `custom`: Adresse und Modell je Nutzer, Gateway 3132 mit der Adresse im Ticket.
 
 ### 9.3a Pakete je Rolle (Janis, 20.11.2026, gebaut in `web/app/prompts.py`)
 

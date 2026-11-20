@@ -116,15 +116,20 @@ class Tickets:
         self.folder = Path(folder)
         self.owner = owner
 
-    def issue(self, token: str, provider: str = "claude") -> str:
-        """A new ticket for this credential of this provider; its gateway accepts it until `revoke` (or TICKET_AGE)."""
+    def issue(self, token: str, provider: str = "claude", upstream: str = "", lan: bool = False) -> str:
+        """A new ticket for this credential of this provider; its gateway accepts it until `revoke` (or TICKET_AGE).
+        `upstream` (the user's own AI only): the address its gateway sends the requests to, `lan` whether that may be
+        in the home network (the owner's own AI). They stand in the ticket, so a run can not change them."""
         if not isinstance(token, str) or not _secret_ok(provider, token):
             raise ValueError("not a credential of this provider")
+        if provider == "custom" and not ENDPOINT.fullmatch(upstream or ""):
+            raise ValueError("bad address")
         ticket = "hubrun-" + secrets.token_urlsafe(32)
         path = self.folder / ticket_name(ticket)
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
         try:
-            os.write(fd, f"{provider}\n{token}".encode())
+            extra = f"\n{upstream}\n{'lan' if lan else 'public'}" if provider == "custom" else ""
+            os.write(fd, f"{provider}\n{token}{extra}".encode())
             if os.geteuid() == 0:
                 os.fchown(fd, self.owner, self.owner)
         finally:
@@ -150,23 +155,42 @@ def lookup(folder: str | Path, ticket: str, now: float | None = None, max_age: i
            provider: str = "claude") -> str | None:
     """For the proxy: the credential behind a ticket of this provider, or None (unknown, malformed, too old, or a
     ticket of another AI)."""
+    found = lookup_route(folder, ticket, now, max_age, provider)
+    return None if found is None else found[0]
+
+
+def lookup_route(folder: str | Path, ticket: str, now: float | None = None, max_age: int = TICKET_AGE,
+                 provider: str = "claude") -> tuple[str, str, bool] | None:
+    """(credential, upstream, lan) behind a ticket of this provider, or None. upstream and lan only for "custom"."""
     if not isinstance(ticket, str) or not TICKET.fullmatch(ticket):
         return None
     path = Path(folder) / ticket_name(ticket)
     try:
         if (time.time() if now is None else now) - path.stat().st_mtime > max_age:
             return None
-        owner, _, token = path.read_text().strip().partition("\n")
+        lines = path.read_text().strip().split("\n")
     except (OSError, UnicodeDecodeError):
         return None
-    return token if owner == provider and _secret_ok(provider, token) else None
+    owner, token = (lines + ["", ""])[:2]
+    if owner != provider or not _secret_ok(provider, token):
+        return None
+    if provider != "custom":
+        return token, "", False
+    if len(lines) != 4 or not ENDPOINT.fullmatch(lines[2]) or lines[3] not in ("lan", "public"):
+        return None
+    return token, lines[2], lines[3] == "lan"
 
 
 # --- API keys of other AIs (Mistral since 14.11.2026; web/app/ai_link.py). Same encryption and key as the Claude
 # tokens, but their own folder `<HUB_CLAUDE_DIR>/keys/<provider>/<user id>.enc`: deleting or renewing a user's Claude
 # folder (wipes, Vault.forget) never touches them, and the folder name "keys" can never be a user id.
 # These keys never go to a run: the runner itself asks the provider (runner/mistral.py), no code of an AI runs there.
-KEY_PATTERNS = {"mistral": re.compile(r"[A-Za-z0-9_-]{16,200}")}
+# The user's own AI (20.11.2026): any printable key, or "-" for an API without one (a local model).
+KEY_PATTERNS = {"mistral": re.compile(r"[A-Za-z0-9_-]{16,200}"), "custom": re.compile(r"[!-~]{1,400}")}
+NO_KEY = "-"
+# The address of such an API: http(s), a host name or address, an optional port and path; nothing else (web/app/ai_link.py
+# checks the same pattern before it is stored).
+ENDPOINT = re.compile(r"https?://[A-Za-z0-9.-]{1,253}(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~/-]{0,200})?")
 
 
 class ProviderKeys:

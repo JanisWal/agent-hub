@@ -15,7 +15,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import aichoice, board, catalog, db, files, memory, prompts, questions, reply, serversettings, workflow
+from . import ai_link, aichoice, board, catalog, db, files, memory, prompts, questions, reply, serversettings, workflow
 
 # Models and effort levels are not fixed here: they come from catalog.py (Janis, 14.11.2026). A role without a
 # choice gets the provider's default model and that model's default level. Since 15.11.2026 the choice is kept per
@@ -96,6 +96,7 @@ class Job:
     provider: str = "claude"        # which AI does the run (aichoice.py); the runner picks the adapter by it
     prompt: str = ""                # the package for the AI (prompts.run): rules, memory, project, task
     mode: str = ""                  # "brief": one answer without tools and without /work (prompts.brief_run)
+    route: dict = field(default_factory=dict)   # the own AI: its address and model name (ai_link.route_in)
     files: list = field(default_factory=list)   # the user's files for /files (files.for_agents): id, name, area, size
     links: list = field(default_factory=list)   # and the links: name, address
     images: bool = False            # the model sees pictures (catalog.sees_images): the adapter lets it look at them
@@ -615,6 +616,7 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
                       branch_name(task["id"]), task["title"], task["kind"], task["round"],
                       task["note"], reports, net_in(conn, user_id, run["role"]), effort, provider)
             job.mode = "brief" if prompts.brief_run(conn, job) else ""
+            job.route = ai_link.route_in(conn, user_id, provider)
             job.prompt = prompts.run(conn, job, brief=job.mode == "brief")
             if not job.mode:   # a brief run reads no files
                 job.files, job.links = files.for_agents(conn, user_id, task["project_id"])

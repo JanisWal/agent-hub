@@ -14,8 +14,8 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import (agents, aichoice, autofolders, board, catalog, db, devices, files, i18n, memory, prompts, questions,
-               reply, statusnote)
+from . import (agents, ai_link, aichoice, autofolders, board, catalog, db, devices, files, i18n, memory, prompts,
+               questions, reply, statusnote)
 
 # The manager is the role "chef": model and effort level are settings of the user (agents.py, list in catalog.py).
 # What the manager is told (rules, memory, project) is built in prompts.py, the same for every AI.
@@ -71,6 +71,7 @@ class ChatJob:
     files: list = field(default_factory=list)   # files.for_agents: id, name, area, size
     links: list = field(default_factory=list)
     images: bool = False       # the model sees pictures (catalog.sees_images): the adapter lets it look at them
+    route: dict = field(default_factory=dict)   # the own AI: its address and model name (ai_link.route_in)
 
 
 def _message(row: sqlite3.Row) -> Message:
@@ -201,21 +202,22 @@ def claim_next(now: int | None = None) -> ChatJob | None:
                 _switch(conn, row, other, row["provider"])
                 row = conn.execute("SELECT * FROM chat_messages WHERE id = ?", (row["id"],)).fetchone()
             conn.execute("UPDATE chat_messages SET status = 'running', started_at = ? WHERE id = ?", (now, row["id"]))
+            route = ai_link.route_in(conn, row["user_id"], row["provider"])
             if row["kind"] == "status":   # no files and no code: the digest is all it reads
                 return ChatJob(row["id"], row["user_id"], row["model"],
                                statusnote.prompt_for(conn, row["user_id"], row["project_id"], now), "brief",
-                               row["effort"], row["provider"], 0)
+                               row["effort"], row["provider"], 0, route=route)
             if row["kind"] == autofolders.KIND:   # the list on stdin; with "include contents" the files, too
                 contents = row["mode"] != "brief"
                 stored, links = files.for_agents(conn, row["user_id"], row["project_id"]) if contents else ([], [])
                 return ChatJob(row["id"], row["user_id"], row["model"],
                                autofolders.prompt_for(conn, row["user_id"], row["project_id"], contents), row["mode"],
                                row["effort"], row["provider"], row["project_id"] if contents else 0, stored, links,
-                               contents and catalog.sees_images(row["model"]))
+                               contents and catalog.sees_images(row["model"]), route)
             stored, links = files.for_agents(conn, row["user_id"], row["project_id"])
             return ChatJob(row["id"], row["user_id"], row["model"], prompts.manager_chat(conn, row), row["mode"],
                            row["effort"], row["provider"], row["project_id"], stored, links,
-                           catalog.sees_images(row["model"]))
+                           catalog.sees_images(row["model"]), route)
     return None
 
 

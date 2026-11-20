@@ -32,7 +32,7 @@ from dataclasses import dataclass
 
 from . import db
 
-PROVIDERS = ("claude", "mistral")        # providers the hub can start; more come with their own connection
+PROVIDERS = ("claude", "mistral", "custom")   # providers the hub can start; "custom" = the user's own AI (20.11.2026)
 DEFAULT_PROVIDER = "claude"
 HINTS = ("fast", "balanced", "thorough", "deepest")
 TOOLS = ("read", "write", "shell", "search", "fetch", "look")   # look = see images and PDF pages
@@ -66,7 +66,7 @@ SEED = {
     "mistral": {
         "name": "Mistral",
         "default_model": "mistral-small-2603",
-        # Mistral Vibe brings files, shell and web; pictures come through the hub's tool `look` (runner/look_mcp.py).
+        # Mistral Vibe brings files, shell and web; pictures come through the hub's tool `look` (runner/hub_tools.py).
         "tools": {"read": "own", "write": "own", "shell": "own", "search": "own", "fetch": "own", "look": "hub"},
         "models": [
             {"id": "mistral-small-2603", "name": "Mistral Small", "hint": "fast", "efforts": ["none", "high"],
@@ -74,6 +74,14 @@ SEED = {
             {"id": "mistral-large-4", "name": "Mistral Large", "hint": "thorough", "efforts": ["low", "medium", "high"],
              "default_effort": "high", "images": True},
         ],
+    },
+    # The user's own AI (20.11.2026): any API in the OpenAI chat format. The real model name is the user's (ai_link.py,
+    # per connection); here one stand-in model. It brings no tools: the hub's loop gives its own (runner/hubloop.py).
+    "custom": {
+        "name": "Eigene KI",
+        "default_model": "own",
+        "tools": {"read": "hub", "write": "hub", "shell": "hub", "search": "none", "fetch": "hub", "look": "hub"},
+        "models": [{"id": "own", "name": "LLM", "efforts": ["none"], "default_effort": "none", "images": False}],
     },
 }
 

@@ -50,10 +50,6 @@ def _result(lang: str, item: agents.RoleRun) -> tuple[str, str]:
     return i18n.t(lang, f"result_{result}"), tone
 
 
-def _provider_name(provider: str) -> str:
-    return catalog.provider(provider).name if provider in catalog.PROVIDERS else provider
-
-
 def _run_row(lang: str, item: agents.RoleRun, now: int) -> str:
     run = item.run
     label, tone = _result(lang, item)
@@ -63,7 +59,8 @@ def _run_row(lang: str, item: agents.RoleRun, now: int) -> str:
     if run.tokens_in or run.tokens_out:
         facts.append(i18n.t(lang, "role_tokens", tin=_tokens(run.tokens_in), tout=_tokens(run.tokens_out)))
     found = catalog.find(run.model)
-    facts.append(" ".join(x for x in (_provider_name(item.provider), found[1].name if found else run.model) if x))
+    model = "" if found and found[0].id == "custom" else (found[1].name if found else run.model)   # own AI: its name says it
+    facts.append(" ".join(x for x in (ui.ai_name(lang, item.provider) if item.provider else "", model) if x))
     head = (f'<summary><span class="r-title">{esc(item.task_title)}</span>'
             f'<span class="r-result {tone}">{esc(label)}</span>'
             f'<small class="r-facts">{esc(" · ".join(f for f in facts if f))}</small></summary>')
@@ -156,7 +153,7 @@ def _programmer(lang: str, settings: dict, runs: list[agents.RoleRun], usage: di
     runs_html = (f'<ol class="r-runs">{listed}</ol>' if listed
                  else f'<p class="muted">{esc(i18n.t(lang, "role_runs_empty"))}</p>')
     # every AI the hub knows, the ones the user has connected stand out; more providers come with their adapter (3c)
-    others = "".join(f'<span class="p-ai{"" if p in ais else " off"}">{esc(catalog.provider(p).name)}</span>'
+    others = "".join(f'<span class="p-ai{"" if p in ais else " off"}">{esc(ui.ai_name(lang, p))}</span>'
                      for p in catalog.PROVIDERS) + f'<span class="p-ai off">{esc(i18n.t(lang, "p_more_ais"))}</span>'
     trail = ('<ol class="p-trail"><li class="thinking">' + esc(i18n.t(lang, "p_sample_think")) + '</li>'
              '<li class="tool"><code>python3 -m unittest</code></li>'

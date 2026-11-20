@@ -538,10 +538,10 @@ class IsolationTest(unittest.TestCase):
         from app.routes import ai as ai_routes
         key = "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6"
         ai_link._keys.clear()
-        ai_routes.connect("mistral", key, user=self.a)
+        ai_routes.connect("mistral", key, endpoint="", model="", user=self.a)
         self.assertEqual(ai_routes.status("mistral", user=self.b)["status"], "none")
         ai_routes.disconnect("mistral", user=self.b)                                  # B can not cancel A's check
-        self.assertEqual(ai_link.take_keys(), [(self.a.id, "mistral", key)])         # the user comes from the hub
+        self.assertEqual(ai_link.take_keys(), [{"user_id": self.a.id, "provider": "mistral", "key": key}])         # the user comes from the hub
         ai_link.complete(self.a.id, "mistral", True)
         agents.configure(self.b.id, "chef", model="mistral-small-2603")
         with self.assertRaisesRegex(ValueError, "none"):

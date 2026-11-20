@@ -1,18 +1,19 @@
 """The chat window of a project page (see chat.py): ask Claude, poll for the answer, delete the history."""
 from fastapi import APIRouter, Depends, Form
 
-from .. import catalog, chat, claude_link, users
+from .. import chat, claude_link, ui, users
 from ..deps import api_user, error, fail, ok
 
 router = APIRouter()
 
 # ValueError text from chat.send -> (message key in i18n.py, status)
-_PROBLEMS = {"claude": ("chat_err_claude", 409), "mistral": ("chat_err_mistral", 409), "busy": ("chat_err_busy", 409),
+_PROBLEMS = {"claude": ("chat_err_claude", 409), "mistral": ("chat_err_mistral", 409), "custom": ("chat_err_custom", 409),
+             "busy": ("chat_err_busy", 409),
              "prompt": ("chat_err_prompt", 400), "mode": ("chat_err_prompt", 400), "none": ("chat_err_none", 409)}
 
 
-def _name(provider: str) -> str:
-    return catalog.provider(provider).name if provider in catalog.PROVIDERS else provider
+def _name(provider: str, lang: str) -> str:
+    return ui.ai_name(lang, provider)
 
 
 @router.post("/chat/delete")
@@ -30,8 +31,8 @@ def messages(project_id: int, user: users.User = Depends(api_user)):
          "failure": chat.failure_kind(m.answer) if m.status == "failed" else "", "mode": m.mode, "model": m.model,
          "memory": m.memory_saved, "thoughts": "" if m.status == "failed" else m.thoughts.strip(),
          # the fallback (aichoice.py): another AI of the user answered; "instead" is the one asked first
-         "via": _name(m.provider) if m.tried and m.status == "done" else "",
-         "instead": _name(m.tried.split(",")[0]) if m.tried else ""}
+         "via": _name(m.provider, user.language) if m.tried and m.status == "done" else "",
+         "instead": _name(m.tried.split(",")[0], user.language) if m.tried else ""}
         for m in chat.list_messages(user.id, project_id)
     ])
 

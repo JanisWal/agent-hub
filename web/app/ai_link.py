@@ -10,6 +10,11 @@ States: none -> connecting (the runner checks the key) -> connected -> expired (
 connecting ...; "wipe" = disconnected, the runner still deletes the saved key (then the row goes). A deleted account
 leaves its rows as "wipe" (no foreign key on purpose), so the runner deletes the key files of a deleted user too.
 The user always comes from the session or the database, never from a parameter a browser could send.
+
+The user's own AI ("custom", 20.11.2026): besides the key (optional: a local model may need none) the address of an
+API in the OpenAI chat format and the model name there. They are no secret and stay in the row (`endpoint`,
+`remote_model`), taken over only once the runner checked them. Plain http and addresses in the home network only for the
+owner's own AI (`route_in`: lan); the gateway and the runner check the address again (runner/egress.py, runner/custom.py).
 """
 import re
 import sqlite3
@@ -17,13 +22,18 @@ import time
 
 from . import db
 
-PROVIDERS = ("mistral",)          # providers whose connection is an API key (Claude has claude_link.py)
+PROVIDERS = ("mistral", "custom")   # providers whose connection is an API key (Claude has claude_link.py)
 STATUSES = ("none", "connecting", "connected", "expired")
 CHECK_SECONDS = 120               # the runner has this long to check a key, else the connection counts as failed
 KEY_SECONDS = 300                 # a pasted key waits this long for the runner, then it is forgotten
 KEY = re.compile(r"[A-Za-z0-9_-]{16,200}")   # what an API key looks like (Mistral: 32 letters and digits)
+KEYS = {"mistral": KEY, "custom": re.compile(r"[!-~]{1,400}")}   # the same patterns as runner/tokens.KEY_PATTERNS
+NO_KEY = "-"                                        # the own AI needs no key (runner/tokens.NO_KEY)
+ENDPOINT = re.compile(r"https?://[A-Za-z0-9.-]{1,253}(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~/-]{0,200})?")   # = tokens.ENDPOINT
+REMOTE_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,99}")                                   # = launcher._REMOTE_MODEL
 
-_keys: dict[tuple[int, str], tuple[str, int]] = {}   # (user, provider) -> (key, forget at); memory of this process only
+# (user, provider) -> (key, forget at, endpoint, model); memory of this process only
+_keys: dict[tuple[int, str], tuple[str, int, str, str]] = {}
 
 
 def _check_provider(provider: str) -> None:
@@ -70,32 +80,58 @@ def _save(conn: sqlite3.Connection, user_id: int, provider: str, new_status: str
     )
 
 
-def submit_key(user_id: int, provider: str, key: str, now: int | None = None) -> bool:
+def _owner(conn: sqlite3.Connection, user_id: int) -> bool:
+    row = conn.execute("SELECT role FROM users WHERE id = ? AND deleted_at IS NULL", (user_id,)).fetchone()
+    return row is not None and row["role"] == "owner"
+
+
+def submit_key(user_id: int, provider: str, key: str, now: int | None = None, endpoint: str = "",
+               model: str = "") -> bool:
     """The user pasted a key (connect, or a new key after "expired"). ValueError("key") for something that is not a
-    key; False while a check of an earlier key is still running. A key that works replaces the old one."""
+    key; False while a check of an earlier key is still running. A key that works replaces the old one.
+    The own AI also needs `endpoint` and `model`: ValueError("endpoint") or ("model") for bad ones (plain http only for
+    the owner); its key may be empty."""
     _check_provider(provider)
     key = key.strip()
-    if not KEY.fullmatch(key):
+    endpoint, model = endpoint.strip().rstrip("/"), model.strip()
+    if provider == "custom":
+        key = key or NO_KEY
+        if not REMOTE_MODEL.fullmatch(model):
+            raise ValueError("model")
+        if not ENDPOINT.fullmatch(endpoint):
+            raise ValueError("endpoint")
+    if not KEYS[provider].fullmatch(key):
         raise ValueError("key")
     now = int(now if now is not None else time.time())
     with db.connect() as conn:
+        if provider == "custom" and endpoint.startswith("http://") and not _owner(conn, user_id):
+            raise ValueError("endpoint")
         before = status_in(conn, user_id, provider, now)
         if before == "connecting":
             return False
         _save(conn, user_id, provider, "connecting", now, before if before in ("connected", "expired") else "")
-    _keys[(user_id, provider)] = (key, now + KEY_SECONDS)
+    _keys[(user_id, provider)] = (key, now + KEY_SECONDS, endpoint, model)
     return True
 
 
-def take_keys(now: int | None = None) -> list[tuple[int, str, str]]:
-    """Runner: the keys waiting to be checked, as (user_id, provider, key), each handed over once."""
+def take_keys(now: int | None = None) -> list[dict]:
+    """Runner: the keys waiting to be checked, each handed over once: {user_id, provider, key} and for the own AI also
+    endpoint and lan (the owner's own AI may be in the home network)."""
     now = int(now if now is not None else time.time())
     taken = []
-    for (user_id, provider), (key, until) in list(_keys.items()):
-        del _keys[(user_id, provider)]
+    for (user_id, provider), (key, until, endpoint, _model) in list(_keys.items()):
         if until >= now and status(user_id, provider, now) == "connecting":
-            taken.append((user_id, provider, key))
-    return taken
+            item = {"user_id": user_id, "provider": provider, "key": key}
+            if provider == "custom":   # the key stays until `complete`: endpoint and model are taken over with it
+                with db.connect() as conn:
+                    item.update(endpoint=endpoint, lan=_owner(conn, user_id))
+                _keys[(user_id, provider)] = ("", until, endpoint, _model)
+            else:
+                del _keys[(user_id, provider)]
+            taken.append(item)
+        else:
+            del _keys[(user_id, provider)]
+    return [t for t in taken if t["key"]]
 
 
 def complete(user_id: int, provider: str, ok: bool, now: int | None = None) -> bool:
@@ -109,11 +145,25 @@ def complete(user_id: int, provider: str, ok: bool, now: int | None = None) -> b
             return False
         if ok:
             _save(conn, user_id, provider, "connected", now)
+            pending = _keys.pop((user_id, provider), None)
+            if provider == "custom" and pending:   # the checked address and model become the connection's
+                conn.execute("UPDATE ai_connections SET endpoint = ?, remote_model = ? WHERE user_id = ? AND provider = ?",
+                             (pending[2], pending[3], user_id, provider))
         elif row["previous"]:
             _save(conn, user_id, provider, row["previous"], now)   # the runner kept the old key file
         else:
             conn.execute("DELETE FROM ai_connections WHERE user_id = ? AND provider = ?", (user_id, provider))
     return True
+
+
+def route_in(conn: sqlite3.Connection, user_id: int, provider: str) -> dict:
+    """What a job of the own AI needs besides the ticket: {endpoint, remote_model, lan}; {} for the other AIs."""
+    if provider != "custom":
+        return {}
+    row = _row(conn, user_id, provider)
+    if row is None:
+        return {}
+    return {"endpoint": row["endpoint"], "remote_model": row["remote_model"], "lan": _owner(conn, user_id)}
 
 
 def mark_expired(user_id: int, provider: str) -> bool:
