@@ -338,14 +338,14 @@ class OutputTest(unittest.TestCase):
         cases = [
             ("programmer", "not json at all"),
             ("programmer", answer("Done, but no marker")),
-            ("programmer", answer("x\nRESULT: pass")),                 # a tester value for the programmer
-            ("tester", answer("x\nRESULT: done")),
             ("programmer", answer("x\nRESULT: done", is_error=True)),
             ("programmer", answer("")),
             ("reviewer", json.dumps(["list"])),
         ]
         for role, out in cases:
             self.assertEqual(self.result(role, out)[0], "failed", (role, out))
+        # whether a value fits the role, the hub decides (agents.finish_run): the runner passes it on as it is
+        self.assertEqual(self.result("programmer", answer("x\nRESULT: pass"))[0], "pass")
 
     def test_marker_near_the_end(self):
         result, report = self.result("programmer", answer("Built.\n**RESULT: done**\nand then more text"))[:2]
@@ -355,10 +355,8 @@ class OutputTest(unittest.TestCase):
         self.assertEqual(self.result("programmer", answer(far))[0], "failed")     # not near the end: no guess
         self.assertEqual(self.result("programmer", answer("The RESULT: done line follows"))[0], "failed")
 
-    def test_report_is_capped_and_role_checked(self):
+    def test_report_is_capped(self):
         self.assertEqual(len(self.result("chef", answer("x" * 50000 + "\nRESULT: done"))[1]), L.MAX_REPORT)
-        with self.assertRaises(ValueError):
-            self.result("janitor", answer("x"))
 
 
 class ConsistencyTest(unittest.TestCase):
