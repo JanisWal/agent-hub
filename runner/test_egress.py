@@ -249,5 +249,88 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(E.path_allowed("mistral", "/v1/batch/jobs"))
 
 
+class OwnAiGatewayTest(unittest.IsolatedAsyncioTestCase):
+    """The gateway of the user's own AI (20.11.2026): the address comes from the ticket, never from the request."""
+
+    async def asyncSetUp(self):
+        import tempfile
+        from runner import tokens
+        self.tmp = tempfile.TemporaryDirectory()
+        self.tickets = tokens.Tickets(self.tmp.name)
+        self.received, self.targets = [], []
+
+        async def upstream(reader, writer):
+            data = await asyncio.wait_for(reader.read(65536), 2)
+            self.received.append(data)
+            writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{}")
+            await writer.drain()
+            writer.close()
+
+        self.upstream = await asyncio.start_server(upstream, "127.0.0.1", 0)
+        port = self.upstream.sockets[0].getsockname()[1]
+
+        def open_upstream(target):
+            self.targets.append(target)
+            return asyncio.open_connection("127.0.0.1", port)
+        self.server = await asyncio.start_server(
+            lambda r, w: E.gateway(r, w, self.tmp.name, open_upstream=open_upstream, log=lambda line: None,
+                                   provider="custom"), "127.0.0.1", 0)
+        self.port = self.server.sockets[0].getsockname()[1]
+
+    async def asyncTearDown(self):
+        self.server.close()
+        self.upstream.close()
+        self.tmp.cleanup()
+
+    async def send(self, ticket, path="/v1/chat/completions"):
+        body = b'{"model":"llama3.1:8b"}'
+        reader, writer = await asyncio.open_connection("127.0.0.1", self.port)
+        writer.write((f"POST {path} HTTP/1.1\r\nHost: egress:3132\r\nAuthorization: Bearer {ticket}\r\n"
+                      f"Content-Length: {len(body)}\r\n\r\n").encode() + body)
+        await writer.drain()
+        answer = await asyncio.wait_for(reader.read(), 5)
+        writer.close()
+        return answer
+
+    async def test_the_address_and_key_of_the_ticket(self):
+        ticket = self.tickets.issue("sk-own-key-123", "custom", upstream="https://api.example.com/openai/v1")
+        answer = await self.send(ticket)
+        self.assertTrue(answer.startswith(b"HTTP/1.1 200"))
+        head = self.received[0].split(b"\r\n\r\n")[0]
+        self.assertIn(b"POST /openai/v1/chat/completions HTTP/1.1", head)
+        self.assertIn(b"Host: api.example.com", head)
+        self.assertIn(b"Authorization: Bearer sk-own-key-123", head)
+        target = self.targets[0]
+        self.assertEqual((target.host, target.port, target.tls, target.lan), ("api.example.com", 443, True, False))
+
+    async def test_a_local_ai_without_a_key(self):
+        ticket = self.tickets.issue("-", "custom", upstream="http://192.168.178.50:11434/v1", lan=True)
+        await self.send(ticket)
+        head = self.received[0].split(b"\r\n\r\n")[0]
+        self.assertNotIn(b"Authorization", head)                              # an API without a key
+        self.assertIn(b"Host: 192.168.178.50:11434", head)
+        self.assertEqual((self.targets[0].tls, self.targets[0].lan), (False, True))
+
+    async def test_refused_cases_never_look_like_a_bad_key(self):
+        plain = self.tickets.issue("k", "custom", upstream="http://ai.example.com/v1")   # http without lan: no
+        mistral = self.tickets.issue("A" * 32, "mistral")
+        for ticket, path in ((plain, "/v1/chat/completions"), (mistral, "/v1/chat/completions"),
+                             ("hubrun-" + "Z" * 43, "/v1/chat/completions")):
+            answer = await self.send(ticket, path)
+            self.assertTrue(answer.startswith(b"HTTP/1.1 502"), ticket)
+        good = self.tickets.issue("k", "custom", upstream="https://api.example.com/v1")
+        self.assertTrue((await self.send(good, "/v1/files")).startswith(b"HTTP/1.1 404"))   # only the model calls
+        self.assertEqual(self.received, [])
+
+    def test_home_addresses_only_for_the_owner_and_never_dockers(self):
+        self.assertTrue(E.home_address("192.168.178.50"))
+        self.assertTrue(E.home_address("100.101.1.2"))                         # Tailscale
+        for address in ("172.20.0.5", "127.0.0.1", "169.254.1.1", "8.8.8.8", "::1"):
+            self.assertFalse(E.home_address(address), address)
+        self.assertIsNone(E.Target.of("http://x.example/v1", False))
+        self.assertIsNone(E.Target.of("ftp://x.example/v1", True))
+        self.assertEqual(E.Target.of("http://pc:8080/v1/", True).base, "/v1")
+
+
 if __name__ == "__main__":
     unittest.main()

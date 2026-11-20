@@ -290,15 +290,15 @@ def fetch(url: str) -> list[dict]:
     return _text(re.sub(r"[ \t]*\n\s*\n\s*", "\n\n", re.sub(r"[ \t]+", " ", text)).strip()[:MAX_READ])
 
 
-def _enabled() -> tuple[str, ...]:
-    """The tools of this job (HUB_TOOLS, comma separated), in the order of TOOLS; "look" when none is named."""
-    named = {t.strip() for t in os.environ.get("HUB_TOOLS", "look").split(",") if t.strip()}
+def _enabled(names=None) -> tuple[str, ...]:
+    """The tools of this job, in the order of TOOLS: `names`, else HUB_TOOLS (comma separated; "look" when unset)."""
+    named = set(names) if names is not None else {t.strip() for t in os.environ.get("HUB_TOOLS", "look").split(",")}
     return tuple(t for t in TOOLS if t in named)
 
 
-def call(name: str, args: dict, images: bool = True) -> list[dict]:
+def call(name: str, args: dict, images: bool = True, enabled=None) -> list[dict]:
     """One tool call: content items (text, image). Raises Refused with a text for the model."""
-    if name not in _enabled():
+    if name not in _enabled(enabled):
         raise Refused("Unknown tool.")
     args = args if isinstance(args, dict) else {}
     if name == "look":
@@ -318,8 +318,8 @@ def call(name: str, args: dict, images: bool = True) -> list[dict]:
     return fetch(args.get("url"))
 
 
-def schemas() -> list[dict]:
-    return [SCHEMAS[t] for t in _enabled()]
+def schemas(enabled=None) -> list[dict]:
+    return [SCHEMAS[t] for t in _enabled(enabled)]
 
 
 def answer(message: dict, images: bool) -> dict | None:

@@ -74,11 +74,11 @@ def _result_text(content: list[dict]) -> str:
     return text if len(text) <= MAX_RESULT else text[:MAX_RESULT] + "\n[cut]"
 
 
-def use_tool(name: str, args) -> str:
+def use_tool(name: str, args, enabled: tuple = ()) -> str:
     try:
         if isinstance(args, str):
             args = json.loads(args or "{}")
-        return _result_text(hub_tools.call(name, args, images=False))
+        return _result_text(hub_tools.call(name, args, images=False, enabled=enabled))
     except hub_tools.Refused as reason:
         return f"(refused: {reason})"
     except (ValueError, TypeError):
@@ -92,8 +92,8 @@ def say(data: dict) -> None:
 
 
 def loop(prompt: str, model: str, job: str, turns: int, seconds: int, clock=time.time) -> dict:
-    os.environ["HUB_TOOLS"] = ",".join(JOB_TOOLS.get(job, ()))
-    tools = hub_tools.schemas()
+    enabled = JOB_TOOLS.get(job, ())
+    tools = hub_tools.schemas(enabled)
     native = bool(tools)
     messages = [{"role": "user", "content": prompt}]
     tokens_in = tokens_out = 0
@@ -135,7 +135,7 @@ def loop(prompt: str, model: str, job: str, turns: int, seconds: int, clock=time
                     went_out = True
                     say({"outside": True})
                 messages.append({"role": "tool", "tool_call_id": item.get("id", ""),
-                                 "content": use_tool(name, function.get("arguments") or "{}")})
+                                 "content": use_tool(name, function.get("arguments") or "{}", enabled)})
             continue
         found = _TEXT_TOOL.findall(text) if tools and not native else []
         if found:
@@ -144,7 +144,7 @@ def loop(prompt: str, model: str, job: str, turns: int, seconds: int, clock=time
                 if name in OUTSIDE.get(job, ()) and not went_out:
                     went_out = True
                     say({"outside": True})
-                results.append(f'<tool-result name="{name}">\n{use_tool(name, args.strip())}\n</tool-result>')
+                results.append(f'<tool-result name="{name}">\n{use_tool(name, args.strip(), enabled)}\n</tool-result>')
             messages += [{"role": "assistant", "content": text}, {"role": "user", "content": "\n\n".join(results)}]
             continue
         return {"ok": bool(text.strip()), "text": text, "tokens_in": tokens_in, "tokens_out": tokens_out,
