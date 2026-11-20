@@ -18,7 +18,11 @@ GIT = ["git", "-c", "core.hooksPath=/dev/null", "-c", "safe.directory=*", "-c", 
        "-c", "user.email=agents@agent-hub.local", "-c", "commit.gpgsign=false", "-c", "core.fsmonitor=false"]
 # What running the code leaves behind (first real run, 15.11.2026: __pycache__ ended up in the project). Written to the
 # task's git dir on every commit; the project's own .gitignore counts in addition.
-NEVER_COMMIT = ("__pycache__/", "*.pyc", ".pytest_cache/", ".mypy_cache/", "node_modules/", ".DS_Store")
+NEVER_COMMIT = ("__pycache__/", "*.pyc", ".pytest_cache/", ".mypy_cache/", "node_modules/", ".DS_Store", ".coverage",
+                "coverage/", ".npm/")
+TEST_SCRIPT = "hub-test.sh"   # the project's tests: the hub runs it after the programmer (runner.py, launcher.build_test_command)
+MAX_DIFF = 60000              # characters of a task's change that go to the hub (tester, reviewer, approval)
+MAX_STAT = 4000
 
 
 class Workspace:
@@ -85,6 +89,28 @@ class Workspace:
         self._git("commit", "-q", "-m", message, git_dir=git_dir, work=tree)
         self._git("push", "-q", "origin", f"HEAD:refs/heads/{branch}", git_dir=git_dir)
         return True
+
+    def diff(self, task_id: int) -> tuple[str, str]:
+        """(stat, patch) of what the task changed against main: the files with their +/- lines and the change itself
+        (cut to MAX_STAT / MAX_DIFF characters). The tester, the reviewer and the approval read it."""
+        git_dir, tree = self.gitdir(task_id), self.tree(task_id)
+        self._git("fetch", "-q", "origin", git_dir=git_dir)
+        base = ["diff", "--no-color", "--no-ext-diff", "-M", "origin/main...HEAD"]
+        stat = self._git(*base[:-1], "--stat=120", base[-1], git_dir=git_dir, work=tree).stdout
+        patch = self._git(*base, git_dir=git_dir, work=tree).stdout
+        cut = lambda text, n: text if len(text) <= n else text[:n] + "\n[... cut]\n"
+        return cut(stat, MAX_STAT), cut(patch, MAX_DIFF)
+
+    def has_tests(self, task_id: int) -> bool:
+        script = self.tree(task_id) / TEST_SCRIPT
+        return script.is_file() and not script.is_symlink()
+
+    def reset(self, task_id: int) -> None:
+        """Back to the last commit after the tests ran: files they changed or left behind go (what NEVER_COMMIT names,
+        such as node_modules, stays for the next round)."""
+        git_dir, tree = self.gitdir(task_id), self.tree(task_id)
+        self._git("checkout", "-q", "--", ".", git_dir=git_dir, work=tree, check=False)
+        self._git("clean", "-q", "-f", "-d", git_dir=git_dir, work=tree, check=False)
 
     def merge(self, task_id: int, project_id: int, branch: str) -> bool:
         """Bring the approved branch into main. Fast-forward when main has not moved; otherwise main is merged into

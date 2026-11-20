@@ -212,6 +212,25 @@ class WorkspaceTest(unittest.TestCase):
         self.assertEqual(git(f"--git-dir={self.work.repo(1)}", "rev-parse", "main"), before)
 
 
+    def test_the_change_against_main_and_back_to_the_commit(self):
+        tree = self.work.prepare(11, 1, "agent/task-11")
+        (tree / "calc.js").write_text("export const add = (a, b) => a + b;\n")
+        self.work.commit(11, "agent/task-11", "11")
+        stat, patch = self.work.diff(11)
+        self.assertIn("calc.js", stat)
+        self.assertIn("+export const add", patch)
+        self.assertFalse(self.work.has_tests(11))
+        (tree / "hub-test.sh").write_text("node --test\n")
+        self.assertTrue(self.work.has_tests(11))
+        (tree / "calc.js").write_text("broken by a test\n")                  # what running the tests left
+        (tree / "out.log").write_text("x")
+        (tree / "node_modules").mkdir()
+        self.work.reset(11)
+        self.assertEqual((tree / "calc.js").read_text(), "export const add = (a, b) => a + b;\n")
+        self.assertFalse((tree / "out.log").exists() or (tree / "hub-test.sh").exists())
+        self.assertTrue((tree / "node_modules").exists())                    # ignored: kept for the next round
+
+
 class FakeKeys:
     def __init__(self, saved=None):
         self.saved = dict(saved or {})
@@ -317,6 +336,30 @@ class RunTest(unittest.TestCase):
         finish = hub.posted("/runner/runs/3/finish")[0]
         self.assertEqual((finish["result"], finish["report"], finish["tokens_in"]), ("done", "Built it.", 50))
         self.assertIn("relay.py", git(f"--git-dir={self.work.repo(1)}", "ls-tree", "--name-only", "agent/task-7"))
+
+    def test_the_hub_runs_the_projects_tests_after_the_programmer(self):
+        hub, tests = FakeHub(job=self.job()), []
+
+        def fake_run(command, prompt):
+            (self.work.tree(7) / "calc.py").write_text("ADD = 1\n")
+            (self.work.tree(7) / "hub-test.sh").write_text("python3 -m unittest\n")
+            return types.SimpleNamespace(stdout=json.dumps({"ok": True, "text": "Built.\n\n**RESULT: done**\nThanks",
+                                                            "tokens_in": 5, "tokens_out": 2}), returncode=0)
+        r = self.runner(hub)
+        r.run_agent = fake_run
+        r.run_tests = lambda command: tests.append(command) or types.SimpleNamespace(
+            returncode=1, stdout="FAILED (failures=1)\n", stderr="")
+        if os.geteuid() != 0:
+            self.skipTest("needs root (the folder is handed to the run user)")
+        r.handle_runs()
+        command = tests[0]
+        self.assertEqual(command[-2:], ["sh", "hub-test.sh"])
+        self.assertNotIn("CLAUDE_CODE_OAUTH_TOKEN", " ".join(command))        # no AI, no ticket
+        finish = hub.posted("/runner/runs/3/finish")[0]
+        self.assertEqual((finish["result"], finish["tests_exit"]), ("done", 1))
+        self.assertIn("FAILED", finish["tests"])
+        self.assertIn("calc.py", finish["diff_stat"])
+        self.assertNotIn("RESULT", finish["report"])
 
     def test_without_a_key_the_run_fails_and_the_menu_hears_it(self):
         hub = FakeHub(job=self.job())
