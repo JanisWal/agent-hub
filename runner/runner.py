@@ -419,6 +419,8 @@ class Runner:
         secret, problem = self._secret(adapter, user_id)
         if secret is None:
             return self._finish_run(run_id, "failed", problem)
+        if job.get("mode") == "brief":
+            return self._brief_run(job, adapter, secret)
         try:
             folder = self.work.prepare(task_id, int(job["project_id"]), job["branch"])
             launcher.prepare_folder(str(folder), user_id, recursive=True)
@@ -457,6 +459,27 @@ class Runner:
         if role == "programmer" and result == "done":   # the project's own tests, run by the hub, not by an AI
             extra["tests_exit"], extra["tests"] = self._tests(run_id, user_id, task_id, folder, job.get("net", "apart"))
         self._finish_run(run_id, result, report, tokens_in, tokens_out, int(self.clock() - started), **extra)
+
+    def _brief_run(self, job: dict, adapter, secret: str) -> None:
+        """A run that needs no tools (the reviewer of a small change, the manager's documentation): one answer, no
+        work folder, no files, nothing to commit."""
+        run_id, user_id = int(job["run_id"]), int(job["user_id"])
+        ticket = self.tickets.issue(secret, adapter.provider)
+        started = self.clock()
+        try:
+            command = adapter.brief_command(run_id=run_id, user_id=user_id, model=job["model"], ticket=ticket,
+                                            effort=job.get("effort") or "")
+            done = self.run_agent(command, job["prompt"])
+            ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(done.stdout)
+        except subprocess.TimeoutExpired:
+            subprocess.run(["docker", "rm", "-f", f"agent-run-{run_id}"], capture_output=True)
+            ok, text, tokens_in, tokens_out, login_problem = False, "Timeout: the run took too long.", 0, 0, False
+        finally:
+            self.tickets.revoke(ticket)
+        if login_problem:
+            self._expired(user_id, adapter.provider)
+        result, report = launcher.result_of(job["role"], text, failed=not ok)
+        self._finish_run(run_id, result, report, tokens_in, tokens_out, int(self.clock() - started))
 
     def handle_merges(self) -> None:
         """Approved tasks: merge their branch into the project's main, then the manager documents."""

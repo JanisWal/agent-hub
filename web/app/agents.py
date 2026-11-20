@@ -15,7 +15,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import aichoice, board, catalog, db, files, memory, questions, reply, runtask, serversettings, workflow
+from . import aichoice, board, catalog, db, files, memory, prompts, questions, reply, serversettings, workflow
 
 # Models and effort levels are not fixed here: they come from catalog.py (Janis, 14.11.2026). A role without a
 # choice gets the provider's default model and that model's default level. Since 15.11.2026 the choice is kept per
@@ -37,7 +37,7 @@ RUN_SECONDS = 20 * 60                    # a run that reports nothing for so lon
 # How many AI containers run at once (chat answers and agent runs together) is a setting of the owner
 # (serversettings.ai_parallel, Janis 15.11.2026): 1 on a small server, more or no limit on a big one.
 MAX_REPORT = 20000                       # characters of a report that are kept
-FOUND_MAX = 3                            # items a run may put on the board (runtask.FOUND_RULE)
+FOUND_MAX = 3                            # items a run may put on the board (prompts.FOUND)
 MAX_DIFF = 60000                         # characters of a task's change kept (runner/workspace.py cuts it too)
 MAX_TESTS = 6000                         # characters of the output of the project's tests kept
 HUB_MODEL = "hub"                        # the "model" of a test run the hub made itself (no AI, no tokens)
@@ -94,7 +94,8 @@ class Job:
     net: str = DEFAULT_NET          # web and code together (open internet) or apart, the role's switch
     effort: str = ""                # effort level of the model (catalog.py); empty = the program's own default
     provider: str = "claude"        # which AI does the run (aichoice.py); the runner picks the adapter by it
-    prompt: str = ""                # the package for the AI (runtask.build_input): rules, memory, project, task
+    prompt: str = ""                # the package for the AI (prompts.run): rules, memory, project, task
+    mode: str = ""                  # "brief": one answer without tools and without /work (prompts.brief_run)
     files: list = field(default_factory=list)   # the user's files for /files (files.for_agents): id, name, area, size
     links: list = field(default_factory=list)   # and the links: name, address
     images: bool = False            # the model sees pictures (catalog.sees_images): the adapter lets it look at them
@@ -613,8 +614,10 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
             job = Job(run["id"], user_id, task["project_id"], task["id"], run["role"], model,
                       branch_name(task["id"]), task["title"], task["kind"], task["round"],
                       task["note"], reports, net_in(conn, user_id, run["role"]), effort, provider)
-            job.prompt = runtask.build_input(conn, job)
-            job.files, job.links = files.for_agents(conn, user_id, task["project_id"])
+            job.mode = "brief" if prompts.brief_run(conn, job) else ""
+            job.prompt = prompts.run(conn, job, brief=job.mode == "brief")
+            if not job.mode:   # a brief run reads no files
+                job.files, job.links = files.for_agents(conn, user_id, task["project_id"])
             job.images = catalog.sees_images(model)
             return job
     return None
@@ -664,8 +667,11 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
                 (task["id"], HUB_MODEL, verdict, f"hub-test.sh: exit {code}\n{output}"[:MAX_REPORT], now, now, now, ""))
             step = workflow.advance("testing", task["round"], bool(task["manual_check"]), verdict,
                                     enabled | {"tester"})
-        found = reply.parse(report)                       # what the role noticed outside its task (runtask.FOUND_RULE)
+        found = reply.parse(report)                       # what the role noticed outside its task (prompts.FOUND)
         report = found.text
+        may = prompts.ALLOWED.get((run["role"], "doc" if run["role"] == "chef" else "run"), frozenset())
+        if "task" not in may:                             # the manager's documentation puts nothing on the board
+            found.tasks, found.asks = [], []
         for item in found.tasks[:FOUND_MAX]:              # a bug goes on the board at once, an addition waits
             board.add_from_ai(conn, task["project_id"], item.kind, item.title, item.body,
                               approved=item.kind == "bug", source="agent")

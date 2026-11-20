@@ -17,6 +17,11 @@ unknown key just shows nothing (hint) or the raw level. `images` (18.11.2026) sa
 (images and PDF pages); it is false when missing, so a model nobody checked is never sent a picture (its API would
 refuse the request). Standard library only.
 
+Tools (20.11.2026, Janis: every AI must be usable, with or without tools of its own): per provider `tools` names, for
+each tool of TOOLS, where it comes from: "own" (the AI's program has it), "hub" (the hub hands its own, maybe weaker,
+tool to the program) or "none". The packages (prompts.py) say only what is there; an AI without a way to read files gets
+them in the package and may ask with <read>. Missing in a stored list = DEFAULT_TOOLS of the provider.
+
 Several providers (Mistral since 14.11.2026): a model id belongs to exactly one provider (`store` refuses an id another
 provider already has), so a saved choice ("model.chef" = "mistral-small-2603") tells by itself which AI answers
 (`find`). Which providers a user may pick from depends on what he has connected (ui.model_picker, chat.send).
@@ -30,6 +35,8 @@ from . import db
 PROVIDERS = ("claude", "mistral")        # providers the hub can start; more come with their own connection
 DEFAULT_PROVIDER = "claude"
 HINTS = ("fast", "balanced", "thorough", "deepest")
+TOOLS = ("read", "write", "shell", "search", "fetch", "look")   # look = see images and PDF pages
+SOURCES = ("own", "hub", "none")
 MAX_MODELS = 12
 MAX_EFFORTS = 8
 _ID = re.compile(r"[a-z][a-z0-9.-]{0,47}")     # never starts with "-": it goes to a command line as one argument
@@ -43,6 +50,8 @@ SEED = {
     "claude": {
         "name": "Claude",
         "default_model": "sonnet",
+        # Claude Code brings all of them (Read shows images and PDFs).
+        "tools": {"read": "own", "write": "own", "shell": "own", "search": "own", "fetch": "own", "look": "own"},
         "models": [
             {"id": "haiku", "name": "Haiku", "hint": "fast", "efforts": _ALL, "default_effort": "medium", "images": True},
             {"id": "sonnet", "name": "Sonnet", "hint": "balanced", "efforts": _ALL, "default_effort": "high", "images": True},
@@ -57,6 +66,8 @@ SEED = {
     "mistral": {
         "name": "Mistral",
         "default_model": "mistral-small-2603",
+        # Mistral Vibe brings files, shell and web; pictures come through the hub's tool `look` (runner/look_mcp.py).
+        "tools": {"read": "own", "write": "own", "shell": "own", "search": "own", "fetch": "own", "look": "hub"},
         "models": [
             {"id": "mistral-small-2603", "name": "Mistral Small", "hint": "fast", "efforts": ["none", "high"],
              "default_effort": "none", "images": True},
@@ -83,6 +94,7 @@ class Provider:
     name: str
     models: tuple[Model, ...]
     default_model: str
+    tools: tuple[tuple[str, str], ...] = ()   # (tool, source) for every tool of TOOLS
 
     def model(self, model_id: str | None) -> Model | None:
         return next((m for m in self.models if m.id == model_id), None)
@@ -124,7 +136,19 @@ def parse(provider_id: str, data: dict) -> Provider:
     default_model = data.get("default_model")
     if default_model not in {m.id for m in models}:
         raise ValueError("default model")
-    return Provider(provider_id, name, tuple(models), default_model)
+    raw_tools = data.get("tools", SEED[provider_id].get("tools", {}))
+    if not isinstance(raw_tools, dict) or any(k not in TOOLS or v not in SOURCES for k, v in raw_tools.items()):
+        raise ValueError("tools")
+    tools = tuple((t, raw_tools.get(t, "none")) for t in TOOLS)
+    return Provider(provider_id, name, tuple(models), default_model, tools)
+
+
+def tools_of(provider_id: str) -> dict[str, str]:
+    """{tool: "own" | "hub" | "none"} of a provider (TOOLS); every tool "none" for an unknown one."""
+    try:
+        return dict(provider(provider_id).tools)
+    except ValueError:
+        return {t: "none" for t in TOOLS}
 
 
 def _key(provider_id: str) -> str:

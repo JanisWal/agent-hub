@@ -361,6 +361,34 @@ class RunTest(unittest.TestCase):
         self.assertIn("calc.py", finish["diff_stat"])
         self.assertNotIn("RESULT", finish["report"])
 
+    def test_a_brief_run_has_no_tools_no_work_folder_and_commits_nothing(self):
+        job = {**self.job("reviewer"), "mode": "brief"}
+        hub, seen = FakeHub(job=job), []
+
+        def fake_run(command, prompt):
+            seen.append(command)
+            return types.SimpleNamespace(stdout=json.dumps({"ok": True, "text": "Sauber.\nRESULT: ok",
+                                                            "tokens_in": 4, "tokens_out": 2}), returncode=0)
+        r = self.runner(hub)
+        r.run_agent = fake_run
+        r.handle_runs()
+        command = seen[0]
+        self.assertIn("HUB_JOB=run-brief", command)
+        self.assertIn("agent-run-3", command)
+        self.assertFalse(any("dst=/work" in part or "dst=/files" in part for part in command))
+        self.assertFalse(self.work.tree(7).exists())                            # no folder was made
+        finish = hub.posted("/runner/runs/3/finish")[0]
+        self.assertEqual((finish["result"], finish["report"]), ("ok", "Sauber."))
+        self.assertNotIn("diff", finish)
+
+    def test_a_brief_run_of_claude_is_a_chat_container_with_the_runs_name(self):
+        cmd = launcher.build_chat_command(chat_id=3, user_id=5, model="sonnet", ticket=TICKET, mode="brief",
+                                          name="agent-run-3")
+        self.assertIn("agent-run-3", cmd)
+        self.assertEqual(cmd[cmd.index("--max-turns") + 1], "1")
+        with self.assertRaises(ValueError):
+            launcher.build_chat_command(chat_id=3, user_id=5, model="sonnet", ticket=TICKET, name="x; rm")
+
     def test_without_a_key_the_run_fails_and_the_menu_hears_it(self):
         hub = FakeHub(job=self.job())
         self.runner(hub, FakeKeys()).handle_runs()

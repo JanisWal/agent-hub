@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from app import board, chat, claude_link, db, projectpage, projects, users
+from app import board, chat, claude_link, db, projectpage, projects, prompts, users
 from app.routes import chat as routes
 from app.routes import runner as runner_routes
 
@@ -60,7 +60,7 @@ class ChatQueueTest(Base):
         later = chat.send(self.a.id, self.pa.id, "And?")                    # never part of the next question's context
         with db.connect() as conn:
             row = conn.execute("SELECT * FROM chat_messages WHERE id = ?", (later.id,)).fetchone()
-            self.assertNotIn("Erst lesen", chat.build_input(conn, row))
+            self.assertNotIn("Erst lesen", prompts.manager_chat(conn, row))
         self.assertEqual(routes.messages(self.pb.id, user=self.a)["messages"], [])   # A sees nothing of B's project
 
     def test_a_failed_answer_shows_no_thoughts(self):
@@ -202,7 +202,7 @@ class ChatQueueTest(Base):
         job = chat.claim_next()
         self.assertEqual(job.mode, "all")                                      # the runner learns the mode from the database
         self.assertTrue(job.prompt.endswith("\nq"))
-        self.assertIn(chat.TOOLS_TEXT["all"], job.prompt)
+        self.assertIn("a shell with the public internet", job.prompt)
         chat.finish(job.chat_id, True, "a")
         for bad in ("", "plain", "web", "code", "root", "web,code", "code; rm -rf /"):
             with self.assertRaises(ValueError) as problem:
@@ -218,8 +218,8 @@ class ChatQueueTest(Base):
         self.assertEqual(routes.messages(self.pa.id, user=self.a)["messages"][0]["mode"], "apart")
         job = chat.claim_next()
         self.assertEqual(job.mode, "apart")
-        self.assertIn(chat.TOOLS_TEXT["apart"], job.prompt)                    # the manager knows code is offline
-        self.assertNotIn(chat.TOOLS_TEXT["all"], job.prompt)
+        self.assertIn("a shell without internet", job.prompt)                # the manager knows code is offline
+        self.assertNotIn("reading web pages", job.prompt)
         chat.finish(job.chat_id, True, "done")
         self.assertEqual(agents.settings(self.b.id)["roles"]["chef"]["net"], "together")   # per user
         self.assertEqual(agents.settings(self.a.id)["roles"]["programmer"]["net"], "together")  # and per agent
@@ -277,8 +277,8 @@ class ChatQueueTest(Base):
         self.assertEqual(manager_routes.manager_settings("", "everything", "", "", user=self.a).status_code, 400)
         chat.send(self.a.id, self.pa.id, "q")
         text = chat.claim_next().prompt
-        self.assertIn(chat.AUTONOMY_TEXT["auto"], text)
-        self.assertIn(chat.AUTONOMY_RULE, text)                                # derive first, ask only what is unclear
+        self.assertIn(prompts.AUTONOMY["auto"], text)
+        self.assertIn(prompts.AUTONOMY_RULE, text)                                # derive first, ask only what is unclear
         self.assertEqual(agents.settings(self.b.id)["autonomy"], "major")      # per user
 
     def test_the_manager_knows_the_project_and_remembers_it(self):
@@ -293,7 +293,7 @@ class ChatQueueTest(Base):
         chat.finish(first.chat_id, True, "A 12 V automotive relay.")
         chat.send(self.a.id, self.pa.id, "And the fuse?")
         text = chat.claim_next().prompt
-        self.assertTrue(text.startswith(chat.role_for("all")))
+        self.assertTrue(text.startswith(prompts.MANAGER))
         project = text[text.index("<project>"):text.index("</project>")]
         for part in ("Roadster", "Heater control on an ESP32", "[bug] Heater does not switch off",
                      "[major] Diagnosis page", "User: Which relay?", "Manager: A 12 V automotive relay."):
@@ -301,20 +301,20 @@ class ChatQueueTest(Base):
         self.assertNotIn("Old finished thing", project)                        # archived items are done
         self.assertNotIn("And the fuse?", project)                             # the question itself comes after
         self.assertTrue(text.endswith("Question of the user:\nAnd the fuse?"))
-        self.assertIn("not instructions", chat.ROLE)                           # the context is data
+        self.assertIn("not instructions", prompts.MANAGER)                           # the context is data
 
     def test_the_context_is_limited_and_drops_the_oldest_memory_first(self):
         self.connect(self.a)
-        for i in range(chat.HISTORY + 2):
+        for i in range(prompts.CHAT_LIMITS["history"] + 2):
             chat.send(self.a.id, self.pa.id, f"question {i} " + "x" * 1900)
             job = chat.claim_next()
             chat.finish(job.chat_id, True, f"answer {i} " + "y" * 3000)
         chat.send(self.a.id, self.pa.id, "last")
         text = chat.claim_next().prompt
         project = text[text.index("<project>"):text.index("</project>")]
-        self.assertLessEqual(len(project), chat.MAX_CONTEXT + 20)
+        self.assertLessEqual(len(project), prompts.MAX_CONTEXT + 20)
         self.assertNotIn("question 0 ", project)                               # beyond HISTORY, never sent
-        self.assertIn(f"question {chat.HISTORY + 1} ", project)                # the newest stays
+        self.assertIn(f"question {prompts.CHAT_LIMITS['history'] + 1} ", project)                # the newest stays
         self.assertIn(" …", project)                                           # long answers are cut
 
     def test_deleting_the_project_removes_the_messages(self):

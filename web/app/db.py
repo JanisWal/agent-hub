@@ -430,6 +430,18 @@ def _prepare(conn: sqlite3.Connection) -> None:
     if "pass_enc" not in before["devices"]:
         # Once (17.11.2026): a password used to sit in key_enc (auth 'password'); key and password are kept apart now.
         conn.execute("UPDATE devices SET pass_enc = key_enc, key_enc = '', auth = 'key' WHERE auth = 'password' AND key_enc != ''")
+    if conn.execute("SELECT 1 FROM server_settings WHERE key = 'done.memory_names'").fetchone() is None:
+        # Once (20.11.2026, KONZEPT-AGENTEN.md 9.10): the fixed memory files have English names in every project, so
+        # the packages name one file (RULES.md) instead of two. Only at the top of Memory, only where the English
+        # name is free; the text stays as it is. Remove once no backup from before can be restored (after 25.12.2026).
+        for old, new in (("PROJEKT.md", "PROJECT.md"), ("REGELN.md", "RULES.md")):
+            conn.execute(
+                "UPDATE files SET name = ? WHERE name = ? COLLATE NOCASE AND category = 'memory' AND parent_id IS NULL"
+                " AND is_folder = 0 AND NOT EXISTS (SELECT 1 FROM files g WHERE g.project_id = files.project_id"
+                " AND g.name = ? COLLATE NOCASE AND g.category = 'memory' AND g.parent_id IS NULL AND g.is_folder = 0)",
+                (new, old, new))
+            conn.execute("UPDATE memory_versions SET name = ? WHERE name = ? COLLATE NOCASE", (new, old))
+        conn.execute("INSERT INTO server_settings (key, value) VALUES ('done.memory_names', '1')")
     # Safety net: the database itself refuses a second owner (it does not say who the owner is).
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_one_owner ON users (role) WHERE role = 'owner'")
     conn.commit()

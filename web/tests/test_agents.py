@@ -147,16 +147,15 @@ class ChainTest(Base):
             self.run_stage(result)
         agents.decide(self.a.id, task.id, "approve")
         agents.merge_done(task.id, True)
-        report = ('Doku nachgeführt.\n<memory-edit file="MEMORY.md"><find>- Relais: offen</find>'
-                  '<replace>- Relais: eingebaut</replace></memory-edit>'
-                  '<memory-edit file="ROADMAP.md"><find>gibt es nicht</find><replace>x</replace></memory-edit>')
+        report = ('Doku nachgeführt.\n<memory-edit file="MEMORY.md"><section title="Stand">- Relais: eingebaut</section>'
+                  '</memory-edit><memory-edit file="ROADMAP.md"><section title="x">y</section></memory-edit>')
         self.assertEqual(self.run_stage("done", report).role, "chef")
         memo = next(f for f in files.list_files(self.a.id, self.project.id) if f.name == "MEMORY.md")
         self.assertEqual(files.read_text(self.a.id, memo.id), "# Stand\n- Relais: eingebaut\n")
         with db.connect() as conn:
             stored = conn.execute("SELECT report FROM agent_runs WHERE role = 'chef'").fetchone()["report"]
         self.assertTrue(stored.startswith("Doku nachgeführt."))
-        self.assertIn('<edit-failed file="ROADMAP.md">', stored)
+        self.assertIn('<edit-failed file="ROADMAP.md">', stored)              # there is no ROADMAP.md here
 
     def run_stage(self, result, report="", **kw):
         job = agents.claim_next(can_mac=True, **kw)
