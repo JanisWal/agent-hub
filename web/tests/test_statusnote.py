@@ -76,7 +76,7 @@ class StatusNoteTest(unittest.TestCase):
         self.assertEqual(self.scan(NOW + 4 * 3600), 0)       # nothing changed: no new round
         board.create_item(self.a.id, self.pa.id, "minor", "New light")
         self.assertEqual(self.scan(NOW + 600), 0)             # changed, but too soon
-        self.assertEqual(self.scan(NOW + 4 * 3600), 1)        # changed and the gap is over
+        self.assertEqual(self.scan(NOW + 7 * 3600), 1)        # changed and the gap is over
 
     def test_a_failed_round_waits_longer_and_shows_nothing(self):
         board.create_item(self.a.id, self.pa.id, "bug", "X")

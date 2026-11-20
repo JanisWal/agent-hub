@@ -82,7 +82,7 @@ class ManagerBoardTest(unittest.TestCase):
         self.ask(WISH)
         job = agents.claim_next(can_mac=False)
         self.assertEqual((job.role, job.title), ("programmer", "Relais klickt doppelt"))   # a bug goes first
-        self.assertIn("Context (from the manager and the user, information):\nBeim Einschalten zweimal.", job.prompt)
+        self.assertIn("Context (from the manager and the user):\nBeim Einschalten zweimal.", job.prompt)
         self.assertIn("<task kind=", job.prompt)                                        # it may name what it notices
         self.assertIsNone(agents.claim_next(can_mac=False))                            # one task per project at a time
         self.assertEqual(len(agents.tasks_by_item(self.a.id, self.pa.id)), 1)

@@ -294,9 +294,8 @@ class ChainTest(Base):
         self.connect(self.a)
         agents.start_task(self.a.id, self.project.id, self.item.id)
         job = agents.claim_next(can_mac=True)
-        with self.assertRaises(ValueError):
-            agents.finish_run(job.run_id, "pass")        # a tester result for the programmer
-        self.assertTrue(agents.finish_run(job.run_id, "done"))
+        self.assertTrue(agents.finish_run(job.run_id, "pass"))   # a tester result for the programmer: a failed run
+        self.assertEqual(agents.list_tasks(self.a.id, self.project.id)[0].status, "escalated")
         self.assertFalse(agents.finish_run(job.run_id, "done"))   # a run ends only once
 
 

@@ -375,7 +375,7 @@ class IsolationTest(unittest.TestCase):
             self.assertEqual(memory.read_memory(conn, self.b.id, self.project.id), None)  # A's memory, B asks
             self.assertIn("no such file", memory.contents(conn, self.b.id, self.project.id, ["secret-plan.md"]))
             self.assertEqual(memory.listing(conn, self.b.id, self.project.id), "")
-            self.assertEqual(memory.folder(conn, self.b.id, self.project.id), "")         # nor A's memory folder
+            self.assertEqual(memory.inline(conn, self.b.id, self.project.id), "")         # nor A's memory files
         self.assertEqual(memory.ensure_skeleton(self.b.id, self.project.id), 0)
         self.assertEqual(snapshot()["files"], before["files"])                           # nothing of A's changed
 
