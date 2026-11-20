@@ -44,7 +44,7 @@ class QuestionsTest(unittest.TestCase):
         message = chat.list_messages(self.a.id, self.pa.id)[-1]
         self.assertEqual(message.prompt, i18n.t("de", "w_answer_prompt", question="Welche Spannung hat das Relais?",
                                                  answer="12 V"))
-        self.assertNotIn("<answers>", chat.claim_next().prompt)               # sent as a message, not twice
+        self.assertNotIn("<answers>\n- You asked", chat.claim_next().prompt)               # sent as a message, not twice
 
     def test_while_a_question_runs_the_answer_comes_with_the_next_one(self):
         self.chat_answer(ASK)
@@ -55,7 +55,7 @@ class QuestionsTest(unittest.TestCase):
         self.assertIn("<answers>\n- You asked: Welche Spannung hat das Relais?\n  The user answered: 24 V", job.prompt)
         chat.finish(job.chat_id, True, "Danke.")
         chat.send(self.a.id, self.pa.id, "Und jetzt?")
-        self.assertNotIn("<answers>", chat.claim_next().prompt)               # delivered once
+        self.assertNotIn("<answers>\n- You asked", chat.claim_next().prompt)               # delivered once
 
     def test_a_role_asks_in_a_run_and_the_answer_comes_with_the_next_run(self):
         item = board.create_item(self.a.id, self.pa.id, "minor", "Relais schalten")

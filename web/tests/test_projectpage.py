@@ -78,9 +78,9 @@ class ProjectPageTest(unittest.TestCase):
 
     def test_suggestions_stand_in_the_list_with_two_pills(self):
         page = self.html()
-        self.assertEqual(page.count('class="pill-btn go"'), 1)                 # Janis, 19.11.2026: text pills
-        self.assertEqual(page.count('class="pill-btn quiet"'), 1)
-        idea = page[page.index("An idea") - 300:page.index("An idea") + 700]
+        idea = page[page.index("An idea") - 300:page.index("An idea") + 700]   # Janis, 19.11.2026: text pills
+        self.assertIn('class="pill-btn go" type="button" data-action="accept"', idea)
+        self.assertIn('class="pill-btn quiet" type="button" data-action="reject"', idea)
         self.assertIn("proposed", idea)
         self.assertIn("Vorschlag", idea)
         self.assertLess(idea.index("pill-btn quiet"), idea.index("pill-btn go"))   # reject left, take over right
@@ -459,9 +459,9 @@ class RoleViewsTest(unittest.TestCase):
         self.assertIn("A bug", waiting)
         self.assertIn("Wartet auf deine Freigabe", waiting)
         self.assertIn("Fine by me", waiting)
-        self.assertIn('data-goto="board"', waiting)
         self.assertIn('<span class="count">1</span>', waiting)
-        self.assertNotIn("agent-approve", waiting)                            # deciding stays on the board card
+        self.assertIn('data-decide="approve"', waiting)                       # since 19.11.2026: decided right here
+        self.assertIn('class="w-input"', waiting)                              # with a remark of your own
         me = page[page.index('id="view-me"'):]
         self.assertNotIn("A bug", me)
 
