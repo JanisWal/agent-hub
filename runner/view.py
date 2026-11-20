@@ -14,14 +14,22 @@ project's own folder tree (one tree for the whole project since 18.11.2026, `fil
 The folder belongs to root and is readable by everybody (the run user only reads it); the container mounts it with
 `readonly`, so nothing written there can reach the hub. A copy instead of the original: the storage folders are only
 the hub's (0700), and a run must never see the other files of the storage. Files above MAX_FILE and anything beyond
-MAX_TOTAL are left out (named in INDEX.md). The view is deleted when the job ends; `clear` removes leftovers.
+MAX_TOTAL are left out (named in INDEX.md).
+
+Kept between jobs (20.11.2026): copying the files for every question wrote the same 150 MB to the SD card each time.
+`acquire` gives a view named after the project and a hash of what is in it (the list from the hub and the code's
+commit); jobs with the same content share it (read-only anyway), a changed one is made anew and the old one goes
+once no job uses it (`release`). `remove_project` deletes them with the project; `clear` removes all at the start.
 
 A TIFF, HEIC or raw photo can not be shown to a model as it is. The browser already made a big JPEG of it for the
 viewer (`<id>.preview` next to the file in the storage, web/app/files.py); it is copied next to the photo as
 "<name>.jpg", so every AI can look at it (18.11.2026).
 """
+import hashlib
+import json
 import os
 import shutil
+import threading
 import subprocess
 import tarfile
 import tempfile
@@ -60,6 +68,15 @@ def _place(item: dict) -> str:
     return "".join(f"{part}/" for part in folders)
 
 
+def _head(repo: Path | None) -> str:
+    """The commit of main in `repo` (part of a view's hash), "" when there is none."""
+    if repo is None or not (Path(repo) / "HEAD").is_file():
+        return ""
+    done = subprocess.run(["git", "-c", "safe.directory=*", f"--git-dir={repo}", "rev-parse", "-q", "--verify", "main"],
+                          capture_output=True, text=True, timeout=30)
+    return done.stdout.strip()
+
+
 def _size(n: int) -> str:
     return f"{n / 1024 ** 2:.1f} MB" if n >= 1024 ** 2 else f"{max(1, n // 1024)} KB"
 
@@ -68,6 +85,49 @@ class Views:
     def __init__(self, base: str | Path, source: str | Path | None):
         self.base = Path(base) / "views"
         self.source = Path(source) if source else None
+        self.lock = threading.Lock()
+        self.users: dict[str, int] = {}          # view name -> jobs using it now
+
+    def acquire(self, project_id: int, files: list, links: list, repo: Path | None = None) -> Path:
+        """The view of a project with this content, made if needed; give it back with `release`."""
+        project_id = int(project_id)
+        content = json.dumps([files, links, _head(repo), [self._stamp(project_id, item) for item in files]],
+                             sort_keys=True, default=str)
+        name = f"p{project_id}-{'c' if repo is not None else 'f'}{hashlib.sha256(content.encode()).hexdigest()[:20]}"
+        with self.lock:
+            if not (self.path(name) / "files" / "INDEX.md").is_file():
+                self.build(name, project_id, files, links, repo)
+            self.users[name] = self.users.get(name, 0) + 1
+            self._drop_old(project_id, keep=name)
+        return self.path(name)
+
+    def _stamp(self, project_id: int, item: dict) -> list:
+        """When the stored file last changed (a memory file edited to the same size is new content too)."""
+        try:
+            info = (self.source / str(int(project_id)) / str(int(item["id"]))).stat() if self.source else None
+        except (OSError, KeyError, TypeError, ValueError):
+            info = None
+        return [info.st_mtime_ns, info.st_size] if info else []
+
+    def release(self, root: Path) -> None:
+        with self.lock:
+            name = Path(root).name
+            self.users[name] = max(0, self.users.get(name, 0) - 1)
+
+    def _drop_old(self, project_id: int, keep: str) -> None:
+        """Views of the project with other contents that no job uses any more."""
+        for folder in self.base.glob(f"p{int(project_id)}-*") if self.base.is_dir() else ():
+            if folder.name != keep and not self.users.get(folder.name):
+                shutil.rmtree(folder, ignore_errors=True)
+                self.users.pop(folder.name, None)
+
+    def remove_project(self, project_id: int) -> bool:
+        """The project was deleted: all its views go. True if none is left."""
+        with self.lock:
+            for folder in self.base.glob(f"p{int(project_id)}-*") if self.base.is_dir() else ():
+                shutil.rmtree(folder, ignore_errors=True)
+                self.users.pop(folder.name, None)
+            return not any(self.base.glob(f"p{int(project_id)}-*")) if self.base.is_dir() else True
 
     def path(self, name: str) -> Path:
         if not name.replace("-", "").isalnum():

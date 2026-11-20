@@ -369,6 +369,7 @@ ASSIGN_ROLES = (
     " AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'owner')",
 )
 
+BUSY_SECONDS = 15
 _ready: set[str] = set()  # database files whose schema is already current in this process
 
 
@@ -449,7 +450,10 @@ def connect() -> Iterator[sqlite3.Connection]:
 
     Commits on success, rolls back on an exception and always closes the connection.
     """
-    conn = sqlite3.connect(DB_PATH)
+    # Wait up to BUSY_SECONDS for another writer instead of failing with "database is locked" (uploads, the runner's
+    # questions every two seconds and pages at the same time). No WAL mode (20.11.2026): the nightly backup reads the
+    # database as root and would leave its -shm file behind, which the web service (user 9000) could not open.
+    conn = sqlite3.connect(DB_PATH, timeout=BUSY_SECONDS)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:

@@ -518,5 +518,46 @@ class LoginCommandTest(unittest.TestCase):
                 launcher.build_login_command(**{"user_id": 2, **change})
 
 
+
+class GuardTest(unittest.TestCase):
+    """Every job ends with a report, even when it breaks off (rule of 15.11.2026)."""
+
+    def test_a_job_that_breaks_off_is_reported_as_failed(self):
+        class Hub:
+            def __init__(self):
+                self.calls = []
+
+            def call(self, method, path, **form):
+                self.calls.append((path, form))
+                return {"ok": True}
+        hub = Hub()
+        r = runner.Runner(hub, "/nowhere", vault=object(), tickets=object(), background=False)
+
+        def broken(job):
+            raise KeyError("model")
+        broken.__name__ = "do_chat"
+        r._start(broken, {"chat_id": 4, "user_id": 1})
+        r._start(broken, {"run_id": 6, "user_id": 1})
+        self.assertEqual([p for p, _ in hub.calls], ["/runner/chat/4/finish", "/runner/runs/6/finish"])
+        self.assertEqual(hub.calls[0][1]["success"], "0")
+        self.assertEqual(hub.calls[1][1]["result"], "failed")
+
+    def test_a_report_is_sent_again_while_the_hub_restarts(self):
+        class Hub:
+            def __init__(self):
+                self.tries = 0
+
+            def call(self, method, path, **form):
+                self.tries += 1
+                if self.tries < 3:
+                    raise ConnectionRefusedError()
+                return {"ok": True}
+        hub = Hub()
+        r = runner.Runner(hub, "/nowhere", vault=object(), tickets=object(), background=False)
+        r.REPORT_WAIT = 0
+        self.assertEqual(r._report("/runner/runs/1/finish", result="done"), {"ok": True})
+        self.assertEqual(hub.tries, 3)
+
+
 if __name__ == "__main__":
     unittest.main()
