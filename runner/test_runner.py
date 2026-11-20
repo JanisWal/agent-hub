@@ -397,7 +397,7 @@ class ChatRunTest(unittest.TestCase):
         self.assertNotIn("/data/claude", " ".join(command))
         self.assertEqual(self.tickets.revoked, [ticket])                    # and the ticket ends with the run
         self.assertEqual(self.api.posted("/chat/5/finish"),
-                         [{"success": "1", "answer": "Hi!", "tokens_in": 7, "tokens_out": 2}])
+                         [{"success": "1", "answer": "Hi!", "tokens_in": 7, "tokens_out": 2, "outside": "0"}])
 
     def test_every_question_runs_behind_the_public_only_proxy(self):
         for job in ({"mode": "all"}, {}):                                       # a job without a mode is "all" too

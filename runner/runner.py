@@ -36,6 +36,8 @@ CHAT_TIMEOUT = 200              # seconds a chat answer may take (a web search t
 RUN_TIMEOUT = 1100              # seconds an agent run may take (the hub gives up after 20 minutes)
 THOUGHTS_EVERY = 1.5            # seconds between two reports of new thoughts of a chat answer
 POWER_TIMEOUT = 240             # seconds a manual backup may take (the nightly one needs a few seconds)
+# The answer when a saved credential is there but this server can not read it: the server's fault, nothing is deleted.
+UNREADABLE = "Server: the saved credential can not be read (HUB_TOKEN_KEY)."
 
 
 class Api:
@@ -65,8 +67,10 @@ class Thoughts:
     def __init__(self, api, chat_id: int, adapter, clock=time.time):
         self.api, self.chat_id, self.adapter, self.clock = api, int(chat_id), adapter, clock
         self.waiting, self.sent = "", clock()
+        self.outside = False   # the AI read something from outside (web): its new board items wait for the user
 
     def line(self, line: str) -> None:
+        self.outside = self.outside or self.adapter.outside(line)
         self.waiting += self.adapter.thought(line)
         if self.waiting.strip() and self.clock() - self.sent >= THOUGHTS_EVERY:
             self.flush()
@@ -250,6 +254,20 @@ class Runner:
             self.keys.forget(int(user_id), provider)
             self.api.call("POST", f"/runner/keys/{int(user_id)}/{provider}/expired")
 
+    def _secret(self, adapter, user_id: int):
+        """(secret, problem): the credential, or None and the reason. A missing one shows the AI as expired; one that
+        is there but can not be read is the server's fault and stays (tokens.Unreadable)."""
+        try:
+            secret = adapter.secret(self, user_id)
+        except tokens.Unreadable as error:
+            print(f"runner: the saved {adapter.provider} credential of user {user_id} can not be read "
+                  f"({error}); nothing deleted", file=sys.stderr, flush=True)
+            return None, UNREADABLE
+        if secret is None:   # no saved credential: the user links this AI again
+            self._expired(user_id, adapter.provider)
+            return None, "Not logged in: no saved credential. Please run /login"
+        return secret, ""
+
     def _view(self, name: str, job: dict, code: bool = False):
         """(files folder, code folder) of a job, or (None, None) when the view could not be made: the job then runs
         without them (the package says what the files are; nothing hangs on it)."""
@@ -290,20 +308,19 @@ class Runner:
             self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="0",
                           answer="This AI is not available on the server.", tokens_in=0, tokens_out=0)
             return
-        secret = adapter.secret(self, user_id)
-        if secret is None:   # no saved credential (or the key changed): the user links this AI again
-            self._expired(user_id, provider)
-            self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="0",
-                          answer="Not logged in: no saved token. Please run /login", tokens_in=0, tokens_out=0)
+        secret, problem = self._secret(adapter, user_id)
+        if secret is None:
+            self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="0", answer=problem, tokens_in=0,
+                          tokens_out=0)
             return
         files_dir, code_dir = self._view(f"chat-{chat_id}", job, code=True) if job.get("project_id") else (None, None)
         ticket = self.tickets.issue(secret, provider)
         secret = None
+        thoughts = Thoughts(self.api, chat_id, adapter, self.clock)
         try:
             command = adapter.chat_command(chat_id=chat_id, user_id=user_id, model=job["model"], ticket=ticket,
                                            mode=job.get("mode", "all"), effort=job.get("effort") or "",
                                            files_dir=files_dir, code_dir=code_dir, images=job.get("images") is True)
-            thoughts = Thoughts(self.api, chat_id, adapter, self.clock)
             done = self.run_chat(command, job["prompt"], thoughts.line)
             thoughts.flush()
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(done.stdout)
@@ -318,7 +335,7 @@ class Runner:
         if login_problem:   # the AI says we are not signed in: show the connection as expired
             self._expired(user_id, provider)
         self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="1" if ok else "0", answer=text,
-                      tokens_in=tokens_in, tokens_out=tokens_out)
+                      tokens_in=tokens_in, tokens_out=tokens_out, outside="1" if thoughts.outside else "0")
 
     # --- agent runs (web/app/agents.py, runtask.py): one container per run in the task's work folder
     def _run_agent(self, command: list[str], prompt: str):
@@ -339,10 +356,9 @@ class Runner:
         adapter = adapters.ADAPTERS.get(provider)
         if adapter is None:
             return self._finish_run(run_id, "failed", "This AI is not available on the server.")
-        secret = adapter.secret(self, user_id)
+        secret, problem = self._secret(adapter, user_id)
         if secret is None:
-            self._expired(user_id, provider)
-            return self._finish_run(run_id, "failed", "Not logged in: no saved credential.")
+            return self._finish_run(run_id, "failed", problem)
         try:
             folder = self.work.prepare(task_id, int(job["project_id"]), job["branch"])
             launcher.prepare_folder(str(folder), user_id, recursive=True)

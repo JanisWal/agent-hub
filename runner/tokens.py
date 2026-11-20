@@ -30,6 +30,19 @@ TICKET_OWNER = 65534        # the egress proxy runs as this user (compose.yml) a
 TICKET_AGE = 3600           # seconds a ticket file counts at most, even if a run forgot to delete it
 
 
+class Unreadable(Exception):
+    """A saved credential is there, but the server can not read it (wrong or missing HUB_TOKEN_KEY, a read error).
+    Never a reason to delete it: only the AI's own refusal is (Janis, 20.11.2026)."""
+
+
+def _decrypt(vault: "Vault", path: Path) -> str:
+    from cryptography.fernet import InvalidToken
+    try:
+        return vault._fernet().decrypt(path.read_bytes()).decode()
+    except (OSError, InvalidToken, RuntimeError, ValueError, UnicodeDecodeError) as error:
+        raise Unreadable(type(error).__name__) from None
+
+
 def ticket_name(ticket: str) -> str:
     """The file name of a ticket: its SHA-256, so the folder never holds a ticket itself."""
     return hashlib.sha256(ticket.encode()).hexdigest()
@@ -69,14 +82,15 @@ class Vault:
         os.replace(part, folder / TOKEN_FILE)
 
     def load(self, user_id: int) -> str | None:
-        """The user's token, or None (none saved, or it can not be read with this key)."""
-        from cryptography.fernet import InvalidToken
-        try:
-            data = (self.folder(user_id) / TOKEN_FILE).read_bytes()
-            token = self._fernet().decrypt(data).decode()
-        except (OSError, InvalidToken, RuntimeError, UnicodeDecodeError):
+        """The user's token, or None when none is saved. Raises Unreadable when one is saved but this server can not
+        read it (HUB_TOKEN_KEY missing or changed, a read error): that is the server's fault, the token stays."""
+        path = self.folder(user_id) / TOKEN_FILE
+        if not path.is_file():
             return None
-        return token if TOKEN.fullmatch(token) else None
+        token = _decrypt(self, path)
+        if not TOKEN.fullmatch(token):
+            raise Unreadable("not a token")
+        return token
 
     def forget(self, user_id: int) -> bool:
         """Delete the user's folder with the token in it (an expired or refused token). True if there was one."""
@@ -197,13 +211,14 @@ class ProviderKeys:
         os.replace(part, path)
 
     def load(self, user_id: int, provider: str) -> str | None:
-        from cryptography.fernet import InvalidToken
-        try:
-            path = self.path(user_id, provider)
-            api_key = self.vault._fernet().decrypt(path.read_bytes()).decode()
-        except (OSError, ValueError, InvalidToken, RuntimeError, UnicodeDecodeError):
+        """The saved key, or None when there is none; Unreadable when it is there but can not be read (Vault.load)."""
+        path = self.path(user_id, provider)
+        if not path.is_file():
             return None
-        return api_key if KEY_PATTERNS[provider].fullmatch(api_key) else None
+        api_key = _decrypt(self.vault, path)
+        if not KEY_PATTERNS[provider].fullmatch(api_key):
+            raise Unreadable("not an API key")
+        return api_key
 
     def forget(self, user_id: int, provider: str) -> bool:
         """Delete the saved key. True if there was one."""

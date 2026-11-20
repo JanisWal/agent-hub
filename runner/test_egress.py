@@ -233,6 +233,21 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(answer.startswith(b"HTTP/1.1 400"))
         self.assertEqual(self.received, [])
 
+    async def test_a_run_reaches_only_the_model_calls(self):
+        for path in ("/v1/files", "/v1/organizations/x", "/v1/messages_x", "/v1/messages/batches/../x"):
+            answer = await self.send(self.request(path=path))
+            self.assertTrue(answer.startswith((b"HTTP/1.1 404", b"HTTP/1.1 400")), path)
+        self.assertEqual(self.received, [])
+
+    def test_paths_per_ai(self):
+        self.assertTrue(E.path_allowed("claude", "/v1/messages?beta=true"))
+        self.assertTrue(E.path_allowed("claude", "/v1/messages/count_tokens"))
+        self.assertFalse(E.path_allowed("claude", "/v1/files"))
+        self.assertTrue(E.path_allowed("mistral", "/v1/chat/completions"))
+        self.assertTrue(E.path_allowed("mistral", "/v1/conversations"))
+        self.assertFalse(E.path_allowed("mistral", "/v1/files/abc"))
+        self.assertFalse(E.path_allowed("mistral", "/v1/batch/jobs"))
+
 
 if __name__ == "__main__":
     unittest.main()

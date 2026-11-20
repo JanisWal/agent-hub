@@ -44,8 +44,10 @@ class VaultTest(unittest.TestCase):
 
     def test_without_the_key_nothing_can_be_read(self):
         self.vault.save(2, TOKEN)
-        self.assertIsNone(tokens.Vault(self.base, key()).load(2))            # another key
-        self.assertIsNone(tokens.Vault(self.base, None).load(2))             # no key
+        for other in (key(), None):   # another key, no key: the token is there but unreadable, never "none"
+            with self.assertRaises(tokens.Unreadable):
+                tokens.Vault(self.base, other).load(2)
+        self.assertEqual(self.vault.load(2), TOKEN)                          # and it is still there
         with self.assertRaises(RuntimeError):
             tokens.Vault(self.base, None).save(2, TOKEN)
 

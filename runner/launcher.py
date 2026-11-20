@@ -234,8 +234,12 @@ def build_chat_command(*, chat_id: int, user_id: int, model: str, ticket: str, m
         "--max-turns", str(spec["turns"]),
     ]
 
-# Words in an error answer that mean "not signed in (any more)": the connection is shown as expired.
-_AUTH_PROBLEM = re.compile(r"/login|not logged in|log in|authenticat|invalid api key|oauth|401", re.I)
+# What Claude Code says when the AI refused the token (only read in an error answer): the connection is shown as
+# expired and the token is deleted, so only clear words count, never a bare "log in" or "oauth" (20.11.2026).
+_AUTH_PROBLEM = re.compile(r"authentication_error|invalid api key|please run /login|not logged in|"
+                           r"oauth token (?:has )?expired|token (?:has been )?revoked|\b401\b", re.I)
+# Tools whose results come from outside the project (the web; a shell may have internet): see adapters.py `outside`.
+OUTSIDE_TOOLS = ("WebFetch", "WebSearch", "Bash")
 
 
 def claude_tokens(data: dict) -> tuple[int, int]:
@@ -285,6 +289,29 @@ def claude_thought(line: str) -> str:
     if isinstance(delta, dict) and delta.get("type") == "thinking_delta":
         return str(delta.get("thinking") or "")
     return ""
+
+
+def claude_outside(line: str) -> bool:
+    """True for a line of stream-json in which the AI calls a tool of OUTSIDE_TOOLS."""
+    if '"tool_use"' not in line:
+        return False
+    try:
+        data = json.loads(line)
+    except ValueError:
+        return False
+    message = data.get("message") if isinstance(data, dict) and data.get("type") == "assistant" else None
+    content = message.get("content") if isinstance(message, dict) else None
+    return any(isinstance(c, dict) and c.get("type") == "tool_use" and c.get("name") in OUTSIDE_TOOLS
+               for c in content or [])
+
+
+def vibe_outside(line: str) -> bool:
+    """True for the line {"outside": true} of vibe_entry.py."""
+    try:
+        data = json.loads(line)
+    except ValueError:
+        return False
+    return isinstance(data, dict) and data.get("outside") is True
 
 
 def vibe_thought(line: str) -> str:
