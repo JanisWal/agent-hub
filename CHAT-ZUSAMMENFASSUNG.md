@@ -15,7 +15,7 @@ Selbst gehostetes Verwaltungstool auf einem Raspberry Pi 4B, live unter `https:/
 
 ## Was als Nächstes ansteht
 
-1. **Ersatzwerkzeuge** (PROJEKT.md 11a, Stufe 2, Punkt 7): `runner/hub_tools.py` (MCP), `runner/hubloop.py` (nur API, auch lokal), Kachel „Eigene KI“, Anzeige der Werkzeuge je KI.
+1. ~~Ersatzwerkzeuge~~ **live seit 20.11.2026, abends (`own-ai`):** „Eigene KI“ in der Schublade (jede API im OpenAI-Format, auch lokal beim Owner), `runner/hubloop.py`, `runner/hub_tools.py`, Gateway 3132, Werkzeugzeile unter jeder KI. **Noch nie echt gelaufen** (kein Konto bei einer solchen API verbunden); offen: Werkzeuge je KI auf `/admin` umschaltbar, Bilder für die eigene KI.
 2. **Diff in der Oberfläche** bei der Freigabe (Daten liegen schon in `agent_tasks.diff`).
 3. Ein echter Lauf mit `hub-test.sh` in einem JavaScript-Projekt und ein echter Prüfer-Lauf ohne Werkzeuge (nur mit Tests geprüft).
 4. Die 6 eskalierten Aufgaben in den Testprojekten aufräumen (abbrechen oder neu starten); eskalierte Punkte mit Automatik halten ihr Projekt jetzt an.
