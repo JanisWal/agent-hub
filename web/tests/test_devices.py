@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pyrage
 
-from app import broker, chat, db, device_profiles, devicepage, devices, projects, users, vault
+from app import broker, chat, db, device_profiles, devicepage, devices, projects, prompts, users, vault
 from app.routes import devices as R
 
 
@@ -180,7 +180,7 @@ class DevicesTest(unittest.TestCase):
         with db.connect() as conn:
             conn.execute("INSERT INTO chat_messages (user_id, project_id, prompt, status, created_at) VALUES (?, ?, 'hi', 'queued', 1)",
                          (self.user.id, self.project.id))
-            text = chat.build_input(conn, conn.execute("SELECT * FROM chat_messages").fetchone())
+            text = prompts.manager_chat(conn, conn.execute("SELECT * FROM chat_messages").fetchone())
         self.assertIn("- Roadster: raspberry pi, host roadster.local, IP 192.168.1.5 (found for the hostname), runs "
                       "Raspberry Pi OS; Car computer", text)
         for secret in ("topsecret", self.stored(d.id), "HOSTKEY", "fingerprint"):

@@ -28,10 +28,10 @@ from dataclasses import dataclass
 from . import aichoice, catalog, checks, db, devices, memory, reply, status as statusmod
 
 SCAN_EVERY = 300          # seconds between two looks for projects that need a round
-MIN_GAP = 3 * 3600        # a project gets a new round at most this often
+MIN_GAP = 6 * 3600        # a project gets a new round at most this often (3 h until 20.11.2026: tokens)
 URGENT_GAP = 20 * 60      # ... or this often after an important event
 FAILED_GAP = 6 * 3600     # after a round that brought nothing, wait this long
-DAILY_MAX = 12            # rounds per user and day
+DAILY_MAX = 6             # rounds per user and day (12 until 20.11.2026)
 PER_SCAN = 3              # rounds queued per look
 MANUAL_GAP = 10 * 60      # the user's "write it again" works this often
 KEEP = 20                 # notes kept per project

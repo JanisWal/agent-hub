@@ -28,7 +28,8 @@ HOME = Path(os.environ.get("HOME", "/home/vibe"))
 LEVELS = {"none": "off", "off": "off", "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max"}
 # Tools per job (always by --disabled-tools: with --enabled-tools Vibe hides its deferred web tools in headless runs).
 OFF_ALWAYS = ("ask_user_question", "powershell*", "git_bash*", "task")
-OFF_JOB = {"chat-all": (), "chat-apart": ("web_fetch",), "chat-brief": ("*",), "run": ()}   # brief: the status, no tools
+OFF_JOB = {"chat-all": (), "chat-apart": ("web_fetch",), "chat-brief": ("*",), "run": (),
+           "run-brief": ("*",)}   # brief: the status, a small review, the documentation: no tools
 
 
 LOOK = "/opt/hub/look_mcp.py"
@@ -153,7 +154,7 @@ def main() -> int:
     vibe_home = HOME / ".vibe"
     vibe_home.mkdir(parents=True, exist_ok=True)
     images = os.environ.get("HUB_IMAGES") == "1"
-    (vibe_home / "config.toml").write_text(config(model, LEVELS.get(effort or "off", "off"), images, job != "chat-brief"))
+    (vibe_home / "config.toml").write_text(config(model, LEVELS.get(effort or "off", "off"), images, job not in ("chat-brief", "run-brief")))
     workdir = Path("/work") if job == "run" else HOME / "scratch"
     workdir.mkdir(parents=True, exist_ok=True)
     out = HOME / "out"

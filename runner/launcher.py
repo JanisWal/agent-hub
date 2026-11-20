@@ -38,7 +38,10 @@ API_PROXY = "http://egress:3129"   # only Anthropic (sign-ins)
 GATEWAY = "http://egress:3130"     # the Claude API with the user's token put in by the proxy (runner/egress.py)
 MISTRAL_GATEWAY = "http://egress:3131"   # the same for Mistral (its key put in by the proxy)
 # Mistral runs: limits per job (turns, seconds); the proxy follows the same switch as Claude.
-VIBE_JOBS = {"chat-all": (12, 180), "chat-apart": (10, 180), "chat-brief": (1, 90), "run": (60, 1050)}
+# "run-brief": a run that needs no tools (the reviewer of a small change, the manager's documentation; 20.11.2026).
+VIBE_JOBS = {"chat-all": (12, 180), "chat-apart": (10, 180), "chat-brief": (1, 90), "run": (60, 1050),
+             "run-brief": (2, 300)}
+_NAME = re.compile(r"agent-(chat|run)-[0-9]+")
 _TICKET = re.compile(r"hubrun-[A-Za-z0-9_-]{43}")   # runner/tokens.py
 # What the manager chat may do: tools, proxy and steps (model turns) per question.
 CHAT_MODES = {
@@ -224,12 +227,15 @@ def build_test_command(*, run_id: int, user_id: int, work_dir: str, net: str = "
 
 def build_chat_command(*, chat_id: int, user_id: int, model: str, ticket: str, mode: str = "all",
                        effort: str = "", image: str = IMAGE, network: str = NETWORK, memory: str = "480m",
-                       files_dir: str | None = None, code_dir: str | None = None) -> list[str]:
+                       files_dir: str | None = None, code_dir: str | None = None, name: str | None = None) -> list[str]:
     """The manager chat (see web/app/chat.py): one question to Claude, in a container like a run but with no
     work folder at all (nothing of any project is mounted; the project context comes on stdin). `mode` (see
     CHAT_MODES) decides the tools and the way out; "all" = web search and a shell, only Anthropic reachable.
     `effort` is the model's level (empty = Claude Code's own default)."""
     chat_id = _number(chat_id, "chat_id")
+    name = name or f"agent-chat-{chat_id}"     # "agent-run-<n>" for a brief agent run (runner.do_run)
+    if not _NAME.fullmatch(name):
+        raise ValueError("bad name")
     uid = run_uid(user_id)
     model_args = _model_args(model, effort)
     if mode not in CHAT_MODES:
@@ -241,7 +247,7 @@ def build_chat_command(*, chat_id: int, user_id: int, model: str, ticket: str, m
     # reach a later run either.
     runs_code = "Bash" in tools
     return [
-        "docker", "run", "--rm", "--init", "-i", "--name", f"agent-chat-{chat_id}",
+        "docker", "run", "--rm", "--init", "-i", "--name", name,
         "--user", f"{uid}:{uid}",
         "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
         "--read-only", "--tmpfs", f"/tmp:rw,size={'128m' if runs_code else '64m'},mode=1777", "--workdir", "/tmp",
@@ -418,12 +424,13 @@ def build_vibe_command(*, name: str, user_id: int, model: str, ticket: str, job:
     sees pictures (the tool look_mcp.py then hands it images and PDF pages)."""
     if job not in VIBE_JOBS or (job == "run") != (work_dir is not None):
         raise ValueError("unknown job")
-    if not re.fullmatch(r"agent-(chat|run)-[0-9]+", name):
+    if not _NAME.fullmatch(name):
         raise ValueError("bad name")
     if not isinstance(ticket, str) or not _TICKET.fullmatch(ticket):
         raise ValueError("bad ticket")
     _model_args(model, effort)                        # the same patterns as for Claude
-    proxy = {"chat-all": WEB_PROXY, "chat-apart": API_PROXY, "chat-brief": API_PROXY}.get(job) or RUN_PROXY.get(net)
+    proxy = ({"chat-all": WEB_PROXY, "chat-apart": API_PROXY, "chat-brief": API_PROXY, "run-brief": API_PROXY}.get(job)
+             or RUN_PROXY.get(net))
     if proxy is None:
         raise ValueError("unknown net mode")
     _check_container(memory, image, network)

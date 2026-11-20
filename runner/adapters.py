@@ -32,6 +32,11 @@ class Claude:
         return launcher.build_command(run_id=run_id, user_id=user_id, model=model, work_dir=work_dir, ticket=ticket,
                                       net=net, effort=effort, files_dir=files_dir)
 
+    def brief_command(self, *, run_id, user_id, model, ticket, effort):
+        """A run without tools and without /work: one answer to the package (prompts.brief_run)."""
+        return launcher.build_chat_command(chat_id=run_id, user_id=user_id, model=model, ticket=ticket, mode="brief",
+                                           effort=effort, name=f"agent-run-{int(run_id)}")
+
     def parse_chat(self, stdout: str):
         return launcher.parse_chat_output(stdout)
 
@@ -68,6 +73,10 @@ class Mistral:
         return launcher.build_vibe_command(name=f"agent-run-{int(run_id)}", user_id=user_id, model=model,
                                            ticket=ticket, job="run", effort=effort, net=net, work_dir=work_dir,
                                            files_dir=files_dir, images=images)
+
+    def brief_command(self, *, run_id, user_id, model, ticket, effort):
+        return launcher.build_vibe_command(name=f"agent-run-{int(run_id)}", user_id=user_id, model=model,
+                                           ticket=ticket, job="run-brief", effort=effort)
 
     def parse_chat(self, stdout: str):
         return launcher.parse_vibe(stdout)

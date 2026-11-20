@@ -24,11 +24,15 @@ file that only grows: what the manager writes into <memory file="ARCHIVE.md"> is
 (`_append_archive`), nothing in it is ever replaced by the manager (the user can still edit it in the tile). It comes
 last in the memory folder and, when it does not fit, its newest part is given.
 
-Targeted edits (Janis, 16.11.2026): instead of the whole new text the manager may change a memory file with
-<memory-edit file="NAME.md"><find>exact old text</find><replace>new text</replace>...<append>text</append></memory-edit>.
-Each <find> must occur exactly once; a block is applied whole or not at all; only a file the AI saw whole in the
-memory folder may be edited (`shown_whole`), so it never changes what it saw only in part. ARCHIVE.md is not edited
-(it only grows). `check_edits` says what would fail, `apply_edits` does it.
+Targeted edits (Janis, 16.11.2026; by section since 20.11.2026): instead of the whole new text the manager changes a
+memory file with <memory-edit file="NAME.md"><section title="HEADING">new text</section><append>text</append>
+</memory-edit>. A section is a heading and everything up to the next heading of the same or a higher level; a heading
+that is not there yet is added at the end. A block is applied whole or not at all. Weaker models could not copy the
+old text exactly for the earlier <find>/<replace>; a heading they copy easily. ARCHIVE.md is not edited (it only
+grows). `check_edits` says what would fail, `apply_edits` does it.
+
+In a package (`inline`, 20.11.2026) MEMORY.md always comes whole; the other memory files only while MAX_INLINE lasts
+and ARCHIVE.md never (only named): an AI with tools opens them in /files, one without asks with <read>.
 
 Versions (Janis, 16.11.2026): before a memory file is replaced (by the manager or by the user in the tile), its old
 text goes into `memory_versions` (at most MAX_VERSIONS per file). The user sees and restores them in the archive of
@@ -59,21 +63,24 @@ READABLE = files.CODE | set("md txt csv tsv log json yaml yml toml ini cfg conf 
 
 _MEMORY_TAG = re.compile(r"<memory(?:\s+file=\"([^\"<>]{1,80})\")?>(.*?)</memory>", re.DOTALL)
 _MEMORY_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _.\-]{0,60}\.md")   # what the manager may name a memory file
-MAX_FOLDER = 40000          # characters of the memory folder given with every question
+MAX_INLINE = 8000           # characters of memory files given with a package besides MEMORY.md (`inline`)
+MEMORY_FILES = ("MEMORY.md", "PROJECT.md", "ROADMAP.md", "RULES.md", "ARCHIVE.md")   # the fixed ones (SKELETON)
+RULES_NAME = "RULES.md"
 MAX_NEW_FILES = 3           # memory files the manager may write in one answer
 MAX_EDIT_BLOCKS = 3         # <memory-edit> blocks taken from one answer
 MAX_EDIT_CHANGES = 10       # <find>/<replace> pairs and <append> parts in one block
 MAX_VERSIONS = 20           # earlier versions kept per memory file
 VERSIONS_SHOWN = 200        # versions the archive lists at most (newest)
 _EDIT_TAG = re.compile(r"<memory-edit\s+file=\"([^\"<>]{1,80})\">(.*?)</memory-edit>", re.DOTALL)
-_CHANGE_TAG = re.compile(r"<find>(.*?)</find>\s*<replace>(.*?)</replace>|<append>(.*?)</append>", re.DOTALL)
+_CHANGE_TAG = re.compile(r"<section\s+title=\"([^\"<>]{1,120})\">(.*?)</section>|<append>(.*?)</append>", re.DOTALL)
+_HEADING = re.compile(r"^(#{1,6})[ \t]+(.+?)[ \t#]*$")
 # The fixed memory files of a project, by language: name and the start of its text (headings to fill).
 SKELETON = {
     "de": (
         ("MEMORY.md", "# Stand\n\n# Entscheidungen\n\n# Offene Fragen\n\n# Notizen\n"),
-        ("PROJEKT.md", "# Ziel\n\n# Umfang\n\n# Aufbau\n\n## Hardware\n\n## Software\n\n# Entscheidungen und Gründe\n\n# Begriffe\n"),
+        ("PROJECT.md", "# Ziel\n\n# Umfang\n\n# Aufbau\n\n## Hardware\n\n## Software\n\n# Entscheidungen und Gründe\n\n# Begriffe\n"),
         ("ROADMAP.md", "# Als Nächstes\n\n# Später\n\n# Ideen\n\n# Erledigt\n"),
-        ("REGELN.md", "# Arbeitsweise\n\n# Vorgaben\n\n# Design\n\n# Nie tun\n"),
+        ("RULES.md", "# Arbeitsweise\n\n# Vorgaben\n\n# Design\n\n# Nie tun\n"),
         ("ARCHIVE.md", "# Archiv\n\nWas es einmal gab, was verworfen oder geändert wurde, und warum. Neue Einträge kommen "
                        "unten dazu.\n"),
     ),
@@ -106,7 +113,7 @@ class Parsed:
 @dataclass
 class Edit:
     file: str
-    changes: list            # (find, replace) pairs; find None = append replace at the end
+    changes: list            # (heading, new text) pairs; heading None = append the text at the end
 
 
 @dataclass
@@ -141,8 +148,8 @@ def parse_answer(answer: str) -> Parsed:
             reads.append(name)
     edits = []
     for name, body in _EDIT_TAG.findall(answer)[:MAX_EDIT_BLOCKS]:
-        changes = [(None, _edge(add)) if find == "" and replace == "" and add else (_edge(find), _edge(replace))
-                   for find, replace, add in _CHANGE_TAG.findall(body)]
+        changes = [(None, _edge(add)) if title == "" and add else (title.strip(), _edge(text))
+                   for title, text, add in _CHANGE_TAG.findall(body)]
         edits.append(Edit(name.strip(), changes))
     text = _READ_TAG.sub("", _MEMORY_TAG.sub("", _EDIT_TAG.sub("", answer))).strip()
     return Parsed(text, memory or None, reads[:MAX_READS], others, edits)
@@ -241,28 +248,56 @@ def _keep_version(project_id: int, name: str, text: str, author: str, now: int |
             (project_id, name, project_id, name, MAX_VERSIONS))
 
 
+def _key(title: str) -> str:
+    return " ".join(title.replace("#", " ").split()).casefold()
+
+
+def _section(text: str, title: str, body: str) -> tuple[str | None, str]:
+    """Replace the section under the heading `title` (up to the next heading of the same or a higher level) with
+    `body`; a missing heading is added at the end, at the level of the file's first heading. (None, reason) when the
+    heading stands there more than once."""
+    lines = text.split("\n")
+    found = [(i, len(m.group(1))) for i, m in ((i, _HEADING.match(line)) for i, line in enumerate(lines))
+             if m and _key(m.group(2)) == _key(title)]
+    body = body.strip("\n")
+    first = body.split("\n", 1)[0]
+    heading = _HEADING.match(first)
+    if heading and _key(heading.group(2)) == _key(title):   # the AI repeated the heading: it is kept once
+        body = body.split("\n", 1)[1].strip("\n") if "\n" in body else ""
+    if len(found) > 1:
+        return None, "not_unique"
+    if not found:
+        levels = [len(m.group(1)) for m in map(_HEADING.match, lines) if m]
+        mark = "#" * (levels[0] if levels else 1)
+        return text.rstrip("\n") + f"\n\n{mark} {title.strip()}\n" + (body + "\n" if body else ""), ""
+    start, level = found[0]
+    end = next((i for i in range(start + 1, len(lines))
+                if (m := _HEADING.match(lines[i])) and len(m.group(1)) <= level), len(lines))
+    rest = lines[end:]
+    new = lines[:start + 1] + ([body, ""] if body else [""]) + rest
+    return "\n".join(new).rstrip("\n") + "\n", ""
+
+
 def _edited(old: str, changes: list) -> tuple[str | None, str]:
-    """(new text, "") or (None, reason) for one block: every <find> exactly once, applied in order."""
+    """(new text, "") or (None, reason) for one block: sections replaced and parts appended, in order."""
     if not changes or len(changes) > MAX_EDIT_CHANGES:
         return None, "empty" if not changes else "too_long"
     text = old
-    for find, replace in changes:
-        if find is None:
-            text = text.rstrip("\n") + "\n\n" + replace.strip("\n") + "\n"
+    for title, body in changes:
+        if title is None:
+            text = text.rstrip("\n") + "\n\n" + body.strip("\n") + "\n"
             continue
-        if not find.strip():
+        if not title.strip():
             return None, "empty"
-        count = text.count(find)
-        if count != 1:
-            return None, "not_found" if count == 0 else "not_unique"
-        text = text.replace(find, replace, 1)
+        text, reason = _section(text, title, body)
+        if text is None:
+            return None, reason
     return (text, "") if len(text) <= MAX_MEMORY else (None, "too_long")
 
 
 def _plan(user_id: int, project_id: int, edits: list) -> list[tuple[EditResult, str | None, str]]:
     """For each block: its result, the new text (or None) and the file's real name."""
     with db.connect() as conn:
-        whole = shown_whole(conn, user_id, project_id)
         plans = []
         for edit in edits:
             name = edit.file
@@ -275,9 +310,6 @@ def _plan(user_id: int, project_id: int, edits: list) -> list[tuple[EditResult, 
             row = _find(conn, user_id, project_id, name)
             if row is None:
                 plans.append((EditResult(name, False, "not_found"), None, name))
-                continue
-            if name.lower() not in whole:
-                plans.append((EditResult(name, False, "not_shown"), None, row["name"]))
                 continue
             old = files.read_text(user_id, row["id"]) or ""
             new, reason = _edited(old, edit.changes)
@@ -302,11 +334,11 @@ def apply_edits(user_id: int, project_id: int, edits: list, author: str = "manag
 
 def edit_failures(results: list[EditResult]) -> str:
     """The failed edits for the AI (another round in the chat, or the run's report), in English."""
-    why = {"not_found": "a <find> text is not in the file (copy it exactly)", "not_unique": "a <find> text occurs more"
-           " than once (take a longer piece)", "not_shown": "the file was not given whole: ask for it with <read> or"
-           " write its complete text", "too_long": "the file would get too long, or too many changes",
+    why = {"not_found": "there is no memory file of that name (make it with <memory file=...>)",
+           "not_unique": "that heading stands more than once in the file (write the whole file instead)",
+           "too_long": "the file would get too long, or too many changes",
            "archive": "ARCHIVE.md only grows: use <memory file=\"ARCHIVE.md\">", "bad_name": "not a memory file name",
-           "empty": "no <find>/<replace> pair", "not_saved": "the file could not be saved"}
+           "empty": "no <section> or <append> in it", "not_saved": "the file could not be saved"}
     return "\n".join(f'<edit-failed file="{r.file.replace(chr(34), chr(39))}">{why.get(r.reason, r.reason)}'
                      f'</edit-failed>' for r in results if not r.ok)
 
@@ -389,38 +421,27 @@ def _folder_rows(conn: sqlite3.Connection, user_id: int, project_id: int) -> lis
     return sorted(rows, key=order)
 
 
-def _folder(conn: sqlite3.Connection, user_id: int, project_id: int) -> tuple[str, set[str]]:
-    """(memory folder, lower-case names of the files in it that were given whole)."""
-    blocks, whole, used = [], set(), 0
+def inline(conn: sqlite3.Connection, user_id: int, project_id: int, only: tuple[str, ...] | None = None,
+           budget: int = MAX_INLINE, can_open: bool = True) -> str:
+    """Memory files for a package as <file> blocks: MEMORY.md whole (up to MAX_MEMORY), the others while `budget`
+    lasts, ARCHIVE.md never (it only grows; it is named). `only`: just these files (names, any case). What does not fit
+    is named with its size: to open in /files (`can_open`) or to ask for with <read>. "" when there is nothing."""
+    wanted = {n.lower() for n in only} if only else None
+    blocks, used = [], 0
+    hint = "open it in /files when you need it" if can_open else "ask for it with <read> when you need it"
     for row in _folder_rows(conn, user_id, project_id):
-        shown = row["name"].replace('"', "'")
-        archive = row["name"].lower() == ARCHIVE_NAME.lower()       # its newest part matters most
-        limit = min(MAX_MEMORY, max(0, MAX_FOLDER - used))
-        text = _text_of(row, limit, tail=archive)
-        if text is None or (used >= MAX_FOLDER):
-            blocks.append(f'<file name="{shown}">(too long to give here: ask for it with <read>)</file>')
+        name = row["name"].lower()
+        if wanted is not None and name not in wanted:
             continue
-        if _full_length(row) <= limit:
-            whole.add(row["name"].lower())
-        used += len(text)
-        blocks.append(f'<file name="{shown}">\n{text.strip() or "(empty)"}\n</file>')
-    return "\n\n".join(blocks), whole
-
-
-def folder(conn: sqlite3.Connection, user_id: int, project_id: int) -> str:
-    """The memory folder for the manager: every Markdown file of the area Memory as a <file> block, MEMORY.md first,
-    together at most MAX_FOLDER characters (what does not fit is named, to be asked for with <read>)."""
-    return _folder(conn, user_id, project_id)[0]
-
-
-def shown_whole(conn: sqlite3.Connection, user_id: int, project_id: int) -> set[str]:
-    """Lower-case names of the memory files the folder gives whole: only these may be changed with <memory-edit>."""
-    return _folder(conn, user_id, project_id)[1]
-
-
-def _full_length(row: sqlite3.Row) -> int:
-    path = files.path_of(row["project_id"], row["id"])
-    return len(path.read_text(encoding="utf-8", errors="replace")) if path.is_file() else 0
+        shown = row["name"].replace('"', "'")
+        main = name == MEMORY_NAME.lower()
+        text = None if name == ARCHIVE_NAME.lower() else _text_of(row, MAX_MEMORY)
+        if text is not None and (main or used + len(text) <= budget):
+            used += 0 if main else len(text)
+            blocks.append(f'<file name="{shown}">\n{text.strip() or "(empty)"}\n</file>')
+        else:
+            blocks.append(f'<file name="{shown}" size="{row["size"]} bytes">({hint})</file>')
+    return "\n\n".join(blocks)
 
 
 def ensure_skeleton(user_id: int, project_id: int, lang: str = "de") -> int:

@@ -159,9 +159,10 @@ class AgentRunTest(Base):
         agents.start_item(self.a.id, self.item.id)
         job = agents.claim_next(can_mac=True)
         self.assertEqual((job.role, job.provider), ("programmer", "claude"))
-        for part in ("You are the programmer", "<memory-folder>", 'name="MEMORY.md"', "Title: Fix the relay",
-                     "Allowed results: done, failed", "RESULT: <value>"):
+        for part in ("You are the programmer", "<rules>", 'name="RULES.md"', "# Design", "Title: Fix the relay",
+                     "Allowed results: done, failed", "RESULT: <value>", "hub-test.sh"):
             self.assertIn(part, job.prompt)
+        self.assertNotIn('name="MEMORY.md"', job.prompt)                     # the programmer needs the rules only
         agents.finish_run(job.run_id, "done", "built it")
         job = agents.claim_next(can_mac=True)
         self.assertEqual(job.role, "tester")
@@ -251,11 +252,11 @@ class ParallelTest(Base):
 class DesignRuleTest(Base):
     def test_the_design_lives_in_the_rules(self):
         memory.ensure_skeleton(self.a.id, self.pa.id, "de")
-        rules = next(f for f in files.list_files(self.a.id, self.pa.id) if f.name == "REGELN.md")
+        rules = next(f for f in files.list_files(self.a.id, self.pa.id) if f.name == "RULES.md")
         self.assertIn("# Design", files.read_text(self.a.id, rules.id))
         self.claude(self.a)
         chat.send(self.a.id, self.pa.id, "Hello")
-        self.assertIn("under the heading Design", chat.claim_next().prompt)
+        self.assertIn("its heading Design for the look", chat.claim_next().prompt)
 
 
 class BoardTest(Base):

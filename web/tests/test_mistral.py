@@ -134,7 +134,7 @@ class ChatTest(Base):
         job = chat.claim_next()
         self.assertEqual((job.provider, job.model, job.effort), ("mistral", "mistral-small-2603", "none"))
         self.assertIn("web search", job.prompt)                      # Mistral Vibe has the tools (15.11.2026)
-        self.assertIn("<memory-folder>", job.prompt)                 # the same package as for Claude
+        self.assertIn("<memory>", job.prompt)                        # the same package as for Claude
         self.assertTrue(chat.finish(job.chat_id, True, "Hi <memory file=\"MEMORY.md\"># Status\nok</memory>"))
         message = chat.list_messages(self.a.id, self.pa.id)[-1]
         self.assertEqual((message.status, message.answer, message.memory_saved), ("done", "Hi", True))
