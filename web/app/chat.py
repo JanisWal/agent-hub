@@ -15,7 +15,8 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import agents, aichoice, autofolders, board, catalog, checks, db, devices, files, i18n, memory, reply, statusnote
+from . import (agents, aichoice, autofolders, board, catalog, checks, db, devices, files, i18n, memory, questions, reply,
+               statusnote)
 
 # The manager is the role "chef": model and effort level are settings of the user (agents.py, list in catalog.py).
 MAX_PROMPT = 2000
@@ -104,11 +105,19 @@ BOARD_RULE = (
     "8 per answer, never one that is already on the board (listed in the project block). Tell the user in one short "
     "sentence what you put on the board."
 )
+# Questions (Janis, 19.11.2026): what can not be derived is asked in "waiting for you", where the user answers.
+ASK_RULE = (
+    "Questions: when you need a decision of the user that does not follow from the project information, ask with "
+    "<ask kind=\"choice\">QUESTION<option>ANSWER</option>...</ask> (2 to 6 short answers) or <ask kind=\"text\">QUESTION"
+    "</ask> for a free answer, at most 3 per answer. The user answers in his list \"waiting for you\"; his answer comes "
+    "back to you in an <answers> block."
+)
 
 
 def role_for(mode: str) -> str:
     """The rules of the manager, the same for every AI: each one answers through a program with tools (adapters)."""
-    return ROLE.replace("%TOOLS%", TOOLS_TEXT.get(mode, TOOLS_TEXT["apart"])) + " " + BOARD_RULE + " " + MEMORY_RULES
+    return (ROLE.replace("%TOOLS%", TOOLS_TEXT.get(mode, TOOLS_TEXT["apart"])) + " " + BOARD_RULE + " " + ASK_RULE + " "
+            + MEMORY_RULES)
 # The user's setting of how freely the manager decides (agents.AUTONOMY), as the manager reads it.
 AUTONOMY_TEXT = {
     "auto": "Decide everything yourself with the best option; do not ask the user.",
@@ -274,7 +283,9 @@ def build_input(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
     others = f"<files>\n{memory.listing(conn, user_id, project_id) or '(no other files yet)'}\n</files>"
     asked = f"\n\n<requested-files>\n{row['extra']}\n</requested-files>" if row["extra"] else ""
     blind = "" if catalog.sees_images(row["model"]) else f"\n\n{catalog.BLIND_NOTE}"
-    return (f"{role_for(row['mode'])}{blind}\n\n<project>\n{text}\n</project>\n\n{notes}\n\n{others}{asked}"
+    answers = questions.take_answers(conn, project_id, None)   # what the user answered to your earlier questions
+    answers = f"\n\n{answers}" if answers else ""
+    return (f"{role_for(row['mode'])}{blind}\n\n<project>\n{text}\n</project>\n\n{notes}\n\n{others}{asked}{answers}"
             f"\n\nQuestion of the user:\n{row['prompt']}")
 
 
@@ -463,10 +474,11 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
     asks = []
     tasks: list = []
     edits: list = []
+    open_asks: list = []
     if parsed is not None:
         text, asks = reply.device_asks(parsed.text)
         signals = reply.parse(text)
-        text, tasks, edits = signals.text, signals.tasks, signals.edits
+        text, tasks, edits, open_asks = signals.text, signals.tasks, signals.edits, signals.asks
         if parsed.memory:
             saved = memory.save_memory(row["user_id"], row["project_id"], parsed.memory)
         for name, body in (parsed.files or {}).items():   # the other memory files it wrote (memory folder)
@@ -488,6 +500,8 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
             )
             for name, action, reason in asks:   # they wait for the user's yes in "waiting for you" (devices.py)
                 devices.request_action(conn, row["user_id"], row["project_id"], name, action, reason)
+            for ask in open_asks:   # they wait for the user's answer in "waiting for you" (questions.py)
+                questions.add(conn, row["project_id"], "chef", ask)
             for task in tasks:   # on the board of the question's project; the user's request goes to the programmer
                 board.add_from_ai(conn, row["project_id"], task.kind, task.title, task.body,
                                   approved=task.origin == "user" or task.kind == "bug", source="manager")

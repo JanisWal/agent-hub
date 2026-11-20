@@ -109,14 +109,99 @@ def _net_pill(lang: str, role: str, current: str) -> str:
     """The same round globe button as the manager's (managerpage._net_switch), for this role."""
     label, tip = esc(i18n.t(lang, "net_together")), esc(i18n.t(lang, "net_together_tip"))
     pressed = "true" if current == "together" else "false"
-    return (f'<button type="button" class="m-pill" id="role-{role}-net" data-setting="net" data-on="together" '
+    return (f'<button type="button" class="m-pill m-globe" id="role-{role}-net" data-setting="net" data-on="together" '
             f'data-off="apart" aria-pressed="{pressed}" aria-label="{label}" data-tip="{label}. {tip}">{icon("globe")}</button>')
 
 
+def _soon(lang: str, title_key: str, hint_key: str, body: str, css: str = "") -> str:
+    """A tile that is only a placeholder yet (Janis, 19.11.2026: all parts in, to get a feeling): its title, an "i"
+    with what it will do, the mark "coming later" and an example of its content, greyed and not usable."""
+    title = i18n.t(lang, title_key)
+    return (f'<section class="mtile glass p-soon {css}"><header><h2>{esc(title)}</h2>'
+            f'{ui.info_dot(title, i18n.t(lang, hint_key))}<span class="p-badge">{esc(i18n.t(lang, "coming_soon"))}</span>'
+            f'</header><div class="p-sample" aria-hidden="true">{body}</div></section>')
+
+
+def _soon_button(lang: str, key: str) -> str:
+    label = esc(i18n.t(lang, key))
+    return f'<button class="pill-btn quiet" type="button" disabled data-tip="{esc(i18n.t(lang, "coming_soon"))}">{label}</button>'
+
+
+def _task_tile(lang: str, current) -> str:
+    """The task the programmer works on and the context behind it, read only (list item 3f: tasks are given to the
+    manager, who puts them on the board; here you only follow them)."""
+    head = f'<header><h2>{esc(i18n.t(lang, "p_task"))}</h2>{ui.info_dot(i18n.t(lang, "p_task"), i18n.t(lang, "p_task_hint"))}</header>'
+    if current is None:
+        return f'<section class="mtile glass p-task">{head}<p class="muted">{esc(i18n.t(lang, "p_task_none"))}</p></section>'
+    task, details = current
+    facts = " · ".join((i18n.t(lang, f"task_{task.status}"), i18n.t(lang, "p_round", n=task.round)))
+    note = (f'<p class="p-note"><strong>{esc(i18n.t(lang, "p_note"))}:</strong> {esc(task.note)}</p>' if task.note else "")
+    context = (f'<div class="p-context">{esc(details)}</div>' if details
+               else f'<p class="muted">{esc(i18n.t(lang, "p_context_none"))}</p>')
+    return (f'<section class="mtile glass p-task">{head}<p class="p-title">{esc(task.title)}</p>'
+            f'<small class="p-facts">{esc(facts)}</small>{note}{context}</section>')
+
+
+def _programmer(lang: str, settings: dict, runs: list[agents.RoleRun], usage: dict, ais: tuple[str, ...], now: int,
+                current) -> str:
+    """The programmer's tab as the documentation wants it (PROJEKT.md 11a, list items 3a, 3b, 3c, 3f and 4; Janis
+    19.11.2026: every part in, what does not work yet as a placeholder): left what he does now with his settings and
+    the task with its context, then the usage; in the middle the trail of his thoughts and steps and the preview; right
+    the project's code, the changes for the approval and his runs."""
+    mine = settings["roles"]["programmer"]
+    picker = ui.model_picker(lang, "role-programmer", mine["model"], mine.get("effort", ""), providers=ais)
+    tools = f'<span class="m-chat-tools">{_net_pill(lang, "programmer", mine["net"])}{picker}</span>'
+    name = i18n.t(lang, "station_programmer")
+    listed = "".join(_run_row(lang, r, now) for r in runs)
+    runs_html = (f'<ol class="r-runs">{listed}</ol>' if listed
+                 else f'<p class="muted">{esc(i18n.t(lang, "role_runs_empty"))}</p>')
+    # every AI the hub knows, the ones the user has connected stand out; more providers come with their adapter (3c)
+    others = "".join(f'<span class="p-ai{"" if p in ais else " off"}">{esc(catalog.provider(p).name)}</span>'
+                     for p in catalog.PROVIDERS) + f'<span class="p-ai off">{esc(i18n.t(lang, "p_more_ais"))}</span>'
+    trail = ('<ol class="p-trail"><li class="thinking">' + esc(i18n.t(lang, "p_sample_think")) + '</li>'
+             '<li class="tool"><code>python3 -m unittest</code></li>'
+             '<li class="tool"><code>primes.py</code> · ' + esc(i18n.t(lang, "p_sample_edit")) + '</li>'
+             '<li class="thinking">' + esc(i18n.t(lang, "p_sample_check")) + '</li></ol>'
+             + f'<div class="p-row">{_soon_button(lang, "p_show_thoughts")}</div>')
+    code = ('<ul class="p-tree"><li class="dir">src</li><li class="dir d2">display</li><li class="d3">tiles.py</li>'
+            '<li class="d2">main.py</li><li class="dir">tests</li><li class="d2">test_main.py</li><li>README.md</li></ul>'
+            f'<div class="p-row">{_soon_button(lang, "p_open_file")}</div>')
+    diff = ('<p class="p-stat"><span class="add">+12</span> <span class="del">−3</span> · '
+            + esc(i18n.t(lang, "p_sample_files")) + '</p><pre class="p-diff"><span class="del">-    print(*primes)</span>\n'
+            '<span class="add">+    print(", ".join(map(str, primes)))</span></pre>'
+            f'<div class="p-row">{_soon_button(lang, "p_whole_diff")}</div>')
+    preview = f'<div class="p-frame">{icon("photo")}<small>{esc(i18n.t(lang, "p_preview_empty"))}</small></div>'
+    return (
+        f'<section class="manager role-view p-view" id="view-programmer" data-view-panel="programmer" data-role="programmer" '
+        f'data-settings-url="/roles/programmer/settings" aria-label="{esc(name)}" hidden>'
+        f'<div class="mcol">'
+        f'<section class="mtile glass r-head"><header><h2>{esc(i18n.t(lang, "role_now"))}</h2>'
+        f'{ui.info_dot(name, i18n.t(lang, "role_hint_programmer"))}{tools}</header>'
+        f'<div id="role-programmer-now">{_now(lang, runs, now)}</div>'
+        f'<div class="p-ais"><small>{esc(i18n.t(lang, "p_other_ais"))}</small>{others}</div></section>'
+        f'{_task_tile(lang, current)}'
+        f'<section class="mtile glass"><header><h2>{esc(i18n.t(lang, "role_usage"))}</h2></header>'
+        f'<div id="role-programmer-usage">{_usage(lang, usage)}</div></section>'
+        f'</div><div class="mcol">'
+        f'{_soon(lang, "p_trail", "p_trail_hint", trail, "m-grow")}'
+        f'{_soon(lang, "p_preview", "p_preview_hint", preview)}'
+        f'</div><div class="mcol">'
+        f'{_soon(lang, "p_code", "p_code_hint", code)}'
+        f'{_soon(lang, "p_diff", "p_diff_hint", diff)}'
+        f'<section class="mtile glass m-grow"><header><h2>{esc(i18n.t(lang, "role_runs"))}</h2>'
+        f'<span class="count" id="role-programmer-count">{len(runs)}</span></header>'
+        f'<div class="r-scroll" id="role-programmer-runs">{runs_html}</div></section>'
+        f'</div></section>'
+    )
+
+
 def render_role(lang: str, role: str, settings: dict, runs: list[agents.RoleRun], usage: dict,
-                ais: tuple[str, ...] = (catalog.DEFAULT_PROVIDER,), now: int | None = None) -> str:
-    """One role's view. `settings` is agents.settings(user_id); `runs` agents.role_runs(...) for this project."""
+                ais: tuple[str, ...] = (catalog.DEFAULT_PROVIDER,), now: int | None = None, current=None) -> str:
+    """One role's view. `settings` is agents.settings(user_id); `runs` agents.role_runs(...) for this project;
+    `current` agents.current_task(...) for the programmer's tab."""
     now = int(now if now is not None else time.time())
+    if role == "programmer":
+        return _programmer(lang, settings, runs, usage, ais, now, current)
     mine = settings["roles"][role]
     picker = ui.model_picker(lang, f"role-{role}", mine["model"], mine.get("effort", ""), providers=ais)
     switch = "" if role == "programmer" else _enabled_select(lang, role, mine["enabled"])

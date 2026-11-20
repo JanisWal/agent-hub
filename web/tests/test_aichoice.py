@@ -265,6 +265,11 @@ class BoardTest(Base):
     def test_from_the_card_to_the_approval(self):
         self.mistral(self.a)
         page = self.html()
+        self.assertIn(i18n.t("de", "task_queued"), page)                     # made by hand: it starts by itself
+        self.assertNotIn('data-action="agent-start"', page)
+        with db.connect() as conn:                                           # an item from before 19.11.2026
+            conn.execute("UPDATE board_items SET auto = 0 WHERE id = ?", (self.item.id,))
+        page = self.html()
         self.assertIn('data-action="agent-start"', page)
         self.assertEqual(board_routes.item_action(self.item.id, "agent-start", user=self.b).status_code, 404)
         self.assertEqual(board_routes.item_action(self.item.id, "agent-start", user=self.a), {"ok": True})

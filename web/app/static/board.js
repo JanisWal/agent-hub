@@ -6,10 +6,56 @@
   var projectId = project.dataset.id;
 
   function $(selector, root) { return (root || document).querySelector(selector); }
+  function cards() { return Array.prototype.slice.call(document.querySelectorAll("#board .card")); }
   // Only the board and the trash/archive change (no reload, a running upload goes on); if that fails, the page reloads.
+  // Janis, 19.11.2026 ("like the user list"): every card glides from where it was to its new place (FLIP), a new one
+  // fades in, and a context that was unfolded stays unfolded.
   function reload() {
-    return AgentHub.swap(["board", "vault"]).then(function () { setView(currentView, false); refreshCounts(); })
-      .catch(function () { AgentHub.reload(); });
+    var before = {}, open = {};
+    cards().forEach(function (card) {
+      before[card.dataset.id] = card.getBoundingClientRect();
+      if (card.querySelector(".card-title.open")) open[card.dataset.id] = true;
+    });
+    return AgentHub.swap(["board", "vault"]).then(function () {
+      setView(currentView, false);
+      refreshCounts();
+      cards().forEach(function (card) {
+        if (open[card.dataset.id]) {
+          var title = card.querySelector(".card-title.has-details");
+          if (title) { title.classList.add("open"); title.querySelector(".card-details").hidden = false; }
+        }
+        var was = before[card.dataset.id];
+        if (!was) { appear(card); return; }
+        var now = card.getBoundingClientRect();
+        glide(card, was.left - now.left, was.top - now.top);
+      });
+    }).catch(function () { AgentHub.reload(); });
+  }
+  function glide(card, dx, dy) {
+    if (Motion.reduced() || (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5)) return;
+    var x = Motion.spring(dx, Motion.MOVE, move), y = Motion.spring(dy, Motion.MOVE, move);
+    function move() { card.style.transform = x.value || y.value ? "translate3d(" + x.value + "px," + y.value + "px,0)" : ""; }
+    move(); x.to(0); y.to(0);
+  }
+  function appear(card) {
+    if (Motion.reduced()) return;
+    var p = Motion.spring(0, Motion.MOVE, function (v) {
+      card.style.opacity = String(v);
+      card.style.transform = v < 0.999 ? "scale(" + (0.96 + 0.04 * v) + ")" : "";
+    }, 0.002);
+    p.to(1);
+  }
+  // A card that leaves (trash, rejected, deleted for good) shrinks and fades first; the others glide up after it.
+  function leave(card) {
+    return new Promise(function (resolve) {
+      if (!card || Motion.reduced()) { resolve(); return; }
+      var p = Motion.spring(1, Motion.MOVE, function (v) {
+        card.style.opacity = String(Math.max(0, v));
+        card.style.transform = "scale(" + (0.94 + 0.06 * v) + ")";
+      }, 0.002);
+      p.to(0);
+      setTimeout(resolve, 220);
+    });
   }
   function post(url) { return fetch(url, { method: "POST" }); }
 
@@ -17,6 +63,7 @@
   var itemDialog = $("#item-dialog");
   var itemForm = $("form", itemDialog);
   var titleInput = $('input[name="title"]', itemDialog);
+  var detailsInput = $('textarea[name="details"]', itemDialog);
 
   function openItemDialog(options) {
     itemForm.action = options.action;
@@ -24,6 +71,7 @@
     $("#item-dialog-title").textContent = itemDialog.dataset[options.edit ? "titleEdit" : "titleNew"];
     $("#item-dialog-button").textContent = itemDialog.dataset[options.edit ? "btnEdit" : "btnNew"];
     titleInput.value = options.title || "";
+    detailsInput.value = options.details || "";
     itemDialog.showModal();
     titleInput.focus();
     titleInput.select();
@@ -64,6 +112,7 @@
       action: "/items/" + card.dataset.id,
       kind: card.closest(".column").dataset.kind,
       title: (title.querySelector(".card-text") || title).textContent,
+      details: (title.querySelector(".card-details") || { textContent: "" }).textContent,
       edit: true
     });
   });
@@ -86,9 +135,14 @@
   document.addEventListener("click", function (event) {
     var button = event.target.closest("[data-action]");
     if (!button) return;
-    var id = button.closest("[data-id]").dataset.id;
+    var holder = button.closest("[data-id]");
+    var id = holder.dataset.id;
     var url = "/items/" + id + "/" + button.dataset.action;
-    var run = function () { post(url).then(reload).catch(reload); };
+    var leaves = ["discard", "reject", "delete", "restore"].indexOf(button.dataset.action) >= 0;
+    var run = function () {
+      var sent = post(url);
+      (leaves ? leave(holder) : Promise.resolve()).then(function () { return sent; }).then(reload).catch(reload);
+    };
     if (button.dataset.action === "delete") confirmThen("msgItem", run);
     else run();
   });
@@ -138,7 +192,7 @@
 
   function layout() {
     return JSON.stringify(Array.prototype.map.call(document.querySelectorAll(".open-list"), function (list) {
-      return Array.prototype.map.call(list.querySelectorAll(".card"), function (card) { return card.dataset.id; });
+      return Array.prototype.map.call(list.querySelectorAll(".card:not(.proposed)"), function (card) { return card.dataset.id; });
     }));
   }
 
@@ -149,9 +203,9 @@
     });
   }
 
-  Motion.sortable({
-    itemSelector: ".open-list .card",
-    items: function () { return document.querySelectorAll(".open-list .card"); },
+  Motion.sortable({   // suggestions stand in the list but stay put until they are accepted
+    itemSelector: ".open-list .card:not(.proposed)",
+    items: function () { return document.querySelectorAll(".open-list .card:not(.proposed)"); },
     containerFor: function (el) {
       var column = el.closest(".column");
       return column && column.querySelector(".open-list");
@@ -164,7 +218,7 @@
       refreshCounts();
       if (layout() === snapshot) return;
       var list = info.item.closest(".open-list");
-      var ids = Array.prototype.map.call(list.querySelectorAll(".card"), function (c) { return c.dataset.id; });
+      var ids = Array.prototype.map.call(list.querySelectorAll(".card:not(.proposed)"), function (c) { return c.dataset.id; });
       fetch("/items/reorder", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -174,4 +228,25 @@
       }).catch(reload);
     }
   });
+
+  // While a role works on an item, or one waits in the queue, the board looks again every few seconds and swaps in
+  // what changed (Janis, 19.11.2026: "I do not see that he works"); not while dragging, typing or the tab is hidden.
+  var lastFetched = null;   // the board as the server sent it last (the page's own copy is changed by core.js)
+  var LOOK = 4000;
+  function look() {
+    var busy = document.hidden || document.querySelector("dialog[open]") || document.documentElement.classList.contains("dragging-active")
+      || !document.querySelector("#board [data-live]") || board.hidden;
+    if (busy) return;
+    fetch(location.pathname, { credentials: "same-origin" }).then(function (response) {
+      return response.ok ? response.text() : null;
+    }).then(function (html) {
+      if (!html) return;
+      var next = new DOMParser().parseFromString(html, "text/html").getElementById("board");
+      if (!next) return;
+      var changed = lastFetched !== null && next.innerHTML !== lastFetched;
+      lastFetched = next.innerHTML;
+      if (changed) reload();
+    }).catch(function () {});
+  }
+  setInterval(look, LOOK);
 })();

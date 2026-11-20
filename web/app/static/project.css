@@ -57,6 +57,11 @@ a.station:not(.active):hover { color: var(--text); }
 .open-list .card:hover { translate: 0 -1px; background: color-mix(in srgb, var(--field) 45%, transparent); }
 
 .card-title { flex: 1; min-width: 0; padding-top: 4px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; user-select: none; }
+/* A suggestion stands in the same list as the agreed items (Janis, 19.11.2026): "Vorschlag" under the bullet and the
+   two pills on their own line below; it can not be dragged until it is accepted. */
+.card.proposed, .card.proposed-like { flex-wrap: wrap; }
+.card-choice { flex: 1 0 100%; display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+.card-task .loading-dots { margin-left: 6px; color: var(--accent); }
 /* Who put a card there and the context behind the bullet (19.11.2026): a quiet line, the context folded under it. */
 .card-title .card-from { display: block; font-size: 0.74rem; font-weight: 600; color: var(--muted); }
 .card-title.has-details { cursor: pointer; }
@@ -85,7 +90,6 @@ a.station:not(.active):hover { color: var(--text); }
 .card-btn.go:hover, .card-btn.stop:hover { color: inherit; filter: brightness(1.08); transform: translateY(-1px); }
 .card-btn.go:hover { color: var(--on-go); }
 .card-btn.stop:hover { color: var(--on-danger); }
-.group-label { margin: 14px 0 0; padding-top: 4px; font-size: 0.74rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); }
 
 /* ===== Trash and archive: one panel, swapped for the board by the two buttons next to the gear ===== */
 .vault { flex: 1; max-width: none; min-height: 260px; padding: 26px; border-radius: 28px; }
@@ -277,8 +281,12 @@ html .card.drag-clone::after { display: none; }
 .m-pill[aria-pressed="true"] { color: var(--on-danger); background: var(--danger); border-color: color-mix(in srgb, var(--danger) 70%, white); box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 28%, transparent), 0 0 16px color-mix(in srgb, var(--danger) 50%, transparent); }
 .m-pill[aria-pressed="true"]:hover { color: var(--on-danger); }
 /* As a round button with a globe (Janis, 14.11.2026: title, switch and capsule in one row): 30 px like the capsule. */
-#manager-net { width: 30px; padding: 0; border-radius: 50%; display: inline-grid; place-items: center; }
-#manager-net svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* The same globe in the manager chat and in every role's tab (19.11.2026: in the tabs it lacked its symbol and looked
+   like a lamp). */
+.m-globe { width: 30px; padding: 0; border-radius: 50%; display: inline-grid; place-items: center; }
+.m-globe svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* An open list of a drop-down lies above the tiles that come after its own (each glass tile is a layer of its own). */
+.glass:has(.has-select.open) { position: relative; z-index: 30; }
 
 /* ===== Regular checks (Manager view): a list with the plus in the header, due ones in bold ===== */
 .m-add { position: relative; flex: none; width: 36px; height: 36px; min-width: 36px; min-height: 36px; color: var(--accent); }
@@ -541,7 +549,6 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 @keyframes r-pulse { 50% { opacity: 0.45; } }
 .station-count { margin-left: 8px; min-width: 20px; padding: 0 6px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; line-height: 20px; text-align: center; color: var(--on-accent); background: var(--accent); }
 .me-view header .link.inline { margin-left: 4px; }
-.m-waiting-board { align-self: flex-start; }
 .station-count[hidden] { display: none; }
 .m-waiting .r-scroll { flex: 1 1 auto; max-height: none; }
 /* "For you" (todos.py, Janis 16.11.2026): the rows of the regular checks; done ones are quiet, with the note below. */
@@ -879,3 +886,53 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 .tidy-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tidy-row.changed { background: color-mix(in srgb, var(--accent) 14%, transparent); }
 .tidy-tag { flex: none; padding: 1px 7px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; color: var(--text); background: color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* "Waiting for you" (Janis, 19.11.2026: decide and answer right here). Each entry: who asks or which task, the text,
+   the suggested answers as quiet pills, a field of its own and the decision as pills (the stronger one on the right). */
+.w-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.w-item { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--glass-border); background: color-mix(in srgb, var(--glass) 55%, transparent); }
+.w-who { font-size: 0.74rem; font-weight: 700; color: var(--accent); }
+.w-text { margin: 0; font-weight: 600; line-height: 1.4; white-space: pre-line; }
+.w-head { display: flex; align-items: center; gap: 8px; }
+.w-title { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.w-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.w-options .pill-btn.quiet { border-color: var(--glass-border); background: color-mix(in srgb, var(--glass) 70%, transparent); color: var(--text); }
+.w-reply { display: flex; align-items: center; gap: 6px; }
+.w-reply .w-input { flex: 1; min-width: 0; min-height: 34px; margin: 0; padding: 0 12px; font-size: 0.86rem; border-radius: 999px; }
+.w-btns { display: flex; gap: 6px; flex: none; }
+.w-task .w-reply { flex-wrap: wrap; justify-content: flex-end; }   /* the remark gets the whole width, the pills below */
+.w-task .w-reply .w-input { flex: 1 0 100%; }
+.w-report summary { cursor: pointer; font-size: 0.78rem; font-weight: 600; color: var(--muted); }
+.w-report .r-report { margin-top: 6px; }
+.w-item.sending { opacity: 0.55; pointer-events: none; }
+@media (pointer: coarse) { .w-reply .w-input { font-size: 16px; min-height: 40px; } }
+
+/* The programmer's tab (Janis, 19.11.2026; PROJEKT.md 11a, 3a 3b 3c 3f 4): three columns. Tiles that are placeholders
+   yet carry "coming later" and a greyed example of their content that can not be used. */
+.manager.role-view.p-view { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1.15fr); align-items: stretch; }
+.p-badge { margin-left: auto; padding: 2px 9px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; color: var(--muted); border: 1px dashed var(--glass-border); }
+.p-sample { opacity: 0.5; pointer-events: none; user-select: none; display: flex; flex-direction: column; gap: 8px; }
+.p-soon .p-sample .pill-btn { pointer-events: none; }
+.p-row { display: flex; justify-content: flex-end; }
+.p-trail { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 0.86rem; }
+.p-trail li { padding: 6px 10px; border-radius: 10px; background: color-mix(in srgb, var(--glass) 60%, transparent); }
+.p-trail li.thinking { font-style: italic; color: var(--muted); }
+.p-trail code, .p-diff { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.8rem; }
+.p-tree { list-style: none; margin: 0; padding: 0; font-size: 0.86rem; }
+.p-tree li { padding: 3px 0 3px 4px; }
+.p-tree li.d2 { padding-left: 20px; } .p-tree li.d3 { padding-left: 36px; }
+.p-tree li.dir { font-weight: 700; }
+.p-tree li.dir::before { content: "▸ "; color: var(--accent); }
+.p-stat { margin: 0; font-weight: 600; }
+.p-stat .add, .p-diff .add { color: var(--go); } .p-stat .del, .p-diff .del { color: var(--danger); }
+.p-diff { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--field); overflow-x: auto; white-space: pre; }
+.p-frame { display: grid; place-items: center; gap: 6px; min-height: 160px; border-radius: 14px; border: 1px dashed var(--glass-border); color: var(--muted); }
+.p-frame svg { width: 28px; height: 28px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.p-task .p-title { margin: 0; font-weight: 700; }
+.p-task .p-facts { color: var(--muted); }
+.p-task .p-note { margin: 8px 0 0; font-size: 0.88rem; }
+.p-task .p-context { margin-top: 8px; max-height: 260px; overflow-y: auto; font-size: 0.86rem; line-height: 1.45; white-space: pre-line; color: var(--muted); }
+.p-ais { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 0.78rem; color: var(--muted); }
+.p-ai { padding: 2px 9px; border-radius: 999px; border: 1px solid var(--glass-border); color: var(--text); }
+.p-ai.off { border-style: dashed; color: var(--muted); opacity: 0.7; }
+@media (max-width: 1100px) { .manager.role-view.p-view { grid-template-columns: minmax(0, 1fr); } }

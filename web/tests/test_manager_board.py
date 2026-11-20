@@ -86,6 +86,20 @@ class ManagerBoardTest(unittest.TestCase):
         self.assertEqual(job.title, "Temperatur in der Anzeige runden")                # ... the next one comes
         self.assertFalse(self.items()["Relais klickt doppelt"].auto)                    # and the stopped one never again
 
+    def test_an_approval_a_day_later_still_gets_the_managers_documentation(self):
+        item = board.create_item(self.a.id, self.pa.id, "minor", "Anzeige bauen")
+        start = 1_000_000
+        task = agents.start_item(self.a.id, item.id, now=start)
+        for result in ("done", "pass", "ok"):
+            job = agents.claim_next(can_mac=False, now=start + 60)
+            agents.finish_run(job.run_id, result, "Bericht", now=start + 60)
+        later = start + 86400                                                   # the user approves the next day
+        self.assertTrue(agents.decide(self.a.id, task.id, "approve", now=later))
+        with db.connect() as conn:
+            conn.execute("UPDATE agent_tasks SET merged = 1 WHERE id = ?", (task.id,))   # the runner merged
+        job = agents.claim_next(can_mac=False, now=later + 60)
+        self.assertEqual((job.role, agents.get_task(self.a.id, task.id).status), ("chef", "documenting"))
+
     def test_what_a_run_notices_goes_on_the_board(self):
         item = board.create_item(self.a.id, self.pa.id, "minor", "Anzeige bauen")
         agents.start_item(self.a.id, item.id)
@@ -134,6 +148,27 @@ class ManagerBoardTest(unittest.TestCase):
         self.assertIn("Of B", self.items(self.b, self.pb))
         self.assertIn("2 Punkt(e) waren schon in Arbeit", chat.list_messages(self.a.id, self.pa.id)[-1].answer)
 
+    def test_accepting_a_suggestion_starts_it_at_once(self):
+        from app.routes import board as board_routes
+        with db.connect() as conn:
+            idea = board.add_from_ai(conn, self.pa.id, "minor", "Helligkeit einstellbar", "Ein Regler.", False, "agent")
+        self.assertEqual(board_routes.item_action(idea, "accept", user=self.b).status_code, 404)   # not B's
+        self.assertEqual(board_routes.item_action(idea, "accept", user=self.a), {"ok": True})
+        task = agents.item_task(self.a.id, idea)
+        self.assertEqual(task.status, "coding")                              # no second step "give to the agents"
+
+    def test_an_item_by_hand_carries_its_context_and_can_be_changed(self):
+        from app.routes import board as board_routes
+        board_routes.create_item(self.pa.id, "minor", "Anzeige dimmen", user=self.a, details="Nachts auf 30 %.")
+        item = self.items()["Anzeige dimmen"]
+        self.assertEqual((item.details, item.auto, item.source), ("Nachts auf 30 %.", True, "user"))
+        board_routes.rename_item(item.id, "Anzeige nachts dimmen", user=self.a, details="Zwischen 22 und 6 Uhr.")
+        self.assertEqual(self.items()["Anzeige nachts dimmen"].details, "Zwischen 22 und 6 Uhr.")
+        board_routes.rename_item(item.id, "Anzeige dimmen", user=self.a, details=None)   # no field: the context stays
+        self.assertEqual(self.items()["Anzeige dimmen"].details, "Zwischen 22 und 6 Uhr.")
+        board_routes.rename_item(item.id, "Fremd", user=self.b, details="x")
+        self.assertIn("Anzeige dimmen", self.items())
+
     def test_no_ai_no_start_and_nothing_for_a_foreign_project(self):
         self.ask(WISH)
         claude_link.disconnect(self.a.id)
@@ -144,6 +179,21 @@ class ManagerBoardTest(unittest.TestCase):
             self.assertIsNone(board.add_from_ai(conn, self.pa.id, "bug", "Heizung per Zeitplan"))   # there already
             self.assertIsNone(board.add_from_ai(conn, self.pa.id, "bug", "X", source="admin"))
 
+    def test_the_programmers_tab_shows_the_task_with_its_context_and_the_parts_to_come(self):
+        self.ask(WISH)
+        agents.claim_next(can_mac=False)                                       # the bug runs now
+        project = projects.get_project(self.a.id, self.pa.id)
+        page = projectpage.render(self.a, project, board.list_items(self.a.id, self.pa.id))
+        view = page[page.index('id="view-programmer"'):page.index('id="view-tester"')]
+        self.assertIn('<p class="p-title">Relais klickt doppelt</p>', view)
+        self.assertIn("Beim Einschalten zweimal.", view)                        # the context from the board
+        for part in ("Verlauf", "Vorschau", "Code", "Änderungen", "Läufe", "Verbrauch"):
+            self.assertIn(f"<h2>{part}</h2>", view)
+        self.assertEqual(view.count('class="p-badge"'), 4)                       # the four placeholders
+        self.assertIn("disabled", view)
+        tester = page[page.index('id="view-tester"'):page.index('id="view-reviewer"')]
+        self.assertNotIn("p-badge", tester)
+
     def test_the_card_shows_the_bullet_and_folds_the_context(self):
         self.ask(WISH)
         project = projects.get_project(self.a.id, self.pa.id)
@@ -151,7 +201,7 @@ class ManagerBoardTest(unittest.TestCase):
         self.assertIn('<span class="card-text">Heizung per Zeitplan</span>', page)
         self.assertIn("vom Manager", page)
         self.assertIn('<span class="card-details" hidden>Ein Zeitplan je Wochentag', page)
-        self.assertIn("Vorschläge", page)
+        self.assertIn("Vorschlag · vom Manager", page)                       # a suggestion in the list, marked
         self.assertNotIn("Vorschläge von Claude", page)
 
 

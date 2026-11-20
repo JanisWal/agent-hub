@@ -174,7 +174,7 @@ class ChecksTest(unittest.TestCase):
         self.assertIn("- Gym (daily on Mon, Wed, Fri, Sun, due)", chat.claim_next().prompt)
 
     def test_the_to_do_dialog_says_to_do_not_title(self):
-        self.assertEqual((i18n.t("de", "item_title"), i18n.t("en", "item_title")), ("To-Do", "To-do"))
+        self.assertEqual((i18n.t("de", "item_title"), i18n.t("en", "item_title")), ("Stichpunkt", "Bullet"))
 
     def test_every_text_exists_in_both_languages(self):
         self.make("Security")

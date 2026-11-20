@@ -15,7 +15,7 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import aichoice, board, catalog, db, files, memory, reply, runtask, serversettings, workflow
+from . import aichoice, board, catalog, db, files, memory, questions, reply, runtask, serversettings, workflow
 
 # Models and effort levels are not fixed here: they come from catalog.py (Janis, 14.11.2026). A role without a
 # choice gets the provider's default model and that model's default level. Since 15.11.2026 the choice is kept per
@@ -407,11 +407,16 @@ def task_runs(user_id: int, task_id: int) -> list[Run]:
 
 
 def waiting_reason(user_id: int, task: Task) -> str | None:
-    """Why a task does not move: "no_ai" (none of his AIs is connected) or None."""
+    """How a task at a role's stage stands: "no_ai" (none of his AIs is connected), "running" (a role works on it now)
+    or None (its run waits to be picked up, the user's stage, or finished)."""
     if task.status in ACTIVE and task.status in workflow.STAGE_ROLE:
         with db.connect() as conn:
             if not aichoice.connected_list(conn, user_id):
                 return "no_ai"
+            row = conn.execute("SELECT status FROM agent_runs WHERE task_id = ? ORDER BY id DESC LIMIT 1",
+                               (task.id,)).fetchone()
+            if row is not None:
+                return "running" if row["status"] == "running" else None
     return None
 
 
@@ -444,6 +449,18 @@ class RoleRun:
 
 
 ROLE_RUNS = 30            # runs a role's tab shows at most (newest)
+
+
+def current_task(user_id: int, project_id: int) -> tuple[Task, str] | None:
+    """The task the roles of the user's project work on now (one at a time per project, autostart) and the context
+    of its board item, for the programmer's tab; None if nothing is on its way or the project is not his."""
+    marks = ",".join("?" * len(ACTIVE))
+    with db.connect() as conn:
+        row = conn.execute(
+            "SELECT t.*, COALESCE(b.details, '') AS details FROM agent_tasks t JOIN projects p ON p.id = t.project_id"
+            f" LEFT JOIN board_items b ON b.id = t.item_id WHERE t.project_id = ? AND p.user_id = ? AND t.status IN ({marks})"
+            " ORDER BY t.id DESC LIMIT 1", (project_id, user_id, *ACTIVE)).fetchone()
+    return None if row is None else (_task(row), row["details"])
 
 
 def role_runs(user_id: int, project_id: int, role: str, limit: int = ROLE_RUNS) -> list[RoleRun]:
@@ -482,6 +499,9 @@ def decide(user_id: int, task_id: int, decision: str, note: str = "", now: int |
         if decision == "approve" and status == "awaiting_approval":
             step = workflow.after_approval(rnd, mc, _enabled(conn, user_id))
             note_value = None
+            # The time the task waited for the user does not count: the manager's documentation gets a fresh limit
+            # (19.11.2026: approved a day later, the task went past its deadline at once and the documentation was cut).
+            conn.execute("UPDATE agent_tasks SET deadline = ? WHERE id = ?", (now + TASK_SECONDS, task_id))
         elif decision == "reject" and status in ("awaiting_approval", "escalated"):
             step = workflow.after_rejection(mc)
             note_value = note.strip()[:1000]
@@ -620,6 +640,8 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
         for item in found.tasks[:FOUND_MAX]:              # a bug goes on the board at once, an addition waits
             board.add_from_ai(conn, task["project_id"], item.kind, item.title, item.body,
                               approved=item.kind == "bug", source="agent")
+        for ask in found.asks:                            # the answer comes with the next run of this task
+            questions.add(conn, task["project_id"], run["role"], ask, task["id"])
         conn.execute(
             "UPDATE agent_runs SET status = 'done', result = ?, report = ?, tokens_in = ?, tokens_out = ?,"
             " seconds = ?, finished_at = ? WHERE id = ?",

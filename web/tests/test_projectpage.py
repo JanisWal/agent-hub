@@ -76,13 +76,17 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn("Finished thing", vault[vault.index('data-view="archive"'):])
         self.assertIn("Thrown away", vault[vault.index('data-view="trash"'):vault.index('data-view="archive"')])
 
-    def test_only_small_and_major_suggestions_have_green_and_red_buttons(self):
+    def test_suggestions_stand_in_the_list_with_two_pills(self):
         page = self.html()
-        self.assertEqual(page.count("card-btn go"), 1)
-        self.assertEqual(page.count("card-btn stop"), 1)
-        idea = page[page.index("An idea") - 200:page.index("An idea") + 700]
+        idea = page[page.index("An idea") - 300:page.index("An idea") + 700]   # Janis, 19.11.2026: text pills
+        self.assertIn('class="pill-btn go" type="button" data-action="accept"', idea)
+        self.assertIn('class="pill-btn quiet" type="button" data-action="reject"', idea)
         self.assertIn("proposed", idea)
-        self.assertLess(idea.index("card-btn stop"), idea.index("card-btn go"))   # reject left, take over right
+        self.assertIn("Vorschlag", idea)
+        self.assertLess(idea.index("pill-btn quiet"), idea.index("pill-btn go"))   # reject left, take over right
+        column = page[page.rindex('<div class="cards open-list"', 0, page.index("An idea")):page.index("An idea")]
+        self.assertNotIn("</div></section>", column)                           # in the same list, no own group
+        self.assertNotIn("group-label", page)
         agent_bug = page[page.index("Found by Claude") - 160:page.index("Found by Claude") + 40]
         self.assertIn("from-agent", agent_bug)
         self.assertNotIn("proposed", agent_bug)
@@ -455,9 +459,9 @@ class RoleViewsTest(unittest.TestCase):
         self.assertIn("A bug", waiting)
         self.assertIn("Wartet auf deine Freigabe", waiting)
         self.assertIn("Fine by me", waiting)
-        self.assertIn('data-goto="board"', waiting)
         self.assertIn('<span class="count">1</span>', waiting)
-        self.assertNotIn("agent-approve", waiting)                            # deciding stays on the board card
+        self.assertIn('data-decide="approve"', waiting)                       # since 19.11.2026: decided right here
+        self.assertIn('class="w-input"', waiting)                              # with a remark of your own
         me = page[page.index('id="view-me"'):]
         self.assertNotIn("A bug", me)
 

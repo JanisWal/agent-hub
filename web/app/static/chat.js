@@ -205,6 +205,8 @@
     }).catch(function () { timer = setTimeout(load, 4000); });
   }
 
+  document.addEventListener("hub:chat-changed", load);   // an answer from "waiting for you" went on as a message
+
   function problem(text) {
     errorBox.hidden = !text;
     errorBox.textContent = text || "";

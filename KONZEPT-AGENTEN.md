@@ -199,7 +199,7 @@ Ziel von Janis: Jede KI soll austauschbar sein. Es wird eine Anfrage gestellt, e
 |---|---|---|
 | `<memory file="NAME.md">…</memory>` | eine Erinnerungsdatei ganz neu schreiben (höchstens 3 je Antwort) | gebaut |
 | `<read>Name</read>` | eine weitere Datei anfordern (Übergang bis zum eingehängten Ordner, PROJEKT.md 11b) | gebaut |
-| `<ask kind="choice\|text" size="small\|large">Frage<option>…</option>…</ask>` | eine Rückfrage an den Nutzer (9.4) | geplant |
+| `<ask kind="choice\|text" size="small\|large">Frage<option>…</option>…</ask>` | eine Rückfrage an den Nutzer (9.4) | **gebaut 19.11.2026** (`board-smooth`: Manager-Chat und Läufe, Antwort in „Wartet auf dich“) |
 | `<task kind="bug\|minor\|major" title="…" from="user\|idea">Kontext, Abnahmekriterien</task>` | ein Stichpunkt fürs Board mit Kontext dahinter (9.5) | **gebaut 19.11.2026** (`manager-board`: Manager-Chat und Berichte der Läufe) |
 | `<task-edit id="N" kind="…" title="…">neuer Kontext</task-edit>` | der Manager korrigiert einen Punkt, den der Programmierer noch nicht angefangen hat | **gebaut 19.11.2026** |
 | `<status level="green\|yellow\|red">ein Satz</status>` | der Projektstand (9.7) | geplant |
@@ -209,6 +209,7 @@ Grenzen (Vorschlag, beim Bau festzulegen): höchstens 3 `<ask>`, 5 `<task>`, 1 `
 
 ### 9.4 Rückfragen, unabhängig von der KI („Wartet auf dich“)
 
+- **So gebaut (19.11.2026, `board-smooth`):** Tabelle `questions` (`questions.py`), höchstens 10 offene je Projekt, gleiche Frage nur einmal. Manager-Chat und Läufe lesen `<ask>`; die Kachel zeigt die Frage mit den Antworten als Pillen und einem freien Feld. Eine Antwort an den Manager geht sofort als nächste Chat-Nachricht los („Antwort auf deine Rückfrage …“); läuft gerade eine Frage, kommt sie mit der nächsten im Block `<answers>`. Eine Antwort an eine Rolle kommt mit dem nächsten Lauf dieser Aufgabe. **Abweichung vom Plan:** die Aufgabe wartet nicht auf die Antwort (die Rolle tut, was am sichersten ist, und fragt; die Antwort wirkt ab dem nächsten Lauf). Freigeben, „Noch eine Runde“ mit Bemerkung und Abbrechen gibt es ebenfalls direkt in der Kachel.
 - Claudes eigenes Nachfragen wird **nicht** genutzt (in `-p` ohnehin nicht möglich); jede KI fragt über `<ask>`.
 - **Rückfragen sind technische Fragen während der Arbeit** (z. B. „Relais mit 12 V oder 24 V?“, „Datenbankfeld als Zahl oder Text?“). Was als Nächstes gebaut wird, gehört dagegen aufs **Board** (9.5). So unterscheiden sich die beiden, obwohl beide bestimmen, wie es weitergeht (Janis, 14.11.2026).
 - Der Hub speichert jede Frage (geplante Tabelle `questions`: id, project_id, task_id oder leer, role, text, kind, options, size, status `open`/`answered`/`dropped`, answer, created_at, answered_at), zeigt sie in der Kachel „Wartet auf dich“ und zählt sie in deren Zahl. Eine Aufgabe, zu der eine Frage offen ist, **wartet** (`waiting_reason = question`).
@@ -253,7 +254,7 @@ Grenzen (Vorschlag, beim Bau festzulegen): höchstens 3 `<ask>`, 5 `<task>`, 1 `
 ### 9.9 Reihenfolge der Umsetzung (Stand 15.11.2026)
 
 1. Antwortformat und strenges Lesen im Manager-Chat: `<ask>`, `<status>`, `<task>` (Parser wie `memory.parse_answer`, Tests mit Fremdprojekten in `test_isolation.py`). **Teilweise (15.11.2026, `reply-format`):** der strenge Leser steht (`web/app/reply.py`, reine Funktion, Grenzen wie in 9.3); offen: Speichern, Anschluss an Chat und Manager-Runde, Fremdprojekt-Tests.
-2. Kachel „Wartet auf dich“ mit Antworten (Knöpfe, freies Feld, groß bei großen Fragen) und der Regeltext der Selbstständigkeit. **Offen.**
+2. Kachel „Wartet auf dich“ mit Antworten (Knöpfe, freies Feld) und der Regeltext der Selbstständigkeit. **Gebaut 19.11.2026** (`board-smooth`); offen: groß öffnen bei langen Fragen.
 3. Status-Kachel und Projektkachel. **Offen.**
 4. Schleife der Agentenläufe samt Verteilen der Aufgaben (Board → Kette), Arbeitsordner je Aufgabe. **Gebaut 15.11.2026** (`ai-default`): Start auf der Board-Karte, Freigabe auf der Karte, Merge durch den Runner, Manager dokumentiert. **Seit 19.11.2026** (`manager-board`): der Manager verteilt die Aufgaben selbst (`<task>`), Punkte starten von selbst.
 5. Zeitplan der Manager-Runden nach Fälligkeit. **Offen.**

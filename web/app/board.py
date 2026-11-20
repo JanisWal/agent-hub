@@ -92,8 +92,9 @@ def list_items(user_id: int, project_id: int) -> list[Item]:
     return [_to_item(r) for r in rows]
 
 
-def create_item(user_id: int, project_id: int, kind: str, title: str) -> Item:
-    """Add an item by hand: it counts as agreed and goes to the top of its column.
+def create_item(user_id: int, project_id: int, kind: str, title: str, details: str = "") -> Item:
+    """Add an item by hand, with the context behind it if given: it counts as agreed, goes to the top of its column
+    and to the programmer by itself.
 
     Raises ValueError for a bad kind or title, or if the project is not the user's.
     """
@@ -103,9 +104,9 @@ def create_item(user_id: int, project_id: int, kind: str, title: str) -> Item:
             raise ValueError("Unbekanntes Projekt")
         position = _edge_position(conn, project_id, kind, top=True)
         cur = conn.execute(   # agreed by hand: it goes to the programmer by itself (Janis, 19.11.2026)
-            "INSERT INTO board_items (project_id, kind, title, source, status, position, created_at, auto)"
-            " VALUES (?, ?, ?, 'user', 'open', ?, ?, 1)",
-            (project_id, kind, title, position, int(time.time())),
+            "INSERT INTO board_items (project_id, kind, title, source, status, position, created_at, auto, details)"
+            " VALUES (?, ?, ?, 'user', 'open', ?, ?, 1, ?)",
+            (project_id, kind, title, position, int(time.time()), (details or "").strip()[:MAX_DETAILS]),
         )
         row = conn.execute("SELECT * FROM board_items WHERE id = ?", (cur.lastrowid,)).fetchone()
     return _to_item(row)
@@ -179,8 +180,9 @@ def edit_from_ai(conn: sqlite3.Connection, project_id: int, item_id: int, kind: 
     return True
 
 
-def update_title(user_id: int, item_id: int, title: str) -> int | None:
-    """Rename an item. Returns its project id, or None if it is not the user's.
+def update_title(user_id: int, item_id: int, title: str, details: str | None = None) -> int | None:
+    """Rename an item and, if given, change the context behind it. Returns its project id, or None if it is not the
+    user's.
 
     Raises ValueError for an empty or too long title.
     """
@@ -189,7 +191,8 @@ def update_title(user_id: int, item_id: int, title: str) -> int | None:
         row = _owned_item(conn, user_id, item_id)
         if row is None:
             return None
-        conn.execute("UPDATE board_items SET title = ? WHERE id = ?", (title, item_id))
+        text = row["details"] if details is None else details.strip()[:MAX_DETAILS]
+        conn.execute("UPDATE board_items SET title = ?, details = ? WHERE id = ?", (title, text, item_id))
     return row["project_id"]
 
 
