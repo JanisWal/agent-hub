@@ -38,6 +38,9 @@ RUN_SECONDS = 20 * 60                    # a run that reports nothing for so lon
 # (serversettings.ai_parallel, Janis 15.11.2026): 1 on a small server, more or no limit on a big one.
 MAX_REPORT = 20000                       # characters of a report that are kept
 FOUND_MAX = 3                            # items a run may put on the board (runtask.FOUND_RULE)
+MAX_DIFF = 60000                         # characters of a task's change kept (runner/workspace.py cuts it too)
+MAX_TESTS = 6000                         # characters of the output of the project's tests kept
+HUB_MODEL = "hub"                        # the "model" of a test run the hub made itself (no AI, no tokens)
 ACTIVE = workflow.STAGES                 # stages in which a task is still moving
 OPEN_STATUSES = ACTIVE + ("escalated",)  # a board item with such a task is "taken"
 
@@ -370,6 +373,11 @@ def autostart(conn: sqlite3.Connection, now: int) -> int:
         if conn.execute(f"SELECT 1 FROM agent_tasks WHERE project_id = ? AND status IN ({marks})",
                         (row["project_id"], *ACTIVE)).fetchone():
             continue
+        # A piece that went to the user stops the ones after it: they may build on it (20.11.2026). Only tasks of
+        # items that started by themselves count, so an old escalated task does not hold up the board.
+        if conn.execute("SELECT 1 FROM agent_tasks t JOIN board_items b ON b.id = t.item_id WHERE t.project_id = ?"
+                        " AND t.status = 'escalated' AND b.auto = 1", (row["project_id"],)).fetchone():
+            continue
         if not aichoice.connected_list(conn, row["user_id"]):
             continue
         for kind in KIND_ORDER:
@@ -613,10 +621,15 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
 
 
 def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, tokens_out: int = 0,
-               seconds: int = 0, now: int | None = None) -> bool:
+               seconds: int = 0, now: int | None = None, change: tuple[str, str] | None = None,
+               tests: tuple[int, str] | None = None) -> bool:
     """Runner: a run is over. `result` must fit the role (workflow.RESULTS). The task moves on
     (or goes back, or to the user) and the next run is queued. False if the run is not running
-    any more (cancelled, timed out) or its task has moved on. Raises ValueError for a bad result."""
+    any more (cancelled, timed out) or its task has moved on. Raises ValueError for a bad result.
+
+    `change` (stat, diff): what the task changed so far, after a run that commits. `tests` (exit code, output): the
+    project's own tests the hub ran after the programmer (20.11.2026). They decide instead of an AI tester: green goes
+    on to the reviewer, red back to the programmer; the hub notes them as the tester's run (model "hub")."""
     now = int(now if now is not None else time.time())
     with db.connect() as conn:
         run = conn.execute("SELECT * FROM agent_runs WHERE id = ? AND status = 'running'", (run_id,)).fetchone()
@@ -635,8 +648,22 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
             pending_notes = (user_id, task["project_id"], notes, parsed.edits or [])
         else:
             pending_notes = None
+        enabled = _enabled(conn, user_id)
         step = workflow.advance(task["status"], task["round"], bool(task["manual_check"]), result,
-                                _enabled(conn, user_id))   # raises ValueError for a result that does not fit
+                                enabled)                  # raises ValueError for a result that does not fit
+        if change is not None:
+            conn.execute("UPDATE agent_tasks SET diff_stat = ?, diff = ? WHERE id = ?",
+                         (change[0][:MAX_DIFF], change[1][:MAX_DIFF], task["id"]))
+        if run["role"] == "programmer" and result == "done" and tests is not None:
+            code, output = int(tests[0]), str(tests[1])[-MAX_TESTS:]
+            verdict = "pass" if code == 0 else "fail"
+            conn.execute("UPDATE agent_tasks SET tests = ?, tests_exit = ? WHERE id = ?", (output, code, task["id"]))
+            conn.execute(
+                "INSERT INTO agent_runs (task_id, role, model, status, result, report, created_at, started_at,"
+                " finished_at, provider) VALUES (?, 'tester', ?, 'done', ?, ?, ?, ?, ?, ?)",
+                (task["id"], HUB_MODEL, verdict, f"hub-test.sh: exit {code}\n{output}"[:MAX_REPORT], now, now, now, ""))
+            step = workflow.advance("testing", task["round"], bool(task["manual_check"]), verdict,
+                                    enabled | {"tester"})
         found = reply.parse(report)                       # what the role noticed outside its task (runtask.FOUND_RULE)
         report = found.text
         for item in found.tasks[:FOUND_MAX]:              # a bug goes on the board at once, an addition waits

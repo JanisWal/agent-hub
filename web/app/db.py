@@ -320,7 +320,11 @@ NEW_COLUMNS = {
                       "kind": "TEXT NOT NULL DEFAULT 'chat'"},        # 'chat' or 'status' (a status round, statusnote.py)
     "agent_runs": {"effort": "TEXT NOT NULL DEFAULT ''",     # effort level of the run's model (catalog.py)
                    "provider": "TEXT NOT NULL DEFAULT 'claude'"},   # which AI does the run (aichoice.py)
-    "agent_tasks": {"merged": "INTEGER NOT NULL DEFAULT 0"},   # the runner merged the approved branch (agents.py)
+    "agent_tasks": {"merged": "INTEGER NOT NULL DEFAULT 0",    # the runner merged the approved branch (agents.py)
+                    "diff_stat": "TEXT NOT NULL DEFAULT ''",   # what the task changed against main: files and lines
+                    "diff": "TEXT NOT NULL DEFAULT ''",        # ... and the change itself (runner/workspace.py, cut)
+                    "tests": "TEXT NOT NULL DEFAULT ''",       # end of the output of the project's tests (hub-test.sh)
+                    "tests_exit": "INTEGER"},                  # their exit code; NULL = the project has no tests
     "files": {"parts": "TEXT NOT NULL DEFAULT ''",           # one flag per chunk of an unfinished upload (files.py)
               "trashed_at": "INTEGER",                       # when it went into the trash (files.py, TRASH_DAYS)
               "parent_id": "INTEGER",                        # the folder it lies in; NULL = top of its area (18.11.2026)

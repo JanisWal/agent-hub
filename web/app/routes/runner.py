@@ -48,9 +48,12 @@ def claim(can_mac: str = Form("0")):
 
 @router.post("/runs/{run_id}/finish")
 def finish(run_id: int, result: str = Form(""), report: str = Form(""), tokens_in: int = Form(0),
-           tokens_out: int = Form(0), seconds: int = Form(0)):
+           tokens_out: int = Form(0), seconds: int = Form(0), diff_stat: str | None = Form(None),
+           diff: str | None = Form(None), tests_exit: int = Form(-1), tests: str = Form("")):
     try:
-        done = agents.finish_run(run_id, result, report, tokens_in, tokens_out, seconds)
+        done = agents.finish_run(run_id, result, report, tokens_in, tokens_out, seconds,
+                                 change=None if diff is None else (diff_stat or "", diff),
+                                 tests=(tests_exit, tests) if tests_exit >= 0 else None)
     except ValueError:
         return fail(400)   # a result that does not fit the role
     return ok() if done else fail(409)   # the run is over already, or the task has moved on

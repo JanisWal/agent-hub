@@ -68,7 +68,8 @@ POWER_COMMANDS = {
 POWER_ACTIONS = tuple(POWER_COMMANDS)
 POWER_IMAGE = "agent-hub-hub-runner"   # the runner's own image (python:3.13-slim has nsenter), never pulled
 _BAD_PATH = re.compile(r"[,\s\x00=:]")   # would confuse --mount parsing or hide something
-_MARKER = re.compile(r"^RESULT:\s*([a-z_]+)\s*$")
+_MARKER = re.compile(r"^RESULT:\s*([a-z_]+)\s*\.?$")
+RESULT_LOOK = 5   # non-empty lines at the end of an answer in which the RESULT line may stand (weaker models add a word)
 
 
 # Switching a device on (Wake-on-LAN, 17.11.2026): the magic packet is a broadcast in the home network. The broker's
@@ -192,6 +193,32 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, ticke
         image,
         # Inside the isolated container the agent may use its tools freely; the prompt comes via stdin.
         "claude", "-p", *model_args, "--output-format", "json", "--dangerously-skip-permissions",
+    ]
+
+
+TEST_SECONDS = 300   # the project's tests (hub-test.sh) at most
+
+
+def build_test_command(*, run_id: int, user_id: int, work_dir: str, net: str = "apart", image: str = IMAGE,
+                       network: str = NETWORK, memory: str = "480m") -> list[str]:
+    """The `docker run` command that runs the project's own tests (`sh hub-test.sh` in /work) after a programmer's run:
+    the same limits as a run, no AI, no ticket. Nothing of the script is on the command line; it is a file in the
+    task's folder. `net` is the programmer's switch (installing packages needs the web)."""
+    run_id = _number(run_id, "run_id")
+    if net not in RUN_PROXY:
+        raise ValueError("unknown net mode")
+    uid = run_uid(user_id)
+    _check_container(memory, image, network)
+    work = _folder(work_dir, "work_dir")
+    return [
+        "docker", "run", "--rm", "--init", "--name", f"agent-test-{run_id}", "--user", f"{uid}:{uid}",
+        "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+        "--read-only", "--tmpfs", "/tmp:rw,size=128m,mode=1777", "--tmpfs", "/home/test:rw,size=64m,mode=1777",
+        "-e", "HOME=/home/test", "-e", "CI=1",
+        "--memory", memory, "--memory-swap", memory, "--pids-limit", "256", "--cpus", "2",
+        "--network", network, *_proxy_env(RUN_PROXY[net]),
+        "--mount", f"type=bind,src={work},dst=/work", "--workdir", "/work",
+        image, "timeout", str(TEST_SECONDS), "sh", "hub-test.sh",
     ]
 
 
@@ -436,14 +463,20 @@ def parse_vibe(stdout: str) -> tuple[bool, str, int, int, bool]:
 
 
 def result_of(role: str, text: str, failed: bool = False) -> tuple[str, str]:
-    """(result, report) from an agent's answer, the same for every AI: the last line is `RESULT: <value>`. Anything
-    else (no marker, a value that does not fit the role, a failed run) is "failed": the task then goes to the user
-    instead of guessing."""
+    """(result, report) from an agent's answer, the same for every AI: a line `RESULT: <value>` among its last
+    RESULT_LOOK lines (markdown around it does not count). Anything else (no marker, a value that does not fit the
+    role, a failed run) is "failed": the task then goes to the user instead of guessing."""
     if role not in RESULTS:
         raise ValueError("unknown role")
     lines = text.rstrip().splitlines()
-    match = _MARKER.match(lines[-1].strip()) if lines else None
-    report = "\n".join(lines[:-1] if match else lines).strip()[:MAX_REPORT]
+    match, at = None, None
+    filled = [i for i, line in enumerate(lines) if line.strip()][-RESULT_LOOK:]
+    for i in reversed(filled):                    # the last RESULT line near the end, without markdown around it
+        match = _MARKER.match(lines[i].strip().strip("*`_ ").strip())
+        if match:
+            at = i
+            break
+    report = "\n".join(lines[:at] + lines[at + 1:] if match else lines).strip()[:MAX_REPORT]
     if failed or match is None or match.group(1) not in RESULTS[role]:
         return "failed", report or "The agent gave no valid result."
     return match.group(1), report

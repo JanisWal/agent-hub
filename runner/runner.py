@@ -101,6 +101,7 @@ class Runner:
         self.verifiers = verifiers or {"mistral": mistral}   # check a pasted API key with its provider: verify()
         self.work = work or workspace.Workspace(os.environ.get("HUB_WORK_DIR", "/opt/agent-hub/work"))
         self.run_agent = run_agent or self._run_agent
+        self.run_tests = self._run_tests
         # The user's files (and for the manager chat the code) as read-only folders of each job (view.py)
         self.views = views or view.Views(self.work.base, os.environ.get("HUB_FILES_SOURCE"))
         self.background = background
@@ -341,14 +342,40 @@ class Runner:
     def _run_agent(self, command: list[str], prompt: str):
         return subprocess.run(command, input=prompt, capture_output=True, text=True, timeout=RUN_TIMEOUT)
 
+    TEST_OUTPUT = 6000   # characters of the end of the tests' output that go to the hub
+
+    def _run_tests(self, command: list[str]):
+        return subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                              timeout=launcher.TEST_SECONDS + 30)
+
+    def _tests(self, run_id: int, user_id: int, task_id: int, folder, net: str) -> tuple[int, str]:
+        """Run the project's own tests (workspace.TEST_SCRIPT) in a container of their own: (exit code, end of the
+        output). (-1, "") when the project has none. The folder goes back to the commit afterwards."""
+        if not self.work.has_tests(task_id):
+            return -1, ""
+        try:
+            done = self.run_tests(launcher.build_test_command(run_id=run_id, user_id=user_id, work_dir=str(folder),
+                                                              net=net))
+            code, output = done.returncode, (done.stdout or "") + (done.stderr or "")
+        except subprocess.TimeoutExpired:
+            subprocess.run(["docker", "rm", "-f", f"agent-test-{run_id}"], capture_output=True)
+            code, output = 124, "Timeout: the tests took too long."
+        finally:
+            try:
+                self.work.reset(task_id)
+            except (OSError, subprocess.SubprocessError):
+                pass
+        return code, output[-self.TEST_OUTPUT:]
+
     def handle_runs(self) -> None:
         job = self.api.call("POST", "/runner/claim", can_mac="0").get("job")
         if job:
             self._start(self.do_run, job)
 
-    def _finish_run(self, run_id: int, result: str, report: str, tokens_in=0, tokens_out=0, seconds=0) -> None:
+    def _finish_run(self, run_id: int, result: str, report: str, tokens_in=0, tokens_out=0, seconds=0, **extra) -> None:
+        """Report a run. `extra`: diff_stat, diff (what the task changed), tests_exit and tests (the hub's test run)."""
         self.api.call("POST", f"/runner/runs/{run_id}/finish", result=result, report=report,
-                      tokens_in=tokens_in, tokens_out=tokens_out, seconds=seconds)
+                      tokens_in=tokens_in, tokens_out=tokens_out, seconds=seconds, **extra)
 
     def do_run(self, job: dict) -> None:
         run_id, user_id, task_id = int(job["run_id"]), int(job["user_id"]), int(job["task_id"])
@@ -385,14 +412,18 @@ class Runner:
         if login_problem:
             self._expired(user_id, provider)
         result, report = launcher.result_of(role, text, failed=not ok)
+        extra = {}
         if role in ("programmer", "tester"):   # the runner commits from outside: the run never sees .git
             try:
                 self.work.commit(task_id, job["branch"], f"Task {task_id}, round {job.get('round', 1)}: {role} (run {run_id})")
+                extra["diff_stat"], extra["diff"] = self.work.diff(task_id)
             except (OSError, subprocess.SubprocessError) as error:
                 print(f"runner: commit of task {task_id} failed: {type(error).__name__}", file=sys.stderr, flush=True)
                 report = (report + "\n\n(The hub could not save the changes.)").strip()
                 result = "failed"
-        self._finish_run(run_id, result, report, tokens_in, tokens_out, int(self.clock() - started))
+        if role == "programmer" and result == "done":   # the project's own tests, run by the hub, not by an AI
+            extra["tests_exit"], extra["tests"] = self._tests(run_id, user_id, task_id, folder, job.get("net", "apart"))
+        self._finish_run(run_id, result, report, tokens_in, tokens_out, int(self.clock() - started), **extra)
 
     def handle_merges(self) -> None:
         """Approved tasks: merge their branch into the project's main, then the manager documents."""
