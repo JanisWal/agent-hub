@@ -348,7 +348,7 @@ class OutputTest(unittest.TestCase):
             self.assertEqual(self.result(role, out)[0], "failed", (role, out))
 
     def test_marker_near_the_end(self):
-        result, report = self.result("programmer", answer("Built.\n**RESULT: done**\nand then more text"))
+        result, report = self.result("programmer", answer("Built.\n**RESULT: done**\nand then more text"))[:2]
         self.assertEqual((result, report), ("done", "Built.\nand then more text"))   # a word after it is fine
         self.assertEqual(self.result("programmer", answer("RESULT: done.\n"))[0], "done")
         far = "RESULT: done\n" + "\n".join(f"line {n}" for n in range(L.RESULT_LOOK))
