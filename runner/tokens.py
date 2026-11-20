@@ -100,19 +100,6 @@ class Vault:
         shutil.rmtree(folder, ignore_errors=True)
         return True
 
-    def clear_old(self, user_id: int) -> None:
-        """Delete everything in the user's folder but the token: the files of the old login (until 14.11.2026 the
-        runs used Claude Code's own login there, with a refresh token in plain text)."""
-        folder = self.folder(user_id)
-        for item in folder.iterdir() if folder.is_dir() else ():
-            if item.name == TOKEN_FILE:
-                continue
-            if item.is_dir() and not item.is_symlink():
-                shutil.rmtree(item, ignore_errors=True)
-            else:
-                item.unlink(missing_ok=True)
-
-
 def _secret_ok(provider: str, secret: str) -> bool:
     """Does this look like a credential of this provider (Claude's token, or an API key of KEY_PATTERNS)?"""
     if provider == "claude":
@@ -177,7 +164,7 @@ def lookup(folder: str | Path, ticket: str, now: float | None = None, max_age: i
 
 # --- API keys of other AIs (Mistral since 14.11.2026; web/app/ai_link.py). Same encryption and key as the Claude
 # tokens, but their own folder `<HUB_CLAUDE_DIR>/keys/<provider>/<user id>.enc`: deleting or renewing a user's Claude
-# folder (wipes, Vault.clear_old) never touches them, and the folder name "keys" can never be a user id.
+# folder (wipes, Vault.forget) never touches them, and the folder name "keys" can never be a user id.
 # These keys never go to a run: the runner itself asks the provider (runner/mistral.py), no code of an AI runs there.
 KEY_PATTERNS = {"mistral": re.compile(r"[A-Za-z0-9_-]{16,200}")}
 

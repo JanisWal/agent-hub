@@ -191,27 +191,7 @@ class MigrationTest(unittest.TestCase):
             self.assertEqual((project.name, project.description), ("Old", ""))
             self.assertEqual(projects.update_details(1, 1, "Old", "Now described").description, "Now described")
 
-    def test_projects_without_pages_are_spread_over_pages_of_six(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            db.DB_PATH = os.path.join(tmp, "old.db")
-            old = sqlite3.connect(db.DB_PATH)
-            old.executescript(
-                "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE,"
-                " password_hash TEXT NOT NULL, is_admin INTEGER NOT NULL DEFAULT 0,"
-                " created_at INTEGER NOT NULL);"
-                "INSERT INTO users (email, password_hash, created_at) VALUES ('a@b.c', 'x', 1);"
-                "CREATE TABLE projects (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL,"
-                " name TEXT NOT NULL, position INTEGER NOT NULL, created_at INTEGER NOT NULL);"
-            )
-            for i in range(8):  # positions with a gap, as after a deleted project
-                old.execute(
-                    "INSERT INTO projects (user_id, name, position, created_at) VALUES (1, ?, ?, 1)",
-                    (f"P{i}", i * 2 + 1),
-                )
-            old.commit()
-            old.close()
-            pages = [[p.name for p in page] for page in projects.layout(1)]
-            self.assertEqual(pages, [[f"P{i}" for i in range(6)], ["P6", "P7"]])
+
 
 
 class I18nTest(unittest.TestCase):

@@ -60,6 +60,13 @@ class AgentFlowTest(unittest.TestCase):
         self.assertIn("+export const add", job.prompt)
         self.assertNotIn("<tests>", job.prompt)
 
+    def test_a_result_the_role_does_not_have_is_a_failed_run(self):
+        task = self.start()
+        job = agents.claim_next(can_mac=False)
+        self.assertTrue(agents.finish_run(job.run_id, "pass", "Fertig."))      # a tester's word from the programmer
+        self.assertEqual(agents.get_task(self.a.id, task.id).status, "escalated")
+        self.assertIn("does not have", agents.task_runs(self.a.id, task.id)[0].report)
+
     def test_an_escalated_piece_stops_the_pieces_after_it(self):
         with db.connect() as conn:
             one = board.add_from_ai(conn, self.pa.id, "minor", "Schritt 1", "Grundgerüst", approved=True, source="manager")

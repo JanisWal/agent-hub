@@ -79,8 +79,8 @@ class VibeCommandTest(unittest.TestCase):
         self.assertEqual((ok, login), (False, True))
         self.assertTrue(text.startswith("Not logged in"))
         self.assertFalse(launcher.parse_vibe("")[0])
-        self.assertEqual(launcher.result_of("tester", "All good\nRESULT: pass"), ("pass", "All good"))
-        self.assertEqual(launcher.result_of("tester", "RESULT: done")[0], "failed")    # not a tester's result
+        self.assertEqual(launcher.result_of("All good\nRESULT: pass"), ("pass", "All good"))
+        self.assertEqual(launcher.result_of("no marker")[0], "failed")
 
     def test_the_entry_script(self):
         config = vibe_entry.config("mistral-small-2603", "off")

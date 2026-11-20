@@ -328,7 +328,7 @@ class OutputTest(unittest.TestCase):
     def result(self, role, out):
         from runner import adapters
         ok, text, tokens_in, tokens_out, _ = adapters.Claude().parse_run(out)
-        return (*L.result_of(role, text, failed=not ok), tokens_in, tokens_out)
+        return (*L.result_of(text, failed=not ok), tokens_in, tokens_out)
 
     def test_result_marker_report_and_tokens(self):
         result = self.result("tester", answer("All good.\nChecked 3 things.\nRESULT: pass"))
@@ -366,16 +366,12 @@ class ConsistencyTest(unittest.TestCase):
 
     def test_same_lists_as_the_hub(self):
         try:
-            from app import catalog, workflow
+            from app import catalog
         except ImportError:
             self.skipTest("hub code not available")
         # models and levels are a list of the hub; the launcher only checks the same safe patterns
         self.assertEqual(L._MODEL.pattern, catalog._ID.pattern)
         self.assertEqual(L._EFFORT.pattern, catalog._EFFORT.pattern)
-        self.assertEqual(L.ROLES, workflow.ROLES)
-        # "skipped" is the chief's own result (a test left out without the Mac), no run reports it
-        self.assertEqual({k: set(v) for k, v in L.RESULTS.items()},
-                         {k: set(v) - {"skipped"} for k, v in workflow.RESULTS.items()})
 
 
 if __name__ == "__main__":

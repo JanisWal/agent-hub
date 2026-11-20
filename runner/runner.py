@@ -154,7 +154,6 @@ class Runner:
         if token is not None:
             try:
                 self.vault.save(user_id, token)
-                self.vault.clear_old(user_id)   # the files of the old kind of login go
                 success = True
             except (OSError, ValueError, RuntimeError) as error:
                 print(f"runner: could not save the token of user {user_id}: {type(error).__name__}", file=sys.stderr,
@@ -446,7 +445,7 @@ class Runner:
             self._release(root)
         if login_problem:
             self._expired(user_id, provider)
-        result, report = launcher.result_of(role, text, failed=not ok)
+        result, report = launcher.result_of(text, failed=not ok)
         extra = {}
         if role in ("programmer", "tester"):   # the runner commits from outside: the run never sees .git
             try:
@@ -478,7 +477,7 @@ class Runner:
             self.tickets.revoke(ticket)
         if login_problem:
             self._expired(user_id, adapter.provider)
-        result, report = launcher.result_of(job["role"], text, failed=not ok)
+        result, report = launcher.result_of(text, failed=not ok)
         self._finish_run(run_id, result, report, tokens_in, tokens_out, int(self.clock() - started))
 
     def handle_merges(self) -> None:
