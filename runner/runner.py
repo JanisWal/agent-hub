@@ -270,27 +270,59 @@ class Runner:
         return secret, ""
 
     def _view(self, name: str, job: dict, code: bool = False):
-        """(files folder, code folder) of a job, or (None, None) when the view could not be made: the job then runs
-        without them (the package says what the files are; nothing hangs on it)."""
+        """(files folder, code folder, view) of a job, or (None, None, None) when the view could not be made: the job
+        then runs without them (the package says what the files are; nothing hangs on it). Give the view back with
+        `self.views.release` when the job ends (view.py keeps it for the next job of the same content)."""
         try:
             repo = self.work.repo(int(job["project_id"])) if code else None
-            root = self.views.build(name, int(job["project_id"]), job.get("files") or [], job.get("links") or [], repo)
-            return str(root / "files"), (str(root / "code") if code else None)
+            root = self.views.acquire(int(job["project_id"]), job.get("files") or [], job.get("links") or [], repo)
+            return str(root / "files"), (str(root / "code") if code else None), root
         except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, tarfile.TarError) as error:
             print(f"runner: view {name}: {type(error).__name__}", file=sys.stderr, flush=True)
-            self.views.remove(name)
-            return None, None
+            return None, None, None
+
+    def _release(self, root) -> None:
+        if root is not None:
+            self.views.release(root)
 
     MAX_WORKERS = 16        # a safety net only: the hub's setting is the real limit
 
     def _start(self, target, job: dict) -> None:
-        """Run a job in its own thread (in tests: right away)."""
+        """Run a job in its own thread (in tests: right away). Whatever goes wrong in it, the hub hears the end."""
         if not self.background:
-            target(job)
+            self._guarded(target, job)
             return
-        worker = threading.Thread(target=target, args=(job,), daemon=True)
+        worker = threading.Thread(target=self._guarded, args=(target, job), daemon=True)
         self.workers.append(worker)
         worker.start()
+
+    def _guarded(self, target, job: dict) -> None:
+        """A job that breaks off reports a failure instead of waiting for the hub's time limit (15.11.2026 rule)."""
+        try:
+            target(job)
+        except Exception as error:   # noqa: BLE001 - every job must end with a report
+            print(f"runner: {target.__name__} broke off: {type(error).__name__}: {error}", file=sys.stderr, flush=True)
+            try:
+                if "chat_id" in job:
+                    self._report(f"/runner/chat/{int(job['chat_id'])}/finish", success="0",
+                                 answer="The server could not run this question.", tokens_in=0, tokens_out=0)
+                elif "run_id" in job:
+                    self._finish_run(int(job["run_id"]), "failed", "The server could not run this job.")
+            except Exception as again:   # noqa: BLE001 - the hub's time limit is the last net
+                print(f"runner: could not report it: {type(again).__name__}", file=sys.stderr, flush=True)
+
+    REPORT_TRIES = 5        # a result is reported again while the hub restarts (a deploy takes some seconds)
+    REPORT_WAIT = 3
+
+    def _report(self, path: str, **form) -> dict:
+        for attempt in range(self.REPORT_TRIES):
+            try:
+                return self.api.call("POST", path, **form)
+            except OSError:
+                if attempt == self.REPORT_TRIES - 1:
+                    raise
+                time.sleep(self.REPORT_WAIT)
+        return {}
 
     def busy(self) -> bool:
         self.workers = [w for w in self.workers if w.is_alive()]
@@ -314,7 +346,8 @@ class Runner:
             self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="0", answer=problem, tokens_in=0,
                           tokens_out=0)
             return
-        files_dir, code_dir = self._view(f"chat-{chat_id}", job, code=True) if job.get("project_id") else (None, None)
+        files_dir, code_dir, root = (self._view(f"chat-{chat_id}", job, code=True) if job.get("project_id")
+                                     else (None, None, None))
         ticket = self.tickets.issue(secret, provider)
         secret = None
         thoughts = Thoughts(self.api, chat_id, adapter, self.clock)
@@ -332,11 +365,11 @@ class Runner:
             ok, text, tokens_in, tokens_out, login_problem = False, "Timeout: no answer in time.", 0, 0, False
         finally:
             self.tickets.revoke(ticket)   # from here on the ticket is worth nothing
-            self.views.remove(f"chat-{chat_id}")
+            self._release(root)
         if login_problem:   # the AI says we are not signed in: show the connection as expired
             self._expired(user_id, provider)
-        self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="1" if ok else "0", answer=text,
-                      tokens_in=tokens_in, tokens_out=tokens_out, outside="1" if thoughts.outside else "0")
+        self._report(f"/runner/chat/{chat_id}/finish", success="1" if ok else "0", answer=text,
+                     tokens_in=tokens_in, tokens_out=tokens_out, outside="1" if thoughts.outside else "0")
 
     # --- agent runs (web/app/agents.py, runtask.py): one container per run in the task's work folder
     def _run_agent(self, command: list[str], prompt: str):
@@ -374,8 +407,8 @@ class Runner:
 
     def _finish_run(self, run_id: int, result: str, report: str, tokens_in=0, tokens_out=0, seconds=0, **extra) -> None:
         """Report a run. `extra`: diff_stat, diff (what the task changed), tests_exit and tests (the hub's test run)."""
-        self.api.call("POST", f"/runner/runs/{run_id}/finish", result=result, report=report,
-                      tokens_in=tokens_in, tokens_out=tokens_out, seconds=seconds, **extra)
+        self._report(f"/runner/runs/{run_id}/finish", result=result, report=report,
+                     tokens_in=tokens_in, tokens_out=tokens_out, seconds=seconds, **extra)
 
     def do_run(self, job: dict) -> None:
         run_id, user_id, task_id = int(job["run_id"]), int(job["user_id"]), int(job["task_id"])
@@ -392,7 +425,7 @@ class Runner:
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             print(f"runner: work folder of task {task_id}: {type(error).__name__}", file=sys.stderr, flush=True)
             return self._finish_run(run_id, "failed", "The work folder could not be prepared.")
-        files_dir, _ = self._view(f"run-{run_id}", job)
+        files_dir, _, root = self._view(f"run-{run_id}", job)
         ticket = self.tickets.issue(secret, provider)
         secret = None
         started = self.clock()
@@ -408,7 +441,7 @@ class Runner:
             ok, text, tokens_in, tokens_out, login_problem = False, "Timeout: the run took too long.", 0, 0, False
         finally:
             self.tickets.revoke(ticket)
-            self.views.remove(f"run-{run_id}")
+            self._release(root)
         if login_problem:
             self._expired(user_id, provider)
         result, report = launcher.result_of(role, text, failed=not ok)
@@ -444,7 +477,8 @@ class Runner:
             self.work.remove(int(task_id))
         for item in data.get("wipes", []):
             kind, ref = item.get("kind"), int(item.get("ref", 0))
-            remove = {"task": self.work.remove, "project": self.work.remove_project}.get(kind)
+            remove = {"task": self.work.remove,
+                      "project": lambda ref: self.work.remove_project(ref) and self.views.remove_project(ref)}.get(kind)
             if remove is None or ref < 1:
                 continue
             if not remove(ref):   # not everything could be deleted: it stays queued, try again next round
@@ -458,9 +492,11 @@ class Runner:
 
     def handle_power(self) -> None:
         job = self.api.call("POST", "/runner/power/claim")
+        if job.get("action"):   # in a thread: a backup takes minutes and must not stop sign-ins and chats
+            self._start(self.do_power, job)
+
+    def do_power(self, job: dict) -> None:
         action = job.get("action")
-        if not action:
-            return
         try:
             command = launcher.build_power_command(action)
         except ValueError:

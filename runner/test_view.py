@@ -102,6 +102,25 @@ class ViewTest(unittest.TestCase):
         self.views.clear()
         self.assertFalse(self.views.base.exists())
 
+    def test_a_view_is_kept_for_the_same_content_and_made_anew_when_it_changes(self):
+        (self.source / "1").mkdir(parents=True, exist_ok=True)
+        (self.source / "1" / "5").write_text("# Stand\nalt\n")
+        files = [{"id": 5, "name": "MEMORY.md", "area": "memory", "size": 12}]
+        first = self.views.acquire(1, files, [])
+        self.views.release(first)
+        self.assertEqual(self.views.acquire(1, files, []), first)                # same content: no new copy
+        self.views.release(first)
+        os.utime(self.source / "1" / "5", ns=(1, 1))
+        (self.source / "1" / "5").write_text("# Stand\nneu\n")                  # same size, new text
+        busy = self.views.acquire(1, files, [])
+        self.assertNotEqual(busy, first)
+        self.assertEqual((busy / "files" / "MEMORY.md").read_text(), "# Stand\nneu\n")
+        self.assertFalse(first.exists())                                         # nobody used the old one any more
+        other = self.views.acquire(2, [], [])
+        self.assertTrue(self.views.remove_project(1))                            # the project's views go with it
+        self.assertFalse(busy.exists())
+        self.assertTrue(other.exists())
+
     def test_names_never_leave_their_folder(self):
         self.assertEqual(view.safe_name("../../etc/passwd"), "passwd")
         self.assertEqual(view.safe_name("a\\..\\b.txt"), "b.txt")

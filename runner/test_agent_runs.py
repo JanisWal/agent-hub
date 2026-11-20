@@ -314,7 +314,7 @@ class RunTest(unittest.TestCase):
         mount, data = seen[0]
         self.assertTrue(mount.endswith(",dst=/files,readonly"))
         self.assertEqual(data, b"%PDF wiring")
-        self.assertFalse((self.work.base / "views" / "run-3").exists())        # deleted with the end of the run
+        self.assertEqual(sum(r.views.users.values()), 0)                       # given back at the end of the run
 
     def test_a_programmer_run_of_mistral_is_committed_and_reported(self):
         hub, seen = FakeHub(job=self.job()), []
