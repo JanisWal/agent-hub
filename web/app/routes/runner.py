@@ -97,8 +97,8 @@ def chat_thoughts(chat_id: int, text: str = Form("")):
 
 @router.post("/chat/{chat_id}/finish")
 def chat_finish(chat_id: int, success: str = Form("0"), answer: str = Form(""), tokens_in: int = Form(0),
-                tokens_out: int = Form(0)):
-    return ok() if chat.finish(chat_id, success == "1", answer, tokens_in, tokens_out) else fail(409)
+                tokens_out: int = Form(0), outside: str = Form("0")):
+    return ok() if chat.finish(chat_id, success == "1", answer, tokens_in, tokens_out, outside == "1") else fail(409)
 
 
 @router.get("/logins")

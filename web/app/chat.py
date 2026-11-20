@@ -136,12 +136,14 @@ MODES = ("all", "apart")   # what a user may choose; "brief" (no tools) is only 
 NET_TO_MODE = {"together": "all", "apart": "apart"}
 # Why a question failed, read from the reason the runner sent (Janis, 14.11.2026: show a short text, not what Claude
 # Code says). The reason stays in the answer column for looking into problems; the page only gets the kind.
-FAILURES = ("auth", "timeout", "steps", "limit", "other")
+FAILURES = ("auth", "timeout", "steps", "limit", "server", "other")
+# The server can not read a saved credential (runner.UNREADABLE): its own fault, nothing was deleted (20.11.2026).
+_SERVER = re.compile(r"^Server: the saved credential")
 _AUTH = re.compile(r"authenticat|not logged in|/login|oauth|invalid api key|\b401\b", re.I)
 # The AI's quota or rate limit (Claude: "usage limit reached", Mistral: 429 when the month's credit is used up).
 _LIMIT = re.compile(r"usage limit|limit reached|rate.?limit|\b429\b|no credit|quota", re.I)
 # A question whose AI fails like this goes to the user's next AI (aichoice.order_in), Janis 15.11.2026.
-FALLBACK_KINDS = ("auth", "limit")
+FALLBACK_KINDS = ("auth", "limit", "server")
 
 
 @dataclass
@@ -182,7 +184,9 @@ def _message(row: sqlite3.Row) -> Message:
 
 
 def failure_kind(reason: str) -> str:
-    """auth (lost sign-in), timeout, steps (the step limit was reached) or other, for a failed answer."""
+    """auth (lost sign-in), limit, timeout, steps (the step limit was reached), server or other, for a failed answer."""
+    if _SERVER.search(reason):
+        return "server"
     if _AUTH.search(reason):
         return "auth"
     if _LIMIT.search(reason):
@@ -427,8 +431,10 @@ def add_thoughts(chat_id: int, text: str) -> bool:
     return cur.rowcount == 1
 
 
-def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: int = 0) -> bool:
-    """Runner: the answer (or the reason for failure). False if the question is not running any more.
+def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: int = 0, outside: bool = False) -> bool:
+    """Runner: the answer (or the reason for failure). False if the question is not running any more. `outside`: the
+    AI read from the web (or ran a shell with internet) for it, so its new board items wait for the user's yes:
+    something it read there could have asked for them (Janis, 20.11.2026).
 
     A good answer is read for two things (memory.py). A new memory file inside <memory> is saved as the project's
     MEMORY.md and cut out of the answer. If the manager asks for files with <read>, the question is put back in
@@ -502,13 +508,18 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
                 devices.request_action(conn, row["user_id"], row["project_id"], name, action, reason)
             for ask in open_asks:   # they wait for the user's answer in "waiting for you" (questions.py)
                 questions.add(conn, row["project_id"], "chef", ask)
+            held = 0
             for task in tasks:   # on the board of the question's project; the user's request goes to the programmer
-                board.add_from_ai(conn, row["project_id"], task.kind, task.title, task.body,
-                                  approved=task.origin == "user" or task.kind == "bug", source="manager")
+                approved = not outside and (task.origin == "user" or task.kind == "bug")
+                if board.add_from_ai(conn, row["project_id"], task.kind, task.title, task.body, approved=approved,
+                                     source="manager") and not approved and outside:
+                    held += 1
             late = [e for e in edits if not board.edit_from_ai(conn, row["project_id"], e.item_id, e.kind, e.title, e.body)]
-            if late:   # the programmer was faster (or it is no item of this project): the user reads that it stayed
+            notes = ([("chat_edit_late", len(late))] if late else []) + ([("chat_outside_held", held)] if held else [])
+            if notes:   # the programmer was faster, or items wait because the web was read: the user reads why
                 lang = (conn.execute("SELECT language FROM users WHERE id = ?", (row["user_id"],)).fetchone() or {"language": "de"})["language"]
-                note = "\n\n" + i18n.t(lang if lang in ("de", "en") else "de", "chat_edit_late", n=len(late))
+                lang = lang if lang in ("de", "en") else "de"
+                note = "".join("\n\n" + i18n.t(lang, key, n=n) for key, n in notes)
                 conn.execute("UPDATE chat_messages SET answer = substr(answer || ?, 1, ?) WHERE id = ?",
                              (note, MAX_ANSWER, chat_id))
     return cur.rowcount == 1

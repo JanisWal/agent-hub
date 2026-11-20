@@ -11,7 +11,7 @@ import unittest
 import urllib.error
 from pathlib import Path
 
-from runner import mistral, runner, tokens
+from runner import mistral, runner, tokens, vibe_entry
 
 KEY = "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6"
 
@@ -84,17 +84,21 @@ class KeyStoreTest(unittest.TestCase):
         from cryptography.fernet import Fernet
         self.keys.save(5, "mistral", KEY)
         other = tokens.ProviderKeys(self.base, Fernet.generate_key().decode())
-        self.assertIsNone(other.load(5, "mistral"))
+        with self.assertRaises(tokens.Unreadable):
+            other.load(5, "mistral")
+        self.assertEqual(self.keys.load(5, "mistral"), KEY)
 
 
 class FakeKeys:
-    def __init__(self, saved=None):
-        self.saved = dict(saved or {})
+    def __init__(self, saved=None, unreadable=False):
+        self.saved, self.unreadable = dict(saved or {}), unreadable
 
     def save(self, user_id, provider, api_key):
         self.saved[(user_id, provider)] = api_key
 
     def load(self, user_id, provider):
+        if self.unreadable:
+            raise tokens.Unreadable("InvalidToken")
         return self.saved.get((user_id, provider))
 
     def forget(self, user_id, provider):
@@ -188,7 +192,35 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(tickets.issued[0][1:], (KEY, "mistral"))
         self.assertEqual(tickets.revoked, [tickets.issued[0][0]])
         self.assertEqual(hub.posted("/runner/chat/9/finish"),
-                         [{"success": "1", "answer": "Hallo", "tokens_in": 30, "tokens_out": 9}])
+                         [{"success": "1", "answer": "Hallo", "tokens_in": 30, "tokens_out": 9, "outside": "0"}])
+
+    def test_a_web_tool_is_reported_as_outside(self):
+        job = {"chat_id": 9, "user_id": 5, "model": "mistral-small-2603", "prompt": "P", "provider": "mistral"}
+        hub = FakeHub(job=job)
+        r = make(hub, FakeKeys({(5, "mistral"): KEY}))
+
+        def chat(command, prompt, on_line=None):
+            lines = [json.dumps({"outside": True}) + "\n", vibe_line()]
+            for line in lines:
+                on_line(line)
+            return types.SimpleNamespace(stdout="".join(lines), returncode=0)
+        r.run_chat = chat
+        r.handle_chat()
+        self.assertEqual(hub.posted("/runner/chat/9/finish")[0]["outside"], "1")
+
+    def test_a_key_the_server_can_not_read_stays(self):
+        job = {"chat_id": 9, "user_id": 5, "model": "mistral-small-2603", "prompt": "P", "provider": "mistral"}
+        keys, hub = FakeKeys({(5, "mistral"): KEY}, unreadable=True), FakeHub(job=job)
+        make(hub, keys).handle_chat()
+        self.assertEqual(keys.saved, {(5, "mistral"): KEY})                      # nothing deleted
+        self.assertEqual(hub.posted("/expired"), [])                              # and not shown as refused
+        self.assertEqual(hub.posted("/runner/chat/9/finish")[0]["answer"], runner.UNREADABLE)
+
+    def test_the_entry_script_marks_web_tools_but_not_words(self):
+        self.assertTrue(vibe_entry.outside(json.dumps({"type": "tool_call", "name": "web_search", "args": {}})))
+        self.assertFalse(vibe_entry.outside(json.dumps({"type": "message", "role": "assistant",
+                                                        "content": [{"type": "text", "text": "no web_search"}]})))
+        self.assertFalse(vibe_entry.outside(json.dumps({"type": "tool_call", "name": "read_file"})))
 
     def test_a_refused_key_goes_and_the_hub_hears_it(self):
         job = {"chat_id": 9, "user_id": 5, "model": "mistral-small-2603", "prompt": "P", "provider": "mistral"}

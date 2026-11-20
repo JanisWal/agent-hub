@@ -5,8 +5,10 @@ an adapter only knows its program. Both programs run in a throwaway container wi
 - claude: Claude Code (runner/Dockerfile), ticket to the gateway on port 3130.
 - mistral: Mistral Vibe (runner/Dockerfile.vibe), ticket to the gateway on port 3131.
 Interface: `secret(runner, user_id)` (the credential the ticket stands for, or None), `chat_command(...)`,
-`run_command(...)`, `parse(stdout) -> (ok, text, tokens_in, tokens_out, login_problem)` and `thought(line)`: the
-thought text in one line of a chat's output while it runs ("" if the line has none; shown in the chat). `images` says whether the
+`run_command(...)`, `parse(stdout) -> (ok, text, tokens_in, tokens_out, login_problem)`, `thought(line)`: the
+thought text in one line of a chat's output while it runs ("" if the line has none; shown in the chat) and
+`outside(line)`: True when the line shows the AI reading from outside (a web search or page, a shell with internet), so
+the hub lets the board items of that answer wait for the user (anything read there could carry instructions). `images` says whether the
 model sees pictures (catalog of the hub); Claude Code looks at images and PDFs with its own Read tool, Vibe through the
 tool of look_mcp.py.
 """
@@ -35,6 +37,9 @@ class Claude:
 
     def thought(self, line: str) -> str:
         return launcher.claude_thought(line)
+
+    def outside(self, line: str) -> bool:
+        return launcher.claude_outside(line)
 
     def parse_run(self, stdout: str):
         """(ok, text, tokens_in, tokens_out, login_problem) of an agent run of Claude Code."""
@@ -71,6 +76,9 @@ class Mistral:
 
     def thought(self, line: str) -> str:
         return launcher.vibe_thought(line)
+
+    def outside(self, line: str) -> bool:
+        return launcher.vibe_outside(line)
 
 
 ADAPTERS = {"claude": Claude(), "mistral": Mistral()}

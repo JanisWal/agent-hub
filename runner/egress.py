@@ -36,6 +36,11 @@ TOTAL_TIMEOUT = 300
 MAX_CLIENTS = 32
 # The gateways: AI -> (upstream host, port). A ticket only works at the gateway of its own AI.
 GATEWAYS = {"claude": ("api.anthropic.com", 3130), "mistral": ("api.mistral.ai", 3131)}
+# What a run may ask of its AI (20.11.2026): Claude only the model calls; Mistral everything but what costs money apart
+# from the model calls or stores data with the provider (Vibe's own calls were not all known, so a list of what never).
+GATEWAY_PATHS = {"claude": ("/v1/messages", "/v1/models")}
+GATEWAY_NEVER = {"mistral": ("/v1/files", "/v1/libraries", "/v1/batch", "/v1/fine_tuning", "/v1/billing",
+                             "/v1/workspaces", "/v1/audio")}
 GATEWAY_HEAD_LIMIT = 65536
 GATEWAY_BODY_LIMIT = 64 * 1024 * 1024    # a request with images or long context; Claude Code always sends the length
 GATEWAY_IDLE = 300                       # a long answer streams with pauses (thinking); the ping events keep it alive
@@ -204,6 +209,15 @@ def parse_request(head: bytes) -> tuple[str, str, list[tuple[str, str]]] | None:
     return method, path, headers
 
 
+def path_allowed(provider: str, path: str) -> bool:
+    """May a run call this path of its AI (GATEWAY_PATHS, GATEWAY_NEVER)? A path matches itself and what is below it."""
+    bare = path.split("?", 1)[0].rstrip("/")
+    def under(prefixes) -> bool:
+        return any(bare == p or bare.startswith(p + "/") for p in prefixes)
+    allowed = GATEWAY_PATHS.get(provider)
+    return (allowed is None or under(allowed)) and not under(GATEWAY_NEVER.get(provider, ()))
+
+
 def rewrite(method: str, path: str, headers: list[tuple[str, str]], token: str, length: int,
             upstream: str) -> bytes:
     """The request as it goes to the AI: the real token instead of the ticket, one request per connection."""
@@ -256,6 +270,10 @@ async def gateway(client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter
             await _gateway_reply(client_w, "400 Bad Request", "bad request")
             return
         method, path, headers = request
+        if not path_allowed(provider, path):
+            log(f"gateway {provider}: refused {method} {path.split('?')[0]} (path)")
+            await _gateway_reply(client_w, "404 Not Found", "not available through the hub")
+            return
         values = {n.lower(): v for n, v in headers}
         if "transfer-encoding" in values:
             await _gateway_reply(client_w, "411 Length Required", "length required")

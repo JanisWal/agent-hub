@@ -309,6 +309,17 @@ class ChatOutputTest(unittest.TestCase):
             self.assertTrue(L.parse_chat_output(out)[4], text)
         self.assertFalse(L.parse_chat_output(json.dumps({"is_error": True, "result": "Overloaded"}))[4])
         self.assertFalse(L.parse_chat_output(json.dumps({"result": "You can log in with /login"}))[4])  # an answer
+        for text in ("The login page fails: log in shows an OAuth error", "authenticate the user first"):
+            self.assertFalse(L.parse_chat_output(json.dumps({"is_error": True, "result": text}))[4], text)
+
+    def test_outside_tools_in_the_stream(self):
+        call = {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "WebFetch", "input": {}}]}}
+        self.assertTrue(L.claude_outside(json.dumps(call)))
+        call["message"]["content"][0]["name"] = "Read"
+        self.assertFalse(L.claude_outside(json.dumps(call)))
+        self.assertFalse(L.claude_outside(json.dumps({"type": "result", "result": "WebFetch tool_use"})))
+        self.assertTrue(L.vibe_outside('{"outside": true}'))
+        self.assertFalse(L.vibe_outside('{"thought": "outside"}'))
 
 
 class OutputTest(unittest.TestCase):
