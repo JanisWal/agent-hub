@@ -227,6 +227,7 @@ Grenzen (Vorschlag, beim Bau festzulegen): höchstens 3 `<ask>`, 5 `<task>`, 1 `
 
 - **Abo oder API-Schlüssel** ist eine Frage des Zugangs, nicht der KI: dieselben Modelle, dasselbe Paket, dieselben Werkzeuge. Der Hub wählt je Auftrag den Weg (`credentials.py`: Modus, Bereich, Tagesgrenze des Nutzers), der Runner holt das passende Geheimnis, das Gateway setzt es ein. Wechsel nur vom Abo zum Schlüssel derselben KI, dann erst die nächste KI (`aichoice`).
 - **Weitere KIs** sind ein Anbieter (`custom`) mit bis zu acht Plätzen je Nutzer; das Modell nennt den Platz (`own-3`), Adresse und Modell der fremden API kommen aus der Datenbank des Hubs, nie aus dem Lauf. Rolle, Paket und Werkzeuge wie bei jeder KI ohne eigenes Programm (`hubloop.py`, Werkzeuge vom Hub).
+- **Schleife nach dem Taschenrechner-Test (`robust-loop`):** Die Aufgabe ist die Einheit: was zu ihr gehört, erledigt der Programmierer im Lauf, Tester und Prüfer melden es als Ergebnis. Rollen legen nur Fehler außerhalb der Aufgabe und neue Funktionen an; Umgebungsprobleme sind Hinweise (`<env>`). Scheitert ein Lauf an der KI statt an der Arbeit (`failures.py`), geht er mit Schlüssel oder nächster KI weiter. Programmierer und Tester haben einen Testbrowser (`hub-browser`).
 - **Eigener Adapter lohnt sich**, wenn die KI ein Programm mit eigenen Werkzeugen und eine Abo-Anmeldung hat (heute Claude Code, Mistral Vibe, Codex; als Platzhalter Gemini CLI und GitHub Copilot CLI). Sonst reicht der allgemeine Weg.
 
 ### 9.3a Pakete je Rolle (Janis, 20.11.2026, gebaut in `web/app/prompts.py`)
