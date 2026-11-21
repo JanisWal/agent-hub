@@ -134,6 +134,8 @@ Ziel von Janis: eine Anmeldung, die nicht abläuft, und Tokens, die weder der Be
 - **Verworfen:** eine eigene Werkzeug-Schleife des Hubs (gibt es fertig), die Mistral Agents API mit eingebautem Code-Interpreter (läuft bei Mistral und kommt nie an unsere Dateien und Geräte), MCP-Server für die Websuche (Vibe hat sie eingebaut; Brave- oder DuckDuckGo-MCP bleiben eine Reserve).
 - Der erste Weg vom 14.11.2026 (Runner fragt die API direkt, ohne Werkzeuge) ist ersetzt; `runner/mistral.py` prüft nur noch Schlüssel.
 
+**Reihenfolge (21.11.2026, `bug-lists`):** ordnet sich selbst (`aichoice.ranked_in`): die Standard-KI, die vorher Standard war (`agent_settings` `ai.previous`), die übrigen verknüpften in der Reihenfolge des Katalogs; so steht sie in der Schublade (danach die nicht verknüpften) und so wird beim Ausweichen gefragt (eine pausierende KI zuletzt). **Fehlerlisten:** Mehrere Mängel in einer Nachricht werden je ein eigener Fehler, bis zu 12 je Antwort.
+
 **Standard-KI und Rückfall (`web/app/aichoice.py`, 15.11.2026):** Jeder Nutzer hat eine Standard-KI (`agent_settings` Schlüssel `ai.default`; ist sie nicht mehr verknüpft, gilt die erste verknüpfte in der Reihenfolge von `catalog.PROVIDERS`). Chat und Agentenläufe nutzen sie; kann sie nicht (nicht verknüpft, abgelaufen, Kontingent leer), übernimmt **automatisch** die nächste **eigene** KI, mit Hinweis unter der Antwort. Modell und Stufe gelten je Rolle **und** je KI (`model.<rolle>.<anbieter>`). Der Prüfer nimmt eine andere KI als der Programmierer, wenn zwei verknüpft sind. **Anleitung für Nutzer:** `ANLEITUNG-MISTRAL.md` (im Repo und im iCloud-Ordner; bei Änderungen an Schublade oder Mistral mit anpassen).
 
 ### Agentenschleife, Testbrowser und Grenzen (Janis, 21.11.2026, `robust-loop`)
