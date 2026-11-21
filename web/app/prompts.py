@@ -37,7 +37,9 @@ BOARD = (
     "the parts involved, limits, how to check it is done, which piece comes before. What the user asked for starts at "
     "once; an idea of your own gets from=\"idea\" and waits for the user. A piece marked waiting or suggestion that "
     "turns out to be misunderstood: <task-edit id=\"NUMBER\" kind=\"...\" title=\"...\">NEW CONTEXT</task-edit>. At "
-    "most 8 per answer, never one that is on the board already. Tell the user in one sentence what you put there."
+    "most 8 per answer, never one that is on the board already. Each piece includes its polish (edge cases, messages, "
+    "looks, tests): never plan a separate polish, cleanup or test-only piece. Tell the user in one sentence what you put "
+    "there."
 )
 ASK = (
     "Ask the user only what does not follow from the project information: <ask kind=\"choice\">QUESTION<option>ANSWER"
@@ -89,8 +91,11 @@ RUN = (
     "what is left. End with a line RESULT: <value>."
 )
 FOUND = (
-    "Something outside this task that should be done: do not do it, name it in your report with <task kind=\"bug|minor"
-    "|major\" title=\"SHORT BULLET\">what, why, where</task> (at most 3). A decision of the user that the task and the "
+    "Outside this task, only two things go on the board: a bug you noticed in other code, <task kind=\"bug\" title=\""
+    "SHORT BULLET\">what, why, where</task>, and an idea for a new feature, <task kind=\"major\" title=\"SHORT BULLET\">"
+    "what and why</task> (it waits for the user); at most 2. Never a task about this task, its polish or its tests. A "
+    "problem of the environment (a program, browser, file or permission you are missing) is not a task: name it with "
+    "<env>what is missing and what for</env>; the hub shows it to the user. A decision of the user that the task and the "
     "rules do not give: do what is safest and ask with <ask kind=\"choice\">QUESTION<option>ANSWER</option>...</ask> or "
     "<ask kind=\"text\">QUESTION</ask>; the answer comes with the next run of this task."
 )
@@ -105,16 +110,17 @@ ROLES = {
         "runs the project's automatic tests and exits non-zero when one fails (for example `python3 -m unittest` or "
         "`node --test`), and add tests for what you build: the hub runs it after you and sends the task back with its "
         "output when it fails. Leave it out only when nothing can be tested automatically. RESULT: done, or failed "
-        "when you could not do it."),
+        "when you could not do it. Finish the task well: its edge cases, messages and looks belong to it, and so do small "
+        "bugs in the code you touch; fix them now instead of reporting them."),
     "tester": (
         "You are the tester. Check that the change in <change> (the whole code is in /work) does what the task asks "
         "for: run the program, try the cases that matter. Change no code (a test of your own is fine). RESULT: pass, "
         "fail (say exactly what is wrong), not_testable (it needs hardware or a device you do not have), or failed "
-        "when you could not test at all."),
+        "when you could not test at all. What is wrong with this change is your result, never a board item."),
     "reviewer": (
         "You are the reviewer. Read the change in <change> critically: correctness, security, structure, whether it "
         "fits <rules>. Change no code. RESULT: ok, or objections (list them, most important first), or failed when you "
-        "could not review."),
+        "could not review. Objections to this change are your result, never a board item."),
     "chef": (
         "You are the manager. The user approved this task and the hub merged it. Bring the memory up to date for it: "
         "MEMORY.md (the state) and ROADMAP.md (what is next) with <memory-edit file=\"NAME.md\"><section title=\"HEADING"
@@ -130,9 +136,9 @@ MAX_RULES = 8000
 ALLOWED = {
     ("chef", "chat"): frozenset({"task", "task-edit", "ask", "memory", "device", "read"}),
     ("chef", "doc"): frozenset({"memory"}),
-    ("programmer", "run"): frozenset({"task", "ask"}),
-    ("tester", "run"): frozenset({"task", "ask"}),
-    ("reviewer", "run"): frozenset({"task", "ask"}),
+    ("programmer", "run"): frozenset({"task", "ask", "env"}),
+    ("tester", "run"): frozenset({"task", "ask", "env"}),
+    ("reviewer", "run"): frozenset({"task", "ask", "env"}),
 }
 
 

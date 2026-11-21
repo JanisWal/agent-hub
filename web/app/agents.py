@@ -333,6 +333,8 @@ def _enter(conn: sqlite3.Connection, user_id: int, task_id: int, step: workflow.
     if step.status in ("done", "escalated", "cancelled"):
         conn.execute("UPDATE agent_runs SET status = 'cancelled' WHERE task_id = ? AND status = 'queued'",
                      (task_id,))
+    if step.status in ("done", "cancelled"):
+        questions.drop_for_task(conn, task_id)
     if step.status == "cancelled":   # the user stopped it: the item stays on the board, but never starts by itself again
         conn.execute("UPDATE board_items SET auto = 0 WHERE id = (SELECT item_id FROM agent_tasks WHERE id = ?)",
                      (task_id,))
@@ -678,6 +680,26 @@ def _try_again(conn: sqlite3.Connection, run: sqlite3.Row, user_id: int, report:
     return True
 
 
+def _auto_approve(conn: sqlite3.Connection, user_id: int, task: sqlite3.Row, step: workflow.Step,
+                  now: int) -> workflow.Step:
+    """Fewer approvals (Janis, 21.11.2026): a clean task merges by itself as the manager's autonomy allows: "auto" every
+    one, "major" (the default) bugs and improvements while a new feature waits, "all" none. Clean: the reviewer had no
+    objection, nothing has to be checked by hand, the project's tests did not fail and no question of the task is
+    open. Anything else waits for the user as before."""
+    if step.status != "awaiting_approval" or step.manual_check:
+        return step
+    autonomy = autonomy_in(conn, user_id)
+    if autonomy == "all" or (autonomy == "major" and task["kind"] == "major"):
+        return step
+    fresh = conn.execute("SELECT tests_exit FROM agent_tasks WHERE id = ?", (task["id"],)).fetchone()
+    if fresh["tests_exit"] not in (None, 0):
+        return step
+    if conn.execute("SELECT 1 FROM questions WHERE task_id = ? AND status = 'open'", (task["id"],)).fetchone():
+        return step
+    conn.execute("UPDATE agent_tasks SET deadline = ? WHERE id = ?", (now + TASK_SECONDS, task["id"]))
+    return workflow.after_approval(step.round, step.manual_check, _enabled(conn, user_id))
+
+
 def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, tokens_out: int = 0,
                seconds: int = 0, now: int | None = None, change: tuple[str, str] | None = None,
                tests: tuple[int, str] | None = None) -> bool:
@@ -732,9 +754,13 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
         may = prompts.ALLOWED.get((run["role"], "doc" if run["role"] == "chef" else "run"), frozenset())
         if "task" not in may:                             # the manager's documentation puts nothing on the board
             found.tasks, found.asks = [], []
-        for item in found.tasks[:FOUND_MAX]:              # a bug goes on the board at once, an addition waits
+        # Only a bug outside the task (on the board at once) and a new feature (waits for the user) come from a role;
+        # a "minor" is part of the task and is done in it (Janis, 21.11.2026: 29 improvements for one calculator).
+        for item in [t for t in found.tasks if t.kind in ("bug", "major")][:FOUND_MAX]:
             board.add_from_ai(conn, task["project_id"], item.kind, item.title, item.body,
                               approved=item.kind == "bug", source="agent")
+        for note in (found.envs if "env" in may else []):   # the environment: never a board item
+            questions.add_note(conn, task["project_id"], run["role"], note)
         for ask in found.asks:                            # the answer comes with the next run of this task
             questions.add(conn, task["project_id"], run["role"], ask, task["id"])
         conn.execute(
@@ -743,7 +769,7 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
             (result, report[:MAX_REPORT], max(0, int(tokens_in)), max(0, int(tokens_out)),
              max(0, int(seconds)), now, run_id),
         )
-        _enter(conn, user_id, task["id"], step, now)
+        _enter(conn, user_id, task["id"], _auto_approve(conn, user_id, task, step, now), now)
     if pending_notes:                                     # after the transaction: files.py opens its own connection
         owner, project_id, notes, edits = pending_notes
         for name, body in notes.items():

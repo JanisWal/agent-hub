@@ -606,6 +606,12 @@ TASK_PILLS = {
 
 
 def _question_row(lang: str, q) -> str:
+    if q.kind == "note":   # a problem of the environment a role named (questions.add_note): read it, then "done"
+        who = i18n.t(lang, "w_env_role", role=i18n.t(lang, f"station_{q.role}"))
+        return (f'<li class="w-item w-ask w-note" data-question="{q.id}"><small class="w-who">{esc(who)}</small>'
+                f'<p class="w-text">{esc(q.text)}</p><div class="w-options">'
+                f'<button class="pill-btn quiet" type="button" data-reply="ok">{esc(i18n.t(lang, "w_env_done"))}</button>'
+                f'</div></li>')
     who = i18n.t(lang, "w_asks_chef") if q.role == "chef" else i18n.t(lang, "w_asks_role", role=i18n.t(lang, f"station_{q.role}"))
     options = "".join(f'<button class="pill-btn quiet" type="button" data-reply="{esc(o)}">{esc(o)}</button>'
                       for o in q.options)   # a suggested answer: one click sends it

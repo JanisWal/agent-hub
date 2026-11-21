@@ -33,6 +33,12 @@ LEVELS = ("green", "yellow", "red")
 LARGE_QUESTION = 300   # a question this long opens large even if the AI said small (KONZEPT 9.4)
 
 _ASK = re.compile(r"<ask(\s[^<>]*)?>(.*?)</ask>", re.DOTALL)
+_ENV = re.compile(r"<env>(.*?)</env>", re.DOTALL)
+MAX_ENVS, MAX_ENV = 2, 300
+_WORD = re.compile(r"[a-zäöüß0-9]+")
+# Words that say nothing about what a bullet is about (German and English).
+_FILLER = frozenset("der die das den dem des ein eine einen und oder mit ohne für auf in im an am zu bei von nach vor "
+                    "the a an and or with without for on in at to of by from is are be".split())
 _TASK = re.compile(r"<task(\s[^<>]*)?>(.*?)</task>", re.DOTALL)
 _EDIT = re.compile(r"<task-edit(\s[^<>]*)?>(.*?)</task-edit>", re.DOTALL)
 _STATUS = re.compile(r"<status(\s[^<>]*)?>(.*?)</status>", re.DOTALL)
@@ -85,6 +91,7 @@ class Signals:
     tasks: list[Task] = field(default_factory=list)
     status: Status | None = None   # the last valid one
     edits: list[Edit] = field(default_factory=list)   # changes to items the programmer has not started
+    envs: list[str] = field(default_factory=list)     # problems of the environment a role names (<env>)
 
 
 def _attrs(raw: str | None) -> dict:
@@ -140,8 +147,23 @@ def parse(answer: str) -> Signals:
         if attrs.get("id", "").isdigit() and len(edits) < MAX_TASKS:
             kind = attrs.get("kind", "") if attrs.get("kind") in TASK_KINDS else ""
             edits.append(Edit(int(attrs["id"]), kind, _line(attrs.get("title", ""), MAX_TITLE), _block(inner, MAX_BODY)))
-    text = _EDIT.sub("", _STATUS.sub("", _TASK.sub("", _ASK.sub("", answer)))).strip()
-    return Signals(text, asks, tasks, status, edits)
+    envs = list(dict.fromkeys(e for e in (_line(x, MAX_ENV) for x in _ENV.findall(answer)) if e))[:MAX_ENVS]
+    text = _ENV.sub("", _EDIT.sub("", _STATUS.sub("", _TASK.sub("", _ASK.sub("", answer))))).strip()
+    return Signals(text, asks, tasks, status, edits, envs)
+
+
+def _words(text: str) -> set[str]:
+    return {w for w in _WORD.findall((text or "").lower()) if w not in _FILLER and len(w) > 1}
+
+
+def similar(a: str, b: str, threshold: float = 0.6) -> bool:
+    """Do two short texts (bullets, questions) say the same (Janis, 21.11.2026: six bullets "scroll the display to the
+    end")? The share of their meaningful words they have in common, measured on the shorter one."""
+    wa, wb = _words(a), _words(b)
+    if not wa or not wb:
+        return (a or "").strip().lower() == (b or "").strip().lower()
+    shared = len(wa & wb)
+    return shared >= min(2, len(wa), len(wb)) and shared / min(len(wa), len(wb)) >= threshold
 
 
 def device_asks(answer: str) -> tuple[str, list[tuple[str, str, str]]]:

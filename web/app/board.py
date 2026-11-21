@@ -15,7 +15,7 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-from . import db
+from . import db, reply
 
 KINDS = ("bug", "minor", "major")
 MAX_TITLE = 200
@@ -135,17 +135,22 @@ def add_from_ai(conn: sqlite3.Connection, project_id: int, kind: str, title: str
                 approved: bool = False, source: str = "agent") -> int | None:
     """An item the manager or an agent put on the board (the caller knows the project is the user's: it comes from the
     job, never from the AI). `approved`: agreed at once and it starts by itself (`auto`), else a suggestion that waits
-    for the user. None for a bad kind or title, an unknown source, or when an open or proposed item of that title is
-    there already (an AI repeats itself; nothing comes twice)."""
+    for the user. None for a bad kind or title, an unknown source, or when an open or proposed item says the same
+    already (reply.similar, Janis 21.11.2026: six bullets for one fix): then its context is added to that item."""
     try:
         kind, title = _clean(kind, title)
     except ValueError:
         return None
     if source not in SOURCES:
         return None
-    if conn.execute("SELECT 1 FROM board_items WHERE project_id = ? AND status IN ('open', 'proposed')"
-                    " AND lower(title) = lower(?)", (project_id, title)).fetchone():
-        return None
+    for row in conn.execute("SELECT id, title, details FROM board_items WHERE project_id = ?"
+                            " AND status IN ('open', 'proposed')", (project_id,)):
+        if reply.similar(row["title"], title):
+            extra = (details or "").strip()
+            if extra and extra not in row["details"]:   # what the repeat adds is kept with the item there is
+                conn.execute("UPDATE board_items SET details = ? WHERE id = ?",
+                             ((row["details"] + "\n\n" + extra).strip()[:MAX_DETAILS], row["id"]))
+            return None
     status = "open" if approved else "proposed"
     position = _edge_position(conn, project_id, kind, top=kind == "bug") if approved else 0   # a bug goes on top
     cur = conn.execute(
