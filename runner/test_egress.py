@@ -402,7 +402,7 @@ class ChatGptGatewayTest(OwnAiGatewayTest):
         self.assertTrue((await self.ask(ticket)).startswith(b"HTTP/1.1 502"))   # not wrapped
         keyed = self.tickets.issue("sk-proj-" + "Z9y8X7w6" * 5, "chatgpt", upstream="api")
         self.assertTrue((await self.ask(codex.ticket_jwt(keyed, {}), "/v1/responses")).startswith(b"HTTP/1.1 502"))
-        self.assertTrue((await self.ask(wrapped, "/v1/chat/completions")).startswith(b"HTTP/1.1 400"))
+        self.assertTrue((await self.ask(wrapped, "/v1/chat/completions")).startswith(b"HTTP/1.1 404"))   # not a path it lets through
         self.assertEqual(self.received, [])
 
     # the own-AI cases of the parent class do not apply here
