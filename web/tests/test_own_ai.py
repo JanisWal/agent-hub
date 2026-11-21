@@ -140,7 +140,7 @@ class OwnAiTest(unittest.TestCase):
         self.assertIn('name="endpoint"', page)
         self.assertIn('name="label"', page)
         self.assertIn('data-key-open="custom"', page)                                 # the open tile
-        self.assertIn("Jede KI mit Standard-API", page)
+        self.assertIn("Jede Standard-API", page)
         for name in ui.SOON:
             self.assertIn(name, page)
         self.assertIn("Kommt später", page)
