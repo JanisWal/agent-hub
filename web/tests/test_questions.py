@@ -72,6 +72,7 @@ class QuestionsTest(unittest.TestCase):
         self.assertEqual(chat.list_messages(self.a.id, self.pa.id), [])          # nothing went to the chat
 
     def test_deciding_in_the_tile_with_a_remark(self):
+        agents.configure(self.a.id, autonomy="all")   # it waits for the approval (else it merges by itself)
         item = board.create_item(self.a.id, self.pa.id, "minor", "Relais schalten")
         for result in ("done", "pass", "ok"):
             job = agents.claim_next(can_mac=False)
@@ -86,6 +87,7 @@ class QuestionsTest(unittest.TestCase):
         self.assertIn("Bitte 24 V nehmen.", agents.claim_next(can_mac=False).prompt)   # the programmer reads it
 
     def test_the_tile_shows_questions_and_decisions_with_their_fields(self):
+        agents.configure(self.a.id, autonomy="all")   # it waits for the approval (else it merges by itself)
         self.chat_answer(ASK)
         item = board.create_item(self.a.id, self.pa.id, "minor", "Relais schalten")
         for result in ("done", "pass", "ok"):

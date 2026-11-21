@@ -53,6 +53,24 @@ def ai_settings(value: int = Form(-1), user: users.User = Depends(api_user)):
     return ok()
 
 
+@router.post("/system/limits")
+async def limits(request: Request, user: users.User = Depends(api_user)):
+    """The settings a small server needs and a big one does not (serversettings.CHOICES): any of them in one form, saved
+    as soon as a choice changes. Owner and superadmin; 400 for an unknown name or a value that is no choice."""
+    if not user.is_system_admin:
+        return fail(403)
+    form = await request.form()
+    try:
+        changes = [(key, int(str(value))) for key, value in form.items()]
+        if not changes or any(key not in serversettings.CHOICES for key, _ in changes):
+            raise ValueError("name")
+        for key, value in changes:
+            serversettings.set_choice(key, value, serversettings.CHOICES[key])
+    except ValueError:
+        return fail(400)
+    return ok()
+
+
 def _owner_only(user: users.User):
     return None if user.role == "owner" else fail(403)
 

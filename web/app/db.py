@@ -296,6 +296,16 @@ CREATE TABLE IF NOT EXISTS ai_models (
     tried_at   INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, provider)
 );
+-- The project's code as a ZIP to download (exports.py, 21.11.2026): the request; the file lies in exports/<id>.zip.
+CREATE TABLE IF NOT EXISTS code_exports (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    task_id    INTEGER,
+    status     TEXT NOT NULL,
+    size       INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+);
 -- Addresses in the server's network that further AIs may use (netaddresses.py, 21.11.2026); user_id NULL = every account.
 CREATE TABLE IF NOT EXISTS net_addresses (
     id         INTEGER PRIMARY KEY,
@@ -353,6 +363,7 @@ NEW_COLUMNS = {
                        "label": "TEXT NOT NULL DEFAULT ''"},         # a further AI: the name the user gave it
     "agent_runs": {"effort": "TEXT NOT NULL DEFAULT ''",     # effort level of the run's model (catalog.py)
                    "credential": "TEXT NOT NULL DEFAULT 'plan'",   # plan or api key of the user (credentials.py)
+                   "tried": "TEXT NOT NULL DEFAULT ''",            # AIs that failed this run already (agents.py)
                    "provider": "TEXT NOT NULL DEFAULT 'claude'"},   # which AI does the run (aichoice.py)
     "agent_tasks": {"merged": "INTEGER NOT NULL DEFAULT 0",    # the runner merged the approved branch (agents.py)
                     "diff_stat": "TEXT NOT NULL DEFAULT ''",   # what the task changed against main: files and lines

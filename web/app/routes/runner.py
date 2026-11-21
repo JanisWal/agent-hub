@@ -17,7 +17,7 @@ import os
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 
-from .. import agents, ai_link, chat, claude_link, devices, models, power, throttle, users
+from .. import agents, ai_link, chat, claude_link, devices, exports, models, power, throttle, users
 from ..deps import fail, ok
 
 TOKEN_HASH_ENV = "HUB_RUNNER_TOKEN_HASH"
@@ -69,6 +69,23 @@ def merges():
 @router.post("/merges/{task_id}/done")
 def merge_done(task_id: int, success: str = Form("0")):
     return ok() if agents.merge_done(task_id, success == "1") else fail(409)
+
+
+@router.get("/exports")
+def export_requests():
+    """Requests for a ZIP of a project's code (exports.py); old ones and their files go on the way."""
+    exports.sweep()
+    return ok(exports=exports.pending(), limit=exports.limit())
+
+
+@router.post("/exports/{export_id}")
+async def export_deliver(export_id: int, request: Request):
+    """The ZIP as the raw body (application/zip); an empty body: it could not be made."""
+    data = await request.body()
+    if not data:
+        exports.fail(export_id)
+        return ok()
+    return ok() if exports.deliver(export_id, data) else fail(409)
 
 
 @router.get("/cleanups")

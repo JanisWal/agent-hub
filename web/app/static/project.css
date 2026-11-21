@@ -937,3 +937,8 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 .p-ai { padding: 2px 9px; border-radius: 999px; border: 1px solid var(--glass-border); color: var(--text); }
 .p-ai.off { border-style: dashed; color: var(--muted); opacity: 0.7; }
 @media (max-width: 1100px) { .manager.role-view.p-view { grid-template-columns: minmax(0, 1fr); } }
+
+/* The project's code to download (rolepage._code_tile, 21.11.2026): the buttons side by side, the note below. */
+.p-export { display: flex; flex-wrap: wrap; gap: var(--space); }
+.p-export button { flex: 1 1 200px; }
+.p-export-note { margin: var(--space) 0 0; font-size: 0.86rem; }

@@ -101,6 +101,7 @@ class ManagerBoardTest(unittest.TestCase):
         self.assertFalse(self.items()["Relais klickt doppelt"].auto)                    # and the stopped one never again
 
     def test_an_approval_a_day_later_still_gets_the_managers_documentation(self):
+        agents.configure(self.a.id, autonomy="all")   # it waits for the approval (else it merges by itself)
         item = board.create_item(self.a.id, self.pa.id, "minor", "Anzeige bauen")
         start = 1_000_000
         task = agents.start_item(self.a.id, item.id, now=start)
@@ -118,12 +119,14 @@ class ManagerBoardTest(unittest.TestCase):
         item = board.create_item(self.a.id, self.pa.id, "minor", "Anzeige bauen")
         agents.start_item(self.a.id, item.id)
         job = agents.claim_next(can_mac=False)
-        report = ("Gebaut.\n<task kind=\"minor\" title=\"Helligkeit einstellbar\">Ein Regler wäre gut.</task>\n"
+        report = ("Gebaut.\n<task kind=\"major\" title=\"Helligkeit einstellbar\">Ein Regler wäre gut.</task>\n"
+                  "<task kind=\"minor\" title=\"Schrift etwas größer\">gehört zur Aufgabe</task>\n"
                   "<task kind=\"bug\" title=\"Absturz bei leerem Plan\">plan.json leer: KeyError.</task>\nRESULT: done")
         self.assertTrue(agents.finish_run(job.run_id, "done", report))
         items = self.items()
         self.assertEqual((items["Helligkeit einstellbar"].status, items["Helligkeit einstellbar"].source), ("proposed", "agent"))
         self.assertEqual((items["Absturz bei leerem Plan"].status, items["Absturz bei leerem Plan"].auto), ("open", True))
+        self.assertNotIn("Schrift etwas größer", items)                          # part of the task: done in it
         stored = agents.task_runs(self.a.id, agents.item_task(self.a.id, item.id).id)[0].report
         self.assertNotIn("<task", stored)
         # the user says yes to the suggestion: it goes to the programmer by itself
@@ -203,7 +206,7 @@ class ManagerBoardTest(unittest.TestCase):
         self.assertIn("Beim Einschalten zweimal.", view)                        # the context from the board
         for part in ("Verlauf", "Vorschau", "Code", "Änderungen", "Läufe", "Verbrauch"):
             self.assertIn(f"<h2>{part}</h2>", view)
-        self.assertEqual(view.count('class="p-badge"'), 4)                       # the four placeholders
+        self.assertEqual(view.count('class="p-badge"'), 3)                       # the three placeholders (code is real)
         self.assertIn("disabled", view)
         tester = page[page.index('id="view-tester"'):page.index('id="view-reviewer"')]
         self.assertNotIn("p-badge", tester)

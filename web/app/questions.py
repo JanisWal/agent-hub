@@ -25,7 +25,7 @@ class Question:
     task_id: int | None
     role: str                # chef (the manager chat) or the role of a run
     text: str
-    kind: str                # choice or text
+    kind: str                # choice, text, or note (a problem of the environment a role named: only "done")
     options: list[str] = field(default_factory=list)
     status: str = "open"
     answer: str = ""
@@ -43,13 +43,24 @@ def add(conn: sqlite3.Connection, project_id: int, role: str, ask: reply.Ask, ta
     if conn.execute("SELECT COUNT(*) FROM questions WHERE project_id = ? AND status = 'open'",
                     (project_id,)).fetchone()[0] >= MAX_OPEN:
         return None
-    if conn.execute("SELECT 1 FROM questions WHERE project_id = ? AND status = 'open' AND text = ?",
-                    (project_id, ask.text)).fetchone():
-        return None
+    if any(reply.similar(r["text"], ask.text) for r in conn.execute(
+            "SELECT text FROM questions WHERE project_id = ? AND status = 'open'", (project_id,))):
+        return None   # the same question is open already (reply.similar), as on the board
     cur = conn.execute(
         "INSERT INTO questions (project_id, task_id, role, text, kind, options, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
         (project_id, task_id, role, ask.text, ask.kind, "\n".join(ask.options), int(now if now is not None else time.time())))
     return cur.lastrowid
+
+
+def add_note(conn: sqlite3.Connection, project_id: int, role: str, text: str, now: int | None = None) -> int | None:
+    """A problem of the environment a role named (<env>, Janis 21.11.2026): never a board item; it waits for the user
+    as a note with one button ("done") and goes to no AI. The same note is kept once."""
+    return add(conn, project_id, role, reply.Ask(text, "note", "small", []), None, now)
+
+
+def drop_for_task(conn: sqlite3.Connection, task_id: int) -> None:
+    """The task is over (done, cancelled): its open questions are no decision any more and leave "waiting for you"."""
+    conn.execute("UPDATE questions SET status = 'dropped' WHERE task_id = ? AND status = 'open'", (task_id,))
 
 
 def open_questions(user_id: int, project_id: int) -> list[Question]:
@@ -71,8 +82,10 @@ def answer(user_id: int, question_id: int, text: str, now: int | None = None) ->
                            " WHERE q.id = ? AND p.user_id = ? AND q.status = 'open'", (question_id, user_id)).fetchone()
         if row is None:
             return None
-        conn.execute("UPDATE questions SET status = 'answered', answer = ?, answered_at = ? WHERE id = ?",
-                     (text, int(now if now is not None else time.time()), question_id))
+        # a note is only acknowledged: it goes to no AI (delivered at once)
+        conn.execute("UPDATE questions SET status = ?, answer = ?, answered_at = ? WHERE id = ?",
+                     ("delivered" if row["kind"] == "note" else "answered", text,
+                      int(now if now is not None else time.time()), question_id))
         row = conn.execute("SELECT * FROM questions WHERE id = ?", (question_id,)).fetchone()
     return _question(row)
 

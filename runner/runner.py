@@ -32,8 +32,6 @@ from . import adapters, apikeys, codex, custom, launcher, login, mistral, models
 
 LOGIN_TIMEOUT_AFTER_CODE = 90   # seconds Claude Code gets to accept the code
 LINK_TIMEOUT = 30               # seconds until the sign-in prints its link
-CHAT_TIMEOUT = 200              # seconds a chat answer may take (a web search takes several steps)
-RUN_TIMEOUT = 1100              # seconds an agent run may take (the hub gives up after 20 minutes)
 THOUGHTS_EVERY = 1.5            # seconds between two reports of new thoughts of a chat answer
 POWER_TIMEOUT = 240             # seconds a manual backup may take (the nightly one needs a few seconds)
 # The answer when a saved credential is there but this server can not read it: the server's fault, nothing is deleted.
@@ -48,6 +46,19 @@ class Api:
     def __init__(self, base_url: str, token: str):
         self.base = base_url.rstrip("/")
         self.token = token
+
+    def send(self, path: str, data: bytes, timeout: int = 300) -> dict:
+        """POST raw bytes (a ZIP of a project's code, exports.py)."""
+        request = urllib.request.Request(self.base + path, data=data, method="POST",
+                                         headers={"Authorization": f"Bearer {self.token}",
+                                                  "Content-Type": "application/zip"})
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as answer:
+                return json.load(answer)
+        except urllib.error.HTTPError as error:
+            if error.code in (400, 409):
+                return {"ok": False}
+            raise
 
     def call(self, method: str, path: str, **form) -> dict:
         data = urllib.parse.urlencode(form).encode() if method == "POST" else None
@@ -107,6 +118,7 @@ class Runner:
                                        "chatgpt-api": apikeys.Verifier("chatgpt-api")}   # check a key with its AI
         self.work = work or workspace.Workspace(os.environ.get("HUB_WORK_DIR", "/opt/agent-hub/work"))
         self.run_agent = run_agent or self._run_agent
+        self._local = threading.local()   # the limits of the job this thread runs (launcher.checked)
         self.run_tests = self._run_tests
         self.run_login = self._run_login
         self.device_logins: set[int] = set()
@@ -209,7 +221,7 @@ class Runner:
 
         threading.Thread(target=feed, daemon=True).start()
         late = threading.Event()
-        timer = threading.Timer(CHAT_TIMEOUT, lambda: (late.set(), proc.kill()))
+        timer = threading.Timer(self._limits()["chat_seconds"], lambda: (late.set(), proc.kill()))
         timer.daemon = True
         timer.start()
         lines = []
@@ -222,7 +234,7 @@ class Runner:
         finally:
             timer.cancel()
         if late.is_set():
-            raise subprocess.TimeoutExpired(command, CHAT_TIMEOUT)
+            raise subprocess.TimeoutExpired(command, self._limits()["chat_seconds"])
         return subprocess.CompletedProcess(command, proc.returncode, "".join(lines), "")
 
     # --- API keys (web/app/ai_link.py): check a pasted key with the provider, keep it encrypted, delete old ones
@@ -325,7 +337,8 @@ class Runner:
         `self.views.release` when the job ends (view.py keeps it for the next job of the same content)."""
         try:
             repo = self.work.repo(int(job["project_id"])) if code else None
-            root = self.views.acquire(int(job["project_id"]), job.get("files") or [], job.get("links") or [], repo)
+            root = self.views.acquire(int(job["project_id"]), job.get("files") or [], job.get("links") or [], repo,
+                                      self._limits(job)["view_mb"] * 1024 ** 2)
             return str(root / "files"), (str(root / "code") if code else None), root
         except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, tarfile.TarError) as error:
             print(f"runner: view {name}: {type(error).__name__}", file=sys.stderr, flush=True)
@@ -408,6 +421,7 @@ class Runner:
                                            files_dir=files_dir, code_dir=code_dir, images=job.get("images") is True,
                                            route=job.get("route"), hub_tools=job.get("hub_tools") or [],
                                            credential=job.get("credential") or "plan")
+            command = launcher.apply_limits(command, self._limits(job))
             done = self.run_chat(command, job["prompt"], thoughts.line)
             thoughts.flush()
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(done.stdout)
@@ -429,14 +443,21 @@ class Runner:
                      tokens_in=tokens_in, tokens_out=tokens_out, outside="1" if thoughts.outside else "0", **extra)
 
     # --- agent runs (web/app/agents.py, runtask.py): one container per run in the task's work folder
+    def _limits(self, job: dict | None = None) -> dict:
+        """The container limits of the job this thread runs (set with a job, read by the run functions below)."""
+        if job is not None:
+            self._local.limits = launcher.checked(job.get("limits"))
+        return getattr(self._local, "limits", None) or launcher.checked(None)
+
     def _run_agent(self, command: list[str], prompt: str):
-        return subprocess.run(command, input=prompt, capture_output=True, text=True, timeout=RUN_TIMEOUT)
+        return subprocess.run(command, input=prompt, capture_output=True, text=True,
+                              timeout=self._limits()["run_seconds"])
 
     TEST_OUTPUT = 6000   # characters of the end of the tests' output that go to the hub
 
     def _run_tests(self, command: list[str]):
         return subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                              timeout=launcher.TEST_SECONDS + 30)
+                              timeout=self._limits()["test_seconds"] + 30)
 
     def _tests(self, run_id: int, user_id: int, task_id: int, folder, net: str) -> tuple[int, str]:
         """Run the project's own tests (workspace.TEST_SCRIPT) in a container of their own: (exit code, end of the
@@ -444,8 +465,10 @@ class Runner:
         if not self.work.has_tests(task_id):
             return -1, ""
         try:
-            done = self.run_tests(launcher.build_test_command(run_id=run_id, user_id=user_id, work_dir=str(folder),
-                                                              net=net))
+            limits = self._limits()
+            done = self.run_tests(launcher.apply_limits(launcher.build_test_command(
+                run_id=run_id, user_id=user_id, work_dir=str(folder), net=net, test_seconds=limits["test_seconds"]),
+                limits))
             code, output = done.returncode, (done.stdout or "") + (done.stderr or "")
         except subprocess.TimeoutExpired:
             subprocess.run(["docker", "rm", "-f", f"agent-test-{run_id}"], capture_output=True)
@@ -495,6 +518,7 @@ class Runner:
                                           work_dir=str(folder), files_dir=files_dir,
                                           images=job.get("images") is True, route=job.get("route"),
                                           hub_tools=job.get("hub_tools") or [], credential=job.get("credential") or "plan")
+            command = launcher.apply_limits(command, self._limits(job))
             done = self.run_agent(command, job["prompt"])
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_run(done.stdout)
         except subprocess.TimeoutExpired:
@@ -530,6 +554,7 @@ class Runner:
             command = adapter.brief_command(run_id=run_id, user_id=user_id, model=job["model"], ticket=ticket,
                                             effort=job.get("effort") or "", route=job.get("route"),
                                             credential=job.get("credential") or "plan")
+            command = launcher.apply_limits(command, self._limits(job))
             done = self.run_agent(command, job["prompt"])
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(done.stdout)
         except subprocess.TimeoutExpired:
@@ -645,6 +670,21 @@ class Runner:
                 ok = False
             self.api.call("POST", f"/runner/merges/{task_id}/done", success="1" if ok else "0")
 
+    # --- the project's code as a ZIP for the user (web/app/exports.py): main or a task's branch, made with git archive
+    def handle_exports(self) -> None:
+        answer = self.api.call("GET", "/runner/exports")
+        limit = int(answer.get("limit") or 0)
+        for item in answer.get("exports", []):
+            export_id = int(item["id"])
+            try:
+                data = self.work.archive(int(item["project_id"]), str(item["ref"]))
+            except (OSError, ValueError, subprocess.SubprocessError) as error:
+                print(f"runner: export {export_id}: {type(error).__name__}", file=sys.stderr, flush=True)
+                data = b""
+            if limit and len(data) > limit:
+                data = b""                                  # too big: the hub says so (serversettings.export_mb)
+            self.api.send(f"/runner/exports/{export_id}", data)
+
     def handle_cleanups(self) -> None:
         """Folders of finished tasks, and everything of deleted projects (their code and their tasks' folders): the
         hub forgets a deleted project only when its folders are really gone."""
@@ -718,6 +758,7 @@ class Runner:
         self.handle_model_checks()
         self.handle_merges()
         self.handle_cleanups()
+        self.handle_exports()
         if self.busy():
             return
         self.handle_chat()

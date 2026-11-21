@@ -236,10 +236,47 @@
         item.setAttribute("aria-selected", String(i === select.selectedIndex));
       });
       mark(select.selectedIndex);
+      float();
       menu.classList.add("open");
       select.parentNode.classList.add("open");   // turns the arrow
       select.setAttribute("aria-expanded", "true");
     }
+    // Outside a dialog the list floats in its own holder under <body> while it is open (Janis, 21.11.2026): a tile
+    // that clips (the manager chat pulled small) or lies below its neighbour can not cut it off. It opens below the
+    // box, or above when there is more room there, and is never taller than the room it has. A dialog is in the
+    // browser's top layer, so a list in a dialog stays where it is.
+    var holder = null;
+    function float() {
+      if (select.closest("dialog")) return;
+      var style = getComputedStyle(menu);
+      var minWidth = parseFloat(style.minWidth) || 0, rightAligned = style.left === "auto";
+      if (!holder) {
+        holder = document.createElement("div");
+        holder.className = box.className.replace(/\bopen\b/, "") + " select-float";
+        document.body.appendChild(holder);
+      }
+      if (menu.parentNode !== holder) holder.appendChild(menu);
+      var rect = box.getBoundingClientRect(), gap = 6, edge = 8;
+      var width = Math.max(rect.width + 2, minWidth);
+      var left = rightAligned ? rect.right + 1 - width : rect.left - 1;
+      left = Math.max(edge, Math.min(left, window.innerWidth - edge - width));
+      menu.style.maxHeight = "";
+      var wanted = Math.min(menu.scrollHeight, parseFloat(getComputedStyle(menu).maxHeight) || menu.scrollHeight);
+      var below = window.innerHeight - rect.bottom - gap - edge, above = rect.top - gap - edge;
+      var up = wanted > below && above > below;
+      var room = up ? above : below;
+      menu.style.left = left + "px";
+      menu.style.right = "auto";
+      menu.style.width = width + "px";
+      menu.style.maxHeight = Math.max(120, Math.min(wanted, room)) + "px";
+      menu.style.top = up ? Math.max(edge, rect.top - gap - Math.min(wanted, room)) + "px" : rect.bottom + gap + "px";
+      menu.style.transformOrigin = up ? "bottom center" : "top center";
+    }
+    window.addEventListener("resize", function () { if (isOpen()) close(); });
+    window.addEventListener("scroll", function (event) {   // the page or a scrolling tile moved the box away
+      if (isOpen() && !menu.contains(event.target)) close();
+    }, true);
+
     // Opened with mouse or finger, the focus goes again when the list closes (Janis, 14.11.2026: the glow of the
     // focus stayed on the capsule after closing). With the keyboard the focus stays, as it should.
     var byPointer = false;

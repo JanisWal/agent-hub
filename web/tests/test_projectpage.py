@@ -451,6 +451,8 @@ class RoleViewsTest(unittest.TestCase):
         self.assertIn("Your jobs", self.html("en"))
 
     def test_decisions_wait_in_the_manager_tile_not_in_for_you(self):
+        from app import agents
+        agents.configure(self.user.id, autonomy="all")   # it waits for the approval (else it merges by itself)
         page = self.html()
         self.assertIn("Nichts wartet auf dich.", page)
         self.run_task([("done", "Built"), ("pass", "Green"), ("ok", "Fine by me")])

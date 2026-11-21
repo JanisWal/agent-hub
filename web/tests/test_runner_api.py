@@ -76,7 +76,7 @@ class RunnerApiTest(unittest.TestCase):
         self.assertEqual(sorted(job), sorted([
             "run_id", "user_id", "project_id", "task_id", "role", "model", "branch", "title", "kind",
             "round", "note", "reports", "net", "effort", "provider", "prompt", "mode", "route", "hub_tools", "files", "links", "images",
-            "credential"]))
+            "credential", "limits"]))
         self.assertEqual(job["effort"], "high")                         # Sonnet's default level
         self.assertIsNone(runner.claim(can_mac="1")["job"])         # one run at a time
         plain = dict(diff_stat=None, diff=None, tests_exit=-1, tests="")   # what the runner leaves out

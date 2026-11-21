@@ -87,7 +87,7 @@ class ChatQueueTest(Base):
     def test_stale_questions_fail_instead_of_blocking(self):
         self.connect(self.a)
         chat.send(self.a.id, self.pa.id, "lost", now=1000)
-        chat.send(self.a.id, self.pa.id, "next", now=1000 + chat.RUN_SECONDS + 1)
+        chat.send(self.a.id, self.pa.id, "next", now=1000 + chat.serversettings.chat_seconds() + 121)
         self.assertEqual([m.status for m in chat.list_messages(self.a.id, self.pa.id)], ["failed", "queued"])
 
     def test_a_failed_answer_keeps_its_reason(self):
@@ -381,8 +381,8 @@ class ChatRoutesTest(Base):
         self.connect(self.a)
         chat.send(self.a.id, self.pa.id, "Hi")
         job = runner_routes.chat_claim()["job"]
-        self.assertEqual(sorted(job), ["chat_id", "credential", "effort", "files", "hub_tools", "images", "links", "mode",
-                                       "model", "project_id", "prompt", "provider", "route", "user_id"])
+        self.assertEqual(sorted(job), ["chat_id", "credential", "effort", "files", "hub_tools", "images", "limits", "links",
+                                       "mode", "model", "project_id", "prompt", "provider", "route", "user_id"])
         self.assertEqual(runner_routes.chat_thoughts(job["chat_id"], "Hm."), {"ok": True})
         self.assertEqual(runner_routes.chat_finish(job["chat_id"], "1", "Hello back", 3, 4), {"ok": True})
         self.assertEqual(runner_routes.chat_thoughts(job["chat_id"], "late").status_code, 409)

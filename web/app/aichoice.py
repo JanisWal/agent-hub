@@ -8,10 +8,12 @@ The choice is a setting of the user (agent_settings, key "ai.default"); a saved 
 counts as not set, then the first connected AI (in the order of catalog.PROVIDERS) is the standard.
 """
 import sqlite3
+import time
 
-from . import catalog, credentials, db
+from . import catalog, credentials, db, serversettings
 
 KEY = "ai.default"
+REST = "ai.rest."   # + provider: until when its quota is used up (unix time), agent_settings
 
 
 def connected_in(conn: sqlite3.Connection, user_id: int, provider: str) -> bool:
@@ -34,10 +36,30 @@ def default_in(conn: sqlite3.Connection, user_id: int) -> str:
     return have[0] if have else catalog.DEFAULT_PROVIDER
 
 
+def resting(conn: sqlite3.Connection, user_id: int, provider: str, now: int | None = None) -> bool:
+    """Did this AI's quota run out a short while ago (`rest`)? Then it is asked last, not first."""
+    row = conn.execute("SELECT value FROM agent_settings WHERE user_id = ? AND key = ?",
+                       (user_id, REST + provider)).fetchone()
+    return row is not None and int(row["value"] or 0) > int(now if now is not None else time.time())
+
+
+def rest(conn: sqlite3.Connection, user_id: int, provider: str, now: int | None = None) -> None:
+    """The AI said its quota is used up: for serversettings.ai_rest minutes the user's other AIs go first, so new
+    questions and runs do not fail at it again and again (Janis, 21.11.2026). It is still asked when no other can."""
+    minutes = serversettings.ai_rest()
+    if not minutes:
+        return
+    until = int(now if now is not None else time.time()) + minutes * 60
+    conn.execute("INSERT INTO agent_settings (user_id, key, value) VALUES (?, ?, ?)"
+                 " ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value", (user_id, REST + provider, str(until)))
+
+
 def order_in(conn: sqlite3.Connection, user_id: int) -> list[str]:
-    """The AIs to ask, in turn: the standard first, then the user's other connected AIs (the fallback)."""
+    """The AIs to ask, in turn: the standard first, then the user's other connected AIs (the fallback); an AI that is
+    resting after a used-up quota comes after all the others."""
     first = default_in(conn, user_id)
-    return [first] + [p for p in connected_list(conn, user_id) if p != first]
+    order = [first] + [p for p in connected_list(conn, user_id) if p != first]
+    return [p for p in order if not resting(conn, user_id, p)] + [p for p in order if resting(conn, user_id, p)]
 
 
 def default(user_id: int) -> str:

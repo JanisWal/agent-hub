@@ -174,6 +174,7 @@ class ChainTest(Base):
 
     def test_whole_chain_with_one_round_back(self):
         self.connect(self.a)
+        agents.configure(self.a.id, autonomy="all")   # so it waits for the approval (else it merges by itself)
         task = agents.start_task(self.a.id, self.project.id, self.item.id)
         job = self.run_stage("done", "coded")
         self.assertEqual((job.role, job.branch, job.model), ("programmer", f"agent/task-{task.id}", "sonnet"))
@@ -217,7 +218,7 @@ class ChainTest(Base):
         agents.start_task(self.a.id, self.project.id, other.id, now=1001)
         first = agents.claim_next(can_mac=True, now=1002)
         self.assertIsNone(agents.claim_next(can_mac=True, now=1003))          # the Pi runs one
-        second = agents.claim_next(can_mac=True, now=1002 + agents.RUN_SECONDS + 1)
+        second = agents.claim_next(can_mac=True, now=1002 + agents.serversettings.run_seconds() + 1)
         self.assertIsNotNone(second)                                           # the silent run was dropped
         # the silent run failed: its task is with the user, the second task may start
         with db.connect() as conn:
@@ -228,7 +229,7 @@ class ChainTest(Base):
     def test_deadline_sends_the_task_to_the_user(self):
         self.connect(self.a)
         task = agents.start_task(self.a.id, self.project.id, self.item.id, now=1000)
-        self.assertIsNone(agents.claim_next(can_mac=True, now=1000 + agents.TASK_SECONDS + 1))
+        self.assertIsNone(agents.claim_next(can_mac=True, now=1000 + agents.serversettings.task_seconds() + 1))
         self.assertEqual(agents.get_task(self.a.id, task.id).status, "escalated")
 
     def test_mac_tasks_wait_or_skip_the_test_by_strictness(self):

@@ -15,8 +15,8 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import (ai_link, aichoice, board, catalog, credentials, db, files, memory, models, prompts, questions, reply,
-               serversettings, toolcheck, workflow)
+from . import (ai_link, aichoice, board, catalog, credentials, db, failures, files, memory, models, prompts, questions,
+               reply, serversettings, toolcheck, workflow)
 
 # Models and effort levels are not fixed here: they come from catalog.py (Janis, 14.11.2026). A role without a
 # choice gets the provider's default model and that model's default level. Since 15.11.2026 the choice is kept per
@@ -33,8 +33,6 @@ DEFAULT_NET = "together"
 # Tester and reviewer check what is in /work and need no internet (20.11.2026): code they run can send nothing out.
 ROLE_NET = {"tester": "apart", "reviewer": "apart"}
 KIND_ORDER = ("bug", "minor", "major")   # the programmer works in this order
-TASK_SECONDS = 2 * 3600                  # time limit per task, then it goes to the user
-RUN_SECONDS = 20 * 60                    # a run that reports nothing for so long is dead
 # How many AI containers run at once (chat answers and agent runs together) is a setting of the owner
 # (serversettings.ai_parallel, Janis 15.11.2026): 1 on a small server, more or no limit on a big one.
 MAX_REPORT = 20000                       # characters of a report that are kept
@@ -100,6 +98,7 @@ class Job:
     route: dict = field(default_factory=dict)   # the own AI: its address and model name (ai_link.route_in)
     hub_tools: list = field(default_factory=list)   # the hub's tools this AI gets (toolcheck.hub_tools)
     credential: str = "plan"        # the user's plan or his API key (credentials.py)
+    limits: dict = field(default_factory=lambda: serversettings.run_limits())   # the container (serversettings.py)
     files: list = field(default_factory=list)   # the user's files for /files (files.for_agents): id, name, area, size
     links: list = field(default_factory=list)   # and the links: name, address
     images: bool = False            # the model sees pictures (catalog.sees_images): the adapter lets it look at them
@@ -333,6 +332,8 @@ def _enter(conn: sqlite3.Connection, user_id: int, task_id: int, step: workflow.
     if step.status in ("done", "escalated", "cancelled"):
         conn.execute("UPDATE agent_runs SET status = 'cancelled' WHERE task_id = ? AND status = 'queued'",
                      (task_id,))
+    if step.status in ("done", "cancelled"):
+        questions.drop_for_task(conn, task_id)
     if step.status == "cancelled":   # the user stopped it: the item stays on the board, but never starts by itself again
         conn.execute("UPDATE board_items SET auto = 0 WHERE id = (SELECT item_id FROM agent_tasks WHERE id = ?)",
                      (task_id,))
@@ -372,7 +373,7 @@ def _start(conn: sqlite3.Connection, user_id: int, item: sqlite3.Row, needs: str
     conn.execute(
         "INSERT INTO agent_tasks (id, project_id, item_id, title, kind, needs, status, round,"
         " created_at, deadline) VALUES (?, ?, ?, ?, ?, ?, 'coding', 1, ?, ?)",
-        (new_id, item["project_id"], item["id"], item["title"], item["kind"], needs, now, now + TASK_SECONDS),
+        (new_id, item["project_id"], item["id"], item["title"], item["kind"], needs, now, now + serversettings.task_seconds()),
     )
     _queue(conn, user_id, new_id, "coding", now)
     return new_id
@@ -530,11 +531,11 @@ def decide(user_id: int, task_id: int, decision: str, note: str = "", now: int |
             note_value = None
             # The time the task waited for the user does not count: the manager's documentation gets a fresh limit
             # (19.11.2026: approved a day later, the task went past its deadline at once and the documentation was cut).
-            conn.execute("UPDATE agent_tasks SET deadline = ? WHERE id = ?", (now + TASK_SECONDS, task_id))
+            conn.execute("UPDATE agent_tasks SET deadline = ? WHERE id = ?", (now + serversettings.task_seconds(), task_id))
         elif decision == "reject" and status in ("awaiting_approval", "escalated"):
             step = workflow.after_rejection(mc)
             note_value = note.strip()[:1000]
-            conn.execute("UPDATE agent_tasks SET deadline = ?, merged = 0 WHERE id = ?", (now + TASK_SECONDS, task_id))
+            conn.execute("UPDATE agent_tasks SET deadline = ?, merged = 0 WHERE id = ?", (now + serversettings.task_seconds(), task_id))
         elif decision == "cancel" and status in OPEN_STATUSES:
             step, note_value = workflow.Step("cancelled", rnd, mc), None
         else:
@@ -549,7 +550,7 @@ def _escalate_late(conn: sqlite3.Connection, now: int) -> None:
     """Tasks past their deadline and runs that went silent go to the user."""
     for run in conn.execute(
         "SELECT r.id, r.task_id FROM agent_runs r WHERE r.status = 'running' AND r.started_at < ?",
-        (now - RUN_SECONDS,),
+        (now - serversettings.run_seconds(),),
     ).fetchall():
         conn.execute("UPDATE agent_runs SET status = 'failed', result = 'failed', finished_at = ? WHERE id = ?",
                      (now, run["id"]))
@@ -618,12 +619,14 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
             if run["role"] == "chef" and not task["merged"]:
                 continue                                   # the runner merges the approved branch first
             provider, model, effort = run["provider"], run["model"], run["effort"]
-            if not aichoice.connected_in(conn, user_id, provider):
-                order = aichoice.order_in(conn, user_id)
+            if not aichoice.connected_in(conn, user_id, provider) or aichoice.resting(conn, user_id, provider):
+                tried = set(run["tried"].split(",")) - {""}
+                order = [p for p in aichoice.order_in(conn, user_id) if p not in tried] or aichoice.order_in(conn, user_id)
                 if not aichoice.connected_in(conn, user_id, order[0]):
                     continue                               # none of his AIs: the run waits
-                provider = order[0]
-                model, effort = _choice(conn, user_id, run["role"], provider)
+                if order[0] != provider:                   # its AI is gone or resting after a used-up quota
+                    provider = order[0]
+                    model, effort = _choice(conn, user_id, run["role"], provider)
             way = (run["credential"] if run["credential"] == "api" and credentials.api_usable(conn, user_id, provider, "run")
                    else credentials.first(conn, user_id, provider, "run"))
             conn.execute("UPDATE agent_runs SET status = 'running', started_at = ?, provider = ?, model = ?, effort = ?,"
@@ -646,6 +649,56 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
     return None
 
 
+def _try_again(conn: sqlite3.Connection, run: sqlite3.Row, user_id: int, report: str, tokens_in: int,
+               tokens_out: int) -> bool:
+    """A run failed for its AI, not for its work (failures.py): the same run is queued again, with the user's API key
+    when the plan ran out (only plan -> key, never back), else with his next AI that has not failed it yet (noted in
+    `tried`, so nothing goes round in circles). An AI whose quota ran out rests a while (aichoice.rest). False when
+    there is no other way: then the run fails as before."""
+    kind = failures.kind(report)
+    if kind not in failures.SWITCH:
+        return False
+    if kind == "limit":
+        aichoice.rest(conn, user_id, run["provider"])
+    used = (max(0, int(tokens_in)), max(0, int(tokens_out)))
+    if run["credential"] == "plan" and kind in failures.EXHAUSTED:
+        other = credentials.next_way(conn, user_id, run["provider"], "run", run["credential"])
+        if other is not None:
+            conn.execute("UPDATE agent_runs SET status = 'queued', credential = ?, tokens_in = tokens_in + ?,"
+                         " tokens_out = tokens_out + ? WHERE id = ?", (other, *used, run["id"]))
+            return True
+    tried = [p for p in run["tried"].split(",") if p] + [run["provider"]]
+    nxt = next((p for p in aichoice.order_in(conn, user_id)
+                if p not in tried and aichoice.connected_in(conn, user_id, p)), None)
+    if nxt is None:
+        return False
+    model, effort = _choice(conn, user_id, run["role"], nxt)
+    conn.execute("UPDATE agent_runs SET status = 'queued', provider = ?, model = ?, effort = ?, credential = 'plan',"
+                 " tried = ?, tokens_in = tokens_in + ?, tokens_out = tokens_out + ? WHERE id = ?",
+                 (nxt, model, effort, ",".join(dict.fromkeys(tried)), *used, run["id"]))
+    return True
+
+
+def _auto_approve(conn: sqlite3.Connection, user_id: int, task: sqlite3.Row, step: workflow.Step,
+                  now: int) -> workflow.Step:
+    """Fewer approvals (Janis, 21.11.2026): a clean task merges by itself as the manager's autonomy allows: "auto" every
+    one, "major" (the default) bugs and improvements while a new feature waits, "all" none. Clean: the reviewer had no
+    objection, nothing has to be checked by hand, the project's tests did not fail and no question of the task is
+    open. Anything else waits for the user as before."""
+    if step.status != "awaiting_approval" or step.manual_check:
+        return step
+    autonomy = autonomy_in(conn, user_id)
+    if autonomy == "all" or (autonomy == "major" and task["kind"] == "major"):
+        return step
+    fresh = conn.execute("SELECT tests_exit FROM agent_tasks WHERE id = ?", (task["id"],)).fetchone()
+    if fresh["tests_exit"] not in (None, 0):
+        return step
+    if conn.execute("SELECT 1 FROM questions WHERE task_id = ? AND status = 'open'", (task["id"],)).fetchone():
+        return step
+    conn.execute("UPDATE agent_tasks SET deadline = ? WHERE id = ?", (now + serversettings.task_seconds(), task["id"]))
+    return workflow.after_approval(step.round, step.manual_check, _enabled(conn, user_id))
+
+
 def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, tokens_out: int = 0,
                seconds: int = 0, now: int | None = None, change: tuple[str, str] | None = None,
                tests: tuple[int, str] | None = None) -> bool:
@@ -665,14 +718,8 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
         if workflow.STAGE_ROLE.get(task["status"]) != run["role"]:
             return False
         user_id = _owner(conn, task["id"])
-        # quota or sign-in of the plan: the user's key first (only plan -> key, never back: no loop)
-        if result == "failed" and run["credential"] == "plan" and credentials.EXHAUSTED.search(report or ""):
-            other = credentials.next_way(conn, user_id, run["provider"], "run", run["credential"])
-            if other is not None:
-                conn.execute("UPDATE agent_runs SET status = 'queued', credential = ?, tokens_in = tokens_in + ?,"
-                             " tokens_out = tokens_out + ? WHERE id = ?",
-                             (other, max(0, int(tokens_in)), max(0, int(tokens_out)), run_id))
-                return True
+        if result == "failed" and _try_again(conn, run, user_id, report or "", tokens_in, tokens_out):
+            return True
         if result not in workflow.RESULTS.get(run["role"], ()) or result == "skipped":   # skipped: the hub's own
             report = (report + f"\n\n(The run gave the result {result[:20]!r}, which this role does not have.)").strip()
             result = "failed"
@@ -706,9 +753,13 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
         may = prompts.ALLOWED.get((run["role"], "doc" if run["role"] == "chef" else "run"), frozenset())
         if "task" not in may:                             # the manager's documentation puts nothing on the board
             found.tasks, found.asks = [], []
-        for item in found.tasks[:FOUND_MAX]:              # a bug goes on the board at once, an addition waits
+        # Only a bug outside the task (on the board at once) and a new feature (waits for the user) come from a role;
+        # a "minor" is part of the task and is done in it (Janis, 21.11.2026: 29 improvements for one calculator).
+        for item in [t for t in found.tasks if t.kind in ("bug", "major")][:FOUND_MAX]:
             board.add_from_ai(conn, task["project_id"], item.kind, item.title, item.body,
                               approved=item.kind == "bug", source="agent")
+        for note in (found.envs if "env" in may else []):   # the environment: never a board item
+            questions.add_note(conn, task["project_id"], run["role"], note)
         for ask in found.asks:                            # the answer comes with the next run of this task
             questions.add(conn, task["project_id"], run["role"], ask, task["id"])
         conn.execute(
@@ -717,7 +768,7 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
             (result, report[:MAX_REPORT], max(0, int(tokens_in)), max(0, int(tokens_out)),
              max(0, int(seconds)), now, run_id),
         )
-        _enter(conn, user_id, task["id"], step, now)
+        _enter(conn, user_id, task["id"], _auto_approve(conn, user_id, task, step, now), now)
     if pending_notes:                                     # after the transaction: files.py opens its own connection
         owner, project_id, notes, edits = pending_notes
         for name, body in notes.items():

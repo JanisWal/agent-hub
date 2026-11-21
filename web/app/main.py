@@ -7,12 +7,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from .deps import COOKIE_SECURE, ApiLoginRequired, LoginRequired, PasswordChangeRequired, fail, redirect
-from .routes import account, accounts, admin, ai, auth, board, chat, checks, claude, devices, files, manager, memory, projects, resets, roles, runner, system, todos
+from .routes import (account, accounts, admin, ai, auth, board, chat, checks, claude, devices, exports, files, manager,
+                     memory, projects, resets, roles, runner, system, todos)
 
 # No /docs, /redoc or /openapi.json: the site is public, nobody needs the list of routes.
 app = FastAPI(title="Agent-Hub", docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
-for router in (auth.router, resets.router, account.router, accounts.router, admin.router, projects.router, board.router, checks.router, devices.router, files.router, chat.router, manager.router, memory.router, roles.router, todos.router, claude.router, ai.router, system.router, runner.router):
+for router in (auth.router, resets.router, account.router, accounts.router, admin.router, projects.router, board.router, checks.router, devices.router, exports.router, files.router, chat.router, manager.router, memory.router, roles.router, todos.router, claude.router, ai.router, system.router, runner.router):
     app.include_router(router)
 
 

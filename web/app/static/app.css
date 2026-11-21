@@ -567,7 +567,9 @@ main { padding-bottom: 96px; } /* room for the toggle */
 /* A long list scrolls inside itself; the glass block holding an open list lies above its neighbours (each glass block
    is a layer of its own, so the next tile painted over the list: Janis, 21.11.2026, ChatGPT's many models). */
 .select-menu { max-height: min(60vh, 440px); overflow-y: auto; overscroll-behavior: contain; }
-.glass:has(.select-menu.open) { z-index: 30; }
+/* An open list outside a dialog floats in a holder under <body> (core.js), placed by the script in the window. */
+div.select-float.select-float { position: fixed; inset: 0 auto auto 0; width: 0; height: 0; margin: 0; padding: 0; border: 0; background: none; box-shadow: none; z-index: 1000; pointer-events: none; }
+div.select-float > .select-menu.select-menu { position: fixed; pointer-events: auto; }
 .ai-services { display: contents; }   /* the AI rows of the drawer, swapped as one part (ailink.js) */
 .select-menu.open { opacity: 1; visibility: visible; transform: none; transition: opacity 0.2s, transform 0.3s cubic-bezier(0.3, 1.4, 0.5, 1), visibility 0s; }
 .select-option {
@@ -601,12 +603,14 @@ main { padding-bottom: 96px; } /* room for the toggle */
 .service.expired .status::before { background: var(--error); opacity: 1; }
 /* "Connected" of Claude and ChatGPT is a button (ui._status, Janis 21.11.2026): the same look, no underline; under the
    pointer the text and the dot glow a little more, so it reads as something to press. */
-.status-open { font: inherit; font-weight: 600; padding: 0; margin: 0; border: 0; background: none; cursor: pointer; color: inherit; border-radius: 6px; }
-.status-open::before { transition: transform 0.2s cubic-bezier(0.3, 1.25, 0.5, 1); }
-.service.ok .status-open:hover { text-shadow: 0 0 10px color-mix(in srgb, var(--success) 55%, transparent); }
-.service.ok .status-open:hover::before { transform: scale(1.25); box-shadow: 0 0 12px color-mix(in srgb, var(--success) 85%, transparent); }
+button.status-open { min-width: 0; min-height: 0; font: inherit; font-weight: 600; padding: 0; margin: 0; border: 0; background: none; box-shadow: none; cursor: pointer; color: inherit; border-radius: 6px; transform-origin: left center; transition: transform 0.25s cubic-bezier(0.3, 1.4, 0.5, 1); }
+button.status-open::before { transition: transform 0.25s cubic-bezier(0.3, 1.25, 0.5, 1); }
+/* Under the pointer only the words glow greener and come forward a little (Janis, 21.11.2026: no button outline). */
+.service.ok button.status-open:hover { transform: scale(1.06); text-shadow: 0 0 12px color-mix(in srgb, var(--success) 70%, transparent); }
+.service.ok button.status-open:hover::before { transform: scale(1.3); box-shadow: 0 0 12px color-mix(in srgb, var(--success) 85%, transparent); }
+button.status-open:active { transform: scale(0.98); }
 .status-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-@media (prefers-reduced-motion: reduce) { .status-open::before { transition: none; } }
+@media (prefers-reduced-motion: reduce) { button.status-open, button.status-open::before { transition: none; } .service.ok button.status-open:hover { transform: none; } }
 /* The tools of the first AI only show with the list open (Janis, 21.11.2026); the others sit in the list anyway. */
 .service:has(> .ai-toggle[aria-expanded="false"]) .service-tools { display: none; }
 /* A saved API key (ui.api_panel): greyed, "remove key" opens it again. */

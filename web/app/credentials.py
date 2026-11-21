@@ -9,19 +9,21 @@ Settings per user and AI (agent_settings, `api.<provider>.<name>`):
 The key itself is a connection of its own (ai_link: "claude-api", "chatgpt-api"), checked and kept by the runner.
 Which one a job used stands with it (chat_messages.credential, agent_runs.credential), so the daily limit counts it.
 """
-import re
 import sqlite3
 import time
 
-from . import ai_link, claude_link
+from . import ai_link, claude_link, failures
 
 API_FOR = {"claude": "claude-api", "chatgpt": "chatgpt-api"}   # the AIs with a plan and an optional key
 MODES = ("fallback", "always", "off")
 SCOPES = ("all", "runs", "chat")
 MAX_DAILY = 1_000_000                                           # thousand tokens a day at most (a typing error guard)
 DEFAULTS = {"mode": "fallback", "scope": "all", "daily": "0"}
-# A run or answer that failed for its quota or sign-in (the same words as chat.py): the other way is tried first.
-EXHAUSTED = re.compile(r"usage limit|limit reached|rate.?limit|\b429\b|no credit|quota|not logged in|\b401\b", re.I)
+
+
+def exhausted(reason: str) -> bool:
+    """Did a run or answer fail for its quota or sign-in (failures.py)? Then the other way is tried first."""
+    return failures.kind(reason) in failures.EXHAUSTED
 
 
 def _setting(conn: sqlite3.Connection, user_id: int, provider: str, name: str) -> str:
