@@ -9,5 +9,14 @@ RUN apt-get update \
  && npm install -g @openai/codex@0.167.2 \
  && npm cache clean --force \
  && codex --version | grep -q "0.167.2"
+# The agents' test browser (hub_browser.js, 21.11.2026): Chromium from Debian, driven by playwright-core (fixed).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends chromium fonts-dejavu-core \
+ && rm -rf /var/lib/apt/lists/* \
+ && npm install -g playwright-core@1.52.0 \
+ && npm cache clean --force
+ENV NODE_PATH=/usr/local/lib/node_modules
+COPY hub_browser.js /opt/hub/
+RUN chmod 755 /opt/hub/hub_browser.js && ln -s /opt/hub/hub_browser.js /usr/local/bin/hub-browser
 COPY codex_entry.py hub_tools.py /opt/hub/
 WORKDIR /work

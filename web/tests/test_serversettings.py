@@ -57,9 +57,10 @@ class ServerSettingsTest(unittest.TestCase):
         html = systempage.render(self.owner)
         self.assertIn('<option value="8" selected>', html)
         self.assertIn('<option value="64" selected>', html)
-        # one "i" per row that needs it (Janis, 14.11.2026): backup, upload, AI runs, AI in the home network (only the
-        # owner, 21.11.2026), restart, shut down (skins: none)
-        self.assertEqual(html.count('class="info-dot"'), 6)
+        # one "i" per row that needs it (Janis, 14.11.2026): backup, upload, AI runs, the limits of a small server
+        # (21.11.2026), the listed addresses (only the owner), restart, shut down (skins: none)
+        from app import systempage as page
+        self.assertEqual(html.count('class="info-dot"'), 6 + len(page.LIMIT_ROWS))
         self.assertNotIn("sys-hint", html)
         self.assertIn("Gleichzeitig: So viele Stücke", html)               # the upload "i" explains both choices
         self.assertEqual(html.count("Backup erstellen<"), 1)               # the button, no title repeating it

@@ -33,8 +33,6 @@ DEFAULT_NET = "together"
 # Tester and reviewer check what is in /work and need no internet (20.11.2026): code they run can send nothing out.
 ROLE_NET = {"tester": "apart", "reviewer": "apart"}
 KIND_ORDER = ("bug", "minor", "major")   # the programmer works in this order
-TASK_SECONDS = 2 * 3600                  # time limit per task, then it goes to the user
-RUN_SECONDS = 20 * 60                    # a run that reports nothing for so long is dead
 # How many AI containers run at once (chat answers and agent runs together) is a setting of the owner
 # (serversettings.ai_parallel, Janis 15.11.2026): 1 on a small server, more or no limit on a big one.
 MAX_REPORT = 20000                       # characters of a report that are kept
@@ -100,6 +98,7 @@ class Job:
     route: dict = field(default_factory=dict)   # the own AI: its address and model name (ai_link.route_in)
     hub_tools: list = field(default_factory=list)   # the hub's tools this AI gets (toolcheck.hub_tools)
     credential: str = "plan"        # the user's plan or his API key (credentials.py)
+    limits: dict = field(default_factory=lambda: serversettings.run_limits())   # the container (serversettings.py)
     files: list = field(default_factory=list)   # the user's files for /files (files.for_agents): id, name, area, size
     links: list = field(default_factory=list)   # and the links: name, address
     images: bool = False            # the model sees pictures (catalog.sees_images): the adapter lets it look at them
@@ -374,7 +373,7 @@ def _start(conn: sqlite3.Connection, user_id: int, item: sqlite3.Row, needs: str
     conn.execute(
         "INSERT INTO agent_tasks (id, project_id, item_id, title, kind, needs, status, round,"
         " created_at, deadline) VALUES (?, ?, ?, ?, ?, ?, 'coding', 1, ?, ?)",
-        (new_id, item["project_id"], item["id"], item["title"], item["kind"], needs, now, now + TASK_SECONDS),
+        (new_id, item["project_id"], item["id"], item["title"], item["kind"], needs, now, now + serversettings.task_seconds()),
     )
     _queue(conn, user_id, new_id, "coding", now)
     return new_id
@@ -532,11 +531,11 @@ def decide(user_id: int, task_id: int, decision: str, note: str = "", now: int |
             note_value = None
             # The time the task waited for the user does not count: the manager's documentation gets a fresh limit
             # (19.11.2026: approved a day later, the task went past its deadline at once and the documentation was cut).
-            conn.execute("UPDATE agent_tasks SET deadline = ? WHERE id = ?", (now + TASK_SECONDS, task_id))
+            conn.execute("UPDATE agent_tasks SET deadline = ? WHERE id = ?", (now + serversettings.task_seconds(), task_id))
         elif decision == "reject" and status in ("awaiting_approval", "escalated"):
             step = workflow.after_rejection(mc)
             note_value = note.strip()[:1000]
-            conn.execute("UPDATE agent_tasks SET deadline = ?, merged = 0 WHERE id = ?", (now + TASK_SECONDS, task_id))
+            conn.execute("UPDATE agent_tasks SET deadline = ?, merged = 0 WHERE id = ?", (now + serversettings.task_seconds(), task_id))
         elif decision == "cancel" and status in OPEN_STATUSES:
             step, note_value = workflow.Step("cancelled", rnd, mc), None
         else:
@@ -551,7 +550,7 @@ def _escalate_late(conn: sqlite3.Connection, now: int) -> None:
     """Tasks past their deadline and runs that went silent go to the user."""
     for run in conn.execute(
         "SELECT r.id, r.task_id FROM agent_runs r WHERE r.status = 'running' AND r.started_at < ?",
-        (now - RUN_SECONDS,),
+        (now - serversettings.run_seconds(),),
     ).fetchall():
         conn.execute("UPDATE agent_runs SET status = 'failed', result = 'failed', finished_at = ? WHERE id = ?",
                      (now, run["id"]))
@@ -696,7 +695,7 @@ def _auto_approve(conn: sqlite3.Connection, user_id: int, task: sqlite3.Row, ste
         return step
     if conn.execute("SELECT 1 FROM questions WHERE task_id = ? AND status = 'open'", (task["id"],)).fetchone():
         return step
-    conn.execute("UPDATE agent_tasks SET deadline = ? WHERE id = ?", (now + TASK_SECONDS, task["id"]))
+    conn.execute("UPDATE agent_tasks SET deadline = ? WHERE id = ?", (now + serversettings.task_seconds(), task["id"]))
     return workflow.after_approval(step.round, step.manual_check, _enabled(conn, user_id))
 
 

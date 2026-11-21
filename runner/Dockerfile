@@ -17,5 +17,14 @@ RUN mkdir -p "$HOME" && curl -fsSL https://claude.ai/install.sh | bash -s 2.1.31
 ENV PATH="/opt/claude-install/.local/bin:${PATH}" \
     DISABLE_AUTOUPDATER=1
 # The hub's tool loop and tools for an AI that has only an API (20.11.2026, runner/hubloop.py, runner/hub_tools.py).
+# The agents' test browser (hub_browser.js, 21.11.2026): Chromium from Debian, driven by playwright-core (fixed).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends chromium fonts-dejavu-core \
+ && rm -rf /var/lib/apt/lists/* \
+ && npm install -g playwright-core@1.52.0 \
+ && npm cache clean --force
+ENV NODE_PATH=/usr/local/lib/node_modules
+COPY hub_browser.js /opt/hub/
+RUN chmod 755 /opt/hub/hub_browser.js && ln -s /opt/hub/hub_browser.js /usr/local/bin/hub-browser
 COPY hubloop.py hub_tools.py /opt/hub/
 WORKDIR /work

@@ -19,8 +19,8 @@ GIT = ["git", "-c", "core.hooksPath=/dev/null", "-c", "safe.directory=*", "-c", 
        "-c", "user.email=agents@agent-hub.local", "-c", "commit.gpgsign=false", "-c", "core.fsmonitor=false"]
 # What running the code leaves behind (first real run, 15.11.2026: __pycache__ ended up in the project). Written to the
 # task's git dir on every commit; the project's own .gitignore counts in addition.
-NEVER_COMMIT = ("__pycache__/", "*.pyc", ".pytest_cache/", ".mypy_cache/", "node_modules/", ".DS_Store", ".coverage",
-                "coverage/", ".npm/")
+NEVER_COMMIT = (".hub-shots/", "__pycache__/", "*.pyc", ".pytest_cache/", ".mypy_cache/", "node_modules/", ".DS_Store",
+                ".coverage", "coverage/", ".npm/")
 TEST_SCRIPT = "hub-test.sh"   # the project's tests: the hub runs it after the programmer (runner.py, launcher.build_test_command)
 MAX_DIFF = 60000              # characters of a task's change that go to the hub (tester, reviewer, approval)
 MAX_STAT = 4000

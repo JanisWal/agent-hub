@@ -210,11 +210,50 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, ticke
     ]
 
 
-TEST_SECONDS = 300   # the project's tests (hub-test.sh) at most
+TEST_SECONDS = 300   # the project's tests (hub-test.sh) at most, until the hub says otherwise (limits)
+
+# The container of a job as the owner set it (web/app/serversettings.run_limits, 21.11.2026), checked here again: a
+# value out of its range or of the wrong type falls back to the one the Pi has always used.
+LIMITS = {"memory_mb": (480, 256, 65536), "cpus": (2, 1, 64), "pids": (256, 64, 65536),
+          "run_seconds": (1100, 60, 86400), "chat_seconds": (200, 60, 86400), "test_seconds": (TEST_SECONDS, 60, 86400),
+          "view_mb": (200, 50, 100000), "browser": (1, 0, 1)}
+
+
+def checked(raw) -> dict:
+    """The job's limits, each an int inside its range (LIMITS), else its default."""
+    raw = raw if isinstance(raw, dict) else {}
+    out = {}
+    for key, (default, low, high) in LIMITS.items():
+        value = raw.get(key)
+        out[key] = value if isinstance(value, int) and not isinstance(value, bool) and low <= value <= high else default
+    return out
+
+
+def apply_limits(command: list[str], limits: dict) -> list[str]:
+    """The `docker run` of a job with the owner's memory, processor cores, process count and /tmp size (a quarter of
+    the memory, at least what it was). Only the options before the image are touched, never the program's own."""
+    limits = checked(limits)
+    images = {IMAGE, VIBE_IMAGE, CODEX_IMAGE}
+    out = list(command)
+    end = next((i for i, part in enumerate(out) if part in images), len(out))
+    for i in range(end - 1):
+        flag = out[i]
+        if flag in ("--memory", "--memory-swap"):
+            out[i + 1] = f"{limits['memory_mb']}m"
+        elif flag == "--pids-limit":
+            out[i + 1] = str(limits["pids"])
+        elif flag == "--cpus":
+            out[i + 1] = str(limits["cpus"])
+        elif flag == "--tmpfs" and out[i + 1].startswith("/tmp:"):
+            size = re.search(r"size=([0-9]+)m", out[i + 1])
+            if size:
+                wanted = max(int(size.group(1)), limits["memory_mb"] // 4)
+                out[i + 1] = out[i + 1].replace(size.group(0), f"size={wanted}m")
+    return out
 
 
 def build_test_command(*, run_id: int, user_id: int, work_dir: str, net: str = "apart", image: str = IMAGE,
-                       network: str = NETWORK, memory: str = "480m") -> list[str]:
+                       network: str = NETWORK, memory: str = "480m", test_seconds: int = TEST_SECONDS) -> list[str]:
     """The `docker run` command that runs the project's own tests (`sh hub-test.sh` in /work) after a programmer's run:
     the same limits as a run, no AI, no ticket. Nothing of the script is on the command line; it is a file in the
     task's folder. `net` is the programmer's switch (installing packages needs the web)."""
@@ -232,7 +271,7 @@ def build_test_command(*, run_id: int, user_id: int, work_dir: str, net: str = "
         "--memory", memory, "--memory-swap", memory, "--pids-limit", "256", "--cpus", "2",
         "--network", network, *_proxy_env(RUN_PROXY[net]),
         "--mount", f"type=bind,src={work},dst=/work", "--workdir", "/work",
-        image, "timeout", str(TEST_SECONDS), "sh", "hub-test.sh",
+        image, "timeout", str(int(test_seconds)), "sh", "hub-test.sh",
     ]
 
 

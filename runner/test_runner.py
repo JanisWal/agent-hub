@@ -323,12 +323,20 @@ class RunChatTest(unittest.TestCase):
         self.assertEqual((seen, done.stdout, done.returncode), (["first\n", "300000\n"], "first\n300000\n", 0))
 
     def test_the_timeout_holds(self):
-        old, runner.CHAT_TIMEOUT = runner.CHAT_TIMEOUT, 0.5
-        try:
-            with self.assertRaises(subprocess.TimeoutExpired):
-                self.runner._run_chat([sys.executable, "-c", "import time; print('x', flush=True); time.sleep(30)"], "")
-        finally:
-            runner.CHAT_TIMEOUT = old
+        self.runner._local.limits = dict(runner.launcher.checked(None), chat_seconds=0.5)   # the job's limit
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self.runner._run_chat([sys.executable, "-c", "import time; print('x', flush=True); time.sleep(30)"], "")
+
+    def test_the_owners_limits_reach_the_container_and_nothing_else(self):
+        launcher = runner.launcher
+        command = ["docker", "run", "--tmpfs", "/tmp:rw,size=64m,mode=1777", "--memory", "480m", "--memory-swap",
+                   "480m", "--pids-limit", "256", "--cpus", "2", launcher.IMAGE, "claude", "--memory", "x"]
+        out = launcher.apply_limits(command, {"memory_mb": 2048, "cpus": 4, "pids": 1024})
+        self.assertEqual(out[:13], ["docker", "run", "--tmpfs", "/tmp:rw,size=512m,mode=1777", "--memory", "2048m",
+                                    "--memory-swap", "2048m", "--pids-limit", "1024", "--cpus", "4", launcher.IMAGE])
+        self.assertEqual(out[-2:], ["--memory", "x"])                              # the program's own words stay
+        bad = launcher.checked({"memory_mb": "9999; rm", "cpus": 0, "pids": True, "run_seconds": 10 ** 9})
+        self.assertEqual((bad["memory_mb"], bad["cpus"], bad["pids"], bad["run_seconds"]), (480, 2, 256, 1100))
 
 
 class ChatRunTest(unittest.TestCase):

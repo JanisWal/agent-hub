@@ -14,14 +14,13 @@ import time
 from dataclasses import dataclass, field
 
 from . import (agents, ai_link, aichoice, autofolders, board, catalog, credentials, db, devices, failures, files, i18n,
-               memory, models, prompts, questions, reply, statusnote, toolcheck)
+               memory, models, prompts, questions, reply, serversettings, statusnote, toolcheck)
 
 # The manager is the role "chef": model and effort level are settings of the user (agents.py, list in catalog.py).
 # What the manager is told (rules, memory, project) is built in prompts.py, the same for every AI.
 MAX_PROMPT = 2000
 MAX_THOUGHTS = 20000      # characters of thoughts kept per question (what the AI showed while it thought)
 MAX_ANSWER = 8000
-RUN_SECONDS = 300        # a question the runner does not answer in this time has failed
 KEEP = 10                # messages shown per project
 MAX_STORED = 100         # messages kept per user, the oldest go first
 # "all": web and code together, code with the open internet; "apart": web search, code without internet.
@@ -69,6 +68,7 @@ class ChatJob:
     route: dict = field(default_factory=dict)   # the own AI: its address and model name (ai_link.route_in)
     hub_tools: list = field(default_factory=list)   # the hub's tools this AI gets (toolcheck.hub_tools)
     credential: str = "plan"   # the user's plan or his API key (credentials.py)
+    limits: dict = field(default_factory=lambda: serversettings.run_limits())   # the container (serversettings.py)
 
 
 def _message(row: sqlite3.Row) -> Message:
@@ -86,7 +86,7 @@ def _drop_stale(conn: sqlite3.Connection, now: int) -> None:
     busy = not agents.slot_free(conn)
     statuses = "'running'" if busy else "'queued', 'running'"
     conn.execute(f"UPDATE chat_messages SET status = 'failed', answer = 'timeout'"
-                 f" WHERE status IN ({statuses}) AND created_at < ?", (now - RUN_SECONDS,))
+                 f" WHERE status IN ({statuses}) AND created_at < ?", (now - serversettings.chat_seconds() - 120,))
 
 
 def send(user_id: int, project_id: int, prompt: str, mode: str | None = None, now: int | None = None,

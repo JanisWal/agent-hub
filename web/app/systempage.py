@@ -9,12 +9,16 @@ from .users import User
 
 
 def _upload_field(lang: str, name: str, label_key: str, choices: tuple, current: int, unit: str,
-                  zero: str = "") -> str:
+                  zero: str = "", text=None) -> str:
     """One choice of the server settings: a compact drop-down in our own style (core.js `.has-select`). `zero` is the
-    text of the value 0 ("no limit")."""
+    text of the value 0 ("no limit"); `text` names a value itself (sizes in MB or GB, on and off)."""
     label = esc(i18n.t(lang, label_key))
-    options = "".join(f'<option value="{value}"{" selected" if value == current else ""}>'
-                      f'{esc(zero) if value == 0 and zero else f"{value}{unit}"}</option>' for value in choices)
+    def shown(value: int) -> str:
+        if text is not None:
+            return esc(text(value))
+        return esc(zero) if value == 0 and zero else f"{value}{unit}"
+    options = "".join(f'<option value="{value}"{" selected" if value == current else ""}>{shown(value)}</option>'
+                      for value in choices)
     return (f'<label class="setting has-select sys-field"><span class="setting-label">{label}</span>'
             f'<select name="{name}">{options}</select>{icon("chevron_down")}</label>')
 
@@ -41,6 +45,7 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
       <div class="sys-fields">%AI_FIELD%</div>
       %AI_INFO%
     </div>
+    %LIMITS%
     %ADDRESSES%
     %SKINS%
     %REBOOT%
@@ -102,6 +107,36 @@ ADDRESS_DIALOG = """<dialog class="dialog wide" id="addresses-dialog">
 </dialog>"""
 
 
+def _size(mb: int) -> str:
+    return f"{mb // 1024} GB" if mb >= 1024 and mb % 1024 == 0 else (f"{mb / 1000:g} GB" if mb >= 1000 else f"{mb} MB")
+
+
+# The settings a small server needs and a big one does not (serversettings.CHOICES, Janis 21.11.2026): one row per pair,
+# like "Upload" and "AI runs"; all go to /system/limits, saved as soon as a choice changes (system.js).
+LIMIT_ROWS = (
+    ("sys_run", (("run_memory_mb", "sys_run_memory", "size"), ("run_cpus", "sys_run_cpus", ""))),
+    ("sys_run_more", (("run_pids", "sys_run_pids", ""), ("view_mb", "sys_run_files", "size"))),
+    ("sys_times", (("run_minutes", "sys_time_run", "min"), ("chat_minutes", "sys_time_chat", "min"))),
+    ("sys_tools", (("agent_browser", "sys_browser", "onoff"), ("export_mb", "sys_export", "size"))),
+    ("sys_rest", (("ai_rest", "sys_rest_short", "min0"),)),
+)
+
+
+def _limit_rows(lang: str) -> str:
+    t = lambda key, **kw: i18n.t(lang, key, **kw)   # noqa: E731
+    texts = {"size": _size, "min": lambda v: f"{v} min", "": str,
+             "onoff": lambda v: t("sys_on") if v else t("sys_off"),
+             "min0": lambda v: f"{v} min" if v else t("sys_rest_never")}
+    rows = []
+    for row_key, fields in LIMIT_ROWS:
+        html = "".join(_upload_field(lang, key, label, serversettings.CHOICES[key], serversettings.get(key), "",
+                                     text=texts[kind]) for key, label, kind in fields)
+        rows.append(f'<div class="sys-row sys-upload" data-url="/system/limits"><span class="sys-name">'
+                    f'{esc(t(row_key))}</span><div class="sys-fields">{html}</div>'
+                    f'{info_dot(t(row_key), t(row_key + "_info"))}</div>')
+    return "\n    ".join(rows)
+
+
 def address_list(lang: str) -> str:
     """The rows of the list (sent again after each change): address, for whom, note, "remove"."""
     with db.connect() as conn:
@@ -143,7 +178,8 @@ def render(user: User) -> str:
     ai_field = _upload_field(lang, "value", "sys_upload_parallel", serversettings.AI_PARALLEL,
                              serversettings.ai_parallel(), "", t("sys_ai_unlimited"))
     row, dialog = _addresses(user)
-    return fill(SYSTEM, lang, UPLOAD_FIELDS=fields, ADDRESSES=row, ADDRESS_DIALOG=dialog, UPLOAD_INFO=info_dot(t("sys_upload"), upload_info),
+    return fill(SYSTEM, lang, UPLOAD_FIELDS=fields, ADDRESSES=row, ADDRESS_DIALOG=dialog, LIMITS=_limit_rows(lang),
+                UPLOAD_INFO=info_dot(t("sys_upload"), upload_info),
                 AI_FIELD=ai_field, AI_INFO=info_dot(t("sys_ai"), t("sys_ai_info")),
                 BACKUP=_action(lang, "sys_backup", "data-backup"),
                 SKINS=_action(lang, "sys_skins", "disabled", info=False),   # placeholder (Janis, 18.11.2026): comes later

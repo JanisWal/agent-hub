@@ -18,7 +18,7 @@ Standard library only.
 import sqlite3
 import time
 
-from . import catalog, checks, memory, questions, toolcheck, workflow
+from . import catalog, checks, memory, questions, serversettings, toolcheck, workflow
 
 # --- the manager in the chat (chat.py)
 MANAGER = (
@@ -99,6 +99,14 @@ FOUND = (
     "rules do not give: do what is safest and ask with <ask kind=\"choice\">QUESTION<option>ANSWER</option>...</ask> or "
     "<ask kind=\"text\">QUESTION</ask>; the answer comes with the next run of this task."
 )
+# The agents' test browser (runner/hub_browser.js, 21.11.2026): only for roles with a shell, only when the owner has
+# it on (serversettings agent_browser).
+BROWSER = (
+    "To see a web page as a person does, use the test browser: hub-browser index.html --click \"#seven\" --fill "
+    "\"#field=12\" --press Enter --shot (hub-browser --help); it prints the visible text and errors and saves a "
+    "screenshot you can look at."
+)
+BROWSER_ROLES = ("programmer", "tester")
 RUN_FILES = (
     "/files (read-only) holds the user's files of the project (INDEX.md lists them): use what the task needs. If /work "
     "has no code yet and the project's code lies in /files, copy it into /work as the start of the project."
@@ -294,6 +302,9 @@ def run(conn: sqlite3.Connection, job, brief: bool = False) -> str:
         rules.append(RUN_FILES)
     if job.role != "chef":
         rules.append(FOUND)
+    if (not brief and job.role in BROWSER_ROLES and tools.get("shell", "none") != "none"
+            and serversettings.get("agent_browser")):
+        rules.append(BROWSER)
     rules.append(f"{ROLES[job.role]} Allowed results: {allowed}.")
     parts = ["\n\n".join(rules)]
     if job.role in RULES_FOR:

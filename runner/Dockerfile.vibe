@@ -8,5 +8,17 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 # Pinned: a new Vibe version is tried on a branch first (its settings and output format may change).
 RUN pip install --no-cache-dir --root-user-action=ignore mistral-vibe==3.1.2
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends "nodejs=20.19.*" "npm=9.2.0*" \
+ && rm -rf /var/lib/apt/lists/*
+# The agents' test browser (hub_browser.js, 21.11.2026): Chromium from Debian, driven by playwright-core (fixed).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends chromium fonts-dejavu-core \
+ && rm -rf /var/lib/apt/lists/* \
+ && npm install -g playwright-core@1.52.0 \
+ && npm cache clean --force
+ENV NODE_PATH=/usr/local/lib/node_modules
+COPY hub_browser.js /opt/hub/
+RUN chmod 755 /opt/hub/hub_browser.js && ln -s /opt/hub/hub_browser.js /usr/local/bin/hub-browser
 COPY vibe_entry.py hub_tools.py /opt/hub/
 WORKDIR /work

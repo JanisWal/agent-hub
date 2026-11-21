@@ -36,8 +36,8 @@ import tempfile
 from pathlib import Path
 
 LABELS = ("documents", "media", "code", "memory")
-MAX_FILE = 50 * 1024 ** 2       # a larger file is not copied (videos, big archives)
-MAX_TOTAL = 200 * 1024 ** 2     # all copied files of one job together
+MAX_FILE = 50 * 1024 ** 2       # a larger file is not copied (videos, big archives); grows with the owner's total
+MAX_TOTAL = 200 * 1024 ** 2     # all copied files of one job together, until the owner chose more (limits view_mb)
 MAX_FILES = 300                 # files taken from the list at most
 MAX_CODE = 100 * 1024 ** 2      # the code snapshot (git archive) at most
 MAX_DEPTH = 12                  # folders of the storage taken over at most
@@ -88,15 +88,17 @@ class Views:
         self.lock = threading.Lock()
         self.users: dict[str, int] = {}          # view name -> jobs using it now
 
-    def acquire(self, project_id: int, files: list, links: list, repo: Path | None = None) -> Path:
-        """The view of a project with this content, made if needed; give it back with `release`."""
+    def acquire(self, project_id: int, files: list, links: list, repo: Path | None = None,
+                max_total: int = MAX_TOTAL) -> Path:
+        """The view of a project with this content, made if needed; give it back with `release`. `max_total`: the
+        bytes of files copied at most (another limit makes another view)."""
         project_id = int(project_id)
-        content = json.dumps([files, links, _head(repo), [self._stamp(project_id, item) for item in files]],
+        content = json.dumps([files, links, _head(repo), [self._stamp(project_id, item) for item in files], max_total],
                              sort_keys=True, default=str)
         name = f"p{project_id}-{'c' if repo is not None else 'f'}{hashlib.sha256(content.encode()).hexdigest()[:20]}"
         with self.lock:
             if not (self.path(name) / "files" / "INDEX.md").is_file():
-                self.build(name, project_id, files, links, repo)
+                self.build(name, project_id, files, links, repo, max_total)
             self.users[name] = self.users.get(name, 0) + 1
             self._drop_old(project_id, keep=name)
         return self.path(name)
@@ -134,7 +136,8 @@ class Views:
             raise ValueError("bad view name")
         return self.base / name
 
-    def build(self, name: str, project_id: int, files: list, links: list, repo: Path | None = None) -> Path:
+    def build(self, name: str, project_id: int, files: list, links: list, repo: Path | None = None,
+              max_total: int = MAX_TOTAL) -> Path:
         """Make the view of one job (`name` like "run-12" or "chat-7") and return its folder."""
         root = self.path(name)
         self.remove(name)
@@ -149,7 +152,7 @@ class Views:
                 index.append(f"- {place}{shown} ({label}, {_size(size)}, not available)")
                 continue
             folder = root / "files" / place if place else root / "files"
-            if size > MAX_FILE or used + size > MAX_TOTAL:
+            if size > max(MAX_FILE, max_total // 4) or used + size > max_total:
                 line, name = f"- {place}{shown} ({label}, {_size(size)}, too big to give here", shown
             else:
                 folder.mkdir(parents=True, exist_ok=True)
@@ -160,7 +163,7 @@ class Views:
                 used += size
                 line, name = f"- {place}{target.name} ({label}, {_size(size)}", target.name
             picture = src.with_name(f"{src.name}.preview")
-            if picture.is_file() and not picture.is_symlink() and used + picture.stat().st_size <= MAX_TOTAL:
+            if picture.is_file() and not picture.is_symlink() and used + picture.stat().st_size <= max_total:
                 folder.mkdir(parents=True, exist_ok=True)
                 jpeg = _unique(folder, f"{name}.jpg")
                 shutil.copyfile(picture, jpeg, follow_symlinks=False)
