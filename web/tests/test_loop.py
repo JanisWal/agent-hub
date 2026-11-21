@@ -19,7 +19,8 @@ class SimilarTest(unittest.TestCase):
                      ("Ziffern und Komma nach % sperren", "Nach % keine Ziffer/Komma zulassen")):
             self.assertTrue(reply.similar(a, b), (a, b))
         for a, b in (("Negative Zahlen per Eingabe ermöglichen", "Taste 0 über zwei Spalten (.wide)"),
-                     ("Tastatureingabe", "Rechenlogik calc.js"), ("Login", "Logout")):
+                     ("Tastatureingabe", "Rechenlogik calc.js"), ("Login", "Logout"),
+                     ("Schritt 1", "Schritt 2"), ("Schritt 1: Grundgerüst", "Schritt 2: Grundgerüst prüfen")):
             self.assertFalse(reply.similar(a, b), (a, b))
 
     def test_env_marker(self):
@@ -29,7 +30,7 @@ class SimilarTest(unittest.TestCase):
         self.assertNotIn("<env>", found.text)
 
     def test_the_packages_say_it(self):
-        self.assertIn("polish", prompts.ROLES["programmer"])
+        self.assertIn("Finish the task well", prompts.ROLES["programmer"])
         self.assertIn("never a board item", prompts.ROLES["tester"])
         self.assertIn("<env>", prompts.FOUND)
         self.assertNotIn("minor", prompts.FOUND)

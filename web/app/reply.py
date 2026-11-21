@@ -153,7 +153,10 @@ def parse(answer: str) -> Signals:
 
 
 def _words(text: str) -> set[str]:
-    return {w for w in _WORD.findall((text or "").lower()) if w not in _FILLER and len(w) > 1}
+    """The meaningful words of a short text: numbers always ("Schritt 1" is not "Schritt 2"), other words without the
+    filler and by their first five letters ("Ziffern" and "Ziffer", "Eingabe" and "Eingaben" are one word)."""
+    return {w if w.isdigit() else w[:5] for w in _WORD.findall((text or "").lower())
+            if w.isdigit() or (w not in _FILLER and len(w) > 1)}
 
 
 def similar(a: str, b: str, threshold: float = 0.6) -> bool:
@@ -162,6 +165,9 @@ def similar(a: str, b: str, threshold: float = 0.6) -> bool:
     wa, wb = _words(a), _words(b)
     if not wa or not wb:
         return (a or "").strip().lower() == (b or "").strip().lower()
+    na, nb = {w for w in wa if w.isdigit()}, {w for w in wb if w.isdigit()}
+    if na and nb and na != nb:                         # "Schritt 1 ..." and "Schritt 2 ...": two pieces
+        return False
     shared = len(wa & wb)
     return shared >= min(2, len(wa), len(wb)) and shared / min(len(wa), len(wb)) >= threshold
 

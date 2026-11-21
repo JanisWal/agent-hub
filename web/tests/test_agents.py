@@ -174,6 +174,7 @@ class ChainTest(Base):
 
     def test_whole_chain_with_one_round_back(self):
         self.connect(self.a)
+        agents.configure(self.a.id, autonomy="all")   # so it waits for the approval (else it merges by itself)
         task = agents.start_task(self.a.id, self.project.id, self.item.id)
         job = self.run_stage("done", "coded")
         self.assertEqual((job.role, job.branch, job.model), ("programmer", f"agent/task-{task.id}", "sonnet"))
