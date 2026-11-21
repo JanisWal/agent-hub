@@ -124,6 +124,20 @@ def _soon_button(lang: str, key: str) -> str:
     return f'<button class="pill-btn quiet" type="button" disabled data-tip="{esc(i18n.t(lang, "coming_soon"))}">{label}</button>'
 
 
+def _code_tile(lang: str, current) -> str:
+    """The project's code to download and try oneself (Janis, 21.11.2026): the merged state, and the state of the task
+    being worked on (its branch). The runner makes the ZIP (exports.py, static/export.js); a note says how it goes."""
+    title = i18n.t(lang, "p_code")
+    t = lambda key: esc(i18n.t(lang, key))   # noqa: E731
+    task = (f'<button type="button" data-export="{current[0].id}">{t("p_export_task")}</button>'
+            if current is not None else "")
+    return (f'<section class="mtile glass p-code"><header><h2>{esc(title)}</h2>'
+            f'{ui.info_dot(title, i18n.t(lang, "p_code_hint"))}</header>'
+            f'<div class="p-export"><button type="button" data-export="">{t("p_export_main")}</button>{task}</div>'
+            f'<p class="p-export-note muted" role="status" data-export-note hidden data-wait="{t("p_export_wait")}" '
+            f'data-failed="{t("p_export_failed")}"></p></section>')
+
+
 def _task_tile(lang: str, current) -> str:
     """The task the programmer works on and the context behind it, read only (list item 3f: tasks are given to the
     manager, who puts them on the board; here you only follow them)."""
@@ -161,9 +175,6 @@ def _programmer(lang: str, settings: dict, runs: list[agents.RoleRun], usage: di
              '<li class="tool"><code>primes.py</code> · ' + esc(i18n.t(lang, "p_sample_edit")) + '</li>'
              '<li class="thinking">' + esc(i18n.t(lang, "p_sample_check")) + '</li></ol>'
              + f'<div class="p-row">{_soon_button(lang, "p_show_thoughts")}</div>')
-    code = ('<ul class="p-tree"><li class="dir">src</li><li class="dir d2">display</li><li class="d3">tiles.py</li>'
-            '<li class="d2">main.py</li><li class="dir">tests</li><li class="d2">test_main.py</li><li>README.md</li></ul>'
-            f'<div class="p-row">{_soon_button(lang, "p_open_file")}</div>')
     diff = ('<p class="p-stat"><span class="add">+12</span> <span class="del">−3</span> · '
             + esc(i18n.t(lang, "p_sample_files")) + '</p><pre class="p-diff"><span class="del">-    print(*primes)</span>\n'
             '<span class="add">+    print(", ".join(map(str, primes)))</span></pre>'
@@ -184,7 +195,7 @@ def _programmer(lang: str, settings: dict, runs: list[agents.RoleRun], usage: di
         f'{_soon(lang, "p_trail", "p_trail_hint", trail, "m-grow")}'
         f'{_soon(lang, "p_preview", "p_preview_hint", preview)}'
         f'</div><div class="mcol">'
-        f'{_soon(lang, "p_code", "p_code_hint", code)}'
+        f'{_code_tile(lang, current)}'
         f'{_soon(lang, "p_diff", "p_diff_hint", diff)}'
         f'<section class="mtile glass m-grow"><header><h2>{esc(i18n.t(lang, "role_runs"))}</h2>'
         f'<span class="count" id="role-programmer-count">{len(runs)}</span></header>'

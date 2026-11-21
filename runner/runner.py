@@ -49,6 +49,19 @@ class Api:
         self.base = base_url.rstrip("/")
         self.token = token
 
+    def send(self, path: str, data: bytes, timeout: int = 300) -> dict:
+        """POST raw bytes (a ZIP of a project's code, exports.py)."""
+        request = urllib.request.Request(self.base + path, data=data, method="POST",
+                                         headers={"Authorization": f"Bearer {self.token}",
+                                                  "Content-Type": "application/zip"})
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as answer:
+                return json.load(answer)
+        except urllib.error.HTTPError as error:
+            if error.code in (400, 409):
+                return {"ok": False}
+            raise
+
     def call(self, method: str, path: str, **form) -> dict:
         data = urllib.parse.urlencode(form).encode() if method == "POST" else None
         request = urllib.request.Request(self.base + path, data=data, method=method,
@@ -645,6 +658,21 @@ class Runner:
                 ok = False
             self.api.call("POST", f"/runner/merges/{task_id}/done", success="1" if ok else "0")
 
+    # --- the project's code as a ZIP for the user (web/app/exports.py): main or a task's branch, made with git archive
+    def handle_exports(self) -> None:
+        answer = self.api.call("GET", "/runner/exports")
+        limit = int(answer.get("limit") or 0)
+        for item in answer.get("exports", []):
+            export_id = int(item["id"])
+            try:
+                data = self.work.archive(int(item["project_id"]), str(item["ref"]))
+            except (OSError, ValueError, subprocess.SubprocessError) as error:
+                print(f"runner: export {export_id}: {type(error).__name__}", file=sys.stderr, flush=True)
+                data = b""
+            if limit and len(data) > limit:
+                data = b""                                  # too big: the hub says so (serversettings.export_mb)
+            self.api.send(f"/runner/exports/{export_id}", data)
+
     def handle_cleanups(self) -> None:
         """Folders of finished tasks, and everything of deleted projects (their code and their tasks' folders): the
         hub forgets a deleted project only when its folders are really gone."""
@@ -718,6 +746,7 @@ class Runner:
         self.handle_model_checks()
         self.handle_merges()
         self.handle_cleanups()
+        self.handle_exports()
         if self.busy():
             return
         self.handle_chat()

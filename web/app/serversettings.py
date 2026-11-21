@@ -14,7 +14,8 @@ AI_PARALLEL = (1, 2, 3, 4, 0)
 REQUEST_MB = (16, 32, 64, 90, 190, 490)   # largest request in MB
 # How long an AI whose quota ran out goes to the end of a user's order (aichoice.rest, 21.11.2026), in minutes.
 AI_REST = (0, 15, 30, 60, 120, 300)
-DEFAULTS = {"upload_parallel": 6, "upload_request_mb": 32, "ai_parallel": 1, "ai_rest": 30}
+EXPORT_MB = (10, 25, 50, 100, 250, 500)   # the largest ZIP of a project's code (exports.py)
+DEFAULTS = {"upload_parallel": 6, "upload_request_mb": 32, "ai_parallel": 1, "ai_rest": 30, "export_mb": 25}
 
 
 def _get(key: str) -> int:
@@ -40,6 +41,11 @@ def ai_rest() -> int:
     """Minutes an AI with a used-up quota rests (0 = never: it is tried first again at once)."""
     value = _get("ai_rest")
     return value if value in AI_REST else DEFAULTS["ai_rest"]
+
+
+def export_mb() -> int:
+    value = _get("export_mb")
+    return value if value in EXPORT_MB else DEFAULTS["export_mb"]
 
 
 def set_choice(key: str, value: int, choices: tuple) -> None:

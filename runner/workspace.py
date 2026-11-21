@@ -10,6 +10,7 @@ git dir, which only the runner can reach, so nothing a run writes can make the r
 (core.hooksPath is switched off as well). The runner commits after each run and pushes the task's branch to the
 project; after the user's approval it merges the branch into main (`merge`).
 """
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -111,6 +112,19 @@ class Workspace:
         git_dir, tree = self.gitdir(task_id), self.tree(task_id)
         self._git("checkout", "-q", "--", ".", git_dir=git_dir, work=tree, check=False)
         self._git("clean", "-q", "-f", "-d", git_dir=git_dir, work=tree, check=False)
+
+    def archive(self, project_id: int, ref: str) -> bytes:
+        """A ZIP of the project's code at `ref` ("main" or a task's branch "agent/task-N"). ValueError for another ref or
+        a branch that is not there (yet)."""
+        if ref != "main" and not re.fullmatch(r"agent/task-[0-9]{1,9}", ref):
+            raise ValueError("ref")
+        repo = self.repo(int(project_id))
+        if not repo.is_dir() or self._git("rev-parse", "--verify", "-q", f"refs/heads/{ref}", git_dir=repo,
+                                          check=False).returncode:
+            raise ValueError("no such branch")
+        done = subprocess.run([*GIT, f"--git-dir={repo}", "archive", "--format=zip", f"refs/heads/{ref}"],
+                              capture_output=True, check=True, timeout=300)
+        return done.stdout
 
     def merge(self, task_id: int, project_id: int, branch: str) -> bool:
         """Bring the approved branch into main. Fast-forward when main has not moved; otherwise main is merged into

@@ -296,6 +296,16 @@ CREATE TABLE IF NOT EXISTS ai_models (
     tried_at   INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, provider)
 );
+-- The project's code as a ZIP to download (exports.py, 21.11.2026): the request; the file lies in exports/<id>.zip.
+CREATE TABLE IF NOT EXISTS code_exports (
+    id         INTEGER PRIMARY KEY,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    task_id    INTEGER,
+    status     TEXT NOT NULL,
+    size       INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+);
 -- Addresses in the server's network that further AIs may use (netaddresses.py, 21.11.2026); user_id NULL = every account.
 CREATE TABLE IF NOT EXISTS net_addresses (
     id         INTEGER PRIMARY KEY,

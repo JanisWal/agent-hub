@@ -161,6 +161,20 @@ class WorkspaceTest(unittest.TestCase):
         self.assertIn("a.py", names)
         self.assertNotIn("pyc", names)
 
+    def test_a_zip_of_main_and_of_a_tasks_branch_for_the_user(self):
+        import io
+        import zipfile
+        self.work.ensure_repo(1)
+        self.assertTrue(self.work.archive(1, "main").startswith(b"PK"))           # an empty project: an empty ZIP
+        tree = self.work.prepare(11, 1, "agent/task-11")
+        (tree / "calc.js").write_text("export const add = (a, b) => a + b;\n")
+        self.work.commit(11, "agent/task-11", "Task 11")
+        names = zipfile.ZipFile(io.BytesIO(self.work.archive(1, "agent/task-11"))).namelist()
+        self.assertIn("calc.js", names)
+        for bad in ("agent/task-99", "HEAD", "main; rm -rf /", "--output=/tmp/x"):
+            with self.assertRaises(ValueError):
+                self.work.archive(1, bad)
+
     def test_caches_already_in_the_project_are_taken_out_and_its_own_files_stay(self):
         repo = self.work.ensure_repo(1)
         seed = Path(self.tmp.name) / "seed"
