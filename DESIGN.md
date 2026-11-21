@@ -62,7 +62,7 @@ Regeln:
 
 ## 3b. Logo (14.11.2026)
 
-- Ein Hub mit drei Agenten: ein dunkler Kreis in der Mitte, drei helle Punkte darum (oben, links unten, rechts unten), verbunden mit kräftigen Linien. Auf einem abgerundeten Quadrat (Rundung 16 von 64) mit warmem Aprikosen-Verlauf (`#F3B183` → `#E8845A` → `#C8683F`), Glanz oben und heller Lichtkante wie das Glas. Hell `#FBEADB` (nie reines Weiß), dunkel `#2B1D14` (wie `--on-accent`). In 16 px noch erkennbar.
+- **Seit 21.11.2026 (Janis wählte Vorschlag 3 von 5):** ein dunkler Projektordner `#2B1D14` mit einem hellen vierzackigen KI-Funken `#FBEADB` darauf, auf einem abgerundeten Quadrat (Rundung 16 von 64) in flachem Apricot `#E8845A`, ohne Verlauf. In 16 px noch erkennbar. Vorher: ein Hub mit drei Agenten auf Aprikosen-Verlauf (14.11.2026).
 - Dateien in `static/`: `icon.svg` (Browser-Tab), `icon-48.png` (ältere Browser und `/favicon.ico`), `icon-180.png` (Home-Bildschirm des iPhones, randlos, iOS rundet selbst). Dazu `theme-color` im Ton von `--bg` (hell und dunkel), damit Safari seine Leiste passend färbt.
 
 ## 4. Formen, Knöpfe, Links
