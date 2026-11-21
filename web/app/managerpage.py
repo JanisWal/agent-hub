@@ -43,7 +43,7 @@ CHAT = """<section class="mtile glass m-chat" id="chat" data-you="%t.chat_you%" 
              data-waiting="%WAITING%" data-ai="%AI%" data-failed="%t.chat_failed%" data-memory="%t.chat_memory_saved%"
              data-thoughts="%t.chat_thoughts%"
              data-fail-auth="%t.chat_fail_auth%" data-fail-timeout="%t.chat_fail_timeout%"
-             data-fail-steps="%t.chat_fail_steps%" data-fail-limit="%t.chat_fail_limit%" data-fail-server="%t.chat_fail_server%" data-fail-other="%t.chat_fail_other%"
+             data-fail-steps="%t.chat_fail_steps%" data-fail-limit="%t.chat_fail_limit%" data-fail-server="%t.chat_fail_server%" data-fail-plan="%t.chat_fail_plan%" data-fail-other="%t.chat_fail_other%"
              data-fallback="%FALLBACK%">
       <header><h2>%t.manager_chat%</h2>%INFO%<span class="m-chat-tools">%NET%%MODEL%</span></header>
       <ol class="chat-log" id="chat-log" aria-live="polite"></ol>
@@ -533,7 +533,7 @@ MVAULT = """<section class="vault glass m-vault" id="mvault" hidden>
       <ul class="trash-list" id="chat-archive" data-questions="%QUESTIONS%" data-question="%t.chat_archive_one%"
           data-delete="%t.chat_archive_delete%" data-you="%t.chat_you%" data-claude="%t.station_manager%"
           data-failed="%t.chat_failed%" data-fail-auth="%t.chat_fail_auth%" data-fail-timeout="%t.chat_fail_timeout%"
-          data-fail-steps="%t.chat_fail_steps%" data-fail-limit="%t.chat_fail_limit%" data-fail-server="%t.chat_fail_server%" data-fail-other="%t.chat_fail_other%"></ul>
+          data-fail-steps="%t.chat_fail_steps%" data-fail-limit="%t.chat_fail_limit%" data-fail-server="%t.chat_fail_server%" data-fail-plan="%t.chat_fail_plan%" data-fail-other="%t.chat_fail_other%"></ul>
       <h2 class="versions-head">%t.versions_title%%VERSIONS_INFO%</h2>
       <div id="mvault-versions">%VERSIONS%</div>
     </div>
@@ -660,7 +660,8 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
     `waiting`: (task, last report) of agents.waiting_tasks, the decisions of "waiting for you"."""
     chef = settings["roles"]["chef"]
     model = ui.model_picker(lang, "manager", chef["model"], chef.get("effort", ""),
-                            label_model="chat_model", label_effort="chat_effort", providers=ais)
+                            label_model="chat_model", label_effort="chat_effort", providers=ais,
+                            allowed=settings.get("models"), names=settings.get("model_names"))
     autonomy = _select(lang, "autonomy", "autonomy", AUTONOMY, settings["autonomy"])
     return fill(
         MANAGER,

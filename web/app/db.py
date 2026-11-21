@@ -287,6 +287,24 @@ CREATE TABLE IF NOT EXISTS project_status (
 );
 CREATE INDEX IF NOT EXISTS project_status_by_project ON project_status (project_id, id);
 -- Settings of the whole server, chosen by the owner (serversettings.py), e.g. how uploads are cut.
+-- The models each user's AI offered him (models.py, 21.11.2026): asked for by the runner once a day. Goes with the account.
+CREATE TABLE IF NOT EXISTS ai_models (
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider   TEXT NOT NULL,
+    models     TEXT NOT NULL DEFAULT '[]',
+    checked_at INTEGER NOT NULL DEFAULT 0,
+    tried_at   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, provider)
+);
+-- Whether an AI's own tools are really there, measured on its answers (toolcheck.py, 21.11.2026).
+CREATE TABLE IF NOT EXISTS tool_health (
+    provider   TEXT NOT NULL,
+    tool       TEXT NOT NULL,
+    missing    INTEGER NOT NULL DEFAULT 0,
+    note       TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (provider, tool)
+);
 CREATE TABLE IF NOT EXISTS server_settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -310,6 +328,7 @@ NEW_COLUMNS = {
     "projects": {"page": "INTEGER NOT NULL DEFAULT 0", "description": "TEXT NOT NULL DEFAULT ''",
                  "memory_seeded": "INTEGER NOT NULL DEFAULT 0"},   # the fixed memory files were made (memory.py)
     "chat_messages": {"mode": "TEXT NOT NULL DEFAULT 'web'", "model": "TEXT NOT NULL DEFAULT 'haiku'",
+                      "credential": "TEXT NOT NULL DEFAULT 'plan'",   # plan or api key of the user (credentials.py)
                       "extra": "TEXT NOT NULL DEFAULT ''",          # contents of files the manager asked for (memory.py)
                       "rounds": "INTEGER NOT NULL DEFAULT 0",       # how often it was answered again with such files
                       "memory_saved": "INTEGER NOT NULL DEFAULT 0",   # the answer updated the memory file
@@ -319,8 +338,12 @@ NEW_COLUMNS = {
                       "tried": "TEXT NOT NULL DEFAULT ''",            # AIs that could not answer it (chat fallback)
                       "kind": "TEXT NOT NULL DEFAULT 'chat'"},        # 'chat' or 'status' (a status round, statusnote.py)
     "ai_connections": {"endpoint": "TEXT NOT NULL DEFAULT ''",       # the user's own AI: its address (ai_link.py)
-                       "remote_model": "TEXT NOT NULL DEFAULT ''"},  # ... and the model name there
+                       "remote_model": "TEXT NOT NULL DEFAULT ''",   # ... and the model name there
+                       "login_url": "TEXT NOT NULL DEFAULT ''",      # ChatGPT sign-in: the page at OpenAI ...
+                       "login_code": "TEXT NOT NULL DEFAULT ''",     # ... and the one-time code (21.11.2026)
+                       "label": "TEXT NOT NULL DEFAULT ''"},         # a further AI: the name the user gave it
     "agent_runs": {"effort": "TEXT NOT NULL DEFAULT ''",     # effort level of the run's model (catalog.py)
+                   "credential": "TEXT NOT NULL DEFAULT 'plan'",   # plan or api key of the user (credentials.py)
                    "provider": "TEXT NOT NULL DEFAULT 'claude'"},   # which AI does the run (aichoice.py)
     "agent_tasks": {"merged": "INTEGER NOT NULL DEFAULT 0",    # the runner merged the approved branch (agents.py)
                     "diff_stat": "TEXT NOT NULL DEFAULT ''",   # what the task changed against main: files and lines

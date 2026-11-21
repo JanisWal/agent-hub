@@ -146,7 +146,8 @@ def _programmer(lang: str, settings: dict, runs: list[agents.RoleRun], usage: di
     the task with its context, then the usage; in the middle the trail of his thoughts and steps and the preview; right
     the project's code, the changes for the approval and his runs."""
     mine = settings["roles"]["programmer"]
-    picker = ui.model_picker(lang, "role-programmer", mine["model"], mine.get("effort", ""), providers=ais)
+    picker = ui.model_picker(lang, "role-programmer", mine["model"], mine.get("effort", ""), providers=ais,
+                             allowed=settings.get("models"), names=settings.get("model_names"))
     tools = f'<span class="m-chat-tools">{_net_pill(lang, "programmer", mine["net"])}{picker}</span>'
     name = i18n.t(lang, "station_programmer")
     listed = "".join(_run_row(lang, r, now) for r in runs)
@@ -200,7 +201,8 @@ def render_role(lang: str, role: str, settings: dict, runs: list[agents.RoleRun]
     if role == "programmer":
         return _programmer(lang, settings, runs, usage, ais, now, current)
     mine = settings["roles"][role]
-    picker = ui.model_picker(lang, f"role-{role}", mine["model"], mine.get("effort", ""), providers=ais)
+    picker = ui.model_picker(lang, f"role-{role}", mine["model"], mine.get("effort", ""), providers=ais,
+                             allowed=settings.get("models"), names=settings.get("model_names"))
     switch = "" if role == "programmer" else _enabled_select(lang, role, mine["enabled"])
     tools = f'<span class="m-chat-tools">{switch}{_net_pill(lang, role, mine["net"])}{picker}</span>'
     name = i18n.t(lang, f"station_{role}")

@@ -32,12 +32,12 @@ from dataclasses import dataclass
 
 from . import db
 
-PROVIDERS = ("claude", "mistral", "custom")   # providers the hub can start; "custom" = the user's own AI (20.11.2026)
+PROVIDERS = ("claude", "mistral", "chatgpt", "custom")   # providers the hub can start; "custom" = the user's own AI
 DEFAULT_PROVIDER = "claude"
 HINTS = ("fast", "balanced", "thorough", "deepest")
 TOOLS = ("read", "write", "shell", "search", "fetch", "look")   # look = see images and PDF pages
 SOURCES = ("own", "hub", "none")
-MAX_MODELS = 12
+MAX_MODELS = 24             # models.py fills the lists from the AIs themselves (21.11.2026)
 MAX_EFFORTS = 8
 _ID = re.compile(r"[a-z][a-z0-9.-]{0,47}")     # never starts with "-": it goes to a command line as one argument
 _EFFORT = re.compile(r"[a-z]{1,12}")
@@ -75,13 +75,35 @@ SEED = {
              "default_effort": "high", "images": True},
         ],
     },
+    # ChatGPT through Codex with the ChatGPT sign-in (21.11.2026): the starting list from Codex 0.167.2's own catalog;
+    # the account's real list replaces it (models.py). "ultra" is left out: it hands work to further agents. The roles
+    # (21.11.2026, Janis): the manager a general model on a low level, programmer and reviewer a strong one.
+    "chatgpt": {
+        "name": "ChatGPT",
+        "default_model": "gpt-6-luna",
+        "tools": {"read": "own", "write": "own", "shell": "own", "search": "own", "fetch": "own", "look": "own"},
+        "roles": {"chef": ["gpt-6-luna", "low"], "programmer": ["gpt-6.1-sol", "medium"],
+                  "reviewer": ["gpt-6.1-sol", "medium"], "tester": ["gpt-6-luna", "medium"]},
+        "models": [
+            {"id": "gpt-6-luna", "name": "GPT-6 Luna", "hint": "fast", "efforts": ["low", "medium", "high", "xhigh", "max"],
+             "default_effort": "medium", "images": True},
+            {"id": "gpt-6-sol", "name": "GPT-6 Sol", "hint": "balanced", "efforts": ["low", "medium", "high", "xhigh", "max"],
+             "default_effort": "medium", "images": True},
+            {"id": "gpt-6.1-sol", "name": "GPT-6.1 Sol", "hint": "thorough",
+             "efforts": ["low", "medium", "high", "xhigh", "max"], "default_effort": "low", "images": True},
+            {"id": "gpt-6.1-terra", "name": "GPT-6.1 Terra", "hint": "deepest",
+             "efforts": ["low", "medium", "high", "xhigh", "max"], "default_effort": "low", "images": True},
+        ],
+    },
     # The user's own AI (20.11.2026): any API in the OpenAI chat format. The real model name is the user's (ai_link.py,
     # per connection); here one stand-in model. It brings no tools: the hub's loop gives its own (runner/hubloop.py).
     "custom": {
-        "name": "Eigene KI",
-        "default_model": "own",
+        "name": "Weitere KI",
+        "default_model": "own-1",
         "tools": {"read": "hub", "write": "hub", "shell": "hub", "search": "none", "fetch": "hub", "look": "hub"},
-        "models": [{"id": "own", "name": "LLM", "efforts": ["none"], "default_effort": "none", "images": False}],
+        # one stand-in per place of a further AI (ai_link.SLOTS); the page shows the user's own names for them
+        "models": [{"id": f"own-{n}", "name": f"KI {n}", "efforts": ["none"], "default_effort": "none", "images": False}
+                   for n in range(1, 9)],
     },
 }
 
@@ -103,6 +125,7 @@ class Provider:
     models: tuple[Model, ...]
     default_model: str
     tools: tuple[tuple[str, str], ...] = ()   # (tool, source) for every tool of TOOLS
+    roles: tuple[tuple[str, str, str], ...] = ()   # (role, model, effort): what a role starts with (none: default)
 
     def model(self, model_id: str | None) -> Model | None:
         return next((m for m in self.models if m.id == model_id), None)
@@ -148,7 +171,18 @@ def parse(provider_id: str, data: dict) -> Provider:
     if not isinstance(raw_tools, dict) or any(k not in TOOLS or v not in SOURCES for k, v in raw_tools.items()):
         raise ValueError("tools")
     tools = tuple((t, raw_tools.get(t, "none")) for t in TOOLS)
-    return Provider(provider_id, name, tuple(models), default_model, tools)
+    ids = {m.id: m for m in models}
+    roles = tuple((role, pick[0], pick[1]) for role, pick in (data.get("roles") or {}).items()
+                  if isinstance(pick, list) and len(pick) == 2 and pick[0] in ids and pick[1] in ids[pick[0]].efforts)
+    return Provider(provider_id, name, tuple(models), default_model, tools, roles)
+
+
+def role_default(provider_id: str, role: str) -> tuple[str, str] | None:
+    """(model, effort) a role starts with at this AI when the user chose none (catalog "roles"), or None."""
+    try:
+        return next(((m, e) for r, m, e in provider(provider_id).roles if r == role), None)
+    except ValueError:
+        return None
 
 
 def tools_of(provider_id: str) -> dict[str, str]:

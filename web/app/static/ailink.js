@@ -22,6 +22,7 @@
   });
 
   var CHECK_FOR = 150000; // ms: the hub gives up a check after two minutes (ai_link.CHECK_SECONDS)
+  var SIGN_IN_FOR = 990000; // ms: a sign-in with a one-time code may take 15 minutes (ai_link.DEVICE_SECONDS)
 
   function post(url, body) {
     return fetch(url, { method: "POST", body: body || null })
@@ -30,9 +31,13 @@
   }
 
   document.querySelectorAll("dialog[data-provider]").forEach(function (dialog) {
-    var provider = dialog.dataset.provider;
-    var button = document.querySelector('[data-key-open="' + provider + '"]');
-    if (!button || typeof dialog.showModal !== "function") return;
+    var kind = dialog.dataset.provider;
+    // The further AIs share one dialog: the open tile ("custom") and each connected one ("custom-3", ui._key_row).
+    var buttons = document.querySelectorAll('[data-key-open="' + kind + '"]' +
+                                            (kind === "custom" ? ', [data-key-open^="custom-"]' : ""));
+    if (!buttons.length || typeof dialog.showModal !== "function") return;
+    var provider = kind;   // the connection the dialog is about now
+    var fieldError = dialog.querySelector("[data-field-error]");
     var steps = {};
     dialog.querySelectorAll("[data-step]").forEach(function (el) { steps[el.dataset.step] = el; });
     var form = steps.key;
@@ -51,29 +56,53 @@
         .then(function (data) {
           if (!dialog.open || !data.ok) return;
           if (data.status === "connected") { stop(); show("done"); return; }
-          if (data.status !== "connecting" || Date.now() - since > CHECK_FOR) { stop(); show("failed"); return; }
+          // ChatGPT: the server shows the link and the one-time code of the sign-in at OpenAI (ui.DEVICE_DIALOG)
+          if (data.url && data.code && steps.device) {
+            var link = dialog.querySelector("[data-device-link]");
+            link.href = data.url;
+            dialog.querySelector("[data-device-code]").textContent = data.code;
+            if (steps.device.hidden) show("device");
+          }
+          var limit = steps.device ? SIGN_IN_FOR : CHECK_FOR;
+          if (data.status !== "connecting" || Date.now() - since > limit) { stop(); show("failed"); return; }
           timer = setTimeout(poll, 1500);
         })
         .catch(function () { if (dialog.open) timer = setTimeout(poll, 3000); });
     }
 
-    button.addEventListener("click", function () {
-      stop();
-      form.reset();
-      show(button.dataset.status === "connected" ? "disconnect" : "key");
-      dialog.showModal();
-      var field = form.querySelector("input");
-      if (!form.hidden && field) field.focus();
+    Array.prototype.forEach.call(buttons, function (button) {
+      button.addEventListener("click", function () {
+        stop();
+        provider = button.dataset.keyOpen;
+        form.reset();
+        if (fieldError) fieldError.hidden = true;
+        var name = form.querySelector('input[name="label"]');
+        if (name && button.dataset.label) name.value = button.dataset.label;
+        show(button.dataset.status === "connected" ? "disconnect" : "key");
+        dialog.showModal();
+        var field = form.querySelector("input");
+        if (!form.hidden && field) field.focus();
+      });
     });
 
     form.addEventListener("submit", function (event) {
       event.preventDefault();
       if (!window.AgentHub.validate(form)) return;
       var body = new FormData(form);
-      form.reset();   // the key does not stay in the page
+      var key = form.querySelector('input[name="key"]');
+      if (key) key.value = "";   // the key does not stay in the page
       show("check");
       post("/ai/" + provider + "/connect", body).then(function (data) {
+        // a further AI: the server says which field does not fit; the other fields stay for a correction
+        if (fieldError && data.field && fieldError.dataset[data.field]) {
+          fieldError.textContent = fieldError.dataset[data.field];
+          fieldError.hidden = false;
+          show("key");
+          return;
+        }
         if (!data.ok && data.httpStatus !== 409) { show("failed"); return; }   // 409: an earlier key is being checked
+        if (data.provider) provider = data.provider;   // "custom" took the next free place
+        form.reset();
         since = Date.now();
         poll();
       });

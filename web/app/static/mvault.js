@@ -137,7 +137,7 @@
     day.entries.forEach(function (entry) {
       log.appendChild(line("you", list.dataset.you + " · " + time(new Date(entry.at * 1000)), entry.prompt));
       if (entry.failure) {
-        var key = { auth: "failAuth", timeout: "failTimeout", steps: "failSteps", limit: "failLimit", server: "failServer" }[entry.failure] || "failOther";
+        var key = { auth: "failAuth", timeout: "failTimeout", steps: "failSteps", limit: "failLimit", server: "failServer", plan: "failPlan" }[entry.failure] || "failOther";
         log.appendChild(line("claude failed", list.dataset.claude, list.dataset.failed + ": " + list.dataset[key]));
       } else {
         log.appendChild(line("claude", list.dataset.claude + (entry.model ? " · " + entry.model : ""), entry.answer));

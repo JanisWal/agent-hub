@@ -28,7 +28,7 @@ from pathlib import Path
 
 import threading
 
-from . import adapters, custom, launcher, login, mistral, tokens, view, workspace
+from . import adapters, apikeys, codex, custom, launcher, login, mistral, models, tokens, view, workspace
 
 LOGIN_TIMEOUT_AFTER_CODE = 90   # seconds Claude Code gets to accept the code
 LINK_TIMEOUT = 30               # seconds until the sign-in prints its link
@@ -38,6 +38,8 @@ THOUGHTS_EVERY = 1.5            # seconds between two reports of new thoughts of
 POWER_TIMEOUT = 240             # seconds a manual backup may take (the nightly one needs a few seconds)
 # The answer when a saved credential is there but this server can not read it: the server's fault, nothing is deleted.
 UNREADABLE = "Server: the saved credential can not be read (HUB_TOKEN_KEY)."
+LATER = "Server: the AI's sign-in service could not be reached to renew the sign-in; nothing was deleted."
+DEVICE_LOGIN_SECONDS = launcher.LOGIN_SECONDS + 60   # a ChatGPT sign-in waits this long for the user at most
 
 
 class Api:
@@ -68,9 +70,12 @@ class Thoughts:
         self.api, self.chat_id, self.adapter, self.clock = api, int(chat_id), adapter, clock
         self.waiting, self.sent = "", clock()
         self.outside = False   # the AI read something from outside (web): its new board items wait for the user
+        self.tools = None      # the tools the program named at its start (toolcheck.py); None: it named none we read
 
     def line(self, line: str) -> None:
         self.outside = self.outside or self.adapter.outside(line)
+        if self.tools is None and hasattr(self.adapter, "tools_seen"):
+            self.tools = self.adapter.tools_seen(line)
         self.waiting += self.adapter.thought(line)
         if self.waiting.strip() and self.clock() - self.sent >= THOUGHTS_EVERY:
             self.flush()
@@ -98,10 +103,15 @@ class Runner:
         self.run_chat = run_chat or self._run_chat
         self.run_power = run_power or self._run_power
         self.keys = keys or tokens.ProviderKeys(claude_base, os.environ.get("HUB_TOKEN_KEY"))
-        self.verifiers = verifiers or {"mistral": mistral, "custom": custom}   # check a pasted key with its AI: verify()
+        self.verifiers = verifiers or {"mistral": mistral, **{f"custom-{n}": custom for n in range(1, 9)}, "claude-api": apikeys.Verifier("claude-api"),
+                                       "chatgpt-api": apikeys.Verifier("chatgpt-api")}   # check a key with its AI
         self.work = work or workspace.Workspace(os.environ.get("HUB_WORK_DIR", "/opt/agent-hub/work"))
         self.run_agent = run_agent or self._run_agent
         self.run_tests = self._run_tests
+        self.run_login = self._run_login
+        self.device_logins: set[int] = set()
+        self.fetch_models = models.fetch
+        self.model_checks: set[tuple[int, str]] = set()
         # The user's files (and for the manager chat the code) as read-only folders of each job (view.py)
         self.views = views or view.Views(self.work.base, os.environ.get("HUB_FILES_SOURCE"))
         self.background = background
@@ -223,7 +233,7 @@ class Runner:
             success = False
             if adapter is not None and tokens.KEY_PATTERNS.get(provider) and tokens.KEY_PATTERNS[provider].fullmatch(api_key):
                 result = (adapter.verify(api_key, str(item.get("endpoint") or ""), item.get("lan") is True)
-                          if provider == "custom" else adapter.verify(api_key))
+                          if provider.startswith("custom-") else adapter.verify(api_key))
                 if result == "ok":
                     try:
                         self.keys.save(user_id, provider, api_key)
@@ -247,27 +257,67 @@ class Runner:
                 continue
             self.api.call("POST", f"/runner/keys/{user_id}/{provider}/wiped")
 
-    def _expired(self, user_id: int, provider: str) -> None:
+    def _plan_check(self, user_id: int, provider: str, ok: bool, text: str) -> None:
+        """ChatGPT said the plan does not include Codex (codex_entry.py: outcome "plan"): the menu shows it."""
+        if not ok and provider == "chatgpt" and "(plan)" in (text or ""):
+            self._report(f"/runner/keys/{int(user_id)}/chatgpt/noplan")
+
+    @staticmethod
+    def _key_name(provider: str, job: dict | None) -> str:
+        """The saved connection a job of this AI uses: a further AI's place ("custom-3", from the job's route)."""
+        if provider != "custom":
+            return provider
+        slot = ((job or {}).get("route") or {}).get("slot")
+        return f"custom-{slot}" if isinstance(slot, int) and 1 <= slot <= 8 else "custom-0"   # custom-0: never saved
+
+    def _expired(self, user_id: int, provider: str, credential: str = "plan", job: dict | None = None) -> None:
         """The AI refused the credential (or there is none): the menu shows it, a refused API key is deleted."""
+        if credential == "api":   # the user's key next to the plan (its own connection)
+            name = f"{provider}-api"
+            self.keys.forget(int(user_id), name)
+            self.api.call("POST", f"/runner/keys/{int(user_id)}/{name}/expired")
+            return
         if provider == "claude":
             self.api.call("POST", f"/runner/logins/{int(user_id)}/expired")
-        else:
-            self.keys.forget(int(user_id), provider)
-            self.api.call("POST", f"/runner/keys/{int(user_id)}/{provider}/expired")
+            return
+        name = self._key_name(provider, job)
+        if name == "custom-0":
+            return
+        self.keys.forget(int(user_id), name)
+        self.api.call("POST", f"/runner/keys/{int(user_id)}/{name}/expired")
 
-    def _secret(self, adapter, user_id: int):
+    def _secret(self, adapter, user_id: int, credential: str = "plan", job: dict | None = None):
         """(secret, problem): the credential, or None and the reason. A missing one shows the AI as expired; one that
-        is there but can not be read is the server's fault and stays (tokens.Unreadable)."""
+        is there but can not be read is the server's fault and stays (tokens.Unreadable). `credential` "api": the
+        user's API key next to the plan (web/app/credentials.py) instead of the plan."""
+        api = credential == "api" and adapter.provider in ("claude", "chatgpt")
         try:
-            secret = adapter.secret(self, user_id)
+            if api:
+                secret = self.keys.load(user_id, f"{adapter.provider}-api")
+            elif adapter.provider == "custom":   # the place of the further AI the job is for
+                name = self._key_name("custom", job)
+                secret = None if name == "custom-0" else self.keys.load(user_id, name)
+            else:
+                secret = adapter.secret(self, user_id)
         except tokens.Unreadable as error:
             print(f"runner: the saved {adapter.provider} credential of user {user_id} can not be read "
                   f"({error}); nothing deleted", file=sys.stderr, flush=True)
             return None, UNREADABLE
+        except adapters.Later as error:
+            print(f"runner: the {adapter.provider} sign-in of user {user_id} could not be renewed now ({error})",
+                  file=sys.stderr, flush=True)
+            return None, LATER
         if secret is None:   # no saved credential: the user links this AI again
-            self._expired(user_id, adapter.provider)
+            self._expired(user_id, adapter.provider, "api" if api else "plan", job)
             return None, "Not logged in: no saved credential. Please run /login"
         return secret, ""
+
+    @staticmethod
+    def _route(adapter, job: dict) -> dict:
+        """What the ticket must know besides the credential: for an API key of ChatGPT that it is one."""
+        if (job.get("credential") or "plan") == "api":
+            return {"upstream": "api"} if adapter.provider == "chatgpt" else {}
+        return adapter.route(job)
 
     def _view(self, name: str, job: dict, code: bool = False):
         """(files folder, code folder, view) of a job, or (None, None, None) when the view could not be made: the job
@@ -341,21 +391,23 @@ class Runner:
             self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="0",
                           answer="This AI is not available on the server.", tokens_in=0, tokens_out=0)
             return
-        secret, problem = self._secret(adapter, user_id)
+        way = job.get("credential") or "plan"
+        secret, problem = self._secret(adapter, user_id, way, job)
         if secret is None:
             self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="0", answer=problem, tokens_in=0,
                           tokens_out=0)
             return
         files_dir, code_dir, root = (self._view(f"chat-{chat_id}", job, code=True) if job.get("project_id")
                                      else (None, None, None))
-        ticket = self.tickets.issue(secret, provider, **adapter.route(job))
+        ticket = self.tickets.issue(secret, provider, **self._route(adapter, job))
         secret = None
         thoughts = Thoughts(self.api, chat_id, adapter, self.clock)
         try:
             command = adapter.chat_command(chat_id=chat_id, user_id=user_id, model=job["model"], ticket=ticket,
                                            mode=job.get("mode", "all"), effort=job.get("effort") or "",
                                            files_dir=files_dir, code_dir=code_dir, images=job.get("images") is True,
-                                           route=job.get("route"))
+                                           route=job.get("route"), hub_tools=job.get("hub_tools") or [],
+                                           credential=job.get("credential") or "plan")
             done = self.run_chat(command, job["prompt"], thoughts.line)
             thoughts.flush()
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(done.stdout)
@@ -368,9 +420,13 @@ class Runner:
             self.tickets.revoke(ticket)   # from here on the ticket is worth nothing
             self._release(root)
         if login_problem:   # the AI says we are not signed in: show the connection as expired
-            self._expired(user_id, provider)
+            self._expired(user_id, provider, job.get("credential") or "plan", job)
+        self._plan_check(user_id, provider, ok, text)
+        extra = {}
+        if thoughts.tools is not None:   # what the program named, with what we asked of it (toolcheck.py)
+            extra = {"tools_asked": ",".join(launcher.asked_tools(command)), "tools_seen": ",".join(thoughts.tools)}
         self._report(f"/runner/chat/{chat_id}/finish", success="1" if ok else "0", answer=text,
-                     tokens_in=tokens_in, tokens_out=tokens_out, outside="1" if thoughts.outside else "0")
+                     tokens_in=tokens_in, tokens_out=tokens_out, outside="1" if thoughts.outside else "0", **extra)
 
     # --- agent runs (web/app/agents.py, runtask.py): one container per run in the task's work folder
     def _run_agent(self, command: list[str], prompt: str):
@@ -417,7 +473,8 @@ class Runner:
         adapter = adapters.ADAPTERS.get(provider)
         if adapter is None:
             return self._finish_run(run_id, "failed", "This AI is not available on the server.")
-        secret, problem = self._secret(adapter, user_id)
+        way = job.get("credential") or "plan"
+        secret, problem = self._secret(adapter, user_id, way, job)
         if secret is None:
             return self._finish_run(run_id, "failed", problem)
         if job.get("mode") == "brief":
@@ -429,14 +486,15 @@ class Runner:
             print(f"runner: work folder of task {task_id}: {type(error).__name__}", file=sys.stderr, flush=True)
             return self._finish_run(run_id, "failed", "The work folder could not be prepared.")
         files_dir, _, root = self._view(f"run-{run_id}", job)
-        ticket = self.tickets.issue(secret, provider, **adapter.route(job))
+        ticket = self.tickets.issue(secret, provider, **self._route(adapter, job))
         secret = None
         started = self.clock()
         try:
             command = adapter.run_command(run_id=run_id, user_id=user_id, model=job["model"], ticket=ticket,
                                           net=job.get("net", "together"), effort=job.get("effort") or "",
                                           work_dir=str(folder), files_dir=files_dir,
-                                          images=job.get("images") is True, route=job.get("route"))
+                                          images=job.get("images") is True, route=job.get("route"),
+                                          hub_tools=job.get("hub_tools") or [], credential=job.get("credential") or "plan")
             done = self.run_agent(command, job["prompt"])
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_run(done.stdout)
         except subprocess.TimeoutExpired:
@@ -446,7 +504,8 @@ class Runner:
             self.tickets.revoke(ticket)
             self._release(root)
         if login_problem:
-            self._expired(user_id, provider)
+            self._expired(user_id, provider, job.get("credential") or "plan", job)
+        self._plan_check(user_id, provider, ok, text)
         result, report = launcher.result_of(text, failed=not ok)
         extra = {}
         if role in ("programmer", "tester"):   # the runner commits from outside: the run never sees .git
@@ -465,11 +524,12 @@ class Runner:
         """A run that needs no tools (the reviewer of a small change, the manager's documentation): one answer, no
         work folder, no files, nothing to commit."""
         run_id, user_id = int(job["run_id"]), int(job["user_id"])
-        ticket = self.tickets.issue(secret, adapter.provider, **adapter.route(job))
+        ticket = self.tickets.issue(secret, adapter.provider, **self._route(adapter, job))
         started = self.clock()
         try:
             command = adapter.brief_command(run_id=run_id, user_id=user_id, model=job["model"], ticket=ticket,
-                                            effort=job.get("effort") or "", route=job.get("route"))
+                                            effort=job.get("effort") or "", route=job.get("route"),
+                                            credential=job.get("credential") or "plan")
             done = self.run_agent(command, job["prompt"])
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(done.stdout)
         except subprocess.TimeoutExpired:
@@ -478,9 +538,101 @@ class Runner:
         finally:
             self.tickets.revoke(ticket)
         if login_problem:
-            self._expired(user_id, adapter.provider)
+            self._expired(user_id, adapter.provider, job.get("credential") or "plan", job)
         result, report = launcher.result_of(text, failed=not ok)
         self._finish_run(run_id, result, report, tokens_in, tokens_out, int(self.clock() - started))
+
+    # --- ChatGPT sign-in with a one-time code (runner/codex.py): one container per sign-in, in a thread of its own
+    def handle_device_logins(self) -> None:
+        wanted = {int(i["user_id"]) for i in self.api.call("GET", "/runner/device-logins").get("logins", [])}
+        for user_id in [u for u in self.device_logins if u not in wanted]:   # the user closed the dialog
+            subprocess.run(["docker", "rm", "-f", f"agent-login-chatgpt-{user_id}"], capture_output=True)
+            self.device_logins.discard(user_id)
+        for user_id in wanted - self.device_logins:
+            self.device_logins.add(user_id)
+            self._start(self.do_device_login, {"user_id": user_id})
+
+    def _login_folder(self, user_id: int) -> Path:
+        return self.claude_base / "keys" / "chatgpt-login" / str(int(user_id))
+
+    def _run_login(self, command: list[str], on_line) -> int:
+        proc = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True)
+        try:
+            for line in proc.stdout:
+                on_line(line)
+            return proc.wait(timeout=DEVICE_LOGIN_SECONDS)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            return -9
+
+    def do_device_login(self, job: dict) -> None:
+        """Show the link and code of `codex login --device-auth`, wait for the user at OpenAI, keep the tokens."""
+        user_id = int(job["user_id"])
+        folder = self._login_folder(user_id)
+        success = False
+        try:
+            shutil.rmtree(folder, ignore_errors=True)
+            launcher.prepare_folder(str(folder), user_id)
+            screen, told = [], []
+
+            def on_line(line: str) -> None:
+                screen.append(line)
+                found = codex.login_prompt("".join(screen))
+                if found and not told:
+                    told.append(found)
+                    self._report(f"/runner/device-logins/{user_id}/chatgpt/url", url=found[0], code=found[1])
+            self.run_login(launcher.build_codex_login_command(user_id=user_id, folder=str(folder)), on_line)
+            auth = folder / "auth.json"
+            if auth.is_file() and not auth.is_symlink():
+                kept = codex.read_auth(auth.read_text())
+                self.keys.save(user_id, "chatgpt", codex.dumps(kept))
+                success = True
+            else:
+                print(f"runner: ChatGPT sign-in of user {user_id} ended without tokens", file=sys.stderr, flush=True)
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            print(f"runner: ChatGPT sign-in of user {user_id}: {type(error).__name__}", file=sys.stderr, flush=True)
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)   # the plain tokens never stay on the card
+            self.device_logins.discard(user_id)
+        self._report(f"/runner/keys/{user_id}/chatgpt/done", success="1" if success else "0")
+
+    # --- the models each user's AI offers (runner/models.py, web/app/models.py), once a day
+    def handle_model_checks(self) -> None:
+        for item in self.api.call("GET", "/runner/model-checks").get("checks", []):
+            key = (int(item["user_id"]), str(item["provider"]))
+            if key not in self.model_checks:
+                self.model_checks.add(key)
+                self._start(self.do_model_check, {"user_id": key[0], "provider": key[1]})
+
+    def do_model_check(self, job: dict) -> None:
+        user_id, provider = int(job["user_id"]), job["provider"]
+        raw = None
+        try:
+            adapter = adapters.ADAPTERS.get(provider)
+            secret = self._secret(adapter, user_id)[0] if adapter else None
+            if secret is not None:
+                raw = (self._chatgpt_models(user_id, adapter, secret) if provider == "chatgpt"
+                       else self.fetch_models(provider, secret))
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            print(f"runner: model list of {provider} for user {user_id}: {type(error).__name__}", file=sys.stderr,
+                  flush=True)
+        finally:
+            self.model_checks.discard((user_id, provider))
+        self._report(f"/runner/models/{user_id}/{provider}", models=json.dumps(raw) if raw else "")
+
+    def _chatgpt_models(self, user_id: int, adapter, secret: str):
+        """Codex itself asks for the account's models (job "models" of codex_entry.py), with a ticket."""
+        ticket = self.tickets.issue(secret, "chatgpt", **adapter.route({"user_id": user_id}))
+        try:
+            command = launcher.build_codex_command(name=f"agent-chat-{900000000 + user_id}", user_id=user_id, model="",
+                                                   effort="", auth=adapter._auth(ticket, user_id), job="models")
+            done = self.run_agent(command, "")
+        finally:
+            self.tickets.revoke(ticket)
+        line = (done.stdout or "").strip().splitlines()[-1:] or ["{}"]
+        listed = json.loads(line[0]).get("models")
+        return listed if isinstance(listed, list) else None
 
     def handle_merges(self) -> None:
         """Approved tasks: merge their branch into the project's main, then the manager documents."""
@@ -562,6 +714,8 @@ class Runner:
         self.handle_key_wipes()
         self.handle_keys()
         self.handle_logins()
+        self.handle_device_logins()
+        self.handle_model_checks()
         self.handle_merges()
         self.handle_cleanups()
         if self.busy():

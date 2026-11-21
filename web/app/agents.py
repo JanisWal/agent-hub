@@ -15,7 +15,8 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import ai_link, aichoice, board, catalog, db, files, memory, prompts, questions, reply, serversettings, workflow
+from . import (ai_link, aichoice, board, catalog, credentials, db, files, memory, models, prompts, questions, reply,
+               serversettings, toolcheck, workflow)
 
 # Models and effort levels are not fixed here: they come from catalog.py (Janis, 14.11.2026). A role without a
 # choice gets the provider's default model and that model's default level. Since 15.11.2026 the choice is kept per
@@ -97,6 +98,8 @@ class Job:
     prompt: str = ""                # the package for the AI (prompts.run): rules, memory, project, task
     mode: str = ""                  # "brief": one answer without tools and without /work (prompts.brief_run)
     route: dict = field(default_factory=dict)   # the own AI: its address and model name (ai_link.route_in)
+    hub_tools: list = field(default_factory=list)   # the hub's tools this AI gets (toolcheck.hub_tools)
+    credential: str = "plan"        # the user's plan or his API key (credentials.py)
     files: list = field(default_factory=list)   # the user's files for /files (files.for_agents): id, name, area, size
     links: list = field(default_factory=list)   # and the links: name, address
     images: bool = False            # the model sees pictures (catalog.sees_images): the adapter lets it look at them
@@ -156,6 +159,14 @@ def _choice(conn: sqlite3.Connection, user_id: int, role: str, provider: str | N
         old = _setting(conn, user_id, f"model.{role}", "")
         if old and catalog.provider_of(old) == provider and catalog.find(old):
             model, effort = old, effort or _setting(conn, user_id, f"effort.{role}", "")
+    if not model and (start := catalog.role_default(provider, role)):   # the AI's start for this role (catalog)
+        model, effort = start[0], effort or start[1]
+    ids = models.allowed(conn, user_id, provider)
+    if ids is not None and model not in ids:   # not (any more) in his account's list: the role's start, the default, any
+        start = catalog.role_default(provider, role)
+        default = catalog.provider(provider).default_model
+        model = next((m for m in ((start or ("",))[0], default) if m in ids), None) or sorted(ids)[0]
+        effort = start[1] if start and start[0] == model else effort
     return catalog.resolve(model, effort, provider)
 
 
@@ -189,8 +200,9 @@ def net_in(conn: sqlite3.Connection, user_id: int, role: str) -> str:
 
 
 def settings(user_id: int) -> dict:
-    """{"strictness", "autonomy", "provider", "roles": {role: {"enabled", "model", "effort", "net"}}}, defaults filled
-    in. Model and effort are those of the standard AI ("provider")."""
+    """{"strictness", "autonomy", "provider", "roles": {role: {"enabled", "model", "effort", "net"}}, "models"}, defaults
+    filled in. Model and effort are those of the standard AI ("provider"). "models": per AI the model ids his account
+    offers (models.allowed; None = not known yet), for the drop-downs."""
     with db.connect() as conn:
         enabled = _enabled(conn, user_id)
         provider = aichoice.default_in(conn, user_id)
@@ -199,7 +211,9 @@ def settings(user_id: int) -> dict:
             model, effort = _choice(conn, user_id, r, provider)
             roles[r] = {"enabled": r in enabled, "model": model, "effort": effort, "net": net_in(conn, user_id, r)}
         return {"strictness": _strictness(conn, user_id), "autonomy": autonomy_in(conn, user_id),
-                "provider": provider, "roles": roles}
+                "provider": provider, "roles": roles,
+                "models": {p: models.allowed(conn, user_id, p) for p in catalog.PROVIDERS},
+                "model_names": {f"own-{r['slot']}": r["label"] for r in ai_link.custom_rows(conn, user_id)}}
 
 
 def configure(user_id: int, role: str | None = None, *, enabled: bool | None = None,
@@ -239,6 +253,9 @@ def configure(user_id: int, role: str | None = None, *, enabled: bool | None = N
                 catalog.check(model_for_effort, effort)
             except ValueError:
                 raise ValueError("Unbekanntes Modell oder unbekannte Stufe") from None
+            with db.connect() as conn:
+                if model is not None and not models.permits(conn, user_id, model):
+                    raise ValueError("Modell nicht im Konto")
             provider = catalog.provider_of(model_for_effort)     # kept per AI: switching back finds it again
             if model is not None:
                 changes.append((f"model.{role}.{provider}", model))   # the saved level stays (resolve on reading)
@@ -607,8 +624,10 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
                     continue                               # none of his AIs: the run waits
                 provider = order[0]
                 model, effort = _choice(conn, user_id, run["role"], provider)
-            conn.execute("UPDATE agent_runs SET status = 'running', started_at = ?, provider = ?, model = ?, effort = ?"
-                         " WHERE id = ?", (now, provider, model, effort, run["id"]))
+            way = (run["credential"] if run["credential"] == "api" and credentials.api_usable(conn, user_id, provider, "run")
+                   else credentials.first(conn, user_id, provider, "run"))
+            conn.execute("UPDATE agent_runs SET status = 'running', started_at = ?, provider = ?, model = ?, effort = ?,"
+                         " credential = ? WHERE id = ?", (now, provider, model, effort, way, run["id"]))
             reports = [(r["role"], r["report"]) for r in conn.execute(
                 "SELECT role, report FROM agent_runs WHERE task_id = ? AND status = 'done' AND report != ''"
                 " ORDER BY id", (task["id"],))]
@@ -616,7 +635,9 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
                       branch_name(task["id"]), task["title"], task["kind"], task["round"],
                       task["note"], reports, net_in(conn, user_id, run["role"]), effort, provider)
             job.mode = "brief" if prompts.brief_run(conn, job) else ""
-            job.route = ai_link.route_in(conn, user_id, provider)
+            job.route = ai_link.route_in(conn, user_id, provider, model)
+            job.hub_tools = toolcheck.hub_tools(provider)
+            job.credential = way
             job.prompt = prompts.run(conn, job, brief=job.mode == "brief")
             if not job.mode:   # a brief run reads no files
                 job.files, job.links = files.for_agents(conn, user_id, task["project_id"])
@@ -644,6 +665,14 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
         if workflow.STAGE_ROLE.get(task["status"]) != run["role"]:
             return False
         user_id = _owner(conn, task["id"])
+        # quota or sign-in of the plan: the user's key first (only plan -> key, never back: no loop)
+        if result == "failed" and run["credential"] == "plan" and credentials.EXHAUSTED.search(report or ""):
+            other = credentials.next_way(conn, user_id, run["provider"], "run", run["credential"])
+            if other is not None:
+                conn.execute("UPDATE agent_runs SET status = 'queued', credential = ?, tokens_in = tokens_in + ?,"
+                             " tokens_out = tokens_out + ? WHERE id = ?",
+                             (other, max(0, int(tokens_in)), max(0, int(tokens_out)), run_id))
+                return True
         if result not in workflow.RESULTS.get(run["role"], ()) or result == "skipped":   # skipped: the hub's own
             report = (report + f"\n\n(The run gave the result {result[:20]!r}, which this role does not have.)").strip()
             result = "failed"

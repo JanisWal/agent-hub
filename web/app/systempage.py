@@ -9,12 +9,16 @@ from .users import User
 
 
 def _upload_field(lang: str, name: str, label_key: str, choices: tuple, current: int, unit: str,
-                  zero: str = "") -> str:
+                  zero: str = "", texts: dict | None = None) -> str:
     """One choice of the server settings: a compact drop-down in our own style (core.js `.has-select`). `zero` is the
-    text of the value 0 ("no limit")."""
+    text of the value 0 ("no limit"); `texts` names every value (an on/off choice)."""
     label = esc(i18n.t(lang, label_key))
-    options = "".join(f'<option value="{value}"{" selected" if value == current else ""}>'
-                      f'{esc(zero) if value == 0 and zero else f"{value}{unit}"}</option>' for value in choices)
+    def text(value: int) -> str:
+        if texts:
+            return esc(texts[value])
+        return esc(zero) if value == 0 and zero else f"{value}{unit}"
+    options = "".join(f'<option value="{value}"{" selected" if value == current else ""}>{text(value)}</option>'
+                      for value in choices)
     return (f'<label class="setting has-select sys-field"><span class="setting-label">{label}</span>'
             f'<select name="{name}">{options}</select>{icon("chevron_down")}</label>')
 
@@ -41,6 +45,7 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
       <div class="sys-fields">%AI_FIELD%</div>
       %AI_INFO%
     </div>
+    %HOME%
     %SKINS%
     %REBOOT%
     %POWEROFF%
@@ -79,6 +84,20 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
 </dialog>"""
 
 
+def _home_row(user: User) -> str:
+    """Only the owner (Janis, 21.11.2026): may his further AIs be in this server's home network? It opens his network
+    to them, so a superadmin does not see it."""
+    if user.role != "owner":
+        return ""
+    lang = user.language
+    t = lambda key: i18n.t(lang, key)   # noqa: E731
+    field = _upload_field(lang, "value", "sys_ai_home_short", (0, 1), int(serversettings.ai_home_network()), "",
+                          texts={0: t("sys_ai_home_off"), 1: t("sys_ai_home_on")})
+    return (f'<div class="sys-row sys-upload" data-url="/system/ai-home"><span class="sys-name">'
+            f'{esc(t("sys_ai_home"))}</span><div class="sys-fields">{field}</div>'
+            f'{info_dot(t("sys_ai_home"), t("sys_ai_home_info"))}</div>')
+
+
 def render(user: User) -> str:
     """The system block with its dialogs (a part of /admin, only for the owner; adminpage.py checks that)."""
     lang = user.language
@@ -90,7 +109,7 @@ def render(user: User) -> str:
                             f'{t("sys_upload_size")}: {t("sys_upload_size_info")}'))
     ai_field = _upload_field(lang, "value", "sys_upload_parallel", serversettings.AI_PARALLEL,
                              serversettings.ai_parallel(), "", t("sys_ai_unlimited"))
-    return fill(SYSTEM, lang, UPLOAD_FIELDS=fields, UPLOAD_INFO=info_dot(t("sys_upload"), upload_info),
+    return fill(SYSTEM, lang, UPLOAD_FIELDS=fields, HOME=_home_row(user), UPLOAD_INFO=info_dot(t("sys_upload"), upload_info),
                 AI_FIELD=ai_field, AI_INFO=info_dot(t("sys_ai"), t("sys_ai_info")),
                 BACKUP=_action(lang, "sys_backup", "data-backup"),
                 SKINS=_action(lang, "sys_skins", "disabled", info=False),   # placeholder (Janis, 18.11.2026): comes later

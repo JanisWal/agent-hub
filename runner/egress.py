@@ -14,6 +14,9 @@ run can reach nothing but this proxy. The proxy listens twice, with two policies
   api.anthropic.com over TLS. So the real token never enters a run: code in a run can not read it or send it out.
 - "gateway mistral" (port 3131, since 15.11.2026): the same for Mistral Vibe: its API key never enters a run, the
   ticket (which names its AI, runner/tokens.py) is swapped for the key and the request goes to api.mistral.ai.
+- "gateway chatgpt" (port 3133, since 21.11.2026): ChatGPT through Codex with the user's ChatGPT sign-in (no API key).
+  The run's "access token" is a JWT-shaped wrapper of its ticket (runner/codex.py); the gateway takes the ticket out,
+  puts in the real token and the account id from the ticket, and passes only Codex's model calls on to chatgpt.com.
 - "gateway custom" (port 3132, since 20.11.2026): the user's own AI (any OpenAI-compatible API, runner/hubloop.py). The
   address stands in the ticket, never in the request: only the model calls go there, over TLS to a public address, or
   for the owner's own AI also in the home network (10/8, 192.168/16, Tailscale 100.64/10; never the Docker networks
@@ -31,7 +34,7 @@ import ssl
 import sys
 from dataclasses import dataclass
 
-from runner import tokens
+from runner import codex, tokens
 
 API_HOSTS = ("anthropic.com", "claude.ai", "claude.com")   # a host matches itself and its subdomains
 HEAD_LIMIT = 8192
@@ -40,11 +43,15 @@ IDLE_TIMEOUT = 120
 TOTAL_TIMEOUT = 300
 MAX_CLIENTS = 32
 # The gateways: AI -> (upstream host, port). A ticket only works at the gateway of its own AI.
-GATEWAYS = {"claude": ("api.anthropic.com", 3130), "mistral": ("api.mistral.ai", 3131), "custom": ("", 3132)}
+GATEWAYS = {"claude": ("api.anthropic.com", 3130), "mistral": ("api.mistral.ai", 3131), "custom": ("", 3132),
+            "chatgpt": ("chatgpt.com", 3133)}
+PATH_ROOT = {"chatgpt": ("/backend-api/", "/v1/")}   # where a gateway's paths begin (the others: "/v1/")
 HOME_NETS = tuple(ipaddress.ip_network(n) for n in ("10.0.0.0/8", "192.168.0.0/16", "100.64.0.0/10"))
 # What a run may ask of its AI (20.11.2026): Claude only the model calls; Mistral everything but what costs money apart
 # from the model calls or stores data with the provider (Vibe's own calls were not all known, so a list of what never).
-GATEWAY_PATHS = {"claude": ("/v1/messages", "/v1/models"), "custom": ("/v1/chat/completions", "/v1/models")}
+GATEWAY_PATHS = {"claude": ("/v1/messages", "/v1/models"), "custom": ("/v1/chat/completions", "/v1/models"),
+                 "chatgpt": ("/backend-api/codex/responses", "/backend-api/codex/models", "/v1/responses", "/v1/models")}
+OPENAI_API = ("api.openai.com", ("/v1/responses", "/v1/models"))   # where ChatGPT goes with the user's API key
 GATEWAY_NEVER = {"mistral": ("/v1/files", "/v1/libraries", "/v1/batch", "/v1/fine_tuning", "/v1/billing",
                              "/v1/workspaces", "/v1/audio")}
 GATEWAY_HEAD_LIMIT = 65536
@@ -223,8 +230,8 @@ async def handle(policy: Policy, client_r: asyncio.StreamReader, client_w: async
                     pass
 
 
-def parse_request(head: bytes) -> tuple[str, str, list[tuple[str, str]]] | None:
-    """(method, path, headers) of a plain HTTP request to the gateway, or None. Only GET and POST to /v1/..."""
+def parse_request(head: bytes, root: str = "/v1/") -> tuple[str, str, list[tuple[str, str]]] | None:
+    """(method, path, headers) of a plain HTTP request to the gateway, or None. Only GET and POST below `root`."""
     try:
         lines = head.decode("latin-1").split("\r\n")
         method, path, version = lines[0].split(" ")
@@ -234,7 +241,7 @@ def parse_request(head: bytes) -> tuple[str, str, list[tuple[str, str]]] | None:
     # header or a second request past the checks here, with the real token on the connection.
     if any(c in line for line in lines for c in "\r\n\x00"):
         return None
-    if method not in ("GET", "POST") or not version.startswith("HTTP/1.") or not path.startswith("/v1/") \
+    if method not in ("GET", "POST") or not version.startswith("HTTP/1.") or not path.startswith(root) \
             or any(c in path for c in "\\#") or ".." in path.split("?")[0].split("/") or "://" in path:
         return None
     headers = []
@@ -262,7 +269,8 @@ def rewrite(method: str, path: str, headers: list[tuple[str, str]], token: str, 
     """The request as it goes to the AI: the real token instead of the ticket, one request per connection. No
     Authorization at all for an API without a key (tokens.NO_KEY)."""
     keep = [(n, v) for n, v in headers if n.lower() not in _DROP]
-    auth = [] if token == tokens.NO_KEY else [f"Authorization: Bearer {token}"]
+    auth = ([] if token == tokens.NO_KEY else [f"x-api-key: {token}"] if tokens.CLAUDE_API.fullmatch(token)
+            else [f"Authorization: Bearer {token}"])
     out = [f"{method} {path} HTTP/1.1", f"Host: {upstream}", *auth,
            *(f"{n}: {v}" for n, v in keep), f"Content-Length: {length}", "Connection: close", "", ""]
     return "\r\n".join(out).encode("latin-1")
@@ -308,7 +316,7 @@ async def gateway(client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter
             head = await asyncio.wait_for(client_r.readuntil(b"\r\n\r\n"), CONNECT_TIMEOUT)
         except (asyncio.TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError, ConnectionError):
             return
-        request = parse_request(head) if len(head) <= GATEWAY_HEAD_LIMIT else None
+        request = parse_request(head, PATH_ROOT.get(provider, "/v1/")) if len(head) <= GATEWAY_HEAD_LIMIT else None
         if request is None:
             await _gateway_reply(client_w, "400 Bad Request", "bad request")
             return
@@ -329,8 +337,13 @@ async def gateway(client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter
             await _gateway_reply(client_w, "413 Payload Too Large", "bad length")
             return
         auth = values.get("authorization", "")
-        found = (tokens.lookup_route(tickets_dir, auth[7:].strip(), provider=provider)
-                 if auth.lower().startswith("bearer ") else None)
+        bearer = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+        wrapped = provider == "chatgpt" and not tokens.TICKET.fullmatch(bearer)
+        if wrapped:   # the plan: the ticket inside its wrapper (codex.run_auth); the API key: the bare ticket
+            bearer = codex.ticket_of(bearer)
+        if provider == "claude" and not bearer:            # Claude Code with an API key sends it as x-api-key
+            bearer = values.get("x-api-key", "").strip()
+        found = tokens.lookup_route(tickets_dir, bearer, provider=provider) if bearer else None
         token = found[0] if found else None
         upstream = GATEWAYS[provider][0]
         target = Target.of(found[1], found[2]) if found and provider == "custom" else None
@@ -343,6 +356,17 @@ async def gateway(client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter
             await _gateway_reply(client_w, "403 Forbidden" if provider == "claude" else "502 Bad Gateway",
                                  "no valid ticket")
             return
+        if provider == "chatgpt":   # the plan goes to ChatGPT, the user's API key to the OpenAI API: never mixed
+            keyed = bool(tokens.OPENAI_API.fullmatch(token))
+            if keyed == wrapped:   # a plan's ticket comes only wrapped, a key's only bare
+                log(f"gateway {provider}: refused {method} {path.split('?')[0]} (ticket form)")
+                await _gateway_reply(client_w, "502 Bad Gateway", "no valid ticket")
+                return
+            if keyed != path.startswith("/v1/"):
+                await _gateway_reply(client_w, "404 Not Found", "not available through the hub")
+                return
+            if keyed:
+                upstream = OPENAI_API[0]
         if target is not None:   # the path at the user's AI: its base and what follows /v1 in the request
             path = target.base + path[len("/v1"):]
             upstream = target.host if target.port in (80, 443) else f"{target.host}:{target.port}"
@@ -352,6 +376,10 @@ async def gateway(client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter
         except (asyncio.TimeoutError, OSError):
             await _gateway_reply(client_w, "502 Bad Gateway", f"{provider} not reachable")
             return
+        if provider == "chatgpt" and tokens.OPENAI_API.fullmatch(token):   # the user's API key: the OpenAI API
+            headers = [(n, v) for n, v in headers if n.lower() != "chatgpt-account-id"]
+        elif provider == "chatgpt":   # the account comes from the ticket, never from the run
+            headers = [(n, v) for n, v in headers if n.lower() != "chatgpt-account-id"] + [("ChatGPT-Account-Id", found[1])]
         upstream_w.write(rewrite(method, path, headers, token, length, upstream) + body)
         await upstream_w.drain()
         first = await asyncio.wait_for(upstream_r.read(65536), GATEWAY_IDLE)
@@ -404,9 +432,11 @@ async def main() -> None:
                             os.environ.get("HUB_TICKETS_DIR", "/tickets"), provider="mistral"),
         await serve_gateway(bind, int(os.environ.get("EGRESS_CUSTOM_PORT", "3132")),
                             os.environ.get("HUB_TICKETS_DIR", "/tickets"), provider="custom"),
+        await serve_gateway(bind, int(os.environ.get("EGRESS_CHATGPT_PORT", "3133")),
+                            os.environ.get("HUB_TICKETS_DIR", "/tickets"), provider="chatgpt"),
     ]
-    print("egress: listening (web 3128, api 3129, gateways claude 3130, mistral 3131, own AI 3132)", file=sys.stderr,
-          flush=True)
+    print("egress: listening (web 3128, api 3129, gateways claude 3130, mistral 3131, own AI 3132, chatgpt 3133)",
+          file=sys.stderr, flush=True)
     await asyncio.gather(*(s.serve_forever() for s in servers))
 
 

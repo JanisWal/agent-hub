@@ -6,7 +6,7 @@ from .icons import icon
 from .layout import esc, fill, page
 from .users import User
 
-from . import ai_link, aichoice, claude_link
+from . import ai_link, aichoice, claude_link, db
 
 
 def info_dot(label: str, text: str) -> str:
@@ -25,7 +25,8 @@ def ai_name(lang: str, provider: str) -> str:
 
 def tools_line(lang: str, provider: str) -> str:
     """Where the tools of an AI come from (catalog.tools_of), in one short line: own, from the hub, missing."""
-    tools = catalog.tools_of(provider)
+    from . import toolcheck   # what the AI's answers show, not only what the catalog says
+    tools = toolcheck.effective(provider)
     def names(source: str) -> list[str]:
         return [i18n.t(lang, f"tool_{t}") for t in catalog.TOOLS if tools.get(t) == source]
     own, hub, missing = names("own"), names("hub"), names("none")
@@ -39,7 +40,8 @@ def tools_line(lang: str, provider: str) -> str:
 
 def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model: str = "picker_model",
                  label_effort: str = "picker_effort", css: str = "m-select", setting: bool = True,
-                 providers: tuple[str, ...] = (catalog.DEFAULT_PROVIDER,)) -> str:
+                 providers: tuple[str, ...] = (catalog.DEFAULT_PROVIDER,), allowed: dict | None = None,
+                 names: dict | None = None) -> str:
     """Two drop-downs in our own style, AI model and effort level, built from the list in catalog.py (Janis,
     14.11.2026). Used wherever a model is chosen: manager chat, regular checks, the roles. The level list holds every
     level of the provider; levels the chosen model does not have are hidden, and static/picker.js keeps that right
@@ -50,7 +52,10 @@ def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model
     model, effort = catalog.resolve(model, effort)
     own = catalog.provider_of(model)
     shown = [catalog.provider(p) for p in dict.fromkeys((*providers, own)) if p in catalog.PROVIDERS]
-    all_models = [(prov, m) for prov in shown for m in prov.models]
+    allowed = allowed or {}
+    # only what each user's account offers (models.py; None = not known yet: all), the chosen one always
+    all_models = [(prov, m) for prov in shown for m in prov.models
+                  if allowed.get(prov.id) is None or m.id in allowed[prov.id] or m.id == model]
     chosen = next(m for _, m in all_models if m.id == model)
     levels: list[str] = []
     for _, m in all_models:
@@ -62,7 +67,9 @@ def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model
         return esc(i18n.t(lang, key))
 
     def model_name(prov: catalog.Provider, m: catalog.Model) -> str:
-        return ai_name(lang, "custom") if prov.id == "custom" else m.name   # its real model is the user's own
+        if prov.id == "custom":   # the name the user gave his further AI
+            return (names or {}).get(m.id) or ai_name(lang, "custom")
+        return m.name
 
     def model_text(prov: catalog.Provider, m: catalog.Model) -> str:
         hint = texts.get(f"model_hint_{m.hint}", "") if m.hint else ""
@@ -92,23 +99,27 @@ def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model
         f'</select>{chevron}</label></span>'
     )
 
-# Other AI accounts (name): placeholders until they exist. Claude has its own row with a real state, the AIs with an
-# API key (ai_link.PROVIDERS: Mistral) have a row each in the folded list, after the placeholders.
-PLACEHOLDER_SERVICES = ("ChatGPT",)
+# Claude has its own row with a real state, the AIs the runner keeps (ai_link.PROVIDERS: Mistral, ChatGPT, the own AI)
+# have a row each in the folded list.
 KEY_PAGES = {"mistral": "https://console.mistral.ai/api-keys"}   # where the user makes a key (fixed, never from a request)
 # Row of an AI with a key: style class of the dot, status text, link text.
 KEY_STATES = {
     "connected": ("ok", "connected", "claude_disconnect"),
     "connecting": ("pending", "key_checking", "connect"),
     "expired": ("expired", "key_refused", "claude_renew"),
+    "noplan": ("expired", "plan_missing", "claude_renew"),
 }
 
-# The user's own AI (ai_link.py, 20.11.2026): the same steps as KEY_DIALOG (ailink.js), with address and model; the key
-# may stay empty (a local model). Plain fields, no browser checks (DESIGN.md 9): the server says what does not fit.
+# The further AIs (ai_link.SLOTS, 21.11.2026): one dialog for all of them, the same steps as KEY_DIALOG (ailink.js), with
+# a name, address and model; the key may stay empty (a local model). The open tile sends "custom" and the server takes
+# the next free place; a row of a connected one sends its place ("custom-3"). Plain fields, no browser checks
+# (DESIGN.md 9): the server says what does not fit (data-field-error).
 CUSTOM_DIALOG = """<dialog class="dialog" id="key-dialog-custom" data-provider="custom">
   <h2>%t.custom_title%</h2>
   <form data-step="key" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
     <p class="muted">%t.custom_steps%</p>
+    <p class="error" role="alert" data-field-error hidden data-endpoint="%t.custom_bad_endpoint%" data-home="%t.custom_home%" data-model="%t.custom_bad_model%" data-full="%t.custom_full%" data-key="%t.custom_bad_key%"></p>
+    <label>%t.custom_label%<input type="text" name="label" maxlength="40" autocomplete="off" spellcheck="false" placeholder="%t.custom_label_hint%"></label>
     <label>%t.custom_endpoint%<input type="text" name="endpoint" required maxlength="300" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…/v1"></label>
     <label>%t.custom_model%<input type="text" name="model" required maxlength="100" autocomplete="off" spellcheck="false"></label>
     <label>%t.custom_key%<input type="password" name="key" maxlength="400" autocomplete="off" spellcheck="false"></label>
@@ -132,6 +143,47 @@ CUSTOM_DIALOG = """<dialog class="dialog" id="key-dialog-custom" data-provider="
       <button type="button" data-close autofocus>%t.cancel%</button>
       <button class="danger-btn" type="button" data-disconnect>%t.claude_disconnect%</button>
     </div>
+  </div>
+</dialog>"""
+
+# ChatGPT (ai_link.DEVICE_LOGIN, 21.11.2026): no key; the server starts a sign-in at OpenAI and shows its link and
+# one-time code (ailink.js fills them in from the status). The password is typed at OpenAI only.
+DEVICE_DIALOG = """<dialog class="dialog wide" id="key-dialog-%ID%" data-provider="%ID%">
+  <h2>%t.device_title%</h2>
+  <div class="link-split">
+  <section class="link-plan">
+  <h3 class="link-head">%t.api_plan_title%</h3>
+  <form data-step="key" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
+    <p class="muted">%t.device_steps%</p>
+    <div class="actions">
+      <button type="button" data-close>%t.cancel%</button>
+      <button class="primary" type="submit">%t.device_start%</button>
+    </div>
+  </form>
+  <div data-step="check" hidden><p class="muted" role="status">%t.device_wait_link%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p></div>
+  <div data-step="device" hidden>
+    <p class="muted">%t.device_open%</p>
+    <a class="primary" data-device-link href="#" target="_blank" rel="noopener noreferrer">%t.device_link%</a>
+    <p class="device-code" data-device-code aria-live="polite"></p>
+    <p class="muted" role="status">%t.device_wait%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p>
+  </div>
+  <div data-step="done" hidden>
+    <p class="muted">%t.device_done%</p>
+    <div class="actions"><button class="primary" type="button" data-finish>%t.close%</button></div>
+  </div>
+  <div data-step="failed" hidden>
+    <p class="error" role="alert">%t.device_failed%</p>
+    <div class="actions"><button type="button" data-finish>%t.close%</button></div>
+  </div>
+  <div data-step="disconnect" hidden>
+    <p class="muted">%t.key_disconnect_text%</p>
+    <div class="actions">
+      <button type="button" data-close autofocus>%t.cancel%</button>
+      <button class="danger-btn" type="button" data-disconnect>%t.claude_disconnect%</button>
+    </div>
+  </div>
+  </section>
+  %API%
   </div>
 </dialog>"""
 
@@ -208,8 +260,15 @@ KEY_DIALOG = """<dialog class="dialog" id="key-dialog-%ID%" data-provider="%ID%"
 
 # The dialog of the Claude connection. claude.js shows one step at a time; all texts are here,
 # translated by the server, none in the script.
-CLAUDE_DIALOG = """<dialog class="dialog" id="claude-dialog">
+CLAUDE_DIALOG = """<dialog class="dialog wide" id="claude-dialog">
   <h2>%t.claude_title%</h2>
+  <div class="link-split">
+  <section class="link-plan">
+  <h3 class="link-head">%t.api_plan_title%</h3>
+  <div data-step="start" hidden>
+    <p class="muted">%t.claude_start_text%</p>
+    <button class="primary" type="button" data-start>%t.device_start%</button>
+  </div>
   <div data-step="wait">
     <p class="muted" role="status">%t.claude_wait%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p>
     <div class="actions"><button type="button" data-cancel>%t.cancel%</button></div>
@@ -251,6 +310,9 @@ CLAUDE_DIALOG = """<dialog class="dialog" id="claude-dialog">
     <button type="button" data-close autofocus>%t.cancel%</button>
     <button class="danger-btn" type="button" id="chat-clear-yes">%t.chat_clear_yes%</button>
   </div>
+  </section>
+  %API%
+  </div>
 </dialog>"""
 
 # Claude row: status text, the style class that colours the dot, and the text of the link.
@@ -278,7 +340,7 @@ def _make_default(lang: str, provider: str) -> str:
             f'data-tip="{label}. {esc(i18n.t(lang, "ai_default_hint"))}">{icon("star")}</button>')
 
 
-def _claude_row(lang: str, state: str, first: bool = True, as_default: bool = False) -> str:
+def _claude_row(lang: str, state: str, first: bool = True, as_default: bool = False, api: str = "") -> str:
     """The Claude block: state and the link of its dialog (claude.js), or "make standard" (`as_default`)."""
     style, text_key, action_key = CLAUDE_STATES.get(state, ("", "not_connected", "connect"))
     action = (f'<button class="link inline" type="button" id="claude-open" data-status="{esc(state)}">'
@@ -289,62 +351,152 @@ def _claude_row(lang: str, state: str, first: bool = True, as_default: bool = Fa
         f'data-expired="{esc(i18n.t(lang, "claude_expired"))}" data-renew="{esc(i18n.t(lang, "claude_renew"))}">'
         f'<span class="setting-label">{esc(ai_name(lang, "claude"))}</span>{corner}'
         f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>{action}</span>'
-        f'<span class="service-tools">{esc(tools_line(lang, "claude"))}</span></div>'
+        f'<span class="service-tools">{esc(tools_line(lang, "claude"))}{api}</span></div>'
     )
 
 
-def _key_row(lang: str, provider: str, state: str, first: bool = False, as_default: bool = False) -> str:
-    """The block of an AI with an API key: state and one link that opens its dialog (ailink.js), or "make standard"."""
+def _key_row(lang: str, provider: str, state: str, first: bool = False, as_default: bool = False, api: str = "",
+             name: str = "") -> str:
+    """The block of an AI with an API key: state and one link that opens its dialog (ailink.js), or "make standard".
+    A further AI ("custom-3") shows the name the user gave it; its tools and its standard are those of "custom"."""
+    kind = "custom" if ai_link.is_custom(provider) else provider
     style, text_key, action_key = KEY_STATES.get(state, ("", "not_connected", "connect"))
-    action = (f'<button class="link inline" type="button" data-key-open="{provider}" data-status="{esc(state)}">'
+    label = f' data-label="{esc(name)}"' if name else ""
+    action = (f'<button class="link inline" type="button" data-key-open="{provider}" data-status="{esc(state)}"{label}>'
               f'{esc(i18n.t(lang, action_key))}</button>')
-    corner = _toggle(lang) if first else (_make_default(lang, provider) if as_default and state == "connected" else "")
+    corner = _toggle(lang) if first else (_make_default(lang, kind) if as_default and state == "connected" else "")
     return (
-        f'<div class="setting service {style}" id="key-row-{provider}" data-ai="{provider}">'
-        f'<span class="setting-label">{esc(ai_name(lang, provider))}</span>{corner}'
+        f'<div class="setting service {style}" id="key-row-{provider}" data-ai="{kind}">'
+        f'<span class="setting-label">{esc(name or ai_name(lang, provider))}</span>{corner}'
         f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>{action}</span>'
-        f'<span class="service-tools">{esc(tools_line(lang, provider))}</span></div>'
+        f'<span class="service-tools">{esc(tools_line(lang, kind))}{api}</span></div>'
     )
 
 
-def _placeholder_row(lang: str, name: str) -> str:
-    return ('<div class="setting service">'
-            f'<span class="setting-label">{name}</span>'
-            f'<span class="service-line"><span class="status">{esc(i18n.t(lang, "not_connected"))}</span>'
-            f'<button class="link inline" type="button" disabled title="{esc(i18n.t(lang, "coming_soon"))}">'
-            f'{esc(i18n.t(lang, "connect"))}</button></span></div>')
+# AIs that get an adapter of their own later (Janis, 21.11.2026): their programs do more than the general way.
+SOON = ("Gemini", "GitHub Copilot")
 
 
-def _key_dialogs(lang: str) -> str:
+def _add_row(lang: str) -> str:
+    """The open tile (Janis, 21.11.2026): always there while a place is free, to connect one more AI of any kind with
+    an API in the OpenAI format."""
+    return (f'<div class="setting service" id="key-row-custom"><span class="setting-label">'
+            f'{esc(i18n.t(lang, "custom_add"))}</span><span class="service-line"><span class="status">'
+            f'{esc(i18n.t(lang, "custom_add_line"))}</span><button class="link inline" type="button" '
+            f'data-key-open="custom" data-status="none">{esc(i18n.t(lang, "connect"))}</button></span></div>')
+
+
+def _soon_row(lang: str, name: str) -> str:
+    """A placeholder: name and "later", no button and no "i" (CLAUDE.md)."""
+    return (f'<div class="setting service soon"><span class="setting-label">{esc(name)}</span>'
+            f'<span class="service-line"><span class="status">{esc(i18n.t(lang, "ai_soon"))}</span></span></div>')
+
+
+API_MODES = ("fallback", "always", "off")
+API_SCOPES = ("all", "runs", "chat")
+
+
+def _api_lines(lang: str, user_id: int) -> dict[str, str]:
+    """Per AI with a plan, the short note in its drawer row when the user has an API key: how it is used."""
+    from . import credentials
+    lines = {}
+    with db.connect() as conn:
+        for provider in credentials.API_FOR:
+            now = credentials.settings_in(conn, user_id, provider)
+            if now["connected"]:
+                lines[provider] = " · " + esc(i18n.t(lang, "api_row", mode=i18n.t(lang, f"api_mode_{now['mode']}")))
+    return lines
+
+
+def api_panel(lang: str, provider: str, user_id: int) -> str:
+    """The right half of the dialog of Claude and ChatGPT (Janis, 21.11.2026): the user's API key next to the plan, its
+    state and settings (credentials.py). Sent by aiapi.js; the key leaves the page once and is never shown again."""
+    from . import credentials
+    with db.connect() as conn:
+        now = credentials.settings_in(conn, user_id, provider)
+    def options(name: str, values: tuple, chosen: str) -> str:
+        return "".join(f'<option value="{v}"{" selected" if v == chosen else ""}>{esc(i18n.t(lang, f"api_{name}_{v}"))}'
+                       f'</option>' for v in values)
+    state = {"connected": "api_state_on", "connecting": "api_state_checking", "expired": "api_state_refused"}.get(
+        now["status"], "api_state_none")
+    spent = (f' {esc(i18n.t(lang, "api_spent", n=now["spent"], limit=now["daily"]))}' if now["daily"] else "")
+    remove = (f'<button class="link" type="button" data-api-remove>{esc(i18n.t(lang, "api_remove"))}</button>'
+              if now["status"] in ("connected", "expired") else "")
+    chevron = icon("chevron_down")
+    return (
+        f'<section class="link-api" data-api="{provider}">'
+        f'<h3 class="link-head">{esc(i18n.t(lang, "api_title"))}</h3>'
+        f'<p class="muted link-note">{esc(i18n.t(lang, "api_costs"))}</p>'
+        f'<p class="api-state" role="status" data-api-state>{esc(i18n.t(lang, state))}{spent}</p>'
+        f'<form data-api-form novalidate data-saved="{esc(i18n.t(lang, "api_saved"))}" '
+        f'data-failed="{esc(i18n.t(lang, "api_failed"))}">'
+        f'<label class="setting"><span class="setting-label">{esc(i18n.t(lang, "api_key"))}</span>'
+        f'<input type="password" name="key" maxlength="300" autocomplete="off" spellcheck="false" '
+        f'placeholder="{esc(i18n.t(lang, "api_key_kept" if now["connected"] else "api_key_new"))}"></label>'
+        f'<label class="setting has-select"><span class="setting-label">{esc(i18n.t(lang, "api_mode"))}</span>'
+        f'<select name="mode">{options("mode", API_MODES, now["mode"])}</select>{chevron}</label>'
+        f'<label class="setting has-select"><span class="setting-label">{esc(i18n.t(lang, "api_scope"))}</span>'
+        f'<select name="scope">{options("scope", API_SCOPES, now["scope"])}</select>{chevron}</label>'
+        f'<label class="setting"><span class="setting-label">{esc(i18n.t(lang, "api_daily"))}</span>'
+        f'<input type="text" name="daily" inputmode="numeric" maxlength="7" value="{now["daily"] or ""}" '
+        f'placeholder="{esc(i18n.t(lang, "api_daily_none"))}"></label>'
+        f'<div class="actions"><button type="submit">{esc(i18n.t(lang, "api_save"))}</button></div>{remove}'
+        f'</form></section>'
+    )
+
+
+def _custom_rows(user_id: int) -> list[dict]:
+    with db.connect() as conn:
+        return ai_link.custom_rows(conn, user_id)
+
+
+def _key_dialogs(lang: str, user_id: int) -> str:
     def dialog(provider: str) -> str:
         if provider == "custom":   # address, model and an optional key instead of a page to make a key on
             return fill(CUSTOM_DIALOG, lang)
+        if provider in ai_link.DEVICE_LOGIN:   # sign-in at OpenAI with a one-time code, and the API key beside it
+            return fill(DEVICE_DIALOG, lang, ID=provider, NAME=esc(ai_name(lang, provider)),
+                        API=api_panel(lang, provider, user_id))
         name = ai_name(lang, provider)                        # the AI's name comes from the catalog, never from here
         return fill(KEY_DIALOG, lang, ID=provider, PAGE=esc(KEY_PAGES[provider]),
                     **{part.upper(): esc(i18n.t(lang, f"key_{part}", name=name)) for part in ("title", "steps", "open", "done")})
-    return "\n".join(dialog(p) for p in ai_link.PROVIDERS)
+    return "\n".join(dialog(p) for p in (*ai_link.PROVIDERS, "custom"))
 
 
 def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | None = None,
-                  standard: str = "claude", connected: tuple[str, ...] = ()) -> str:
+                  standard: str = "claude", connected: tuple[str, ...] = (), api: dict | None = None,
+                  custom: list[dict] | None = None) -> str:
     """The AIs and the chat history button (Janis, 15.11.2026). On top the standard AI with the arrow; below, folded
     (Janis, 11.11.2026: the list grows with every AI), the others in a fixed order: Claude, ChatGPT (not built yet),
-    the AIs with a key. With two or more connected, each connected one that is not the standard has the green star
+    the AIs with a key, the further AIs (`custom`: ai_link.custom_rows), the open tile and the placeholders (SOON).
+    With two or more connected, each connected one that is not the standard has the green star
     "use as standard" at its top right; every connected AI keeps "disconnect". The button is type="button": no submit."""
-    key_states = key_states or {}
+    key_states = dict(key_states or {})
     several = len(connected) >= 2
+    custom = custom or []
+    labels = {}
+    for item in custom:
+        key_states[item["name"]], labels[item["name"]] = item["state"], item["label"]
+
+    def kind(name: str) -> str:
+        return "custom" if ai_link.is_custom(name) else name
+
+    names = ["claude", *ai_link.PROVIDERS, *labels]
+    first_custom = next((i["name"] for i in custom if i["state"] == "connected"), None)
+    top = first_custom if standard == "custom" and first_custom else (standard if standard in names else "claude")
 
     def row(name: str, first: bool) -> str:
-        as_default = several and not first
+        as_default = several and kind(name) != kind(top)
+        line = (api or {}).get(name, "")
         if name == "claude":
-            return _claude_row(lang, claude_state, first, as_default)
-        if name in ai_link.PROVIDERS:
-            return _key_row(lang, name, key_states.get(name, "none"), first, as_default)
-        return _placeholder_row(lang, name)
+            return _claude_row(lang, claude_state, first, as_default, line)
+        return _key_row(lang, name, key_states.get(name, "none"), first, as_default, line, labels.get(name, ""))
 
-    names = ["claude", *PLACEHOLDER_SERVICES, *ai_link.PROVIDERS]
-    top = standard if standard in names else "claude"
-    others = "\n        ".join(row(n, False) for n in names if n != top)
+    rest = [row(n, False) for n in names if n != top]
+    if len(custom) < len(ai_link.SLOTS):
+        rest.append(_add_row(lang))
+    rest += [_soon_row(lang, n) for n in SOON]
+    others = "\n        ".join(rest)
     clear = (f'<button class="clear-btn" type="button" id="chat-clear-open">'
              f'{esc(i18n.t(lang, "chat_clear"))}</button>')
     more = f'<div class="ai-more" id="ai-more" hidden>\n        {others}\n      </div>'
@@ -369,10 +521,11 @@ def settings_bar(user: User, extras: str = "") -> str:
         GEAR=icon("gear"),
         ARROW=icon("arrow_left", "drawer-arrow"),
         SERVICES=_service_rows(lang, claude_link.status(user.id), {p: ai_link.status(user.id, p) for p in ai_link.PROVIDERS},
-                               aichoice.default(user.id), tuple(aichoice.connected(user.id))),
+                               aichoice.default(user.id), tuple(aichoice.connected(user.id)), _api_lines(lang, user.id),
+                               _custom_rows(user.id)),
         ADMIN=_admin_button(user),
-        CLAUDE_DIALOG=fill(CLAUDE_DIALOG, lang),
-        KEY_DIALOGS=_key_dialogs(lang),
+        CLAUDE_DIALOG=fill(CLAUDE_DIALOG, lang, API=api_panel(lang, "claude", user.id)),
+        KEY_DIALOGS=_key_dialogs(lang, user.id),
     )
 
 
@@ -392,5 +545,5 @@ def logged_in_page(
     return page(
         title, body, user.language,
         top_right=settings_bar(user, drawer_extras), top_center=top_center, top_left=top_left,
-        scripts=("claude.js", "ailink.js", *scripts), styles=styles, body_class=body_class,
+        scripts=("claude.js", "ailink.js", "aiapi.js", *scripts), styles=styles, body_class=body_class,
     )

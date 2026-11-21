@@ -6,7 +6,7 @@ any request. The key is handed to the runner once and never stored here (ai_link
 from fastapi import APIRouter, Depends, Form
 from fastapi.responses import JSONResponse
 
-from .. import ai_link, aichoice, users
+from .. import ai_link, aichoice, credentials, db, users
 from ..deps import api_user, fail, ok
 
 router = APIRouter(prefix="/ai")
@@ -18,29 +18,83 @@ def make_default(provider: str = Form(""), user: users.User = Depends(api_user))
     return ok(standard=aichoice.default(user.id)) if aichoice.set_default(user.id, provider) else fail(400)
 
 
+@router.get("/{provider}/api")
+def api_settings(provider: str, user: users.User = Depends(api_user)):
+    """The user's API key next to the plan of Claude or ChatGPT: its state and settings (credentials.py)."""
+    if provider not in credentials.API_FOR:
+        return fail(404)
+    with db.connect() as conn:
+        return ok(**credentials.settings_in(conn, user.id, provider))
+
+
+@router.post("/{provider}/api")
+def api_save(provider: str, key: str = Form(""), mode: str = Form("fallback"), scope: str = Form("all"),
+             daily: str = Form("0"), user: users.User = Depends(api_user)):
+    """Save the settings and, if one is given, a new key (the runner checks it). 400 with the field that does not fit."""
+    if provider not in credentials.API_FOR:
+        return fail(404)
+    try:
+        limit = int(daily.strip() or "0")
+        with db.connect() as conn:
+            credentials.configure_in(conn, user.id, provider, mode, scope, limit)
+    except ValueError:
+        return JSONResponse({"ok": False, "field": "settings"}, status_code=400)
+    if key.strip():
+        try:
+            if not ai_link.submit_key(user.id, credentials.API_FOR[provider], key):
+                return fail(409)
+        except ValueError:
+            return JSONResponse({"ok": False, "field": "key"}, status_code=400)
+    with db.connect() as conn:
+        return ok(**credentials.settings_in(conn, user.id, provider))
+
+
+@router.post("/{provider}/api/remove")
+def api_remove(provider: str, user: users.User = Depends(api_user)):
+    """Remove the key (the runner deletes it); the settings stay for a later key."""
+    if provider not in credentials.API_FOR:
+        return fail(404)
+    ai_link.disconnect(user.id, credentials.API_FOR[provider])
+    return ok()
+
+
 def _provider(provider: str) -> str | None:
-    return provider if provider in ai_link.PROVIDERS else None
+    """A connection the user may ask for: an AI of ai_link.PROVIDERS, one of his further AIs ("custom-3"), or "custom"
+    to add one more (connect only)."""
+    return provider if provider in ai_link.PROVIDERS or provider in ai_link.SLOTS or provider == "custom" else None
 
 
 @router.get("/{provider}/status")
 def status(provider: str, user: users.User = Depends(api_user)):
-    if not _provider(provider):
+    """The state of the user's own connection; during a ChatGPT sign-in also the link and the one-time code."""
+    if not _provider(provider) or provider == "custom":
         return fail(404)
-    return ok(status=ai_link.status(user.id, provider))
+    if provider not in ai_link.DEVICE_LOGIN:
+        return ok(status=ai_link.status(user.id, provider))
+    link, code = ai_link.device_prompt(user.id, provider)
+    return ok(status=ai_link.status(user.id, provider), url=link, code=code)
 
 
 @router.post("/{provider}/connect")
 def connect(provider: str, key: str = Form(""), endpoint: str = Form(""), model: str = Form(""),
-            user: users.User = Depends(api_user)):
-    """The key the user pasted (for the own AI also its address and model name): 400 with the field that does not fit
-    (`field`), 409 while an earlier one is being checked."""
+            label: str = Form(""), user: users.User = Depends(api_user)):
+    """The key the user pasted (for a further AI also its address, model and name): 400 with the field that does not
+    fit (`field`), 409 while an earlier one is being checked. "custom" takes the next free place and names it in the
+    answer (`provider`), so the page asks that one how the check went."""
     if not _provider(provider):
         return fail(404)
+    if provider == "custom":
+        with db.connect() as conn:
+            provider = ai_link.free_slot(conn, user.id)
+        if provider is None:
+            return JSONResponse({"ok": False, "field": "full"}, status_code=400)
+    if provider in ai_link.DEVICE_LOGIN:   # no key: the runner starts the sign-in at OpenAI
+        return ok(status="connecting") if ai_link.begin_login(user.id, provider) else fail(409)
     try:
-        accepted = ai_link.submit_key(user.id, provider, key, endpoint=endpoint, model=model)
+        accepted = ai_link.submit_key(user.id, provider, key, endpoint=endpoint, model=model, label=label)
     except ValueError as problem:
         return JSONResponse({"ok": False, "field": str(problem)}, status_code=400)
-    return ok(status=ai_link.status(user.id, provider)) if accepted else fail(409)
+    return ok(status=ai_link.status(user.id, provider), provider=provider) if accepted else fail(409)
 
 
 @router.post("/{provider}/disconnect")

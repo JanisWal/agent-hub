@@ -164,7 +164,7 @@
         log.appendChild(waiting);
       } else if (m.status === "failed") {
         // Only a short text per kind of failure (chat.FAILURES), never what Claude Code said.
-        var kind = { auth: "failAuth", timeout: "failTimeout", steps: "failSteps", limit: "failLimit", server: "failServer" }[m.failure] || "failOther";
+        var kind = { auth: "failAuth", timeout: "failTimeout", steps: "failSteps", limit: "failLimit", server: "failServer", plan: "failPlan" }[m.failure] || "failOther";
         log.appendChild(line("claude failed", box.dataset.claude, box.dataset.failed + ": " + box.dataset[kind]));
       } else {
         var answer = line("claude", box.dataset.claude, m.answer, true);

@@ -9,16 +9,15 @@ counts as not set, then the first connected AI (in the order of catalog.PROVIDER
 """
 import sqlite3
 
-from . import ai_link, catalog, claude_link, db
+from . import catalog, credentials, db
 
 KEY = "ai.default"
 
 
 def connected_in(conn: sqlite3.Connection, user_id: int, provider: str) -> bool:
-    """Can this user's own account of this provider answer now?"""
-    if provider == "claude":
-        return claude_link.connected_in(conn, user_id)
-    return provider in ai_link.PROVIDERS and ai_link.connected_in(conn, user_id, provider)
+    """Can this user's own account of this provider answer now: its plan, or his API key if he allows it
+    (credentials.py)?"""
+    return credentials.plan_in(conn, user_id, provider) or credentials.api_usable(conn, user_id, provider)
 
 
 def connected_list(conn: sqlite3.Connection, user_id: int) -> list[str]:

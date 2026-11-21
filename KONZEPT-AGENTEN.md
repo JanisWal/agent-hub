@@ -215,7 +215,19 @@ Grenzen (Vorschlag, beim Bau festzulegen): höchstens 3 `<ask>`, 5 `<task>`, 1 `
 
 - Im Katalog steht je Anbieter für jedes Werkzeug (`read`, `write`, `shell`, `search`, `fetch`, `look`), woher es kommt: `own` (das Programm der KI hat es), `hub` (der Hub reicht sein eigenes, vielleicht schwächeres Werkzeug), `none`. Heute: Claude Code alles `own`; Mistral Vibe alles `own`, nur `look` vom Hub (`runner/look_mcp.py`).
 - Das Paket nennt nur die Werkzeuge, die es gibt (`prompts.tools_text`). Eine KI ohne Dateiwerkzeug bekommt die Liste der Dateien und fragt mit `<read>`; eine KI ganz ohne Werkzeuge bekommt alles Nötige im Paket.
-- **Gebaut am 20.11.2026 (`own-ai`):** `runner/hub_tools.py` (look, Dateien lesen, suchen, schreiben, Shell, Webseiten) als MCP-Server für Programme, denen Werkzeuge fehlen, und `runner/hubloop.py` für KIs, die nur eine API im OpenAI-Format haben (die Schleife fährt der Hub im Container selbst, Werkzeugaufrufe der API oder als Text). Die „Eigene KI“ ist der Anbieter `custom`: Adresse und Modell je Nutzer, Gateway 3132 mit der Adresse im Ticket.
+- **Gebaut am 20.11.2026 (`own-ai`):** `runner/hub_tools.py` (look, Dateien lesen, suchen, schreiben, Shell, Webseiten) als MCP-Server für Programme, denen Werkzeuge fehlen, und `runner/hubloop.py` für KIs, die nur eine API im OpenAI-Format haben (die Schleife fährt der Hub im Container selbst, Werkzeugaufrufe der API oder als Text). Die „Eigene KI“ ist der Anbieter `custom` (seit 21.11.2026 „Weitere KI“ mit bis zu acht Plätzen, 9.2c): Adresse und Modell je Nutzer, Gateway 3132 mit der Adresse im Ticket.
+
+### 9.2b ChatGPT, Modell-Listen, Werkzeug-Prüfung (21.11.2026, gebaut)
+
+- **ChatGPT** läuft über Codex (das Programm, Modelle der GPT-Familie) mit der Anmeldung des ChatGPT-Kontos; alle Rollen, je Rolle ein passendes Modell (`catalog` "roles"). Tokens nur beim Runner, Läufe mit Ticket-Hülle über Gateway 3133 (`runner/codex.py`).
+- **Modell-Listen** fragt der Runner täglich bei jeder KI mit den Zugangsdaten des Nutzers ab; der Hub macht daraus den Katalog und die Auswahl je Nutzer (`models.py`).
+- **Werkzeug-Prüfung** (`toolcheck.py`): Ersatz vom Hub nur, wenn das Programm ein angefragtes Werkzeug dreimal in Folge lesbar nicht nennt; heute misst das nur Claude Code (`init`), die anderen bleiben beim Katalog.
+
+### 9.2c Abo oder Schlüssel, weitere KIs (21.11.2026, gebaut)
+
+- **Abo oder API-Schlüssel** ist eine Frage des Zugangs, nicht der KI: dieselben Modelle, dasselbe Paket, dieselben Werkzeuge. Der Hub wählt je Auftrag den Weg (`credentials.py`: Modus, Bereich, Tagesgrenze des Nutzers), der Runner holt das passende Geheimnis, das Gateway setzt es ein. Wechsel nur vom Abo zum Schlüssel derselben KI, dann erst die nächste KI (`aichoice`).
+- **Weitere KIs** sind ein Anbieter (`custom`) mit bis zu acht Plätzen je Nutzer; das Modell nennt den Platz (`own-3`), Adresse und Modell der fremden API kommen aus der Datenbank des Hubs, nie aus dem Lauf. Rolle, Paket und Werkzeuge wie bei jeder KI ohne eigenes Programm (`hubloop.py`, Werkzeuge vom Hub).
+- **Eigener Adapter lohnt sich**, wenn die KI ein Programm mit eigenen Werkzeugen und eine Abo-Anmeldung hat (heute Claude Code, Mistral Vibe, Codex; als Platzhalter Gemini CLI und GitHub Copilot CLI). Sonst reicht der allgemeine Weg.
 
 ### 9.3a Pakete je Rolle (Janis, 20.11.2026, gebaut in `web/app/prompts.py`)
 

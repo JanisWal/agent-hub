@@ -11,13 +11,14 @@ Which rules a role gets, and which markers the hub reads from its answer (ALLOWE
   files itself.
 - programmer, tester, reviewer: their role, RESULT and what they notice outside the task (<task>, <ask>).
 - manager after an approval ("doc"): memory only.
-What the AI's program can do comes from the catalog (catalog.tools_of): a package names only tools that exist.
+What the AI's program can do comes from the catalog, corrected by what its answers show (toolcheck.effective): a
+package names only tools that exist.
 Standard library only.
 """
 import sqlite3
 import time
 
-from . import catalog, checks, memory, questions, workflow
+from . import catalog, checks, memory, questions, toolcheck, workflow
 
 # --- the manager in the chat (chat.py)
 MANAGER = (
@@ -170,7 +171,7 @@ def manager_chat(conn: sqlite3.Connection, row: sqlite3.Row) -> str:
     """The package of one question of the manager chat (a row of chat_messages), from its owner's data only."""
     from . import agents   # agents imports this module
     user_id, project_id, mode = row["user_id"], row["project_id"], row["mode"]
-    tools = catalog.tools_of(row["provider"])
+    tools = toolcheck.effective(row["provider"])
     can_open = tools.get("read", "none") != "none"
     project = conn.execute("SELECT name, description FROM projects WHERE id = ? AND user_id = ?",
                            (project_id, user_id)).fetchone()
@@ -279,7 +280,7 @@ def run(conn: sqlite3.Connection, job, brief: bool = False) -> str:
     project = conn.execute("SELECT name, description FROM projects WHERE id = ? AND user_id = ?",
                            (job.project_id, job.user_id)).fetchone()
     name, description = (project["name"], project["description"]) if project else ("", "")
-    tools = catalog.tools_of(job.provider)
+    tools = toolcheck.effective(job.provider)
     allowed = ", ".join(r for r in workflow.RESULTS.get(job.role, ()) if r != "skipped")   # skipped: the hub's own
     rules = [RUN, tools_text(tools, "brief" if brief else ("all" if job.net == "together" else "apart"))
              + _blind(job.model)]
