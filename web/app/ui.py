@@ -92,15 +92,15 @@ def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model
         f'</select>{chevron}</label></span>'
     )
 
-# Other AI accounts (name): placeholders until they exist. Claude has its own row with a real state, the AIs with an
-# API key (ai_link.PROVIDERS: Mistral) have a row each in the folded list, after the placeholders.
-PLACEHOLDER_SERVICES = ("ChatGPT",)
+# Claude has its own row with a real state, the AIs the runner keeps (ai_link.PROVIDERS: Mistral, ChatGPT, the own AI)
+# have a row each in the folded list.
 KEY_PAGES = {"mistral": "https://console.mistral.ai/api-keys"}   # where the user makes a key (fixed, never from a request)
 # Row of an AI with a key: style class of the dot, status text, link text.
 KEY_STATES = {
     "connected": ("ok", "connected", "claude_disconnect"),
     "connecting": ("pending", "key_checking", "connect"),
     "expired": ("expired", "key_refused", "claude_renew"),
+    "noplan": ("expired", "plan_missing", "claude_renew"),
 }
 
 # The user's own AI (ai_link.py, 20.11.2026): the same steps as KEY_DIALOG (ailink.js), with address and model; the key
@@ -124,6 +124,41 @@ CUSTOM_DIALOG = """<dialog class="dialog" id="key-dialog-custom" data-provider="
   </div>
   <div data-step="failed" hidden>
     <p class="error" role="alert">%t.custom_failed%</p>
+    <div class="actions"><button type="button" data-finish>%t.close%</button></div>
+  </div>
+  <div data-step="disconnect" hidden>
+    <p class="muted">%t.key_disconnect_text%</p>
+    <div class="actions">
+      <button type="button" data-close autofocus>%t.cancel%</button>
+      <button class="danger-btn" type="button" data-disconnect>%t.claude_disconnect%</button>
+    </div>
+  </div>
+</dialog>"""
+
+# ChatGPT (ai_link.DEVICE_LOGIN, 21.11.2026): no key; the server starts a sign-in at OpenAI and shows its link and
+# one-time code (ailink.js fills them in from the status). The password is typed at OpenAI only.
+DEVICE_DIALOG = """<dialog class="dialog" id="key-dialog-%ID%" data-provider="%ID%">
+  <h2>%t.device_title%</h2>
+  <form data-step="key" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
+    <p class="muted">%t.device_steps%</p>
+    <div class="actions">
+      <button type="button" data-close>%t.cancel%</button>
+      <button class="primary" type="submit">%t.device_start%</button>
+    </div>
+  </form>
+  <div data-step="check" hidden><p class="muted" role="status">%t.device_wait_link%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p></div>
+  <div data-step="device" hidden>
+    <p class="muted">%t.device_open%</p>
+    <a class="primary" data-device-link href="#" target="_blank" rel="noopener noreferrer">%t.device_link%</a>
+    <p class="device-code" data-device-code aria-live="polite"></p>
+    <p class="muted" role="status">%t.device_wait%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p>
+  </div>
+  <div data-step="done" hidden>
+    <p class="muted">%t.device_done%</p>
+    <div class="actions"><button class="primary" type="button" data-finish>%t.close%</button></div>
+  </div>
+  <div data-step="failed" hidden>
+    <p class="error" role="alert">%t.device_failed%</p>
     <div class="actions"><button type="button" data-finish>%t.close%</button></div>
   </div>
   <div data-step="disconnect" hidden>
@@ -307,18 +342,12 @@ def _key_row(lang: str, provider: str, state: str, first: bool = False, as_defau
     )
 
 
-def _placeholder_row(lang: str, name: str) -> str:
-    return ('<div class="setting service">'
-            f'<span class="setting-label">{name}</span>'
-            f'<span class="service-line"><span class="status">{esc(i18n.t(lang, "not_connected"))}</span>'
-            f'<button class="link inline" type="button" disabled title="{esc(i18n.t(lang, "coming_soon"))}">'
-            f'{esc(i18n.t(lang, "connect"))}</button></span></div>')
-
-
 def _key_dialogs(lang: str) -> str:
     def dialog(provider: str) -> str:
         if provider == "custom":   # address, model and an optional key instead of a page to make a key on
             return fill(CUSTOM_DIALOG, lang)
+        if provider in ai_link.DEVICE_LOGIN:   # sign-in at OpenAI with a one-time code
+            return fill(DEVICE_DIALOG, lang, ID=provider, NAME=esc(ai_name(lang, provider)))
         name = ai_name(lang, provider)                        # the AI's name comes from the catalog, never from here
         return fill(KEY_DIALOG, lang, ID=provider, PAGE=esc(KEY_PAGES[provider]),
                     **{part.upper(): esc(i18n.t(lang, f"key_{part}", name=name)) for part in ("title", "steps", "open", "done")})
@@ -338,11 +367,9 @@ def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | Non
         as_default = several and not first
         if name == "claude":
             return _claude_row(lang, claude_state, first, as_default)
-        if name in ai_link.PROVIDERS:
-            return _key_row(lang, name, key_states.get(name, "none"), first, as_default)
-        return _placeholder_row(lang, name)
+        return _key_row(lang, name, key_states.get(name, "none"), first, as_default)
 
-    names = ["claude", *PLACEHOLDER_SERVICES, *ai_link.PROVIDERS]
+    names = ["claude", *ai_link.PROVIDERS]
     top = standard if standard in names else "claude"
     others = "\n        ".join(row(n, False) for n in names if n != top)
     clear = (f'<button class="clear-btn" type="button" id="chat-clear-open">'

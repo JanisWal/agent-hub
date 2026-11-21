@@ -31,6 +31,10 @@ API_PROXY = "http://egress:3129"   # only Anthropic (sign-ins)
 GATEWAY = "http://egress:3130"     # the Claude API with the user's token put in by the proxy (runner/egress.py)
 MISTRAL_GATEWAY = "http://egress:3131"   # the same for Mistral (its key put in by the proxy)
 CUSTOM_GATEWAY = "http://egress:3132"    # the user's own AI (any OpenAI-compatible API; address and key from the ticket)
+CHATGPT_GATEWAY = "http://egress:3133"   # ChatGPT through Codex (the real token and account put in by the proxy)
+CODEX_IMAGE = "agent-hub-codex"           # built from runner/Dockerfile.codex
+CODEX_JOBS = {"chat-all": 180, "chat-apart": 180, "chat-brief": 90, "run": 1050, "run-brief": 300, "models": 60}
+LOGIN_SECONDS = 900                       # the one-time code of a ChatGPT sign-in lasts 15 minutes
 _REMOTE_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,99}")   # a model name at such an API (web/app/ai_link.py)
 # Mistral runs: limits per job (turns, seconds); the proxy follows the same switch as Claude.
 # "run-brief": a run that needs no tools (the reviewer of a small change, the manager's documentation; 20.11.2026).
@@ -479,6 +483,72 @@ def build_hubloop_command(*, name: str, user_id: int, model: str, ticket: str, j
         "-e", f"HUB_MODEL={model}", "-e", f"HUB_JOB={job}", "-e", f"HUB_TURNS={turns}", "-e", f"HUB_SECONDS={seconds}",
         "-e", "PYTHONDONTWRITEBYTECODE=1", "-e", "NO_PROXY=egress", "-e", "no_proxy=egress", *_proxy_env(proxy),
         image, "python3", "/opt/hub/hubloop.py",
+    ]
+
+
+def build_codex_command(*, name: str, user_id: int, model: str, effort: str, auth: str, job: str, net: str = "together",
+                        work_dir: str | None = None, image: str = CODEX_IMAGE, network: str = NETWORK,
+                        memory: str = "480m", files_dir: str | None = None, code_dir: str | None = None) -> list[str]:
+    """The `docker run` command of a ChatGPT run (Codex, runner/codex_entry.py). `auth` is the run's auth.json
+    (codex.run_auth: the ticket in its wrapper, nothing real), checked to be that and nothing else; model and level
+    after the same patterns as everywhere. Like the other runs: run user, read-only, a home in memory, every request to
+    the gateway, the web only through the proxy of the job."""
+    if job not in CODEX_JOBS or (job == "run") != (work_dir is not None):
+        raise ValueError("unknown job")
+    if not _NAME.fullmatch(name):
+        raise ValueError("bad name")
+    if model or job != "models":
+        _model_args(model, effort)
+    if not _codex_auth(auth):
+        raise ValueError("bad auth")
+    proxy = ({"chat-all": WEB_PROXY, "chat-apart": API_PROXY, "chat-brief": API_PROXY, "run-brief": API_PROXY,
+              "models": API_PROXY}.get(job) or RUN_PROXY.get(net))
+    if proxy is None:
+        raise ValueError("unknown net mode")
+    _check_container(memory, image, network)
+    uid = run_uid(user_id)
+    mount = ["--mount", f"type=bind,src={_folder(work_dir, 'work_dir')},dst=/work", "--workdir", "/work"] if work_dir else []
+    return [
+        "docker", "run", "--rm", "--init", "-i", "--name", name, "--user", f"{uid}:{uid}",
+        "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+        "--read-only", "--tmpfs", "/tmp:rw,size=128m,mode=1777", "--tmpfs", "/home/codex:rw,size=128m,mode=1777",
+        "--memory", memory, "--memory-swap", memory, "--pids-limit", "256", "--cpus", "2",
+        "--network", network, *mount, *_read_only(files_dir, code_dir),
+        "-e", "HOME=/home/codex", "-e", f"HUB_AUTH={auth}", "-e", f"HUB_GATEWAY={CHATGPT_GATEWAY}",
+        "-e", f"HUB_MODEL={model}", "-e", f"HUB_EFFORT={effort}", "-e", f"HUB_JOB={job}",
+        "-e", f"HUB_SECONDS={CODEX_JOBS[job]}", "-e", "NO_PROXY=egress", "-e", "no_proxy=egress", *_proxy_env(proxy),
+        image, "python3", "/opt/hub/codex_entry.py",
+    ]
+
+
+def _codex_auth(auth) -> bool:
+    """The run's auth.json and nothing else: the shape of codex.run_auth with a wrapped ticket, no real token."""
+    try:
+        data = json.loads(auth)
+        tokens = data["tokens"]
+        from runner import codex   # the runner's own module (no import cycle at load time)
+        ticket = codex.ticket_of(tokens["access_token"])
+    except (ValueError, KeyError, TypeError):
+        return False
+    return (bool(_TICKET.fullmatch(ticket)) and tokens.get("refresh_token") == "hub-none"
+            and set(data) <= {"OPENAI_API_KEY", "auth_mode", "tokens", "last_refresh"} and "\n" not in auth)
+
+
+def build_codex_login_command(*, user_id: int, folder: str, image: str = CODEX_IMAGE, network: str = NETWORK,
+                              memory: str = "480m") -> list[str]:
+    """`codex login --device-auth` for a ChatGPT sign-in: it prints a link and a one-time code, the user signs in at
+    OpenAI, Codex writes auth.json into `folder` (the runner's own folder of this sign-in, mounted as the only place it
+    can write to). Public web only through the proxy: Codex talks to auth.openai.com itself."""
+    uid = run_uid(user_id)
+    _check_container(memory, image, network)
+    return [
+        "docker", "run", "--rm", "--init", "-i", "--name", f"agent-login-chatgpt-{int(user_id)}",
+        "--user", f"{uid}:{uid}", "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
+        "--read-only", "--tmpfs", "/tmp:rw,size=64m,mode=1777", "--tmpfs", "/home/codex:rw,size=32m,mode=1777",
+        "--memory", memory, "--memory-swap", memory, "--pids-limit", "256", "--network", network,
+        "--mount", f"type=bind,src={_folder(folder, 'folder')},dst=/login",
+        "-e", "HOME=/home/codex", "-e", "CODEX_HOME=/login", "-e", "NO_COLOR=1", *_proxy_env(WEB_PROXY),
+        image, "timeout", str(LOGIN_SECONDS), "codex", "-c", 'cli_auth_credentials_store="file"', "login", "--device-auth",
     ]
 
 

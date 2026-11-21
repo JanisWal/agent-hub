@@ -1,0 +1,13 @@
+# Image of a ChatGPT run (Codex, runner/adapters.py; 21.11.2026). Started by launcher.py as user 10000+id, read-only, with
+# a ticket instead of the user's tokens (runner/codex.py). Pinned: a new Codex version is tried on a branch first (its
+# options, events and the way it signs in may change). Node.js from Debian like the agent image (runner/Dockerfile).
+FROM debian:trixie-slim
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates git ripgrep python3 poppler-utils \
+      "nodejs=20.19.*" "npm=9.2.0*" \
+ && rm -rf /var/lib/apt/lists/* \
+ && npm install -g @openai/codex@0.167.2 \
+ && npm cache clean --force \
+ && codex --version | grep -q "0.167.2"
+COPY codex_entry.py hub_tools.py /opt/hub/
+WORKDIR /work

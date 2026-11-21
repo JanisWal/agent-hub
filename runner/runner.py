@@ -28,7 +28,7 @@ from pathlib import Path
 
 import threading
 
-from . import adapters, custom, launcher, login, mistral, tokens, view, workspace
+from . import adapters, codex, custom, launcher, login, mistral, tokens, view, workspace
 
 LOGIN_TIMEOUT_AFTER_CODE = 90   # seconds Claude Code gets to accept the code
 LINK_TIMEOUT = 30               # seconds until the sign-in prints its link
@@ -38,6 +38,8 @@ THOUGHTS_EVERY = 1.5            # seconds between two reports of new thoughts of
 POWER_TIMEOUT = 240             # seconds a manual backup may take (the nightly one needs a few seconds)
 # The answer when a saved credential is there but this server can not read it: the server's fault, nothing is deleted.
 UNREADABLE = "Server: the saved credential can not be read (HUB_TOKEN_KEY)."
+LATER = "Server: the AI's sign-in service could not be reached to renew the sign-in; nothing was deleted."
+DEVICE_LOGIN_SECONDS = launcher.LOGIN_SECONDS + 60   # a ChatGPT sign-in waits this long for the user at most
 
 
 class Api:
@@ -102,6 +104,8 @@ class Runner:
         self.work = work or workspace.Workspace(os.environ.get("HUB_WORK_DIR", "/opt/agent-hub/work"))
         self.run_agent = run_agent or self._run_agent
         self.run_tests = self._run_tests
+        self.run_login = self._run_login
+        self.device_logins: set[int] = set()
         # The user's files (and for the manager chat the code) as read-only folders of each job (view.py)
         self.views = views or view.Views(self.work.base, os.environ.get("HUB_FILES_SOURCE"))
         self.background = background
@@ -247,6 +251,11 @@ class Runner:
                 continue
             self.api.call("POST", f"/runner/keys/{user_id}/{provider}/wiped")
 
+    def _plan_check(self, user_id: int, provider: str, ok: bool, text: str) -> None:
+        """ChatGPT said the plan does not include Codex (codex_entry.py: outcome "plan"): the menu shows it."""
+        if not ok and provider == "chatgpt" and "(plan)" in (text or ""):
+            self._report(f"/runner/keys/{int(user_id)}/chatgpt/noplan")
+
     def _expired(self, user_id: int, provider: str) -> None:
         """The AI refused the credential (or there is none): the menu shows it, a refused API key is deleted."""
         if provider == "claude":
@@ -264,6 +273,10 @@ class Runner:
             print(f"runner: the saved {adapter.provider} credential of user {user_id} can not be read "
                   f"({error}); nothing deleted", file=sys.stderr, flush=True)
             return None, UNREADABLE
+        except adapters.Later as error:
+            print(f"runner: the {adapter.provider} sign-in of user {user_id} could not be renewed now ({error})",
+                  file=sys.stderr, flush=True)
+            return None, LATER
         if secret is None:   # no saved credential: the user links this AI again
             self._expired(user_id, adapter.provider)
             return None, "Not logged in: no saved credential. Please run /login"
@@ -369,6 +382,7 @@ class Runner:
             self._release(root)
         if login_problem:   # the AI says we are not signed in: show the connection as expired
             self._expired(user_id, provider)
+        self._plan_check(user_id, provider, ok, text)
         self._report(f"/runner/chat/{chat_id}/finish", success="1" if ok else "0", answer=text,
                      tokens_in=tokens_in, tokens_out=tokens_out, outside="1" if thoughts.outside else "0")
 
@@ -447,6 +461,7 @@ class Runner:
             self._release(root)
         if login_problem:
             self._expired(user_id, provider)
+        self._plan_check(user_id, provider, ok, text)
         result, report = launcher.result_of(text, failed=not ok)
         extra = {}
         if role in ("programmer", "tester"):   # the runner commits from outside: the run never sees .git
@@ -481,6 +496,61 @@ class Runner:
             self._expired(user_id, adapter.provider)
         result, report = launcher.result_of(text, failed=not ok)
         self._finish_run(run_id, result, report, tokens_in, tokens_out, int(self.clock() - started))
+
+    # --- ChatGPT sign-in with a one-time code (runner/codex.py): one container per sign-in, in a thread of its own
+    def handle_device_logins(self) -> None:
+        wanted = {int(i["user_id"]) for i in self.api.call("GET", "/runner/device-logins").get("logins", [])}
+        for user_id in [u for u in self.device_logins if u not in wanted]:   # the user closed the dialog
+            subprocess.run(["docker", "rm", "-f", f"agent-login-chatgpt-{user_id}"], capture_output=True)
+            self.device_logins.discard(user_id)
+        for user_id in wanted - self.device_logins:
+            self.device_logins.add(user_id)
+            self._start(self.do_device_login, {"user_id": user_id})
+
+    def _login_folder(self, user_id: int) -> Path:
+        return self.claude_base / "keys" / "chatgpt-login" / str(int(user_id))
+
+    def _run_login(self, command: list[str], on_line) -> int:
+        proc = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                text=True)
+        try:
+            for line in proc.stdout:
+                on_line(line)
+            return proc.wait(timeout=DEVICE_LOGIN_SECONDS)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            return -9
+
+    def do_device_login(self, job: dict) -> None:
+        """Show the link and code of `codex login --device-auth`, wait for the user at OpenAI, keep the tokens."""
+        user_id = int(job["user_id"])
+        folder = self._login_folder(user_id)
+        success = False
+        try:
+            shutil.rmtree(folder, ignore_errors=True)
+            launcher.prepare_folder(str(folder), user_id)
+            screen, told = [], []
+
+            def on_line(line: str) -> None:
+                screen.append(line)
+                found = codex.login_prompt("".join(screen))
+                if found and not told:
+                    told.append(found)
+                    self._report(f"/runner/device-logins/{user_id}/chatgpt/url", url=found[0], code=found[1])
+            self.run_login(launcher.build_codex_login_command(user_id=user_id, folder=str(folder)), on_line)
+            auth = folder / "auth.json"
+            if auth.is_file() and not auth.is_symlink():
+                kept = codex.read_auth(auth.read_text())
+                self.keys.save(user_id, "chatgpt", codex.dumps(kept))
+                success = True
+            else:
+                print(f"runner: ChatGPT sign-in of user {user_id} ended without tokens", file=sys.stderr, flush=True)
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            print(f"runner: ChatGPT sign-in of user {user_id}: {type(error).__name__}", file=sys.stderr, flush=True)
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)   # the plain tokens never stay on the card
+            self.device_logins.discard(user_id)
+        self._report(f"/runner/keys/{user_id}/chatgpt/done", success="1" if success else "0")
 
     def handle_merges(self) -> None:
         """Approved tasks: merge their branch into the project's main, then the manager documents."""
@@ -562,6 +632,7 @@ class Runner:
         self.handle_key_wipes()
         self.handle_keys()
         self.handle_logins()
+        self.handle_device_logins()
         self.handle_merges()
         self.handle_cleanups()
         if self.busy():

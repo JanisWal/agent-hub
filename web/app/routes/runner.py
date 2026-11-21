@@ -195,6 +195,27 @@ def key_expired(user_id: int, provider: str):
     return ok() if ai_link.mark_expired(user_id, provider) else fail(409)
 
 
+@router.get("/device-logins")
+def device_logins():
+    """ChatGPT sign-ins with a one-time code the runner has to run (ai_link.begin_login)."""
+    return ok(logins=ai_link.pending_device_logins())
+
+
+@router.post("/device-logins/{user_id}/{provider}/url")
+def device_login_url(user_id: int, provider: str, url: str = Form(""), code: str = Form("")):
+    _key_provider(provider)
+    try:
+        return ok() if ai_link.set_device_prompt(user_id, provider, url, code) else fail(409)
+    except ValueError:
+        return fail(400)
+
+
+@router.post("/keys/{user_id}/{provider}/noplan")
+def key_noplan(user_id: int, provider: str):
+    _key_provider(provider)
+    return ok() if ai_link.mark_noplan(user_id, provider) else fail(409)
+
+
 @router.get("/keys/wipes")
 def key_wipes():
     return ok(wipes=[{"user_id": uid, "provider": p} for uid, p in ai_link.pending_wipes()])

@@ -24,9 +24,11 @@ def _provider(provider: str) -> str | None:
 
 @router.get("/{provider}/status")
 def status(provider: str, user: users.User = Depends(api_user)):
+    """The state of the user's own connection; during a ChatGPT sign-in also the link and the one-time code."""
     if not _provider(provider):
         return fail(404)
-    return ok(status=ai_link.status(user.id, provider))
+    link, code = ai_link.device_prompt(user.id, provider) if provider in ai_link.DEVICE_LOGIN else ("", "")
+    return ok(status=ai_link.status(user.id, provider), url=link, code=code)
 
 
 @router.post("/{provider}/connect")
@@ -36,6 +38,8 @@ def connect(provider: str, key: str = Form(""), endpoint: str = Form(""), model:
     (`field`), 409 while an earlier one is being checked."""
     if not _provider(provider):
         return fail(404)
+    if provider in ai_link.DEVICE_LOGIN:   # no key: the runner starts the sign-in at OpenAI
+        return ok(status="connecting") if ai_link.begin_login(user.id, provider) else fail(409)
     try:
         accepted = ai_link.submit_key(user.id, provider, key, endpoint=endpoint, model=model)
     except ValueError as problem:

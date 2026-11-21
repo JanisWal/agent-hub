@@ -319,7 +319,9 @@ NEW_COLUMNS = {
                       "tried": "TEXT NOT NULL DEFAULT ''",            # AIs that could not answer it (chat fallback)
                       "kind": "TEXT NOT NULL DEFAULT 'chat'"},        # 'chat' or 'status' (a status round, statusnote.py)
     "ai_connections": {"endpoint": "TEXT NOT NULL DEFAULT ''",       # the user's own AI: its address (ai_link.py)
-                       "remote_model": "TEXT NOT NULL DEFAULT ''"},  # ... and the model name there
+                       "remote_model": "TEXT NOT NULL DEFAULT ''",   # ... and the model name there
+                       "login_url": "TEXT NOT NULL DEFAULT ''",      # ChatGPT sign-in: the page at OpenAI ...
+                       "login_code": "TEXT NOT NULL DEFAULT ''"},    # ... and the one-time code (21.11.2026)
     "agent_runs": {"effort": "TEXT NOT NULL DEFAULT ''",     # effort level of the run's model (catalog.py)
                    "provider": "TEXT NOT NULL DEFAULT 'claude'"},   # which AI does the run (aichoice.py)
     "agent_tasks": {"merged": "INTEGER NOT NULL DEFAULT 0",    # the runner merged the approved branch (agents.py)

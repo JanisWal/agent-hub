@@ -104,6 +104,8 @@ def _secret_ok(provider: str, secret: str) -> bool:
     """Does this look like a credential of this provider (Claude's token, or an API key of KEY_PATTERNS)?"""
     if provider == "claude":
         return bool(TOKEN.fullmatch(secret))
+    if provider == "chatgpt":
+        return bool(CHATGPT_ACCESS.fullmatch(secret))
     pattern = KEY_PATTERNS.get(provider)
     return bool(pattern and pattern.fullmatch(secret))
 
@@ -124,11 +126,14 @@ class Tickets:
             raise ValueError("not a credential of this provider")
         if provider == "custom" and not ENDPOINT.fullmatch(upstream or ""):
             raise ValueError("bad address")
+        if provider == "chatgpt" and not ACCOUNT.fullmatch(upstream or ""):
+            raise ValueError("bad account")
         ticket = "hubrun-" + secrets.token_urlsafe(32)
         path = self.folder / ticket_name(ticket)
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o400)
         try:
-            extra = f"\n{upstream}\n{'lan' if lan else 'public'}" if provider == "custom" else ""
+            extra = (f"\n{upstream}\n{'lan' if lan else 'public'}" if provider == "custom"
+                     else f"\n{upstream}" if provider == "chatgpt" else "")
             os.write(fd, f"{provider}\n{token}{extra}".encode())
             if os.geteuid() == 0:
                 os.fchown(fd, self.owner, self.owner)
@@ -174,6 +179,8 @@ def lookup_route(folder: str | Path, ticket: str, now: float | None = None, max_
     owner, token = (lines + ["", ""])[:2]
     if owner != provider or not _secret_ok(provider, token):
         return None
+    if provider == "chatgpt":   # the account id stands where the address of the own AI stands
+        return (token, lines[2], False) if len(lines) == 3 and ACCOUNT.fullmatch(lines[2]) else None
     if provider != "custom":
         return token, "", False
     if len(lines) != 4 or not ENDPOINT.fullmatch(lines[2]) or lines[3] not in ("lan", "public"):
@@ -185,8 +192,13 @@ def lookup_route(folder: str | Path, ticket: str, now: float | None = None, max_
 # tokens, but their own folder `<HUB_CLAUDE_DIR>/keys/<provider>/<user id>.enc`: deleting or renewing a user's Claude
 # folder (wipes, Vault.forget) never touches them, and the folder name "keys" can never be a user id.
 # These keys never go to a run: the runner itself asks the provider (runner/mistral.py), no code of an AI runs there.
+# ChatGPT (21.11.2026): what the runner keeps is a JSON of tokens (runner/codex.py); a ticket stands for the access token.
+CHATGPT_KEPT = re.compile(r"\{[ -~]{20,30000}\}")
+CHATGPT_ACCESS = re.compile(r"[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]*")
+ACCOUNT = re.compile(r"[A-Za-z0-9-]{1,80}")
 # The user's own AI (20.11.2026): any printable key, or "-" for an API without one (a local model).
-KEY_PATTERNS = {"mistral": re.compile(r"[A-Za-z0-9_-]{16,200}"), "custom": re.compile(r"[!-~]{1,400}")}
+KEY_PATTERNS = {"mistral": re.compile(r"[A-Za-z0-9_-]{16,200}"), "custom": re.compile(r"[!-~]{1,400}"),
+                "chatgpt": CHATGPT_KEPT}
 NO_KEY = "-"
 # The address of such an API: http(s), a host name or address, an optional port and path; nothing else (web/app/ai_link.py
 # checks the same pattern before it is stored).

@@ -156,6 +156,8 @@ def _choice(conn: sqlite3.Connection, user_id: int, role: str, provider: str | N
         old = _setting(conn, user_id, f"model.{role}", "")
         if old and catalog.provider_of(old) == provider and catalog.find(old):
             model, effort = old, effort or _setting(conn, user_id, f"effort.{role}", "")
+    if not model and (start := catalog.role_default(provider, role)):   # the AI's start for this role (catalog)
+        model, effort = start[0], effort or start[1]
     return catalog.resolve(model, effort, provider)
 
 

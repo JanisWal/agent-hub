@@ -8,6 +8,7 @@ router = APIRouter()
 
 # ValueError text from chat.send -> (message key in i18n.py, status)
 _PROBLEMS = {"claude": ("chat_err_claude", 409), "mistral": ("chat_err_mistral", 409), "custom": ("chat_err_custom", 409),
+             "chatgpt": ("chat_err_chatgpt", 409),
              "busy": ("chat_err_busy", 409),
              "prompt": ("chat_err_prompt", 400), "mode": ("chat_err_prompt", 400), "none": ("chat_err_none", 409)}
 

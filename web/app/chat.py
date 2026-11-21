@@ -31,14 +31,16 @@ MODES = ("all", "apart")   # what a user may choose; "brief" (no tools) is only 
 NET_TO_MODE = {"together": "all", "apart": "apart"}
 # Why a question failed, read from the reason the runner sent (Janis, 14.11.2026: show a short text, not what Claude
 # Code says). The reason stays in the answer column for looking into problems; the page only gets the kind.
-FAILURES = ("auth", "timeout", "steps", "limit", "server", "other")
+FAILURES = ("auth", "timeout", "steps", "limit", "server", "plan", "other")
+# The account's plan does not include the AI's program (ChatGPT without Codex, runner/codex_entry.py: outcome "plan").
+_PLAN = re.compile(r"\(plan\)")
 # The server can not read a saved credential (runner.UNREADABLE): its own fault, nothing was deleted (20.11.2026).
 _SERVER = re.compile(r"^Server: the saved credential")
 _AUTH = re.compile(r"authenticat|not logged in|/login|oauth|invalid api key|\b401\b", re.I)
 # The AI's quota or rate limit (Claude: "usage limit reached", Mistral: 429 when the month's credit is used up).
 _LIMIT = re.compile(r"usage limit|limit reached|rate.?limit|\b429\b|no credit|quota", re.I)
 # A question whose AI fails like this goes to the user's next AI (aichoice.order_in), Janis 15.11.2026.
-FALLBACK_KINDS = ("auth", "limit", "server")
+FALLBACK_KINDS = ("auth", "limit", "server", "plan")
 
 
 @dataclass
@@ -83,6 +85,8 @@ def failure_kind(reason: str) -> str:
     """auth (lost sign-in), limit, timeout, steps (the step limit was reached), server or other, for a failed answer."""
     if _SERVER.search(reason):
         return "server"
+    if _PLAN.search(reason):
+        return "plan"
     if _AUTH.search(reason):
         return "auth"
     if _LIMIT.search(reason):

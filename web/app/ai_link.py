@@ -22,8 +22,13 @@ import time
 
 from . import db
 
-PROVIDERS = ("mistral", "custom")   # providers whose connection is an API key (Claude has claude_link.py)
-STATUSES = ("none", "connecting", "connected", "expired")
+PROVIDERS = ("mistral", "chatgpt", "custom")   # connections kept by the runner (Claude has claude_link.py)
+# ChatGPT (21.11.2026): no key at all; the user signs in at OpenAI with a one-time code the runner shows (runner/codex.py)
+DEVICE_LOGIN = ("chatgpt",)
+DEVICE_SECONDS = 16 * 60         # the code lasts 15 minutes; then the sign-in counts as failed
+DEVICE_URL = re.compile(r"https://auth\.openai\.com/codex/device")
+DEVICE_CODE = re.compile(r"[A-Z0-9]{4}-[A-Z0-9]{4,8}")
+STATUSES = ("none", "connecting", "connected", "expired", "noplan")   # noplan: ChatGPT without Codex in the plan
 CHECK_SECONDS = 120               # the runner has this long to check a key, else the connection counts as failed
 KEY_SECONDS = 300                 # a pasted key waits this long for the runner, then it is forgotten
 KEY = re.compile(r"[A-Za-z0-9_-]{16,200}")   # what an API key looks like (Mistral: 32 letters and digits)
@@ -49,7 +54,8 @@ def _row(conn: sqlite3.Connection, user_id: int, provider: str) -> sqlite3.Row |
 def _effective(row: sqlite3.Row | None, now: int) -> str:
     if row is None or row["status"] == "wipe":
         return "none"
-    if row["status"] == "connecting" and now - row["updated_at"] > CHECK_SECONDS:
+    limit = DEVICE_SECONDS if row["provider"] in DEVICE_LOGIN else CHECK_SECONDS
+    if row["status"] == "connecting" and now - row["updated_at"] > limit:
         return row["previous"] or "none"                  # the runner never answered: as it was before
     return row["status"]
 
@@ -114,6 +120,49 @@ def submit_key(user_id: int, provider: str, key: str, now: int | None = None, en
     return True
 
 
+def begin_login(user_id: int, provider: str, now: int | None = None) -> bool:
+    """The user wants to sign in with a one-time code (ChatGPT): "connecting" until the runner reports how it went.
+    False while one is running already."""
+    if provider not in DEVICE_LOGIN:
+        raise ValueError("provider")
+    now = int(now if now is not None else time.time())
+    with db.connect() as conn:
+        before = status_in(conn, user_id, provider, now)
+        if before == "connecting":
+            return False
+        _save(conn, user_id, provider, "connecting", now, before if before in ("connected", "expired") else "")
+        conn.execute("UPDATE ai_connections SET login_url = '', login_code = '' WHERE user_id = ? AND provider = ?",
+                     (user_id, provider))
+    return True
+
+
+def pending_device_logins(now: int | None = None) -> list[dict]:
+    """Runner: sign-ins with a one-time code that are going on, as {user_id, provider}."""
+    now = int(now if now is not None else time.time())
+    with db.connect() as conn:
+        rows = conn.execute("SELECT * FROM ai_connections WHERE status = 'connecting' AND provider IN"
+                            f" ({','.join('?' * len(DEVICE_LOGIN))})", DEVICE_LOGIN).fetchall()
+    return [{"user_id": r["user_id"], "provider": r["provider"]} for r in rows if _effective(r, now) == "connecting"]
+
+
+def set_device_prompt(user_id: int, provider: str, url: str, code: str) -> bool:
+    """Runner: the link and the one-time code to show. ValueError for anything else than OpenAI's page and a code."""
+    if provider not in DEVICE_LOGIN or not DEVICE_URL.fullmatch(url or "") or not DEVICE_CODE.fullmatch(code or ""):
+        raise ValueError("prompt")
+    with db.connect() as conn:
+        return conn.execute("UPDATE ai_connections SET login_url = ?, login_code = ? WHERE user_id = ? AND provider = ?"
+                            " AND status = 'connecting'", (url, code, user_id, provider)).rowcount == 1
+
+
+def device_prompt(user_id: int, provider: str) -> tuple[str, str]:
+    """(link, code) of the user's own sign-in going on; ("", "") while there is none."""
+    with db.connect() as conn:
+        row = _row(conn, user_id, provider)
+        if row is None or status_in(conn, user_id, provider) != "connecting":
+            return "", ""
+    return row["login_url"], row["login_code"]
+
+
 def take_keys(now: int | None = None) -> list[dict]:
     """Runner: the keys waiting to be checked, each handed over once: {user_id, provider, key} and for the own AI also
     endpoint and lan (the owner's own AI may be in the home network)."""
@@ -143,6 +192,8 @@ def complete(user_id: int, provider: str, ok: bool, now: int | None = None) -> b
         row = _row(conn, user_id, provider)
         if row is None or row["status"] != "connecting":
             return False
+        conn.execute("UPDATE ai_connections SET login_url = '', login_code = '' WHERE user_id = ? AND provider = ?",
+                     (user_id, provider))
         if ok:
             _save(conn, user_id, provider, "connected", now)
             pending = _keys.pop((user_id, provider), None)
@@ -164,6 +215,17 @@ def route_in(conn: sqlite3.Connection, user_id: int, provider: str) -> dict:
     if row is None:
         return {}
     return {"endpoint": row["endpoint"], "remote_model": row["remote_model"], "lan": _owner(conn, user_id)}
+
+
+def mark_noplan(user_id: int, provider: str) -> bool:
+    """Runner: the AI said the account's plan does not include its program (ChatGPT without Codex). The sign-in stays;
+    the menu says why it is not used, and signing in again (after a change of plan) tries anew."""
+    _check_provider(provider)
+    with db.connect() as conn:
+        if status_in(conn, user_id, provider) != "connected":
+            return False
+        _save(conn, user_id, provider, "noplan", int(time.time()))
+    return True
 
 
 def mark_expired(user_id: int, provider: str) -> bool:

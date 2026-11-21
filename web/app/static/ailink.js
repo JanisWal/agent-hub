@@ -22,6 +22,7 @@
   });
 
   var CHECK_FOR = 150000; // ms: the hub gives up a check after two minutes (ai_link.CHECK_SECONDS)
+  var SIGN_IN_FOR = 990000; // ms: a sign-in with a one-time code may take 15 minutes (ai_link.DEVICE_SECONDS)
 
   function post(url, body) {
     return fetch(url, { method: "POST", body: body || null })
@@ -51,7 +52,15 @@
         .then(function (data) {
           if (!dialog.open || !data.ok) return;
           if (data.status === "connected") { stop(); show("done"); return; }
-          if (data.status !== "connecting" || Date.now() - since > CHECK_FOR) { stop(); show("failed"); return; }
+          // ChatGPT: the server shows the link and the one-time code of the sign-in at OpenAI (ui.DEVICE_DIALOG)
+          if (data.url && data.code && steps.device) {
+            var link = dialog.querySelector("[data-device-link]");
+            link.href = data.url;
+            dialog.querySelector("[data-device-code]").textContent = data.code;
+            if (steps.device.hidden) show("device");
+          }
+          var limit = steps.device ? SIGN_IN_FOR : CHECK_FOR;
+          if (data.status !== "connecting" || Date.now() - since > limit) { stop(); show("failed"); return; }
           timer = setTimeout(poll, 1500);
         })
         .catch(function () { if (dialog.open) timer = setTimeout(poll, 3000); });
