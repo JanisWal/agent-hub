@@ -1,29 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- Agent-Hub: a hub with three agents around it, on warm apricot glass (DESIGN.md, "Logo"). -->
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0.35" y2="1">
-      <stop offset="0" stop-color="#F3B183"/>
-      <stop offset="0.55" stop-color="#E8845A"/>
-      <stop offset="1" stop-color="#C8683F"/>
-    </linearGradient>
-    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#FFF3EA" stop-opacity="0.55"/>
-      <stop offset="0.5" stop-color="#FFF3EA" stop-opacity="0"/>
-    </linearGradient>
-  </defs>
-  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#bg)"/>
-  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#sheen)"/>
-  <rect x="2.75" y="2.75" width="58.5" height="58.5" rx="15.25" fill="none" stroke="#FFF3EA" stroke-opacity="0.45" stroke-width="1.5"/>
-  <g stroke="#2B1D14" stroke-opacity="0.82" stroke-width="3.6" stroke-linecap="round">
-    <line x1="32" y1="33" x2="32" y2="16"/>
-    <line x1="32" y1="33" x2="17.3" y2="41.5"/>
-    <line x1="32" y1="33" x2="46.7" y2="41.5"/>
-  </g>
-  <g fill="#FBEADB">
-    <circle cx="32" cy="15" r="5.4"/>
-    <circle cx="16.4" cy="42" r="5.4"/>
-    <circle cx="47.6" cy="42" r="5.4"/>
-  </g>
-  <circle cx="32" cy="33" r="8" fill="#2B1D14" fill-opacity="0.88"/>
-  <circle cx="32" cy="33" r="3.4" fill="#FBEADB"/>
+  <!-- Agent-Hub: a project folder with an AI spark, on apricot (DESIGN.md 3b, Janis 21.11.2026). -->
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="#E8845A"/>
+  <path d="M11 21a5 5 0 0 1 5-5h10l5 5h17a5 5 0 0 1 5 5v19a5 5 0 0 1-5 5H16a5 5 0 0 1-5-5z" fill="#2B1D14"/>
+  <path d="M32 23c1 6.5 3.5 9 10 10-6.5 1-9 3.5-10 10-1-6.5-3.5-9-10-10 6.5-1 9-3.5 10-10z" fill="#FBEADB"/>
 </svg>

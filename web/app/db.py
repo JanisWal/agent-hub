@@ -296,6 +296,15 @@ CREATE TABLE IF NOT EXISTS ai_models (
     tried_at   INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, provider)
 );
+-- Addresses in the server's network that further AIs may use (netaddresses.py, 21.11.2026); user_id NULL = every account.
+CREATE TABLE IF NOT EXISTS net_addresses (
+    id         INTEGER PRIMARY KEY,
+    host       TEXT NOT NULL,
+    port       INTEGER NOT NULL,
+    user_id    INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    note       TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+);
 -- Whether an AI's own tools are really there, measured on its answers (toolcheck.py, 21.11.2026).
 CREATE TABLE IF NOT EXISTS tool_health (
     provider   TEXT NOT NULL,

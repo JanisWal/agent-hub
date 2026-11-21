@@ -1,11 +1,12 @@
 """The further AIs (Janis, 20.11. and 21.11.2026): any API in the OpenAI chat format, with the hub's tools, up to eight per
-user with a name each. Address and model are the user's; plain http and the home network only for the owner, and only
-when he allows it in the system settings; everything else as with the other AIs."""
+user with a name each. Address and model are the user's; the server's network and plain http only at addresses the owner
+listed (netaddresses.py), for one account or all; everything else as with the other AIs."""
 import os
 import tempfile
 import unittest
 
-from app import agents, ai_link, aichoice, board, chat, db, models, projects, prompts, statusnote, systempage, ui, users
+from app import (agents, ai_link, aichoice, board, chat, db, models, netaddresses, projects, prompts, statusnote,
+                 systempage, ui, users)
 from app.routes import ai as ai_routes
 from app.routes import system as system_routes
 from app.routes import runner as runner_routes
@@ -78,34 +79,68 @@ class OwnAiTest(unittest.TestCase):
         self.assertNotIn('data-key-open="custom"', ui.settings_bar(self.a))           # no open tile any more
         self.assertEqual(ai_routes.connect("custom-9", "", "https://x.example/v1", "m", "", user=self.a).status_code, 404)
 
-    def test_bad_values_are_refused_and_plain_http_only_for_the_owner_who_allows_it(self):
+    def test_bad_values_are_refused_and_the_servers_network_only_where_listed(self):
         for endpoint, model, field in (("ftp://x/v1", "m", "endpoint"), ("https://a b/v1", "m", "endpoint"),
                                        ("https://x.example/v1", "-rf", "model"), ("https://x.example/v1", "a b", "model"),
-                                       ("http://192.168.1.5:11434/v1", "llama3", "home")):
+                                       ("http://192.168.1.5:11434/v1", "llama3", "network"),
+                                       ("https://192.168.1.5/v1", "llama3", "network"),            # https, but local
+                                       ("https://ollama.local/v1", "llama3", "network"),
+                                       ("http://ai.example.com/v1", "llama3", "network")):         # plain http
             with self.assertRaisesRegex(ValueError, field):
                 ai_link.submit_key(self.a.id, "custom-1", "", endpoint=endpoint, model=model)
         with self.assertRaisesRegex(ValueError, "key"):
             ai_link.submit_key(self.a.id, "custom-1", "with space", endpoint="https://x.example/v1", model="m")
-        with self.assertRaisesRegex(ValueError, "home"):                              # the owner, switch still off
+        with self.assertRaisesRegex(ValueError, "network"):                           # the owner too, while not listed
             ai_link.submit_key(self.owner.id, "custom-1", "", endpoint="http://192.168.1.5:11434/v1", model="llama3")
-        self.assertEqual(system_routes.ai_home(1, user=self.a).status_code, 403)       # only the owner switches it
-        superadmin = users.create_user("s@example.com", "Ssss!pass12", role="superadmin")
-        self.assertEqual(system_routes.ai_home(1, user=superadmin).status_code, 403)
-        self.assertEqual(system_routes.ai_home(2, user=self.owner).status_code, 400)
-        self.assertEqual(system_routes.ai_home(1, user=self.owner), {"ok": True})
-        self.connect(self.owner, "http://192.168.1.5:11434/v1", "llama3.1:8b")
-        self.assertEqual((self.claimed[0]["endpoint"], self.claimed[0]["lan"]), ("http://192.168.1.5:11434/v1", True))
-        with self.assertRaisesRegex(ValueError, "home"):                              # a colleague: never his network
-            ai_link.submit_key(self.a.id, "custom-1", "", endpoint="http://192.168.1.5:11434/v1", model="llama3")
-        self.connect(self.a, "https://colleague.example.net/v1", "llama3")              # public: no switch needed
-        self.assertFalse(self.claimed[0]["lan"])
+        answer = ai_routes.connect("custom", "", "http://192.168.1.5:11434/v1", "m", "", user=self.a)
+        self.assertEqual((answer.status_code, answer.body), (400, b'{"ok":false,"field":"network"}'))
         answer = ai_routes.connect("custom", "", "ftp://x", "m", "", user=self.a)
         self.assertEqual((answer.status_code, answer.body), (400, b'{"ok":false,"field":"endpoint"}'))
+        self.connect(self.a, "https://colleague.example.net/v1", "llama3")              # public: nothing to list
+        self.assertFalse(self.claimed[0]["lan"])
 
-    def test_the_system_page_shows_the_switch_only_to_the_owner(self):
-        self.assertIn('data-url="/system/ai-home"', systempage.render(self.owner))
+    def test_the_owner_lists_addresses_for_one_account_or_all(self):
         superadmin = users.create_user("s@example.com", "Ssss!pass12", role="superadmin")
-        self.assertNotIn('data-url="/system/ai-home"', systempage.render(superadmin))
+        for who in (self.a, superadmin):                                              # only the owner
+            self.assertEqual(system_routes.address_add("192.168.1.5:11434", "", "", user=who).status_code, 403)
+        for bad in ("192.168.1.5", "192.168.1.5:0", "127.0.0.1:11434", "172.17.0.1:8000", "localhost:80", "a b:1"):
+            answer = system_routes.address_add(bad, "", "", user=self.owner)
+            self.assertEqual((answer.status_code, answer.body), (400, b'{"ok":false,"field":"address"}'), bad)
+        self.assertEqual(system_routes.address_add("10.0.0.9:80", "999", "", user=self.owner).status_code, 400)
+        answer = system_routes.address_add("192.168.1.5:11434", str(self.a.id), "Ollama", user=self.owner)
+        self.assertIn("192.168.1.5:11434", answer["list"])
+        self.assertIn("a@example.com", answer["list"])
+        self.connect(self.a, "http://192.168.1.5:11434/v1", "llama3.1:8b")              # listed for A
+        self.assertEqual((self.claimed[0]["endpoint"], self.claimed[0]["lan"]), ("http://192.168.1.5:11434/v1", True))
+        with db.connect() as conn:
+            self.assertTrue(ai_link.route_in(conn, self.a.id, "custom", "own-1")["lan"])
+        with self.assertRaisesRegex(ValueError, "network"):                           # not for B, not another port
+            ai_link.submit_key(self.b.id, "custom-1", "", endpoint="http://192.168.1.5:11434/v1", model="m")
+        with self.assertRaisesRegex(ValueError, "network"):
+            ai_link.submit_key(self.a.id, "custom-2", "", endpoint="http://192.168.1.5:8080/v1", model="m")
+        system_routes.address_add("ollama.local:11434", "", "", user=self.owner)          # for all accounts
+        self.connect(self.b, "http://ollama.local:11434/v1", "m")
+        self.assertTrue(self.claimed[0]["lan"])
+        [entry] = [e for e in self._entries() if e["user_id"] == self.a.id]
+        self.assertNotIn("a@example.com", system_routes.address_remove(entry["id"], user=self.owner)["list"])
+        with db.connect() as conn:                                                     # from the next job on
+            self.assertFalse(ai_link.route_in(conn, self.a.id, "custom", "own-1")["lan"])
+
+    def _entries(self):
+        with db.connect() as conn:
+            return netaddresses.entries(conn)
+
+    def test_an_entry_of_a_deleted_account_goes_with_it(self):
+        system_routes.address_add("192.168.1.5:11434", str(self.a.id), "", user=self.owner)
+        with db.connect() as conn:
+            conn.execute("DELETE FROM users WHERE id = ?", (self.a.id,))                # what purge_deleted does
+        self.assertEqual(self._entries(), [])
+
+    def test_the_system_page_shows_the_list_only_to_the_owner(self):
+        self.assertIn('id="addresses-dialog"', systempage.render(self.owner))
+        self.assertIn("data-addresses", systempage.render(self.owner))
+        superadmin = users.create_user("s@example.com", "Ssss!pass12", role="superadmin")
+        self.assertNotIn("addresses-dialog", systempage.render(superadmin))
 
     def test_a_new_address_counts_only_once_it_was_checked(self):
         self.connect(self.a)

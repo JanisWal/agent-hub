@@ -220,15 +220,6 @@
   }
   $("dw-ai").addEventListener("change", sendAi);
   $("dw-ai-pass").addEventListener("change", sendAi);
-  win.addEventListener("click", function (event) {
-    var copy = event.target.closest("[data-copy]");
-    if (!copy) return;
-    navigator.clipboard.writeText($(copy.dataset.copy).textContent).then(function () {
-      copy.classList.add("copied");
-      status(t("copied"));
-      setTimeout(function () { copy.classList.remove("copied"); }, 1600);
-    });
-  });
   function confirmThen(text, action) {
     confirmDialog.querySelector("h2").textContent = text;
     confirmAction = action;

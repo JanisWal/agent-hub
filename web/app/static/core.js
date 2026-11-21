@@ -33,6 +33,7 @@
         if (!now || !next) throw new Error("swap");
         now.innerHTML = next.innerHTML;
       });
+      return fresh;   // for a caller that takes more from the same page (ailink.js: the model pickers)
     });
   }
   var holds = 0, waiting = null;
@@ -115,7 +116,50 @@
     } catch (e) {}
   }
 
-  window.AgentHub = Object.assign(window.AgentHub || {}, { validate: validate, clear: clear, reload: reload, swap: swap, hold: hold });
+  // Codes, tokens and commands copy with one click (Janis, 21.11.2026): the copy button beside them (ui.copy_button),
+  // in a .copy-click box also the text itself. The button says "copied" in place for a moment. Without the clipboard
+  // (an old browser, no permission) the text is selected, ready for Cmd+C.
+  function copyButton() {
+    var tpl = document.getElementById("copy-tpl");
+    return tpl ? tpl.content.firstElementChild.cloneNode(true) : document.createElement("span");
+  }
+  function copyFrom(box) {
+    var text = box.querySelector("[data-copy-text]");
+    var button = box.querySelector("[data-copy]");
+    if (!text) return;
+    function select() {
+      var range = document.createRange();
+      range.selectNodeContents(text);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    function done() {
+      if (!button) return;
+      var label = button.dataset.label || button.getAttribute("aria-label");
+      button.dataset.label = label;
+      button.classList.add("copied");
+      button.setAttribute("aria-label", button.dataset.done);
+      button.dataset.tip = button.dataset.done;
+      clearTimeout(button.copyTimer);
+      button.copyTimer = setTimeout(function () {
+        button.classList.remove("copied");
+        button.setAttribute("aria-label", label);
+        button.dataset.tip = label;
+      }, 1600);
+    }
+    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text.textContent).then(done, select);
+    else select();
+  }
+  document.addEventListener("click", function (event) {
+    var box = event.target.closest(".copy-box");
+    if (!box) return;
+    if (event.target.closest("[data-copy]") || (box.classList.contains("copy-click") && event.target.closest("[data-copy-text]"))) {
+      copyFrom(box);
+    }
+  });
+
+  window.AgentHub = Object.assign(window.AgentHub || {}, { validate: validate, clear: clear, reload: reload, swap: swap, hold: hold, copyButton: copyButton });
 
   document.addEventListener("submit", function (event) {
     var form = event.target;
@@ -128,15 +172,15 @@
   });
 
   // "More AIs": the arrow in the Claude block of the drawer opens or closes the list of the other services.
-  var aiToggle = document.getElementById("ai-toggle");
-  var aiMore = document.getElementById("ai-more");
-  if (aiToggle && aiMore) {
-    aiToggle.addEventListener("click", function () {
-      var open = aiMore.hidden;
-      aiMore.hidden = !open;
-      aiToggle.setAttribute("aria-expanded", String(open));
-    });
-  }
+  // On the document, so it still works after the rows were swapped (ailink.js, "use as standard").
+  document.addEventListener("click", function (event) {
+    var aiToggle = event.target.closest("#ai-toggle");
+    var aiMore = document.getElementById("ai-more");
+    if (!aiToggle || !aiMore) return;
+    var open = aiMore.hidden;
+    aiMore.hidden = !open;
+    aiToggle.setAttribute("aria-expanded", String(open));
+  });
 
   // Settings drawer: slides out of the top right corner, the handle rides along.
   var drawer = document.getElementById("settings");

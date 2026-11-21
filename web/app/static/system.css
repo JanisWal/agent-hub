@@ -49,3 +49,14 @@
   .sys-fields { grid-column: 1 / -1; grid-row: 2; grid-template-columns: 1fr 1fr; }
 }
 @media (pointer: coarse) { .sys-field select { font-size: max(16px, 1rem); } }   /* no zoom while typing (app.css) */
+
+/* Listed addresses (systempage.ADDRESS_DIALOG, 21.11.2026): one line per address, the form below in three fields. */
+.addr-list { list-style: none; margin: 0 0 calc(var(--space) * 2); padding: 0; display: grid; gap: 6px; }
+.addr-row { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: calc(var(--space) * 1.5); padding: 8px 12px; border-radius: 10px; background: var(--field); border: 1px solid var(--glass-border); }
+.addr-host { font: 600 0.9rem ui-monospace, "SF Mono", Menlo, monospace; }
+.addr-who, .addr-note { font-size: 0.86rem; color: var(--muted); }
+.addr-row .link { margin: 0 0 0 auto; }   /* .link brings its own top margin and centring */
+#addresses-dialog { overflow: visible; }   /* the hidden list of "For" would make it scroll */
+.addr-empty { padding: 4px 0; }
+.addr-fields { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: var(--space); }
+@media (max-width: 640px) { .addr-fields { grid-template-columns: 1fr; } }

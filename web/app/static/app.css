@@ -564,6 +564,11 @@ main { padding-bottom: 96px; } /* room for the toggle */
   transform-origin: top center;
   transition: opacity 0.2s, transform 0.3s cubic-bezier(0.3, 1.4, 0.5, 1), visibility 0s 0.3s;
 }
+/* A long list scrolls inside itself; the glass block holding an open list lies above its neighbours (each glass block
+   is a layer of its own, so the next tile painted over the list: Janis, 21.11.2026, ChatGPT's many models). */
+.select-menu { max-height: min(60vh, 440px); overflow-y: auto; overscroll-behavior: contain; }
+.glass:has(.select-menu.open) { z-index: 30; }
+.ai-services { display: contents; }   /* the AI rows of the drawer, swapped as one part (ailink.js) */
 .select-menu.open { opacity: 1; visibility: visible; transform: none; transition: opacity 0.2s, transform 0.3s cubic-bezier(0.3, 1.4, 0.5, 1), visibility 0s; }
 .select-option {
   display: flex;
@@ -594,6 +599,18 @@ main { padding-bottom: 96px; } /* room for the toggle */
 .service.pending .status::before { background: var(--accent); opacity: 1; }
 .service.expired .status { color: var(--error); }
 .service.expired .status::before { background: var(--error); opacity: 1; }
+/* "Connected" of Claude and ChatGPT is a button (ui._status, Janis 21.11.2026): the same look, no underline; under the
+   pointer the text and the dot glow a little more, so it reads as something to press. */
+.status-open { font: inherit; font-weight: 600; padding: 0; margin: 0; border: 0; background: none; cursor: pointer; color: inherit; border-radius: 6px; }
+.status-open::before { transition: transform 0.2s cubic-bezier(0.3, 1.25, 0.5, 1); }
+.service.ok .status-open:hover { text-shadow: 0 0 10px color-mix(in srgb, var(--success) 55%, transparent); }
+.service.ok .status-open:hover::before { transform: scale(1.25); box-shadow: 0 0 12px color-mix(in srgb, var(--success) 85%, transparent); }
+.status-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { .status-open::before { transition: none; } }
+/* The tools of the first AI only show with the list open (Janis, 21.11.2026); the others sit in the list anyway. */
+.service:has(> .ai-toggle[aria-expanded="false"]) .service-tools { display: none; }
+/* A saved API key (ui.api_panel): greyed, "remove key" opens it again. */
+.setting.kept { opacity: 0.55; }
 /* An AI that gets its own adapter later (ui.SOON): quiet, no button. */
 .service.soon .setting-label, .service.soon .status { color: var(--muted); }
 a.primary { display: flex; align-items: center; justify-content: center; text-decoration: none; }
@@ -698,7 +715,29 @@ a.primary { display: flex; align-items: center; justify-content: center; text-de
   .link-api { padding-left: 0; padding-top: calc(var(--space) * 3); border-left: 0; border-top: 1px solid var(--glass-border); }
 }
 /* The one-time code of a ChatGPT sign-in (ui.DEVICE_DIALOG): large, easy to type at OpenAI */
-.device-code { margin: calc(var(--space) * 2) 0; font: 600 1.6rem/1.2 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.12em; text-align: center; user-select: all; }
+/* Codes, tokens, commands (ui.copy_button, core.js; Janis, 21.11.2026): one click copies; the text stays selectable as a
+   whole. The button shows a check in place for a moment ("copied"), only opacity and transform move. */
+.copy-box code, .copy-box [data-copy-text] { -webkit-user-select: all; user-select: all; }
+.copy-click [data-copy-text] { cursor: copy; }
+.copy-btn { position: relative; }
+.copy-btn svg { transition: opacity 0.2s, transform 0.25s cubic-bezier(0.3, 1.25, 0.5, 1); }
+.copy-btn .copy-done { position: absolute; inset: 0; margin: auto; opacity: 0; transform: scale(0.6); }
+.copy-btn.copied { color: var(--go); }
+.copy-btn.copied svg:first-child { opacity: 0; transform: scale(0.6); }
+.copy-btn.copied .copy-done { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) { .copy-btn svg { transition: none; } }
+.device-copy { display: flex; align-items: center; justify-content: center; gap: var(--space); margin: calc(var(--space) * 2) 0; }
+.device-code { font: 600 1.6rem/1.2 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.12em; text-align: center; }
+.device-code:empty + .copy-btn { visibility: hidden; }
+
+/* What can be selected (Janis, 21.11.2026, as usual in app interfaces and Apple's guidelines): content can (chat,
+   descriptions, file and memory text, addresses, error messages, everything typed into a field); the controls and
+   their labels can not (buttons, links that act, field labels, states, tabs, menus, headings of the interface, cards
+   that are clicked or dragged), so a click or a drag never paints a selection over them. Codes copy with one click. */
+button, a.primary, .link, label, .setting-label, .status, .service-tools, .segment, .select-menu, .select-option,
+.drawer-handle, .info-dot, h1, h2, h3, .link-head, .sys-name, .tile, .card, .file-row, .device-row, .file-tab, .station,
+.m-split, .chat-who, svg { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-select: text; }
 .muted { margin: 0 0 calc(var(--space) * 2); color: var(--muted); overflow-wrap: anywhere; }
 .actions { display: flex; gap: calc(var(--space) * 1.5); margin-top: calc(var(--space) * 2); }
 .actions > * { flex: 1; min-height: 48px; margin-top: 0; }

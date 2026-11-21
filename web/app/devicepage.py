@@ -64,7 +64,7 @@ DIALOGS = """<dialog class="dialog device-dialog" id="device-dialog" %ERRS%>
     data-step="%t.dev_wiz_step%" data-next="%t.dev_wiz_next%" data-finish="%t.dev_wiz_finish%"
     data-key-stored="%t.devices_key_stored%" data-pass-stored="%t.dev_pass_stored%" data-host-new="%t.dev_host_new%"
     data-host-same="%t.dev_host_same%" data-host-changed="%t.dev_host_changed%" data-host-trusted="%t.dev_host_trusted%"
-    data-sudo-ok="%t.dev_sudo_ok%" data-sudo-no="%t.dev_sudo_no%" data-copied="%t.dev_copied%">
+    data-sudo-ok="%t.dev_sudo_ok%" data-sudo-no="%t.dev_sudo_no%">
   <header class="wiz-head">
     <h2 id="wiz-title" tabindex="-1">%t.dev_setup%</h2>
     <button class="icon-button card-btn" type="button" data-close aria-label="%t.close%" data-tip="%t.close%">%CROSS%</button>
@@ -125,7 +125,6 @@ DIALOGS = """<dialog class="dialog device-dialog" id="device-dialog" %ERRS%>
     <button type="button" id="wiz-back">%t.dev_wiz_back%</button>
     <button type="button" id="wiz-next">%t.dev_wiz_next%</button>
   </div>
-  <span hidden id="dev-copy-icon">%COPY%</span>
 </dialog>
 
 <dialog class="dialog device-window" id="device-window" aria-labelledby="dw-name" %ERRS%
@@ -134,7 +133,7 @@ DIALOGS = """<dialog class="dialog device-dialog" id="device-dialog" %ERRS%>
     data-sudo-ok="%t.dev_sudo_ok_short%" data-sudo-no="%t.dev_sudo_no_short%" data-os-none="%t.dev_os_none_short%"
     data-led-on="%t.dev_led_on%" data-led-off="%t.dev_led_off%" data-led-busy="%t.dev_led_busy%" data-led-unknown="%t.dev_led_unknown%"
     data-updates="%t.dev_updates_waiting%" data-reboot-needed="%t.dev_reboot_needed%" data-found="%t.dev_updates_found%" data-none="%t.dev_updates_none%"
-    data-copied="%t.dev_copied%" data-web-note="%t.dev_web_note%" data-shell-closed="%t.dev_shell_closed%"
+    data-web-note="%t.dev_web_note%" data-shell-closed="%t.dev_shell_closed%"
     data-files-empty="%t.dev_files_empty%" data-files-folder="%t.dev_files_folder%" data-files-rename="%t.dev_files_rename%"
     data-files-drop="%t.dev_files_drop%" data-files-up="%t.dev_files_uploading%" data-files-done="%t.dev_files_uploaded%"
     data-history-empty="%t.dev_history_empty%" data-origin-ai="%t.dev_origin_ai%" data-picture-saved="%t.dev_picture_saved%"
@@ -185,9 +184,9 @@ DIALOGS = """<dialog class="dialog device-dialog" id="device-dialog" %ERRS%>
         <div class="dw-card">
           <header class="dw-card-head"><h3>%t.dev_access%</h3>%ACCESS_INFO%</header>
           <dl class="dw-facts" id="dw-access"></dl>
-          <div class="dw-public" id="dw-public" hidden>
-            <code id="dw-public-key"></code>
-            <button type="button" class="icon-button card-btn dw-copy" data-copy="dw-public-key" aria-label="%t.dev_copy%" data-tip="%t.dev_copy%">%COPY%</button>
+          <div class="dw-public copy-box" id="dw-public" hidden>
+            <code id="dw-public-key" data-copy-text></code>
+            %COPY_BUTTON%
           </div>
           <div class="dw-links">
             <button type="button" class="link inline" id="dw-test">%t.dev_test%</button>
@@ -306,7 +305,7 @@ def dialogs(lang: str) -> str:
                  f'<span>{esc(i18n.t(lang, "dev_action_" + a))}</span></label>' for a in devicestore.AI_CHOICES)
     return fill(
         DIALOGS, lang, FIELDS_NEW=_fields(lang), ERRS=_errs(lang), NAMES=_names(lang), AI_CHOICES=ai,
-        CHEVRON=icon("chevron_down"), CROSS=icon("cross"), COPY=icon("copy"), PENCIL=icon("pencil"),
+        CHEVRON=icon("chevron_down"), CROSS=icon("cross"), COPY_BUTTON=ui.copy_button(lang), PENCIL=icon("pencil"),
         TERMINAL=icon("terminal"), FOLDER=icon("folder"), LIST=icon("list"), NOTE=icon("note"), PLUS=icon("plus"),
         ARROW_LEFT=icon("arrow_left"), REFRESH=icon("refresh"), POWER=icon("power"), UPDATE=icon("update"),
         FOLDER_E=esc(icon("folder")), FILE_E=esc(icon("file")), PENCIL_E=esc(icon("pencil")), TRASH_E=esc(icon("trash")),

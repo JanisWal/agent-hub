@@ -567,6 +567,11 @@ class IsolationTest(unittest.TestCase):
             self.assertFalse(models.permits(conn, self.b.id, "own-1"))
             self.assertFalse(credentials.api_usable(conn, self.b.id, "claude"))
         self.assertFalse(aichoice.set_default(self.b.id, "custom"))
+        from app import netaddresses
+        netaddresses.add("192.168.1.5:11434", self.a.id)                            # listed for A only
+        with db.connect() as conn:
+            self.assertTrue(netaddresses.allows(conn, self.a.id, "http://192.168.1.5:11434/v1"))
+            self.assertFalse(netaddresses.allows(conn, self.b.id, "http://192.168.1.5:11434/v1"))
         self.assertNotIn("Werkstatt-KI", ui.settings_bar(self.b))
         self.assertEqual(ai_link.status(self.a.id, "custom-1"), "connected")
 

@@ -118,7 +118,7 @@ CUSTOM_DIALOG = """<dialog class="dialog" id="key-dialog-custom" data-provider="
   <h2>%t.custom_title%</h2>
   <form data-step="key" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
     <p class="muted">%t.custom_steps%</p>
-    <p class="error" role="alert" data-field-error hidden data-endpoint="%t.custom_bad_endpoint%" data-home="%t.custom_home%" data-model="%t.custom_bad_model%" data-full="%t.custom_full%" data-key="%t.custom_bad_key%"></p>
+    <p class="error" role="alert" data-field-error hidden data-endpoint="%t.custom_bad_endpoint%" data-network="%t.custom_network%" data-model="%t.custom_bad_model%" data-full="%t.custom_full%" data-key="%t.custom_bad_key%"></p>
     <label>%t.custom_label%<input type="text" name="label" maxlength="40" autocomplete="off" spellcheck="false" placeholder="%t.custom_label_hint%"></label>
     <label>%t.custom_endpoint%<input type="text" name="endpoint" required maxlength="300" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…/v1"></label>
     <label>%t.custom_model%<input type="text" name="model" required maxlength="100" autocomplete="off" spellcheck="false"></label>
@@ -153,6 +153,11 @@ DEVICE_DIALOG = """<dialog class="dialog wide" id="key-dialog-%ID%" data-provide
   <div class="link-split">
   <section class="link-plan">
   <h3 class="link-head">%t.api_plan_title%</h3>
+  <div data-step="plan-on" hidden>
+    <p class="api-state">%t.plan_on%</p>
+    <div class="actions"><button type="button" data-close>%t.close%</button></div>
+    <button class="link" type="button" data-plan-off>%t.plan_off%</button>
+  </div>
   <form data-step="key" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
     <p class="muted">%t.device_steps%</p>
     <div class="actions">
@@ -164,7 +169,7 @@ DEVICE_DIALOG = """<dialog class="dialog wide" id="key-dialog-%ID%" data-provide
   <div data-step="device" hidden>
     <p class="muted">%t.device_open%</p>
     <a class="primary" data-device-link href="#" target="_blank" rel="noopener noreferrer">%t.device_link%</a>
-    <p class="device-code" data-device-code aria-live="polite"></p>
+    <div class="copy-box copy-click device-copy"><code class="device-code" data-device-code data-copy-text aria-live="polite"></code>%COPY%</div>
     <p class="muted" role="status">%t.device_wait%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p>
   </div>
   <div data-step="done" hidden>
@@ -176,7 +181,7 @@ DEVICE_DIALOG = """<dialog class="dialog wide" id="key-dialog-%ID%" data-provide
     <div class="actions"><button type="button" data-finish>%t.close%</button></div>
   </div>
   <div data-step="disconnect" hidden>
-    <p class="muted">%t.key_disconnect_text%</p>
+    <p class="muted">%DISCONNECT%</p>
     <div class="actions">
       <button type="button" data-close autofocus>%t.cancel%</button>
       <button class="danger-btn" type="button" data-disconnect>%t.claude_disconnect%</button>
@@ -225,7 +230,8 @@ SETTINGS = """<div class="drawer" id="settings">
   </div>
 </div>
 %CLAUDE_DIALOG%
-%KEY_DIALOGS%"""
+%KEY_DIALOGS%
+<template id="copy-tpl">%COPY%</template>"""
 
 # The dialog of an AI that connects with an API key (ai_link.py, static/ailink.js): paste the key, the runner checks
 # it with the provider. All texts come from here; %NAME% is the AI's name, %PAGE% where the user makes a key.
@@ -265,6 +271,11 @@ CLAUDE_DIALOG = """<dialog class="dialog wide" id="claude-dialog">
   <div class="link-split">
   <section class="link-plan">
   <h3 class="link-head">%t.api_plan_title%</h3>
+  <div data-step="plan-on" hidden>
+    <p class="api-state">%t.plan_on%</p>
+    <div class="actions"><button type="button" data-close>%t.close%</button></div>
+    <button class="link" type="button" data-plan-off>%t.plan_off%</button>
+  </div>
   <div data-step="start" hidden>
     <p class="muted">%t.claude_start_text%</p>
     <button class="primary" type="button" data-start>%t.device_start%</button>
@@ -296,11 +307,14 @@ CLAUDE_DIALOG = """<dialog class="dialog wide" id="claude-dialog">
     <div class="actions"><button type="button" data-cancel>%t.close%</button></div>
   </div>
   <div data-step="disconnect" hidden>
-    <p class="muted">%t.claude_disconnect_text%</p>
+    <p class="muted">%DISCONNECT%</p>
     <div class="actions">
       <button type="button" data-finish-keep autofocus>%t.cancel%</button>
       <button class="danger-btn" type="button" data-disconnect>%t.claude_disconnect%</button>
     </div>
+  </div>
+  </section>
+  %API%
   </div>
 </dialog>
 <dialog class="dialog danger" id="chat-clear-dialog">
@@ -340,35 +354,65 @@ def _make_default(lang: str, provider: str) -> str:
             f'data-tip="{label}. {esc(i18n.t(lang, "ai_default_hint"))}">{icon("star")}</button>')
 
 
-def _claude_row(lang: str, state: str, first: bool = True, as_default: bool = False, api: str = "") -> str:
+def _shown(state: str, api_on: bool) -> str:
+    """The state a row of an AI with a plan shows: connected also when only its API key is (Janis, 21.11.2026)."""
+    return "connected" if api_on and state in ("none", "") else state
+
+
+def copy_button(lang: str) -> str:
+    """The copy button (Janis, 21.11.2026: codes, tokens and commands copy with one click). It copies the text of the
+    `[data-copy-text]` in its `.copy-box` (core.js); in a `.copy-box.copy-click` (a short code) a click on the text
+    copies too. For a moment it shows "copied" in place. Scripts clone it from `#copy-tpl` (settings_bar)."""
+    label, done = esc(i18n.t(lang, "copy")), esc(i18n.t(lang, "copied"))
+    return (f'<button class="icon-button card-btn copy-btn" type="button" data-copy aria-label="{label}" '
+            f'data-tip="{label}" data-done="{done}">{icon("copy")}{icon("check", "copy-done")}</button>')
+
+
+def _status(lang: str, text_key: str, manage: str = "", plan: str = "") -> str:
+    """The state of a row. "Connected" of an AI with a plan and a key is a button (Janis, 21.11.2026): it looks the
+    same, glows a little more under the pointer and opens the dialog with both halves as they are (claude.js,
+    ailink.js); `plan` tells the dialog whether the plan is signed in."""
+    text = esc(i18n.t(lang, text_key))
+    if not manage:
+        return f'<span class="status">{text}</span>'
+    return (f'<button class="status status-open" type="button" data-manage="{manage}" data-plan="{esc(plan)}" '
+            f'aria-haspopup="dialog">{text}</button>')
+
+
+def _claude_row(lang: str, state: str, first: bool = True, as_default: bool = False, api: str = "",
+                api_on: bool = False) -> str:
     """The Claude block: state and the link of its dialog (claude.js), or "make standard" (`as_default`)."""
-    style, text_key, action_key = CLAUDE_STATES.get(state, ("", "not_connected", "connect"))
-    action = (f'<button class="link inline" type="button" id="claude-open" data-status="{esc(state)}">'
+    shown = _shown(state, api_on)
+    style, text_key, action_key = CLAUDE_STATES.get(shown, ("", "not_connected", "connect"))
+    action = (f'<button class="link inline" type="button" id="claude-open" data-status="{esc(shown)}">'
               f'{esc(i18n.t(lang, action_key))}</button>')
-    corner = _toggle(lang) if first else (_make_default(lang, "claude") if as_default and state == "connected" else "")
+    corner = _toggle(lang) if first else (_make_default(lang, "claude") if as_default and shown == "connected" else "")
+    status = _status(lang, text_key, "claude" if shown == "connected" else "", state)
     return (
         f'<div class="setting service {style}" id="claude-row" data-ai="claude" '
         f'data-expired="{esc(i18n.t(lang, "claude_expired"))}" data-renew="{esc(i18n.t(lang, "claude_renew"))}">'
         f'<span class="setting-label">{esc(ai_name(lang, "claude"))}</span>{corner}'
-        f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>{action}</span>'
+        f'<span class="service-line">{status}{action}</span>'
         f'<span class="service-tools">{esc(tools_line(lang, "claude"))}{api}</span></div>'
     )
 
 
 def _key_row(lang: str, provider: str, state: str, first: bool = False, as_default: bool = False, api: str = "",
-             name: str = "") -> str:
+             name: str = "", api_on: bool = False) -> str:
     """The block of an AI with an API key: state and one link that opens its dialog (ailink.js), or "make standard".
     A further AI ("custom-3") shows the name the user gave it; its tools and its standard are those of "custom"."""
     kind = "custom" if ai_link.is_custom(provider) else provider
+    plan, state = state, _shown(state, api_on)
     style, text_key, action_key = KEY_STATES.get(state, ("", "not_connected", "connect"))
     label = f' data-label="{esc(name)}"' if name else ""
     action = (f'<button class="link inline" type="button" data-key-open="{provider}" data-status="{esc(state)}"{label}>'
               f'{esc(i18n.t(lang, action_key))}</button>')
     corner = _toggle(lang) if first else (_make_default(lang, kind) if as_default and state == "connected" else "")
+    manage = provider if state == "connected" and provider in API_PANEL else ""
     return (
         f'<div class="setting service {style}" id="key-row-{provider}" data-ai="{kind}">'
         f'<span class="setting-label">{esc(name or ai_name(lang, provider))}</span>{corner}'
-        f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>{action}</span>'
+        f'<span class="service-line">{_status(lang, text_key, manage, plan)}{action}</span>'
         f'<span class="service-tools">{esc(tools_line(lang, kind))}{api}</span></div>'
     )
 
@@ -392,6 +436,7 @@ def _soon_row(lang: str, name: str) -> str:
             f'<span class="service-line"><span class="status">{esc(i18n.t(lang, "ai_soon"))}</span></span></div>')
 
 
+API_PANEL = ("claude", "chatgpt")   # the AIs whose dialog has a plan and an API key half (= credentials.API_FOR)
 API_MODES = ("fallback", "always", "off")
 API_SCOPES = ("all", "runs", "chat")
 
@@ -422,6 +467,7 @@ def api_panel(lang: str, provider: str, user_id: int) -> str:
     spent = (f' {esc(i18n.t(lang, "api_spent", n=now["spent"], limit=now["daily"]))}' if now["daily"] else "")
     remove = (f'<button class="link" type="button" data-api-remove>{esc(i18n.t(lang, "api_remove"))}</button>'
               if now["status"] in ("connected", "expired") else "")
+    kept = now["status"] in ("connected", "connecting")   # saved or being checked: greyed, "remove" opens it again
     chevron = icon("chevron_down")
     return (
         f'<section class="link-api" data-api="{provider}">'
@@ -429,10 +475,11 @@ def api_panel(lang: str, provider: str, user_id: int) -> str:
         f'<p class="muted link-note">{esc(i18n.t(lang, "api_costs"))}</p>'
         f'<p class="api-state" role="status" data-api-state>{esc(i18n.t(lang, state))}{spent}</p>'
         f'<form data-api-form novalidate data-saved="{esc(i18n.t(lang, "api_saved"))}" '
-        f'data-failed="{esc(i18n.t(lang, "api_failed"))}">'
-        f'<label class="setting"><span class="setting-label">{esc(i18n.t(lang, "api_key"))}</span>'
-        f'<input type="password" name="key" maxlength="300" autocomplete="off" spellcheck="false" '
-        f'placeholder="{esc(i18n.t(lang, "api_key_kept" if now["connected"] else "api_key_new"))}"></label>'
+        f'data-failed="{esc(i18n.t(lang, "api_failed"))}" data-none="{esc(i18n.t(lang, "api_state_none"))}" '
+        f'data-new="{esc(i18n.t(lang, "api_key_new"))}">'
+        f'<label class="setting{" kept" if kept else ""}"><span class="setting-label">{esc(i18n.t(lang, "api_key"))}</span>'
+        f'<input type="password" name="key" maxlength="300" autocomplete="off" spellcheck="false"{" disabled" if kept else ""} '
+        f'placeholder="{esc(i18n.t(lang, "api_key_kept" if kept else "api_key_new"))}"></label>'
         f'<label class="setting has-select"><span class="setting-label">{esc(i18n.t(lang, "api_mode"))}</span>'
         f'<select name="mode">{options("mode", API_MODES, now["mode"])}</select>{chevron}</label>'
         f'<label class="setting has-select"><span class="setting-label">{esc(i18n.t(lang, "api_scope"))}</span>'
@@ -443,6 +490,15 @@ def api_panel(lang: str, provider: str, user_id: int) -> str:
         f'<div class="actions"><button type="submit">{esc(i18n.t(lang, "api_save"))}</button></div>{remove}'
         f'</form></section>'
     )
+
+
+def _disconnect_text(lang: str, provider: str, user_id: int, plain: str) -> str:
+    """"Disconnect" in the drawer removes the plan and the API key (Janis, 21.11.2026); the text says so when there
+    is a key. One by one in the dialog behind "Connected"."""
+    from . import credentials
+    with db.connect() as conn:
+        has_key = credentials.settings_in(conn, user_id, provider)["status"] != "none"
+    return esc(i18n.t(lang, "both_disconnect_text" if has_key else plain))
 
 
 def _custom_rows(user_id: int) -> list[dict]:
@@ -456,6 +512,8 @@ def _key_dialogs(lang: str, user_id: int) -> str:
             return fill(CUSTOM_DIALOG, lang)
         if provider in ai_link.DEVICE_LOGIN:   # sign-in at OpenAI with a one-time code, and the API key beside it
             return fill(DEVICE_DIALOG, lang, ID=provider, NAME=esc(ai_name(lang, provider)),
+                        DISCONNECT=_disconnect_text(lang, provider, user_id, "key_disconnect_text"),
+                        COPY=copy_button(lang),
                         API=api_panel(lang, provider, user_id))
         name = ai_name(lang, provider)                        # the AI's name comes from the catalog, never from here
         return fill(KEY_DIALOG, lang, ID=provider, PAGE=esc(KEY_PAGES[provider]),
@@ -489,8 +547,9 @@ def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | Non
         as_default = several and kind(name) != kind(top)
         line = (api or {}).get(name, "")
         if name == "claude":
-            return _claude_row(lang, claude_state, first, as_default, line)
-        return _key_row(lang, name, key_states.get(name, "none"), first, as_default, line, labels.get(name, ""))
+            return _claude_row(lang, claude_state, first, as_default, line, bool(line))
+        return _key_row(lang, name, key_states.get(name, "none"), first, as_default, line, labels.get(name, ""),
+                        bool(line))
 
     rest = [row(n, False) for n in names if n != top]
     if len(custom) < len(ai_link.SLOTS):
@@ -500,7 +559,8 @@ def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | Non
     clear = (f'<button class="clear-btn" type="button" id="chat-clear-open">'
              f'{esc(i18n.t(lang, "chat_clear"))}</button>')
     more = f'<div class="ai-more" id="ai-more" hidden>\n        {others}\n      </div>'
-    return "\n      ".join([row(top, True), more, clear])
+    services = f'<div class="ai-services" id="ai-services">{row(top, True)}\n      {more}</div>'   # swapped as one
+    return "\n      ".join([services, clear])
 
 
 def _admin_button(user: User) -> str:
@@ -524,8 +584,10 @@ def settings_bar(user: User, extras: str = "") -> str:
                                aichoice.default(user.id), tuple(aichoice.connected(user.id)), _api_lines(lang, user.id),
                                _custom_rows(user.id)),
         ADMIN=_admin_button(user),
-        CLAUDE_DIALOG=fill(CLAUDE_DIALOG, lang, API=api_panel(lang, "claude", user.id)),
+        CLAUDE_DIALOG=fill(CLAUDE_DIALOG, lang, API=api_panel(lang, "claude", user.id),
+                           DISCONNECT=_disconnect_text(lang, "claude", user.id, "claude_disconnect_text")),
         KEY_DIALOGS=_key_dialogs(lang, user.id),
+        COPY=copy_button(lang),
     )
 
 
