@@ -29,6 +29,11 @@ Selbst gehostetes Verwaltungstool auf einem Raspberry Pi 4B, live unter `https:/
 - Eigene Werkzeuge der KIs sind fast immer besser und sparsamer (darauf trainiert, im zwischengespeicherten Teil des Pakets); der Ersatz des Hubs kostet je Schritt 1000 bis 2000 Tokens mehr, die Textform am meisten.
 - Netz: Die KI eines Kollegen bei ihm zu Hause ist vom Server aus nicht erreichbar; öffentlich erreichbar (eigener Tunnel, https) braucht sie keine Freigabe. Im Netz des Servers gibt der Owner einzelne Adressen frei (Host und Port, für alle Konten oder eines), nie das ganze Netz.
 
+## Plan vom 21.11.2026, abends (Janis' Rückmeldung nach dem Taschenrechner-Test, noch nicht gebaut)
+
+Befunde: (1) Auswahlliste im klein gezogenen Manager-Chat abgeschnitten, Ursache `overflow: clip` der eingeklappten Kachel; (2) „Verknüpft“ hat Knopf-Schatten und 44 px Mindestgröße; (3) „You've hit your 5-hour limit“ wird nicht als Kontingent erkannt (Muster doppelt in `chat.py` und `credentials.py`), darum kein Wechsel zu Schlüssel oder ChatGPT; (4) Projekt „Taschenrechner“: 45 Punkte, 37 von der Agentenkette, viele doppelt, viele über die Umgebung (Node, Browser, leeres /work); der Programmierer soll laut Paket alles außerhalb der Aufgabe nur melden, darum wandert Feinschliff aufs Board; 6 Aufgaben warten auf Freigabe; (5) Agenten haben keinen Browser (war nie geplant).
+Paket 1 (Fehler): Liste bricht aus der Kachel aus; „Verknüpft“ nur Text, der leuchtet und leicht wächst; eine gemeinsame Liste der Fehlerarten mit den echten Meldungen, Rückfall auch für Agentenläufe prüfen. Paket 2 (Schleife): Rollen erledigen alles zur Aufgabe Gehörende selbst; Funde nur noch als Fehler außerhalb der Aufgabe oder als neue Funktion; Umgebungsprobleme nie aufs Board; Doppelte erkennen; Feinschliff gehört in jeden Schritt; Automatik für das Zusammenführen bei grünen Tests und Prüfer ohne Einwand. Paket 3 (Testen): Browser für Tester und Tests (Vorschlag: Chromium headless mit Playwright im eigenen Image, Bildschirmfoto für `look`).
+
 ## Was als Nächstes ansteht
 
 1. **Echte Probe mit Janis:** ChatGPT anmelden (Gerätecode), eine Chat-Frage und ein Agentenlauf, Modell-Liste ansehen; optional ein API-Schlüssel und eine weitere KI (z. B. ein lokales Ollama, dessen Adresse unter „Freigegebene Adressen“ steht).
