@@ -322,7 +322,7 @@ FILE_DIALOGS = """<dialog class="dialog" id="file-dialog" data-title-link="%t.fi
     <button class="primary" type="button" data-same="keep" autofocus>%t.files_same_keep%</button>
   </div>
 </dialog>
-<dialog class="dialog viewer reader" id="file-reader">
+<dialog class="dialog viewer reader" id="file-reader" tabindex="-1" autofocus>
   <div class="viewer-head">
     <h2 id="file-reader-title"></h2>
     <button class="icon-button card-btn" type="button" id="file-reader-edit" aria-label="%t.files_edit_text%" title="%t.files_edit_text%">%PENCIL%</button>
@@ -337,7 +337,7 @@ FILE_DIALOGS = """<dialog class="dialog" id="file-dialog" data-title-link="%t.fi
     <button class="primary" type="button" id="file-reader-save">%t.save%</button>
   </div>
 </dialog>
-<dialog class="dialog viewer" id="file-viewer">
+<dialog class="dialog viewer" id="file-viewer" tabindex="-1" autofocus>
   <div class="viewer-head">
     <h2 id="file-viewer-title"></h2>
     <button class="icon-button card-btn" type="button" id="file-viewer-download" aria-label="%t.files_download%" title="%t.files_download%">%DOWNLOAD%</button>

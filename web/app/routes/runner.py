@@ -71,6 +71,17 @@ def merge_done(task_id: int, success: str = Form("0")):
     return ok() if agents.merge_done(task_id, success == "1") else fail(409)
 
 
+@router.get("/stops")
+def stops():
+    """Runs to stop at once (agents.set_paused: the user's emergency switch)."""
+    return ok(runs=agents.pending_stops())
+
+
+@router.post("/stops/{run_id}/done")
+def stop_done(run_id: int):
+    return ok() if agents.stop_done(run_id) else fail(409)
+
+
 @router.get("/exports")
 def export_requests():
     """Requests for a ZIP of a project's code (exports.py); old ones and their files go on the way."""

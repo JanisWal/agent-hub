@@ -296,6 +296,11 @@ CREATE TABLE IF NOT EXISTS ai_models (
     tried_at   INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, provider)
 );
+-- Runs the runner must stop at once (agents.set_paused, 21.11.2026: the user's emergency switch); a row goes when done.
+CREATE TABLE IF NOT EXISTS run_stops (
+    run_id     INTEGER PRIMARY KEY,
+    created_at INTEGER NOT NULL
+);
 -- The project's code as a ZIP to download (exports.py, 21.11.2026): the request; the file lies in exports/<id>.zip.
 CREATE TABLE IF NOT EXISTS code_exports (
     id         INTEGER PRIMARY KEY,

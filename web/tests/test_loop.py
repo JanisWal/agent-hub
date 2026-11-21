@@ -5,7 +5,7 @@ import os
 import tempfile
 import unittest
 
-from app import agents, board, claude_link, db, projects, prompts, questions, reply, statusnote, users
+from app import agents, board, chat, claude_link, db, projects, prompts, questions, reply, statusnote, users
 from app.managerpage import _question_row
 
 DIFF = ("calc.js | 2 ++\n 1 file changed", "diff --git a/calc.js b/calc.js\n+export const add = (a, b) => a + b;\n")
@@ -127,6 +127,13 @@ class LoopTest(unittest.TestCase):
         agents.finish_run(job.run_id, "ok", "Keine Einwände.")
         self.assertEqual(agents.get_task(self.a.id, task.id).status, "awaiting_approval")
 
+class ViewerFocusTest(unittest.TestCase):
+    def test_the_viewers_take_the_focus_themselves(self):
+        from app import managerpage
+        for dialog in ('id="file-reader" tabindex="-1" autofocus', 'id="file-viewer" tabindex="-1" autofocus'):
+            self.assertIn(dialog, managerpage.FILE_DIALOGS)
+
+
 class StatusTileTest(LoopTest):
     def test_the_tile_alone_follows_the_board_without_an_ai(self):
         from app.routes import manager as manager_routes
@@ -156,6 +163,92 @@ class HoverTest(unittest.TestCase):
                     self.assertIn(base, self.LIFTED, f"{os.path.basename(path)}: {selector.strip()} moves under the pointer")
                     self.assertRegex(css, re.escape(base) + r":hover::(after|before)\s*\{[^}]*(inset|top)\s*:\s*-",
                                      f"{base} lifts without keeping its hit area")
+
+
+class RoleAiTest(LoopTest):
+    """The AI of a role, chosen in its tab (Janis, 22.11.2026)."""
+
+    def connect_chatgpt(self):
+        from app import ai_link
+        ai_link.begin_login(self.a.id, "chatgpt")
+        ai_link.set_device_prompt(self.a.id, "chatgpt", "https://auth.openai.com/codex/device", "AB12-CDE34")
+        ai_link.complete(self.a.id, "chatgpt", True)
+
+    def test_a_role_works_with_the_ai_chosen_for_it(self):
+        from app.routes import roles as role_routes
+        self.connect_chatgpt()
+        self.assertEqual(agents.settings(self.a.id)["roles"]["programmer"]["provider"], "claude")   # the standard
+        self.assertEqual(role_routes.role_settings("programmer", provider="mistral", user=self.a).status_code, 400)
+        self.assertEqual(role_routes.role_settings("programmer", provider="chatgpt", user=self.a)["provider"], "chatgpt")
+        mine = agents.settings(self.a.id)["roles"]["programmer"]
+        self.assertEqual((mine["provider"], catalog_provider(mine["model"])), ("chatgpt", "chatgpt"))
+        self.assertEqual(agents.settings(self.a.id)["roles"]["reviewer"]["provider"], "claude")      # only that role
+        self.start()
+        job = agents.claim_next(can_mac=False)
+        self.assertEqual((job.role, job.provider), ("programmer", "chatgpt"))
+        role_routes.role_settings("programmer", provider="", user=self.a)                            # back to the standard
+        self.assertEqual(agents.settings(self.a.id)["roles"]["programmer"]["provider"], "claude")
+
+    def test_the_tab_lists_the_connected_ais_first_and_marks_the_roles(self):
+        from app import rolepage
+        self.connect_chatgpt()
+        agents.configure(self.a.id, "programmer", provider="chatgpt")
+        html = rolepage._ai_pills("de", "programmer", "chatgpt", ("claude", "chatgpt"))
+        self.assertLess(html.index('data-role-ai="claude"'), html.index('data-role-ai="chatgpt"'))
+        self.assertLess(html.index('data-role-ai="chatgpt"'), html.index('class="p-ai off"'))       # connected first
+        self.assertIn('data-role-ai="chatgpt" data-role="programmer" aria-pressed="true"', html)
+        self.assertNotIn('class="p-ai off">ChatGPT', html)                                         # connected: not dashed
+
+    def test_the_programmer_says_where_his_task_stands_when_nothing_runs(self):
+        from app import rolepage
+        html = rolepage._now("de", [], 0, (FakeTask("Feinschliff", "awaiting_approval"), ""))
+        self.assertIn("Wartet auf deine Freigabe: Feinschliff", html)
+        self.assertIn("r-now idle", html)
+        self.assertIn("nichts zu tun", rolepage._now("de", [], 0, None))
+
+
+class FakeTask:
+    def __init__(self, title, status):
+        self.title, self.status = title, status
+
+
+def catalog_provider(model):
+    from app import catalog
+    return catalog.provider_of(model)
+
+
+class PauseTest(LoopTest):
+    """The emergency switch (Janis, 22.11.2026): the agents stop at once, the manager chat does not."""
+
+    def test_pause_stops_the_running_run_and_starts_nothing_until_going_on(self):
+        from app.routes import ai as ai_routes
+        from app.routes import runner as runner_routes
+        task = self.start()
+        job = agents.claim_next(can_mac=False)
+        with db.connect() as conn:
+            deadline = conn.execute("SELECT deadline FROM agent_tasks WHERE id = ?", (task.id,)).fetchone()[0]
+        self.assertEqual(ai_routes.pause("1", user=self.a), {"ok": True, "paused": True})
+        self.assertEqual(runner_routes.stops()["runs"], [job.run_id])              # the runner stops its container
+        self.assertIsNone(agents.claim_next(can_mac=False))                         # nothing starts while paused
+        self.assertFalse(agents.finish_run(job.run_id, "done", "late"))            # the stopped run's word is no more
+        self.assertEqual(runner_routes.stop_done(job.run_id), {"ok": True})
+        chat.send(self.a.id, self.pa.id, "Hallo")                                   # the manager chat goes on
+        self.assertIsNotNone(chat.claim_next())
+        agents.set_paused(self.a.id, False, now=int(__import__("time").time()) + 600)
+        with db.connect() as conn:
+            later = conn.execute("SELECT deadline FROM agent_tasks WHERE id = ?", (task.id,)).fetchone()[0]
+        self.assertGreaterEqual(later - deadline, 590)                              # the pause does not count
+        self.assertEqual(agents.claim_next(can_mac=False).run_id, job.run_id)      # it starts again
+
+    def test_the_drawer_shows_the_switch_in_both_states(self):
+        from app import ui
+        page = ui.settings_bar(self.a)
+        self.assertLess(page.index('id="ai-pause"'), page.index('id="chat-clear-open"'))
+        self.assertIn(">KIs pausieren<", page)
+        agents.set_paused(self.a.id, True)
+        page = ui.settings_bar(self.a)
+        self.assertIn('class="clear-btn pause-btn paused"', page)
+        self.assertIn(">KIs fortfahren<", page)
 
 
 if __name__ == "__main__":

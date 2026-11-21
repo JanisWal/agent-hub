@@ -683,6 +683,14 @@ class Runner:
                 data = b""                                  # too big: the hub says so (serversettings.export_mb)
             self.api.send(f"/runner/exports/{export_id}", data)
 
+    # --- the user's emergency switch (web/app/agents.set_paused): his running containers go at once
+    def handle_stops(self) -> None:
+        for run_id in self.api.call("GET", "/runner/stops").get("runs", []):
+            run_id = int(run_id)
+            for name in (f"agent-run-{run_id}", f"agent-test-{run_id}"):
+                subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+            self.api.call("POST", f"/runner/stops/{run_id}/done")
+
     def handle_cleanups(self) -> None:
         """Folders of finished tasks, and everything of deleted projects (their code and their tasks' folders): the
         hub forgets a deleted project only when its folders are really gone."""
@@ -755,6 +763,7 @@ class Runner:
         self.handle_device_logins()
         self.handle_model_checks()
         self.handle_merges()
+        self.handle_stops()
         self.handle_cleanups()
         self.handle_exports()
         if self.busy():

@@ -70,8 +70,12 @@ def _run_row(lang: str, item: agents.RoleRun, now: int) -> str:
     return f'<li><details class="r-run">{head}{body}</details></li>'
 
 
-def _now(lang: str, runs: list[agents.RoleRun], now: int) -> str:
+def _now(lang: str, runs: list[agents.RoleRun], now: int, current=None) -> str:
     live = [r for r in runs if r.run.status in LIVE]
+    if not live and current is not None:   # nothing runs, but a task is on its way: where it stands (22.11.2026)
+        task = current[0]
+        return (f'<p class="r-now idle"><span class="r-dot" aria-hidden="true"></span>'
+                f'{esc(i18n.t(lang, "task_" + task.status))}: {esc(task.title)}</p>')
     if not live:
         return f'<p class="muted">{esc(i18n.t(lang, "role_idle"))}</p>'
     lines = []
@@ -124,6 +128,19 @@ def _soon_button(lang: str, key: str) -> str:
     return f'<button class="pill-btn quiet" type="button" disabled data-tip="{esc(i18n.t(lang, "coming_soon"))}">{label}</button>'
 
 
+def _ai_pills(lang: str, role: str, active: str, ais: tuple[str, ...]) -> str:
+    """The AIs of the role (Janis, 22.11.2026): the connected ones first, in their rank (aichoice.ranked, as in the
+    drawer), as buttons that choose the role's AI; the one it uses is marked. Then the ones not connected, dashed and
+    not clickable. One line that scrolls sideways (wheel, the side wheel of a mouse, or dragging: static/hscroll.js)."""
+    connected = [p for p in ais if p in catalog.PROVIDERS]
+    pills = "".join(
+        f'<button class="p-ai{" on" if p == active else ""}" type="button" data-role-ai="{p}" data-role="{role}" '
+        f'aria-pressed="{"true" if p == active else "false"}">{esc(ui.ai_name(lang, p))}</button>' for p in connected)
+    rest = "".join(f'<span class="p-ai off">{esc(ui.ai_name(lang, p))}</span>'
+                   for p in catalog.PROVIDERS if p not in connected)
+    return pills + rest + f'<span class="p-ai off">{esc(i18n.t(lang, "p_more_ais"))}</span>'
+
+
 def _code_tile(lang: str, current) -> str:
     """The project's code to download and try oneself (Janis, 21.11.2026): the merged state, and the state of the task
     being worked on (its branch). The runner makes the ZIP (exports.py, static/export.js); a note says how it goes."""
@@ -160,16 +177,14 @@ def _programmer(lang: str, settings: dict, runs: list[agents.RoleRun], usage: di
     the task with its context, then the usage; in the middle the trail of his thoughts and steps and the preview; right
     the project's code, the changes for the approval and his runs."""
     mine = settings["roles"]["programmer"]
-    picker = ui.model_picker(lang, "role-programmer", mine["model"], mine.get("effort", ""), providers=ais,
+    picker = ui.model_picker(lang, "role-programmer", mine["model"], mine.get("effort", ""), providers=(mine["provider"],),
                              allowed=settings.get("models"), names=settings.get("model_names"))
     tools = f'<span class="m-chat-tools">{_net_pill(lang, "programmer", mine["net"])}{picker}</span>'
     name = i18n.t(lang, "station_programmer")
     listed = "".join(_run_row(lang, r, now) for r in runs)
     runs_html = (f'<ol class="r-runs">{listed}</ol>' if listed
                  else f'<p class="muted">{esc(i18n.t(lang, "role_runs_empty"))}</p>')
-    # every AI the hub knows, the ones the user has connected stand out; more providers come with their adapter (3c)
-    others = "".join(f'<span class="p-ai{"" if p in ais else " off"}">{esc(ui.ai_name(lang, p))}</span>'
-                     for p in catalog.PROVIDERS) + f'<span class="p-ai off">{esc(i18n.t(lang, "p_more_ais"))}</span>'
+    others = _ai_pills(lang, "programmer", mine["provider"], ais)
     trail = ('<ol class="p-trail"><li class="thinking">' + esc(i18n.t(lang, "p_sample_think")) + '</li>'
              '<li class="tool"><code>python3 -m unittest</code></li>'
              '<li class="tool"><code>primes.py</code> · ' + esc(i18n.t(lang, "p_sample_edit")) + '</li>'
@@ -186,8 +201,8 @@ def _programmer(lang: str, settings: dict, runs: list[agents.RoleRun], usage: di
         f'<div class="mcol">'
         f'<section class="mtile glass r-head"><header><h2>{esc(i18n.t(lang, "role_now"))}</h2>'
         f'{ui.info_dot(name, i18n.t(lang, "role_hint_programmer"))}{tools}</header>'
-        f'<div id="role-programmer-now">{_now(lang, runs, now)}</div>'
-        f'<div class="p-ais"><small>{esc(i18n.t(lang, "p_other_ais"))}</small>{others}</div></section>'
+        f'<div id="role-programmer-now">{_now(lang, runs, now, current)}</div>'
+        f'<div class="p-ais" data-hscroll><small>{esc(i18n.t(lang, "p_other_ais"))}</small>{others}</div></section>'
         f'{_task_tile(lang, current)}'
         f'<section class="mtile glass"><header><h2>{esc(i18n.t(lang, "role_usage"))}</h2></header>'
         f'<div id="role-programmer-usage">{_usage(lang, usage)}</div></section>'
@@ -212,7 +227,7 @@ def render_role(lang: str, role: str, settings: dict, runs: list[agents.RoleRun]
     if role == "programmer":
         return _programmer(lang, settings, runs, usage, ais, now, current)
     mine = settings["roles"][role]
-    picker = ui.model_picker(lang, f"role-{role}", mine["model"], mine.get("effort", ""), providers=ais,
+    picker = ui.model_picker(lang, f"role-{role}", mine["model"], mine.get("effort", ""), providers=(mine["provider"],),
                              allowed=settings.get("models"), names=settings.get("model_names"))
     switch = "" if role == "programmer" else _enabled_select(lang, role, mine["enabled"])
     tools = f'<span class="m-chat-tools">{switch}{_net_pill(lang, role, mine["net"])}{picker}</span>'

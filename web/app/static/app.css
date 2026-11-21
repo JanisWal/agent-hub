@@ -643,6 +643,9 @@ a.primary { display: flex; align-items: center; justify-content: center; text-de
 }
 .drawer-box .clear-btn::after { content: ""; position: absolute; inset: -8px 0; }
 .drawer-box .clear-btn:hover { background: color-mix(in srgb, var(--danger) 24%, var(--glass)); }
+/* "Pause AIs" (the emergency switch, 22.11.2026): the same button; green "go on" while paused. */
+.drawer-box .pause-btn.paused { background: color-mix(in srgb, var(--go) 18%, var(--glass)); border-color: color-mix(in srgb, var(--go) 65%, transparent); box-shadow: 0 4px 12px color-mix(in srgb, var(--go) 25%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.25); }
+.drawer-box .pause-btn.paused:hover { background: color-mix(in srgb, var(--go) 26%, var(--glass)); }
 /* The way to the administration page (owner and admins): a glass button like the others (it lifts off the box
    with shadow and light edge), less colour than "Save", above it. */
 .drawer-box .admin-btn {

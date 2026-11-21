@@ -18,8 +18,21 @@
   function live(view) {
     if (view === "me") return true;
     var now = document.getElementById("role-" + view + "-now");
-    return !!(now && now.querySelector(".r-now"));
+    return !!(now && now.querySelector(".r-now:not(.idle)"));
   }
+
+  // The AI of a role (rolepage._ai_pills): a click chooses it; the page comes again quietly, because the model
+  // picker shows the models of the role's AI and is built when the page loads.
+  document.addEventListener("click", function (event) {
+    var pill = event.target.closest("[data-role-ai]");
+    if (!pill || pill.getAttribute("aria-pressed") === "true") return;
+    pill.disabled = true;
+    var body = new FormData();
+    body.append("provider", pill.dataset.roleAi);
+    fetch("/roles/" + pill.dataset.role + "/settings", { method: "POST", body: body, credentials: "same-origin" })
+      .then(function (r) { if (!r.ok) throw new Error("ai"); window.AgentHub.reload(); })
+      .catch(function () { pill.disabled = false; });
+  });
 
   function tick() {
     timer = null;

@@ -170,12 +170,12 @@ def _choice(conn: sqlite3.Connection, user_id: int, role: str, provider: str | N
 
 
 def _model(conn: sqlite3.Connection, user_id: int, role: str) -> str:
-    return _choice(conn, user_id, role)[0]
+    return _choice(conn, user_id, role, role_provider_in(conn, user_id, role))[0]
 
 
 def effort_in(conn: sqlite3.Connection, user_id: int, role: str) -> str:
     """The effort level of a role for this user, inside an open connection (the manager chat uses "chef")."""
-    return _choice(conn, user_id, role)[1]
+    return _choice(conn, user_id, role, role_provider_in(conn, user_id, role))[1]
 
 
 def _strictness(conn: sqlite3.Connection, user_id: int) -> str:
@@ -207,8 +207,10 @@ def settings(user_id: int) -> dict:
         provider = aichoice.default_in(conn, user_id)
         roles = {}
         for r in workflow.ROLES:
-            model, effort = _choice(conn, user_id, r, provider)
-            roles[r] = {"enabled": r in enabled, "model": model, "effort": effort, "net": net_in(conn, user_id, r)}
+            mine = role_provider_in(conn, user_id, r)   # the AI chosen for the role, else the standard
+            model, effort = _choice(conn, user_id, r, mine)
+            roles[r] = {"enabled": r in enabled, "model": model, "effort": effort, "net": net_in(conn, user_id, r),
+                        "provider": mine, "chosen": role_provider_in(conn, user_id, r, chosen_only=True) or ""}
         return {"strictness": _strictness(conn, user_id), "autonomy": autonomy_in(conn, user_id),
                 "provider": provider, "roles": roles,
                 "models": {p: models.allowed(conn, user_id, p) for p in catalog.PROVIDERS},
@@ -217,12 +219,21 @@ def settings(user_id: int) -> dict:
 
 def configure(user_id: int, role: str | None = None, *, enabled: bool | None = None,
               model: str | None = None, strictness: str | None = None, autonomy: str | None = None,
-              net: str | None = None, effort: str | None = None) -> None:
+              net: str | None = None, effort: str | None = None, provider: str | None = None) -> None:
     """Change a setting of this user. Raises ValueError for unknown values or for switching the
     programmer off. Model and effort are checked against the list (catalog.py); an effort is checked against the
     model sent with it, or the role's current model. A new model alone keeps the saved level where the model has
-    it, otherwise its default level counts (catalog.resolve)."""
+    it, otherwise its default level counts (catalog.resolve). `provider`: the AI of the role (one of the user's
+    connected AIs; "" goes back to the standard)."""
     changes: list[tuple[str, str]] = []
+    if provider is not None:
+        if role not in workflow.ROLES:
+            raise ValueError("Unbekannte Rolle")
+        if provider:
+            with db.connect() as conn:
+                if provider not in catalog.PROVIDERS or not aichoice.connected_in(conn, user_id, provider):
+                    raise ValueError("Diese KI ist nicht verbunden")
+        changes.append((f"ai.role.{role}", provider))
     if strictness is not None:
         if strictness not in workflow.STRICTNESS:
             raise ValueError("Unbekannte Strenge")
@@ -296,9 +307,22 @@ def pick_next(user_id: int, project_id: int) -> board.Item | None:
     return None
 
 
+def role_provider_in(conn: sqlite3.Connection, user_id: int, role: str, chosen_only: bool = False) -> str | None:
+    """The AI of a role (Janis, 22.11.2026: chosen in its tab): the one the user picked for it while it is connected,
+    else the standard (or None with `chosen_only`)."""
+    picked = _setting(conn, user_id, f"ai.role.{role}", "")
+    if picked and aichoice.connected_in(conn, user_id, picked):
+        return picked
+    return None if chosen_only else aichoice.default_in(conn, user_id)
+
+
 def _run_provider(conn: sqlite3.Connection, user_id: int, task_id: int, role: str) -> str:
-    """The AI of a new run: the standard. The reviewer takes another of the user's AIs than the programmer of this
-    task when he has two (Janis: one model overlooks its own mistakes)."""
+    """The AI of a new run: the one chosen for its role, else the standard. Without a choice the reviewer takes another
+    of the user's AIs than the programmer of this task when he has two (Janis: one model overlooks its own
+    mistakes)."""
+    picked = role_provider_in(conn, user_id, role, chosen_only=True)
+    if picked:
+        return picked
     order = aichoice.order_in(conn, user_id)
     if role == "reviewer" and len(order) > 1:
         row = conn.execute("SELECT provider FROM agent_runs WHERE task_id = ? AND role = 'programmer'"
@@ -398,7 +422,7 @@ def autostart(conn: sqlite3.Connection, now: int) -> int:
         if conn.execute("SELECT 1 FROM agent_tasks t JOIN board_items b ON b.id = t.item_id WHERE t.project_id = ?"
                         " AND t.status = 'escalated' AND b.auto = 1", (row["project_id"],)).fetchone():
             continue
-        if not aichoice.connected_list(conn, row["user_id"]):
+        if not aichoice.connected_list(conn, row["user_id"]) or paused_in(conn, row["user_id"]):
             continue
         for kind in KIND_ORDER:
             item = next((i for i in conn.execute(
@@ -546,6 +570,53 @@ def decide(user_id: int, task_id: int, decision: str, note: str = "", now: int |
 
 # --- the runner
 
+# The emergency switch (Janis, 22.11.2026: "AIs pause" in the drawer): the user's agent runs stop at once and none
+# starts until he goes on; the manager chat is not touched. Kept in agent_settings ("agents.paused" = the moment).
+PAUSED = "agents.paused"
+
+
+def paused_in(conn: sqlite3.Connection, user_id: int) -> int:
+    """Since when the user's agents are paused (unix time), 0 when they run."""
+    return int(_setting(conn, user_id, PAUSED, "0") or 0)
+
+
+def set_paused(user_id: int, on: bool, now: int | None = None) -> bool:
+    """Pause the user's agents or let them go on. Pausing: his running runs go back into the queue and onto the list
+    the runner stops at once (run_stops); nothing of his starts while paused. Going on: the time limits of his open
+    tasks get the paused time back (a pause is no reason to escalate). Returns whether it is paused now."""
+    now = int(now if now is not None else time.time())
+    with db.connect() as conn:
+        since = paused_in(conn, user_id)
+        mine = ("SELECT r.id FROM agent_runs r JOIN agent_tasks t ON t.id = r.task_id JOIN projects p"
+                " ON p.id = t.project_id WHERE p.user_id = ? AND r.status = 'running'")
+        if on and not since:
+            for row in conn.execute(mine, (user_id,)).fetchall():
+                conn.execute("UPDATE agent_runs SET status = 'queued', started_at = NULL WHERE id = ?", (row["id"],))
+                conn.execute("INSERT OR IGNORE INTO run_stops (run_id, created_at) VALUES (?, ?)", (row["id"], now))
+            value = str(now)
+        elif not on and since:
+            marks = ",".join("?" * len(ACTIVE))
+            conn.execute(f"UPDATE agent_tasks SET deadline = deadline + ? WHERE status IN ({marks}) AND project_id IN"
+                         " (SELECT id FROM projects WHERE user_id = ?)", (now - since, *ACTIVE, user_id))
+            value = "0"
+        else:
+            return bool(since)
+        conn.execute("INSERT INTO agent_settings (user_id, key, value) VALUES (?, ?, ?)"
+                     " ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value", (user_id, PAUSED, value))
+    return on
+
+
+def pending_stops() -> list[int]:
+    """Runner: the runs to stop at once."""
+    with db.connect() as conn:
+        return [r["run_id"] for r in conn.execute("SELECT run_id FROM run_stops ORDER BY run_id")]
+
+
+def stop_done(run_id: int) -> bool:
+    with db.connect() as conn:
+        return conn.execute("DELETE FROM run_stops WHERE run_id = ?", (run_id,)).rowcount == 1
+
+
 def _escalate_late(conn: sqlite3.Connection, now: int) -> None:
     """Tasks past their deadline and runs that went silent go to the user."""
     for run in conn.execute(
@@ -615,6 +686,8 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
             if run["needs"] == "mac" and not can_mac:
                 continue
             user_id = _owner(conn, run["task_id"])
+            if paused_in(conn, user_id):                   # his emergency switch: nothing of his starts
+                continue
             task = conn.execute("SELECT * FROM agent_tasks WHERE id = ?", (run["task_id"],)).fetchone()
             if run["role"] == "chef" and not task["merged"]:
                 continue                                   # the runner merges the approved branch first

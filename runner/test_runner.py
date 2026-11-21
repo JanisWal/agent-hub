@@ -339,6 +339,25 @@ class RunChatTest(unittest.TestCase):
         self.assertEqual((bad["memory_mb"], bad["cpus"], bad["pids"], bad["run_seconds"]), (480, 2, 256, 1100))
 
 
+class StopTest(unittest.TestCase):
+    def test_the_emergency_switch_removes_the_containers_and_says_so(self):
+        calls, removed = [], []
+
+        class Hub:
+            def call(self, method, path, **form):
+                calls.append((method, path))
+                return {"runs": [7]} if path == "/runner/stops" else {"ok": True}
+        r = runner.Runner(Hub(), "/nowhere", vault=object(), tickets=object(), keys=object(), background=False)
+        real = runner.subprocess.run
+        runner.subprocess.run = lambda command, **kw: removed.append(command[-1])
+        try:
+            r.handle_stops()
+        finally:
+            runner.subprocess.run = real
+        self.assertEqual(removed, ["agent-run-7", "agent-test-7"])
+        self.assertIn(("POST", "/runner/stops/7/done"), calls)
+
+
 class ChatRunTest(unittest.TestCase):
     """The chat window: the runner answers one question in a container."""
 

@@ -6,7 +6,7 @@ from .layout import esc, fill
 from .projects import MAX_DESCRIPTION, MAX_NAME, Project
 from .users import User
 
-SCRIPTS = ("motion.js", "segment.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "picker.js", "manager.js", "splitter.js", "checks.js", "status.js", "devices.js", "devwin.js", "devsetup.js", "upload.js", "tiffthumb.js", "files.js", "filetidy.js", "mvault.js", "roles.js", "todos.js", "waiting.js", "export.js")
+SCRIPTS = ("motion.js", "segment.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "picker.js", "manager.js", "splitter.js", "checks.js", "status.js", "devices.js", "devwin.js", "devsetup.js", "upload.js", "tiffthumb.js", "files.js", "filetidy.js", "mvault.js", "roles.js", "todos.js", "waiting.js", "export.js", "hscroll.js")
 STYLES = ("project.css",)
 
 COLUMN_LABEL = {"bug": "col_bug", "minor": "col_minor", "major": "col_major"}
@@ -269,8 +269,9 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
     tasks = _tasks(user, project)
     settings, ais = agents.settings(user.id), (aichoice.default(user.id),)
     current = agents.current_task(user.id, project.id)
+    ranked = tuple(aichoice.ranked(user.id)) or ais   # the AIs a role can be given, as in the drawer
     roles = "".join(rolepage.render_role(lang, role, settings, agents.role_runs(user.id, project.id, role),
-                                         agents.usage(user.id, project.id, role), ais, current=current)
+                                         agents.usage(user.id, project.id, role), ranked, current=current)
                     for role in rolepage.ROLES)
     waiting = [(t, agents.last_report(user.id, t.id)) for t in agents.waiting_tasks(user.id, project.id)]
     entries = todos.list_todos(user.id, project.id)
