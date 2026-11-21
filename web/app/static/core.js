@@ -33,6 +33,7 @@
         if (!now || !next) throw new Error("swap");
         now.innerHTML = next.innerHTML;
       });
+      return fresh;   // for a caller that takes more from the same page (ailink.js: the model pickers)
     });
   }
   var holds = 0, waiting = null;
@@ -171,15 +172,15 @@
   });
 
   // "More AIs": the arrow in the Claude block of the drawer opens or closes the list of the other services.
-  var aiToggle = document.getElementById("ai-toggle");
-  var aiMore = document.getElementById("ai-more");
-  if (aiToggle && aiMore) {
-    aiToggle.addEventListener("click", function () {
-      var open = aiMore.hidden;
-      aiMore.hidden = !open;
-      aiToggle.setAttribute("aria-expanded", String(open));
-    });
-  }
+  // On the document, so it still works after the rows were swapped (ailink.js, "use as standard").
+  document.addEventListener("click", function (event) {
+    var aiToggle = event.target.closest("#ai-toggle");
+    var aiMore = document.getElementById("ai-more");
+    if (!aiToggle || !aiMore) return;
+    var open = aiMore.hidden;
+    aiMore.hidden = !open;
+    aiToggle.setAttribute("aria-expanded", String(open));
+  });
 
   // Settings drawer: slides out of the top right corner, the handle rides along.
   var drawer = document.getElementById("settings");

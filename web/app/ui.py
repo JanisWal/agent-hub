@@ -556,7 +556,8 @@ def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | Non
     clear = (f'<button class="clear-btn" type="button" id="chat-clear-open">'
              f'{esc(i18n.t(lang, "chat_clear"))}</button>')
     more = f'<div class="ai-more" id="ai-more" hidden>\n        {others}\n      </div>'
-    return "\n      ".join([row(top, True), more, clear])
+    services = f'<div class="ai-services" id="ai-services">{row(top, True)}\n      {more}</div>'   # swapped as one
+    return "\n      ".join([services, clear])
 
 
 def _admin_button(user: User) -> str:

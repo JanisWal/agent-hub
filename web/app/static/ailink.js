@@ -17,7 +17,22 @@
       var rows = Array.prototype.slice.call(document.querySelectorAll("#settings .service"));
       var move = function () { if (row && first && row !== first) first.parentNode.insertBefore(row, first); };
       if (window.Motion && !window.Motion.reduced()) window.Motion.flip(rows, move, row); else move();
-      setTimeout(function () { window.AgentHub.reload(); }, 450);
+      // Then the rows as the server draws them now (arrow, stars), without a reload: the drawer and the open list
+      // stay (Janis, 21.11.2026). A model picker on the page takes the value the new standard gives it.
+      var wasOpen = !document.getElementById("ai-more").hidden;
+      setTimeout(function () {
+        window.AgentHub.swap(["ai-services"]).then(function (fresh) {
+          var more = document.getElementById("ai-more"), arrow = document.getElementById("ai-toggle");
+          if (wasOpen && more && arrow) { more.hidden = false; arrow.setAttribute("aria-expanded", "true"); }
+          document.querySelectorAll(".model-picker select[id]").forEach(function (select) {
+            var next = fresh.getElementById(select.id);
+            if (!next || next.value === select.value) return;
+            if (!Array.prototype.some.call(select.options, function (o) { return o.value === next.value; })) return;
+            select.value = next.value;
+            if (window.AgentHub.syncPicker) window.AgentHub.syncPicker(select);
+          });
+        }).catch(function () { window.AgentHub.reload(); });
+      }, 450);
     }).catch(function () { button.disabled = false; });
   });
 
@@ -33,9 +48,9 @@
   document.querySelectorAll("dialog[data-provider]").forEach(function (dialog) {
     var kind = dialog.dataset.provider;
     // The further AIs share one dialog: the open tile ("custom") and each connected one ("custom-3", ui._key_row).
-    var buttons = document.querySelectorAll('[data-key-open="' + kind + '"], [data-manage="' + kind + '"]' +
-                                            (kind === "custom" ? ', [data-key-open^="custom-"]' : ""));
-    if (!buttons.length || typeof dialog.showModal !== "function") return;
+    var selector = '[data-key-open="' + kind + '"], [data-manage="' + kind + '"]' +
+                   (kind === "custom" ? ', [data-key-open^="custom-"]' : "");
+    if (typeof dialog.showModal !== "function") return;
     var provider = kind;   // the connection the dialog is about now
     var fieldError = dialog.querySelector("[data-field-error]");
     var changed = false;   // a half was disconnected in the dialog: the page comes again when it closes
@@ -71,22 +86,23 @@
         .catch(function () { if (dialog.open) timer = setTimeout(poll, 3000); });
     }
 
-    Array.prototype.forEach.call(buttons, function (button) {
-      button.addEventListener("click", function () {
-        stop();
-        changed = false;
-        provider = button.dataset.keyOpen || button.dataset.manage;
-        form.reset();
-        if (fieldError) fieldError.hidden = true;
-        var name = form.querySelector('input[name="label"]');
-        if (name && button.dataset.label) name.value = button.dataset.label;
-        // "Connected" of an AI with a plan and a key (ui._status): both halves as they are
-        if (button.dataset.manage) show(button.dataset.plan === "connected" ? "plan-on" : "key");
-        else show(button.dataset.status === "connected" ? "disconnect" : "key");
-        dialog.showModal();
-        var field = form.querySelector("input");
-        if (!form.hidden && field) field.focus();
-      });
+    // On the document: the drawer's rows can be swapped ("use as standard" above).
+    document.addEventListener("click", function (event) {
+      var button = event.target.closest(selector);
+      if (!button) return;
+      stop();
+      changed = false;
+      provider = button.dataset.keyOpen || button.dataset.manage;
+      form.reset();
+      if (fieldError) fieldError.hidden = true;
+      var name = form.querySelector('input[name="label"]');
+      if (name && button.dataset.label) name.value = button.dataset.label;
+      // "Connected" of an AI with a plan and a key (ui._status): both halves as they are
+      if (button.dataset.manage) show(button.dataset.plan === "connected" ? "plan-on" : "key");
+      else show(button.dataset.status === "connected" ? "disconnect" : "key");
+      dialog.showModal();
+      var field = form.querySelector("input");
+      if (!form.hidden && field) field.focus();
     });
 
     form.addEventListener("submit", function (event) {
