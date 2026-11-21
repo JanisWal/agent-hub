@@ -1,7 +1,7 @@
 """HTML of the owner's system page."""
 from html import escape as esc
 
-from . import i18n, serversettings
+from . import db, i18n, netaddresses, serversettings, users
 from .icons import icon
 from .layout import fill
 from .ui import info_dot
@@ -9,16 +9,12 @@ from .users import User
 
 
 def _upload_field(lang: str, name: str, label_key: str, choices: tuple, current: int, unit: str,
-                  zero: str = "", texts: dict | None = None) -> str:
+                  zero: str = "") -> str:
     """One choice of the server settings: a compact drop-down in our own style (core.js `.has-select`). `zero` is the
-    text of the value 0 ("no limit"); `texts` names every value (an on/off choice)."""
+    text of the value 0 ("no limit")."""
     label = esc(i18n.t(lang, label_key))
-    def text(value: int) -> str:
-        if texts:
-            return esc(texts[value])
-        return esc(zero) if value == 0 and zero else f"{value}{unit}"
-    options = "".join(f'<option value="{value}"{" selected" if value == current else ""}>{text(value)}</option>'
-                      for value in choices)
+    options = "".join(f'<option value="{value}"{" selected" if value == current else ""}>'
+                      f'{esc(zero) if value == 0 and zero else f"{value}{unit}"}</option>' for value in choices)
     return (f'<label class="setting has-select sys-field"><span class="setting-label">{label}</span>'
             f'<select name="{name}">{options}</select>{icon("chevron_down")}</label>')
 
@@ -45,7 +41,7 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
       <div class="sys-fields">%AI_FIELD%</div>
       %AI_INFO%
     </div>
-    %HOME%
+    %ADDRESSES%
     %SKINS%
     %REBOOT%
     %POWEROFF%
@@ -81,21 +77,58 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
       <button class="danger-btn" type="submit">%t.sys_poweroff_do%</button>
     </div>
   </form>
+</dialog>
+%ADDRESS_DIALOG%"""
+
+# Addresses in the server's network that further AIs may use (netaddresses.py, Janis 21.11.2026): a list and a form to
+# add one, in a dialog behind the row "Freigegebene Adressen" (system.js). Only the owner sees both.
+ADDRESS_DIALOG = """<dialog class="dialog wide" id="addresses-dialog">
+  <h2>%t.sys_addresses%</h2>
+  <p class="muted">%t.addr_text%</p>
+  <ul class="addr-list" id="addr-list">%LIST%</ul>
+  <form id="addr-form" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%"
+        data-address="%t.addr_bad%" data-user="%t.addr_bad_user%" data-full="%t.addr_full%" data-failed="%t.err_network%">
+    <div class="addr-fields">
+      <label class="setting"><span class="setting-label">%t.addr_address%</span><input type="text" name="address" required maxlength="260" placeholder="192.168.1.20:11434" autocomplete="off" spellcheck="false"></label>
+      <label class="setting has-select"><span class="setting-label">%t.addr_for%</span><select name="user">%USERS%</select>%CHEVRON%</label>
+      <label class="setting"><span class="setting-label">%t.addr_note%</span><input type="text" name="note" maxlength="60" autocomplete="off" placeholder="%t.addr_note_hint%"></label>
+    </div>
+    <p class="error" role="alert" data-error hidden></p>
+    <div class="actions">
+      <button type="button" data-close>%t.close%</button>
+      <button class="primary" type="submit">%t.addr_add%</button>
+    </div>
+  </form>
 </dialog>"""
 
 
-def _home_row(user: User) -> str:
-    """Only the owner (Janis, 21.11.2026): may his further AIs be in this server's home network? It opens his network
-    to them, so a superadmin does not see it."""
+def address_list(lang: str) -> str:
+    """The rows of the list (sent again after each change): address, for whom, note, "remove"."""
+    with db.connect() as conn:
+        items = netaddresses.entries(conn)
+    if not items:
+        return f'<li class="addr-empty muted">{esc(i18n.t(lang, "addr_empty"))}</li>'
+    rows = []
+    for item in items:
+        who = item["email"] or i18n.t(lang, "addr_all")
+        note = f'<span class="addr-note">{esc(item["note"])}</span>' if item["note"] else ""
+        rows.append(f'<li class="addr-row"><code class="addr-host">{esc(item["host"])}:{item["port"]}</code>'
+                    f'<span class="addr-who">{esc(who)}</span>{note}'
+                    f'<button class="link" type="button" data-addr-remove="{item["id"]}">'
+                    f'{esc(i18n.t(lang, "addr_remove"))}</button></li>')
+    return "".join(rows)
+
+
+def _addresses(user: User) -> tuple[str, str]:
+    """Row and dialog of the listed addresses: only the owner (it opens his server's network; a superadmin does not
+    see it)."""
     if user.role != "owner":
-        return ""
+        return "", ""
     lang = user.language
-    t = lambda key: i18n.t(lang, key)   # noqa: E731
-    field = _upload_field(lang, "value", "sys_ai_home_short", (0, 1), int(serversettings.ai_home_network()), "",
-                          texts={0: t("sys_ai_home_off"), 1: t("sys_ai_home_on")})
-    return (f'<div class="sys-row sys-upload" data-url="/system/ai-home"><span class="sys-name">'
-            f'{esc(t("sys_ai_home"))}</span><div class="sys-fields">{field}</div>'
-            f'{info_dot(t("sys_ai_home"), t("sys_ai_home_info"))}</div>')
+    accounts = "".join(f'<option value="{u.id}">{esc(u.email)}</option>' for u in users.list_users(user))
+    options = f'<option value="">{esc(i18n.t(lang, "addr_all"))}</option>{accounts}'
+    dialog = fill(ADDRESS_DIALOG, lang, LIST=address_list(lang), USERS=options, CHEVRON=icon("chevron_down"))
+    return _action(lang, "sys_addresses", "data-addresses"), dialog
 
 
 def render(user: User) -> str:
@@ -109,7 +142,8 @@ def render(user: User) -> str:
                             f'{t("sys_upload_size")}: {t("sys_upload_size_info")}'))
     ai_field = _upload_field(lang, "value", "sys_upload_parallel", serversettings.AI_PARALLEL,
                              serversettings.ai_parallel(), "", t("sys_ai_unlimited"))
-    return fill(SYSTEM, lang, UPLOAD_FIELDS=fields, HOME=_home_row(user), UPLOAD_INFO=info_dot(t("sys_upload"), upload_info),
+    row, dialog = _addresses(user)
+    return fill(SYSTEM, lang, UPLOAD_FIELDS=fields, ADDRESSES=row, ADDRESS_DIALOG=dialog, UPLOAD_INFO=info_dot(t("sys_upload"), upload_info),
                 AI_FIELD=ai_field, AI_INFO=info_dot(t("sys_ai"), t("sys_ai_info")),
                 BACKUP=_action(lang, "sys_backup", "data-backup"),
                 SKINS=_action(lang, "sys_skins", "disabled", info=False),   # placeholder (Janis, 18.11.2026): comes later

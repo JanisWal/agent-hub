@@ -160,6 +160,30 @@ class DialogTest(Base):
             self.assertNotIn("%t.", page)
             self.assertNotIn("%API%", page)
 
+    def test_connected_opens_the_dialog_with_both_halves_as_they_are(self):
+        page = ui.settings_bar(self.a)
+        self.assertNotIn('data-manage="claude"', page)                              # nothing connected: "Verknüpfen"
+        self.key(self.a)                                                            # only the key
+        page = ui.settings_bar(self.a)
+        row = page[page.index('id="claude-row"'):page.index('id="claude-row"') + 900]
+        self.assertIn('data-manage="claude" data-plan="none"', row)                 # shown as connected
+        self.assertIn(">Verknüpft<", row)
+        self.assertIn('name="key" maxlength="300" autocomplete="off" spellcheck="false" disabled', page)   # greyed
+        self.assertIn("Anmeldung und API-Schlüssel werden getrennt", page)       # "disconnect" takes both
+        self.plan(self.a)
+        page = ui.settings_bar(self.a)
+        self.assertIn('data-manage="claude" data-plan="connected"', page)
+        self.assertIn('data-step="plan-on"', page)
+        self.assertIn("data-plan-off", page)                                         # the plan on its own
+
+    def test_codes_copy_with_one_click(self):
+        page = ui.settings_bar(self.a)
+        self.assertIn('<template id="copy-tpl"><button class="icon-button card-btn copy-btn"', page)
+        device = page[page.index('id="key-dialog-chatgpt"'):]
+        self.assertIn('class="copy-box copy-click device-copy"', device)
+        self.assertIn("data-device-code data-copy-text", device)
+        self.assertIn('data-done="Kopiert"', device)
+
     def test_the_row_says_how_the_key_is_used(self):
         self.plan(self.a)
         self.key(self.a, mode="always")

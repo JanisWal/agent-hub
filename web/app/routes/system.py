@@ -1,8 +1,9 @@
 """The system actions of owner and superadmin (restart, shut down, manual backup) and server settings (upload); the page itself is
 /admin, routes/admin.py."""
 from fastapi import APIRouter, Depends, Form, Request
+from fastapi.responses import JSONResponse
 
-from .. import power, serversettings, users
+from .. import netaddresses, power, serversettings, systempage, users
 from ..deps import api_user, error, fail, ok, reauth
 
 router = APIRouter()
@@ -52,16 +53,34 @@ def ai_settings(value: int = Form(-1), user: users.User = Depends(api_user)):
     return ok()
 
 
-@router.post("/system/ai-home")
-def ai_home(value: int = Form(-1), user: users.User = Depends(api_user)):
-    """May the owner's further AIs be in the home network (serversettings.ai_home_network)? Only the owner decides:
-    it opens his own network to them."""
-    if user.role != "owner":
-        return fail(403)
-    if value not in (0, 1):
-        return fail(400)
-    serversettings.set_ai_home_network(bool(value))
-    return ok()
+def _owner_only(user: users.User):
+    return None if user.role == "owner" else fail(403)
+
+
+@router.post("/system/addresses")
+def address_add(address: str = Form(""), user_id: str = Form("", alias="user"), note: str = Form(""),
+                user: users.User = Depends(api_user)):
+    """List an address of the server's network for further AIs (netaddresses.py): all accounts ("") or one. Only the
+    owner (it opens his network). 400 with `field` (address, user, full); the list comes back as HTML."""
+    denied = _owner_only(user)
+    if denied:
+        return denied
+    try:
+        netaddresses.add(address, int(user_id) if user_id.strip() else None, note)
+    except ValueError as problem:
+        field = str(problem) if str(problem) in ("address", "user", "full") else "user"
+        return JSONResponse({"ok": False, "field": field}, status_code=400)
+    return ok(list=systempage.address_list(user.language))
+
+
+@router.post("/system/addresses/{entry_id}/remove")
+def address_remove(entry_id: int, user: users.User = Depends(api_user)):
+    """Take an address off the list; holds from the next job on."""
+    denied = _owner_only(user)
+    if denied:
+        return denied
+    netaddresses.remove(entry_id)
+    return ok(list=systempage.address_list(user.language))
 
 
 @router.get("/system/backup")

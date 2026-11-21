@@ -54,7 +54,12 @@
       var code = document.createElement("code");
       code.textContent = m[1].replace(/\n$/, "");
       pre.appendChild(code);
-      target.appendChild(pre);
+      code.dataset.copyText = "";
+      var box = document.createElement("div");   // a code block copies with one click (core.js)
+      box.className = "copy-box chat-code";
+      box.appendChild(pre);
+      if (window.AgentHub.copyButton) box.appendChild(window.AgentHub.copyButton());
+      target.appendChild(box);
       last = fence.lastIndex;
     }
     if (last < text.length) fillRich(target, text.slice(last));

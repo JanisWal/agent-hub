@@ -94,6 +94,40 @@
     });
   });
 
+  // Listed addresses (netaddresses.py, only the owner): the list comes back from the server after each change and is
+  // swapped in place; a wrong field says so above the buttons.
+  var addrDialog = document.getElementById("addresses-dialog");
+  var addrOpen = root.querySelector("[data-addresses]");
+  if (addrDialog && addrOpen) {
+    var addrForm = document.getElementById("addr-form");
+    var addrList = document.getElementById("addr-list");
+    var addrError = addrForm.querySelector("[data-error]");
+    var addrSay = function (text) { addrError.textContent = text || ""; addrError.hidden = !text; };
+    var addrSend = function (url, body) {
+      return fetch(url, { method: "POST", body: body || null })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.ok) { addrSay(addrForm.dataset[data.field] || addrForm.dataset.failed); return false; }
+          addrList.innerHTML = data.list;   // rendered and escaped by the server (systempage.address_list)
+          addrSay("");
+          return true;
+        })
+        .catch(function () { addrSay(addrForm.dataset.failed); return false; });
+    };
+    addrOpen.addEventListener("click", function () { addrSay(""); addrDialog.showModal(); });
+    addrForm.addEventListener("submit", function (event) {
+      event.preventDefault();
+      if (!window.AgentHub.validate(addrForm)) return;
+      addrSend("/system/addresses", new FormData(addrForm)).then(function (done) { if (done) addrForm.reset(); });
+    });
+    addrList.addEventListener("click", function (event) {
+      var remove = event.target.closest("[data-addr-remove]");
+      if (!remove) return;
+      remove.disabled = true;
+      addrSend("/system/addresses/" + remove.dataset.addrRemove + "/remove");
+    });
+  }
+
   var dialogs = { reboot: wire("reboot"), poweroff: wire("poweroff") };
   root.addEventListener("click", function (event) {
     var button = event.target.closest("[data-power]");

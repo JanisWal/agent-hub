@@ -41,27 +41,14 @@
   }
   function commandBox(command) {
     var wrap = document.createElement("div");
-    wrap.className = "setup-cmd";
+    wrap.className = "setup-cmd copy-box";
     var code = document.createElement("code");
     code.textContent = command;
-    var copy = document.createElement("button");
-    copy.type = "button";
-    copy.className = "icon-button card-btn";
-    copy.setAttribute("aria-label", t("copied"));
-    copy.dataset.copyCmd = "1";
-    copy.innerHTML = $("dev-copy-icon").innerHTML;
+    code.dataset.copyText = "";
     wrap.appendChild(code);
-    wrap.appendChild(copy);
+    wrap.appendChild(window.AgentHub.copyButton());   // core.js copies on a click
     return wrap;
   }
-  wiz.addEventListener("click", function (event) {
-    var copy = event.target.closest("[data-copy-cmd]");
-    if (!copy) return;
-    navigator.clipboard.writeText(copy.parentNode.querySelector("code").textContent).then(function () {
-      copy.classList.add("copied");
-      setTimeout(function () { copy.classList.remove("copied"); }, 1600);
-    });
-  });
 
   function loadGuide(family) {
     return fetch(url("/setup") + "?family=" + encodeURIComponent(family), { credentials: "same-origin" })

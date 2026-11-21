@@ -24,10 +24,21 @@
         .catch(function () { say(form.dataset.failed); });
     });
 
+    // Remove only the key (Janis, 21.11.2026): the field opens again in place for a new one; the page comes again
+    // when the dialog closes (claude.js, ailink.js read dataset.apiChanged).
     var remove = panel.querySelector("[data-api-remove]");
     if (remove) remove.addEventListener("click", function () {
       remove.disabled = true;
-      fetch("/ai/" + provider + "/api/remove", { method: "POST" }).then(function () { window.AgentHub.reload(); });
+      fetch("/ai/" + provider + "/api/remove", { method: "POST" }).then(function () {
+        var key = form.querySelector("[name=key]");
+        key.disabled = false;
+        key.placeholder = form.dataset.new;
+        key.closest(".setting").classList.remove("kept");
+        say(form.dataset.none);
+        remove.hidden = true;
+        var dialog = panel.closest("dialog");
+        if (dialog) dialog.dataset.apiChanged = "1";
+      }, function () { remove.disabled = false; say(form.dataset.failed); });
     });
   });
 })();

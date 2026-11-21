@@ -20,7 +20,7 @@ import re
 import sqlite3
 import time
 
-from . import db
+from . import db, netaddresses
 
 PROVIDERS = ("mistral", "chatgpt")   # AIs whose connection the runner keeps (Claude has claude_link.py)
 # More AIs in the OpenAI format (catalog provider "custom", 21.11.2026): as many as SLOTS per user, each its own
@@ -126,17 +126,12 @@ def _save(conn: sqlite3.Connection, user_id: int, provider: str, new_status: str
     )
 
 
-def _owner(conn: sqlite3.Connection, user_id: int) -> bool:
-    row = conn.execute("SELECT role FROM users WHERE id = ? AND deleted_at IS NULL", (user_id,)).fetchone()
-    return row is not None and row["role"] == "owner"
-
-
 def submit_key(user_id: int, provider: str, key: str, now: int | None = None, endpoint: str = "",
                model: str = "", label: str = "") -> bool:
     """The user pasted a key (connect, or a new key after "expired"). ValueError("key") for something that is not a
     key; False while a check of an earlier key is still running. A key that works replaces the old one.
-    The own AI also needs `endpoint` and `model`: ValueError("endpoint") or ("model") for bad ones, ("home") for plain
-    http without the owner's switch (home_allowed); its key may be empty."""
+    The own AI also needs `endpoint` and `model`: ValueError("endpoint") or ("model") for bad ones, ("network") for an
+    address in the server's network or plain http that the owner did not list (netaddresses.py); its key may be empty."""
     _check_provider(provider)
     key = key.strip()
     endpoint, model = endpoint.strip().rstrip("/"), model.strip()
@@ -151,8 +146,8 @@ def submit_key(user_id: int, provider: str, key: str, now: int | None = None, en
         raise ValueError("key")
     now = int(now if now is not None else time.time())
     with db.connect() as conn:
-        if is_custom(provider) and endpoint.startswith("http://") and not home_allowed(conn, user_id):
-            raise ValueError("home")   # plain http only in the home network, and that only for the owner who allows it
+        if is_custom(provider) and _needs_listing(endpoint) and not netaddresses.allows(conn, user_id, endpoint):
+            raise ValueError("network")   # the server's network and plain http only at addresses the owner listed
         before = status_in(conn, user_id, provider, now)
         if before == "connecting":
             return False
@@ -214,7 +209,7 @@ def take_keys(now: int | None = None) -> list[dict]:
             item = {"user_id": user_id, "provider": provider, "key": key}
             if is_custom(provider):   # the key stays until `complete`: endpoint and model are taken over with it
                 with db.connect() as conn:
-                    item.update(endpoint=endpoint, lan=home_allowed(conn, user_id))
+                    item.update(endpoint=endpoint, lan=netaddresses.allows(conn, user_id, endpoint))
                 _keys[(user_id, provider)] = ("", until, endpoint, _model, label)
             else:
                 del _keys[(user_id, provider)]
@@ -248,13 +243,10 @@ def complete(user_id: int, provider: str, ok: bool, now: int | None = None) -> b
     return True
 
 
-def home_allowed(conn: sqlite3.Connection, user_id: int) -> bool:
-    """May this user's further AI be in the server's home network (plain http too)? Only the owner's, and only when
-    he switched it on in the system settings (serversettings.ai_home_network, 21.11.2026). A colleague's AI at his
-    home is not in this network: reachable only if it is public (then no switch is needed) or later over a VPN."""
-    from . import serversettings
-    return _owner(conn, user_id) and serversettings.ai_home_network()
-
+def _needs_listing(endpoint: str) -> bool:
+    """Plain http or an address in the server's network: only where the owner listed it (netaddresses.py)."""
+    found = netaddresses.host_port(endpoint)
+    return endpoint.startswith("http://") or (found is not None and netaddresses.local(found[0]))
 
 def route_in(conn: sqlite3.Connection, user_id: int, provider: str, model: str = "") -> dict:
     """What a job of a further AI needs besides the ticket: {slot, endpoint, remote_model, lan}; {} for other AIs.
@@ -269,7 +261,7 @@ def route_in(conn: sqlite3.Connection, user_id: int, provider: str, model: str =
     if row is None:
         return {}
     return {"slot": slot, "endpoint": row["endpoint"], "remote_model": row["remote_model"],
-            "lan": home_allowed(conn, user_id)}
+            "lan": netaddresses.allows(conn, user_id, row["endpoint"])}
 
 
 def mark_noplan(user_id: int, provider: str) -> bool:

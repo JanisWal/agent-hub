@@ -33,11 +33,12 @@
   document.querySelectorAll("dialog[data-provider]").forEach(function (dialog) {
     var kind = dialog.dataset.provider;
     // The further AIs share one dialog: the open tile ("custom") and each connected one ("custom-3", ui._key_row).
-    var buttons = document.querySelectorAll('[data-key-open="' + kind + '"]' +
+    var buttons = document.querySelectorAll('[data-key-open="' + kind + '"], [data-manage="' + kind + '"]' +
                                             (kind === "custom" ? ', [data-key-open^="custom-"]' : ""));
     if (!buttons.length || typeof dialog.showModal !== "function") return;
     var provider = kind;   // the connection the dialog is about now
     var fieldError = dialog.querySelector("[data-field-error]");
+    var changed = false;   // a half was disconnected in the dialog: the page comes again when it closes
     var steps = {};
     dialog.querySelectorAll("[data-step]").forEach(function (el) { steps[el.dataset.step] = el; });
     var form = steps.key;
@@ -73,12 +74,15 @@
     Array.prototype.forEach.call(buttons, function (button) {
       button.addEventListener("click", function () {
         stop();
-        provider = button.dataset.keyOpen;
+        changed = false;
+        provider = button.dataset.keyOpen || button.dataset.manage;
         form.reset();
         if (fieldError) fieldError.hidden = true;
         var name = form.querySelector('input[name="label"]');
         if (name && button.dataset.label) name.value = button.dataset.label;
-        show(button.dataset.status === "connected" ? "disconnect" : "key");
+        // "Connected" of an AI with a plan and a key (ui._status): both halves as they are
+        if (button.dataset.manage) show(button.dataset.plan === "connected" ? "plan-on" : "key");
+        else show(button.dataset.status === "connected" ? "disconnect" : "key");
         dialog.showModal();
         var field = form.querySelector("input");
         if (!form.hidden && field) field.focus();
@@ -112,11 +116,21 @@
       var target = event.target.closest("button");
       if (!target) return;
       if (target.hasAttribute("data-finish")) { dialog.close(); window.AgentHub.reload(); }
-      else if (target.hasAttribute("data-disconnect")) {
-        post("/ai/" + provider + "/disconnect").then(function () { dialog.close(); window.AgentHub.reload(); });
+      else if (target.hasAttribute("data-disconnect")) {   // with an API key half: the plan and the key
+        var both = dialog.querySelector("[data-api]");
+        post("/ai/" + provider + "/disconnect")
+          .then(function () { return both ? post("/ai/" + provider + "/api/remove") : null; })
+          .then(function () { dialog.close(); window.AgentHub.reload(); });
+      }
+      else if (target.hasAttribute("data-plan-off")) {     // only the plan; the key stays
+        target.disabled = true;
+        post("/ai/" + provider + "/disconnect").then(function () { target.disabled = false; changed = true; show("key"); });
       }
     });
 
-    dialog.addEventListener("close", stop);
+    dialog.addEventListener("close", function () {
+      stop();
+      if (changed || dialog.dataset.apiChanged) { delete dialog.dataset.apiChanged; window.AgentHub.reload(); }
+    });
   });
 })();
