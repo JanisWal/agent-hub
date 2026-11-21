@@ -522,11 +522,13 @@ def _key_dialogs(lang: str, user_id: int) -> str:
 
 
 def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | None = None,
-                  standard: str = "claude", connected: tuple[str, ...] = (), api: dict | None = None,
+                  connected: tuple[str, ...] = (), api: dict | None = None,
                   custom: list[dict] | None = None) -> str:
     """The AIs and the chat history button (Janis, 15.11.2026). On top the standard AI with the arrow; below, folded
-    (Janis, 11.11.2026: the list grows with every AI), the others in a fixed order: Claude, ChatGPT (not built yet),
-    the AIs with a key, the further AIs (`custom`: ai_link.custom_rows), the open tile and the placeholders (SOON).
+    (Janis, 11.11.2026: the list grows with every AI), the others. The order arranges itself (Janis, 21.11.2026):
+    `connected` comes ranked (aichoice.ranked: the standard, the one before it, the other connected ones), then the AIs
+    that are not connected in a fixed order (Claude, Mistral, ChatGPT, the further AIs: ai_link.custom_rows), the open
+    tile and the placeholders (SOON); nothing unconnected stands between connected ones.
     With two or more connected, each connected one that is not the standard has the green star
     "use as standard" at its top right; every connected AI keeps "disconnect". The button is type="button": no submit."""
     key_states = dict(key_states or {})
@@ -540,8 +542,15 @@ def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | Non
         return "custom" if ai_link.is_custom(name) else name
 
     names = ["claude", *ai_link.PROVIDERS, *labels]
-    first_custom = next((i["name"] for i in custom if i["state"] == "connected"), None)
-    top = first_custom if standard == "custom" and first_custom else (standard if standard in names else "claude")
+    linked = []                                          # the rows of the connected AIs, in their rank
+    for provider in connected:
+        if provider == "custom":
+            linked += [i["name"] for i in custom if i["state"] == "connected"]
+        elif provider in names:
+            linked.append(provider)
+    linked = list(dict.fromkeys(linked))
+    names = linked + [n for n in names if n not in linked]
+    top = names[0] if linked else "claude"
 
     def row(name: str, first: bool) -> str:
         as_default = several and kind(name) != kind(top)
@@ -581,7 +590,7 @@ def settings_bar(user: User, extras: str = "") -> str:
         GEAR=icon("gear"),
         ARROW=icon("arrow_left", "drawer-arrow"),
         SERVICES=_service_rows(lang, claude_link.status(user.id), {p: ai_link.status(user.id, p) for p in ai_link.PROVIDERS},
-                               aichoice.default(user.id), tuple(aichoice.connected(user.id)), _api_lines(lang, user.id),
+                               tuple(aichoice.ranked(user.id)), _api_lines(lang, user.id),
                                _custom_rows(user.id)),
         ADMIN=_admin_button(user),
         CLAUDE_DIALOG=fill(CLAUDE_DIALOG, lang, API=api_panel(lang, "claude", user.id),
