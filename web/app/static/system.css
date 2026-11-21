@@ -1,5 +1,5 @@
 /* System block of the administration page (owner only; loaded only there). Values and colours come from app.css. */
-.sys-wrap { min-width: 0; }
+.sys-wrap { min-width: 0; container-type: inline-size; }
 .sys-head { display: flex; align-items: center; min-height: 48px; margin-bottom: calc(var(--space) * 2); }   /* as high as the header of the user block */
 /* One grid for all rows (Janis, 17.11.2026): name | choice | choice | "i". Every row is a subgrid of the list, so
    the choices line up from row to row (the single "Gleichzeitig" of "KI-Läufe" is as wide as the one of "Hochladen")
@@ -41,9 +41,10 @@
   background: var(--field);
   font-weight: 600;
 }
-/* Narrow: the name gets its own line with the "i" at the right, the choices take the full line below it (two equal
-   halves in every row, so they still line up). */
-@media (max-width: 560px) {
+/* Narrow (the block, not only the window: beside the user list it is narrow too, 21.11.2026, since the rows of the
+   server limits came): the name gets its own line with the "i" at the right, the choices take the full line below it
+   (two equal halves in every row, so they still line up). */
+@container (max-width: 560px) {
   .sys-list { grid-template-columns: 1fr auto; }
   .sys-name { grid-column: 1; }
   .sys-fields { grid-column: 1 / -1; grid-row: 2; grid-template-columns: 1fr 1fr; }
