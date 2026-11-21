@@ -43,7 +43,7 @@ class StatusTest(unittest.TestCase):
     def test_an_empty_project_has_no_lamp_and_says_so(self):
         a = self.assess()
         self.assertEqual((a.lamp, a.total, a.progress, a.activity), ("none", 0, 0, "idle"))
-        self.assertIn("Noch nichts geplant", managerpage._status_tile("de", a, NOW))
+        self.assertIn("Noch nichts geplant", managerpage.status_tile("de", a, NOW))
 
     def test_planned_in_progress_waiting_done_and_the_progress(self):
         self.item()                                                   # planned
@@ -111,7 +111,7 @@ class StatusTest(unittest.TestCase):
         self.item(state="archived", at=NOW - DAY)                     # done, nothing open
         a = self.assess()
         self.assertEqual((a.lamp, a.done, a.planned), ("rest", 1, 0))
-        self.assertIn("lamp-rest", managerpage._status_tile("de", a, NOW))
+        self.assertIn("lamp-rest", managerpage.status_tile("de", a, NOW))
         self.item(at=NOW - DAY)                                       # new work: green again
         self.assertEqual(self.assess().lamp, "green")
 
@@ -124,7 +124,7 @@ class StatusTest(unittest.TestCase):
     def test_the_tile_shows_numbers_lamp_and_reasons_in_both_languages(self):
         self.item(at=NOW - 8 * DAY)
         a = self.assess()
-        de, en = managerpage._status_tile("de", a, NOW), managerpage._status_tile("en", a, NOW)
+        de, en = managerpage.status_tile("de", a, NOW), managerpage.status_tile("en", a, NOW)
         self.assertIn("lamp-yellow", de)
         self.assertIn("Stockt", de)
         self.assertIn("vor 8 Tagen", de)

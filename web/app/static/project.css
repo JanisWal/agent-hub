@@ -593,6 +593,10 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 .status-note { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--file-line); font-size: 0.9rem; line-height: 1.45; overflow-wrap: anywhere; }
 .status-line strong { overflow-wrap: anywhere; }
 .m-status header .status-again { flex: none; }
+/* While a new written status is on its way, its arrow turns (status.js, 22.11.2026). */
+.status-again.spinning svg { animation: status-spin 1.1s linear infinite; }
+@keyframes status-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .status-again.spinning svg { animation: none; opacity: 0.6; } }
 
 /* ===== Devices (Janis, 17.11.2026, second round): one design with the files ===== */
 /* The tile: rows are the glass cards of the files (.file-row), with the same lines and soft shadow. The list keeps

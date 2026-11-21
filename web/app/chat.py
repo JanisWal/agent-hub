@@ -179,10 +179,12 @@ def claim_next(now: int | None = None) -> ChatJob | None:
     now = int(now if now is not None else time.time())
     with db.connect() as conn:
         _drop_stale(conn, now)
-        if not agents.slot_free(conn):
-            return None   # as many AI containers at once as the owner allows (agent runs included)
-        statusnote.scan(conn, now)   # the written status of projects that changed (statusnote.py), at most every few minutes
-        for row in conn.execute("SELECT * FROM chat_messages WHERE status = 'queued' ORDER BY id").fetchall():
+        statusnote.scan(conn, now)   # the written status of projects that changed (statusnote.py), every minute or so
+        # As many AI containers at once as the owner allows (agent runs included); a status round is small and runs
+        # beside them anyway (Janis, 22.11.2026: the status must not wait for a run of twenty minutes).
+        free = agents.slot_free(conn)
+        kinds = "" if free else " AND kind = 'status'"
+        for row in conn.execute(f"SELECT * FROM chat_messages WHERE status = 'queued'{kinds} ORDER BY id").fetchall():
             gone = not aichoice.connected_in(conn, row["user_id"], row["provider"])
             if gone or aichoice.resting(conn, row["user_id"], row["provider"]):   # resting: its quota ran out
                 other = _next_ai(conn, row, row["provider"])

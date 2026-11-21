@@ -24,18 +24,29 @@
         if (!fresh || (fresh.innerHTML === tile.innerHTML && fresh.className === tile.className)) return;
         tile.className = fresh.className;
         tile.innerHTML = fresh.innerHTML;
+        spin(!!polling);   // the new arrow keeps turning while the new status is on its way
       })
       .catch(function () {});
   }
 
+  function spin(on) {
+    var button = document.getElementById("status-again");
+    if (button) button.classList.toggle("spinning", on);
+  }
+
   function watch(before) {
+    spin(true);
     var rounds = 0;
     clearInterval(polling);
     polling = setInterval(function () {
       rounds += 1;
       refresh().then(function () {
         var button = document.getElementById("status-again");
-        if ((button && button.dataset.note !== before) || rounds >= LIMIT) { clearInterval(polling); polling = null; }
+        if ((button && button.dataset.note !== before) || rounds >= LIMIT) {
+          clearInterval(polling);
+          polling = null;
+          spin(false);
+        }
       });
     }, QUICK);
   }
@@ -53,7 +64,7 @@
       .then(function (data) {
         button.disabled = false;
         refresh();   // the numbers at once, whatever the AI does
-        if (data.result === "queued") watch(button.dataset.note);
+        if (data.result === "queued" || data.result === "wait") watch(button.dataset.note);   // wait: one is on its way
       }, function () { button.disabled = false; });
   });
 })();

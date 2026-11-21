@@ -8,10 +8,13 @@ last questions to the manager, the start of MEMORY.md and ROADMAP.md, the newest
 to-dos, due checks, the devices by name and the previous status. The AI answers with one `<status>` (reply.py).
 
 When a round runs (`scan`, called from the runner's chat poll, at most every SCAN_EVERY seconds): only for projects
-whose facts changed since the last round (`fingerprint`, a hash of the digest without dates), at most every MIN_GAP,
-after an important event (a task waits for the user, escalated or finished, a run failed) already after URGENT_GAP,
-at most DAILY_MAX rounds per user and day, and only while an AI slot is free and no question of the user waits. A
-project with nothing in it gets no round. A round is a chat job of the kind 'status' (chat.py): the user's standard
+whose facts changed since the last round (`fingerprint`, a hash of the digest without dates). While the project is
+worked on (`active`: a task of it is on its way, or its manager chat was used in the last ACTIVE_WINDOW seconds) every
+ACTIVE_GAP (Janis, 22.11.2026: write, check whether work goes on, wait two minutes, write ...); otherwise at most every
+MIN_GAP, after an important event (a task waits for the user, escalated or finished, a run failed) already after
+URGENT_GAP, and at most DAILY_MAX such quiet rounds per user and day. The user's "write it again" has no limit
+(`request`). A round needs no free AI slot: it is small and runs beside the agent runs (chat.claim_next). A project
+with nothing in it gets no round. A round is a chat job of the kind 'status' (chat.py): the user's standard
 AI, its cheapest model (catalog.light), no tools, one turn, no files (mode 'brief', runner/launcher.py). So a quiet
 project costs nothing and a busy one a few short calls a day.
 
@@ -25,15 +28,16 @@ import sqlite3
 import time
 from dataclasses import dataclass
 
-from . import aichoice, catalog, checks, db, devices, memory, reply, status as statusmod
+from . import aichoice, catalog, checks, db, devices, memory, reply, status as statusmod, workflow
 
-SCAN_EVERY = 300          # seconds between two looks for projects that need a round
+SCAN_EVERY = 60           # seconds between two looks for projects that need a round
+ACTIVE_GAP = 120          # a project being worked on gets a new round this often (Janis, 22.11.2026)
+ACTIVE_WINDOW = 600       # its manager chat used this recently counts as being worked on
 MIN_GAP = 6 * 3600        # a project gets a new round at most this often (3 h until 20.11.2026: tokens)
 URGENT_GAP = 20 * 60      # ... or this often after an important event
 FAILED_GAP = 6 * 3600     # after a round that brought nothing, wait this long
 DAILY_MAX = 6             # rounds per user and day (12 until 20.11.2026)
 PER_SCAN = 3              # rounds queued per look
-MANUAL_GAP = 10 * 60      # the user's "write it again" works this often
 KEEP = 20                 # notes kept per project
 MAX_DIGEST = 4000         # characters the AI reads
 LEVEL_RANK = {"none": 0, "green": 1, "rest": 2, "yellow": 3, "red": 4}
@@ -223,6 +227,16 @@ def _waiting(conn: sqlite3.Connection, project_id: int) -> bool:
                         " ('queued', 'running')", (project_id,)).fetchone() is not None
 
 
+def active(conn: sqlite3.Connection, project_id: int, now: int) -> bool:
+    """Is the project worked on right now: a task of it on its way, or its manager chat used just now?"""
+    marks = ",".join("?" * len(workflow.STAGES))
+    if conn.execute(f"SELECT 1 FROM agent_tasks WHERE project_id = ? AND status IN ({marks})",
+                    (project_id, *workflow.STAGES)).fetchone():
+        return True
+    return conn.execute("SELECT 1 FROM chat_messages WHERE project_id = ? AND kind = 'chat' AND created_at > ?",
+                        (project_id, now - ACTIVE_WINDOW)).fetchone() is not None
+
+
 def _rounds_today(conn: sqlite3.Connection, user_id: int, now: int) -> int:
     return conn.execute(
         "SELECT COUNT(*) FROM project_status s JOIN projects p ON p.id = s.project_id WHERE p.user_id = ?"
@@ -246,24 +260,26 @@ def scan(conn: sqlite3.Connection, now: int | None = None, force: bool = False) 
         pid, uid = row["id"], row["user_id"]
         if _waiting(conn, pid) or not aichoice.connected_list(conn, uid):
             continue
-        if conn.execute("SELECT 1 FROM chat_messages WHERE user_id = ? AND kind = 'chat' AND status IN"
-                        " ('queued', 'running')", (uid,)).fetchone():
-            continue   # the user's own question goes first
         a = statusmod.assess(uid, pid, now)
         if a is None or (a.total == 0 and a.last_activity is None and not a.todos_open):
             continue   # nothing in it to talk about
         last = conn.execute("SELECT * FROM project_status WHERE project_id = ? ORDER BY id DESC LIMIT 1",
                             (pid,)).fetchone()
         mark = fingerprint(conn, uid, pid, now)
+        busy = active(conn, pid, now)
         if last is not None:
             if last["fingerprint"] == mark:
-                continue
+                continue                                   # nothing new to say
             gap = now - last["created_at"]
-            wait = FAILED_GAP if last["source"] == "failed" else (
-                URGENT_GAP if _urgent_since(conn, pid, last["created_at"]) else MIN_GAP)
+            if last["source"] == "failed":
+                wait = URGENT_GAP if busy else FAILED_GAP   # a round that brought nothing: not again at once
+            elif busy:
+                wait = ACTIVE_GAP
+            else:
+                wait = URGENT_GAP if _urgent_since(conn, pid, last["created_at"]) else MIN_GAP
             if gap < wait:
                 continue
-        if _rounds_today(conn, uid, now) >= DAILY_MAX:
+        if not busy and _rounds_today(conn, uid, now) >= DAILY_MAX:
             continue
         if _queue(conn, uid, pid, now):
             queued += 1
@@ -271,19 +287,13 @@ def scan(conn: sqlite3.Connection, now: int | None = None, force: bool = False) 
 
 
 def request(user_id: int, project_id: int, now: int | None = None) -> str:
-    """The user asks for a new status now. 'queued', 'wait' (one is on its way or the last is very new), 'none'
-    (no AI connected) or 'missing' (not his project)."""
+    """The user asks for a new status now, as often as he likes (Janis, 22.11.2026). 'queued', 'wait' (one is on its
+    way: that one comes), 'none' (no AI connected) or 'missing' (not his project)."""
     now = int(now if now is not None else time.time())
     with db.connect() as conn:
         if _owner(conn, project_id) != user_id:
             return "missing"
         if _waiting(conn, project_id):
-            return "wait"
-        last = conn.execute("SELECT created_at FROM project_status WHERE project_id = ? ORDER BY id DESC LIMIT 1",
-                            (project_id,)).fetchone()
-        if last is not None and now - last["created_at"] < MANUAL_GAP:
-            return "wait"
-        if _rounds_today(conn, user_id, now) >= DAILY_MAX:
             return "wait"
         return "queued" if _queue(conn, user_id, project_id, now) else "none"
 
