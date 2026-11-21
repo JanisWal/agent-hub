@@ -332,5 +332,57 @@ class OwnAiGatewayTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(E.Target.of("http://pc:8080/v1/", True).base, "/v1")
 
 
+class ChatGptGatewayTest(OwnAiGatewayTest):
+    """The gateway of ChatGPT (21.11.2026): the ticket inside the wrapper, the account from the ticket."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.server.close()
+        self.server = await asyncio.start_server(
+            lambda r, w: E.gateway(r, w, self.tmp.name, open_upstream=self._open, log=lambda line: None,
+                                   provider="chatgpt"), "127.0.0.1", 0)
+        self.port = self.server.sockets[0].getsockname()[1]
+
+    def _open(self, target):
+        self.targets.append(target)
+        return asyncio.open_connection("127.0.0.1", self.upstream.sockets[0].getsockname()[1])
+
+    async def ask(self, bearer, path="/backend-api/codex/responses", account="planted"):
+        body = b'{"model":"gpt-6-luna"}'
+        reader, writer = await asyncio.open_connection("127.0.0.1", self.port)
+        writer.write((f"POST {path} HTTP/1.1\r\nHost: egress:3133\r\nAuthorization: Bearer {bearer}\r\n"
+                      f"ChatGPT-Account-Id: {account}\r\nContent-Length: {len(body)}\r\n\r\n").encode() + body)
+        await writer.drain()
+        answer = await asyncio.wait_for(reader.read(), 5)
+        writer.close()
+        return answer
+
+    async def test_the_real_token_and_account_go_to_chatgpt(self):
+        from runner import codex
+        real = "eyJhbGciOiJSUzI1NiJ9.eyJleHAiOjF9.signaturexyz"
+        ticket = self.tickets.issue(real, "chatgpt", upstream="acct-777")
+        answer = await self.ask(codex.ticket_jwt(ticket, {"account": "acct-777"}))
+        self.assertTrue(answer.startswith(b"HTTP/1.1 200"))
+        head = self.received[0].split(b"\r\n\r\n")[0]
+        self.assertIn(f"Authorization: Bearer {real}".encode(), head)
+        self.assertIn(b"ChatGPT-Account-Id: acct-777", head)
+        self.assertNotIn(b"planted", head)                                     # never the run's own account header
+        self.assertIn(b"Host: chatgpt.com", head)
+        self.assertEqual(self.targets, ["chatgpt.com"])
+
+    async def test_other_addresses_and_bare_tickets_are_refused(self):
+        from runner import codex
+        ticket = self.tickets.issue("eyJhbGciOiJSUzI1NiJ9.eyJleHAiOjF9.signaturexyz", "chatgpt", upstream="acct-777")
+        wrapped = codex.ticket_jwt(ticket, {"account": "acct-777"})
+        self.assertTrue((await self.ask(wrapped, "/backend-api/wham/accounts/check")).startswith(b"HTTP/1.1 404"))
+        self.assertTrue((await self.ask(ticket)).startswith(b"HTTP/1.1 502"))   # not wrapped
+        self.assertTrue((await self.ask(wrapped, "/v1/chat/completions")).startswith(b"HTTP/1.1 400"))
+        self.assertEqual(self.received, [])
+
+    # the own-AI cases of the parent class do not apply here
+    test_the_address_and_key_of_the_ticket = test_a_local_ai_without_a_key = None
+    test_refused_cases_never_look_like_a_bad_key = test_home_addresses_only_for_the_owner_and_never_dockers = None
+
+
 if __name__ == "__main__":
     unittest.main()
