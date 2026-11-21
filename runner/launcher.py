@@ -121,6 +121,18 @@ def _folder(value, name: str) -> str:
 
 
 READ_TOOLS = ("Read", "Glob", "Grep")   # to open the read-only /files and /code in the manager chat (16.11.2026)
+HUB_TOOL_NAMES = ("look", "list_files", "read_file", "grep", "write_file", "edit_file", "run", "fetch")   # hub_tools.TOOLS
+
+
+def _hub_mcp(hub_tools) -> list[str]:
+    """`--mcp-config` for Claude Code with the hub's tools a measured missing own tool needs (web/app/toolcheck.py);
+    nothing when there are none. Only names of the fixed list reach the command line."""
+    names = [n for n in (hub_tools or ()) if n in HUB_TOOL_NAMES]
+    if not names:
+        return []
+    config = {"mcpServers": {"hub": {"command": "python3", "args": ["/opt/hub/hub_tools.py"],
+                                     "env": {"HUB_TOOLS": ",".join(names)}}}}
+    return ["--mcp-config", json.dumps(config, separators=(",", ":"))]
 
 
 def _read_only(files_dir: str | None, code_dir: str | None = None) -> list[str]:
@@ -171,7 +183,7 @@ def _model_args(model: str, effort: str) -> list[str]:
 
 def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, ticket: str, net: str = "together",
                   effort: str = "", image: str = IMAGE, network: str = NETWORK, memory: str = "480m",
-                  files_dir: str | None = None) -> list[str]:
+                  files_dir: str | None = None, hub_tools=None) -> list[str]:
     """The `docker run` command for one run. Raises ValueError for anything unexpected. `net` is the role's
     switch: "together" = open internet (public hosts only), "apart" = only Anthropic (code without internet).
     `effort` is the model's level (empty = Claude Code's own default)."""
@@ -194,7 +206,7 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, ticke
         *_claude_env(ticket), *_proxy_env(RUN_PROXY[net]),
         image,
         # Inside the isolated container the agent may use its tools freely; the prompt comes via stdin.
-        "claude", "-p", *model_args, "--output-format", "json", "--dangerously-skip-permissions",
+        "claude", "-p", *model_args, "--output-format", "json", "--dangerously-skip-permissions", *_hub_mcp(hub_tools),
     ]
 
 
@@ -226,7 +238,8 @@ def build_test_command(*, run_id: int, user_id: int, work_dir: str, net: str = "
 
 def build_chat_command(*, chat_id: int, user_id: int, model: str, ticket: str, mode: str = "all",
                        effort: str = "", image: str = IMAGE, network: str = NETWORK, memory: str = "480m",
-                       files_dir: str | None = None, code_dir: str | None = None, name: str | None = None) -> list[str]:
+                       files_dir: str | None = None, code_dir: str | None = None, name: str | None = None,
+                       hub_tools=None) -> list[str]:
     """The manager chat (see web/app/chat.py): one question to Claude, in a container like a run but with no
     work folder at all (nothing of any project is mounted; the project context comes on stdin). `mode` (see
     CHAT_MODES) decides the tools and the way out; "all" = web search and a shell, only Anthropic reachable.
@@ -242,6 +255,9 @@ def build_chat_command(*, chat_id: int, user_id: int, model: str, ticket: str, m
     _check_container(memory, image, network)
     spec = CHAT_MODES[mode]
     tools = spec["tools"] + (READ_TOOLS if files_dir or code_dir else ())   # reading the user's files and the code
+    mcp = _hub_mcp(hub_tools) if spec["tools"] else []                       # a brief job gets no tools at all
+    if mcp:
+        tools += tuple(f"mcp__hub__{n}" for n in hub_tools if n in HUB_TOOL_NAMES)
     # Nothing of the run is kept: no saved login, no settings, so a changed configuration (a hook, say) can not
     # reach a later run either.
     runs_code = "Bash" in tools
@@ -261,8 +277,8 @@ def build_chat_command(*, chat_id: int, user_id: int, model: str, ticket: str, m
         "--thinking-display", "summarized", "--no-session-persistence",
         # Exactly the tools of the mode. In -p mode nobody can confirm a permission, so exactly these are
         # allowed; --max-turns keeps a search or a program from running away (and eating quota).
-        "--tools", ",".join(tools),
-        *(["--allowedTools", " ".join(tools)] if tools else []),
+        "--tools", ",".join(t for t in tools if not t.startswith("mcp__")),
+        *(["--allowedTools", " ".join(tools)] if tools else []), *mcp,
         "--max-turns", str(spec["turns"]),
     ]
 
@@ -321,6 +337,28 @@ def claude_thought(line: str) -> str:
     if isinstance(delta, dict) and delta.get("type") == "thinking_delta":
         return str(delta.get("thinking") or "")
     return ""
+
+
+def claude_tools(line: str) -> list[str] | None:
+    """The tools Claude Code names in its "init" event (stream-json), or None for any other line."""
+    if '"init"' not in line:
+        return None
+    try:
+        data = json.loads(line)
+    except ValueError:
+        return None
+    if not isinstance(data, dict) or data.get("type") != "system" or data.get("subtype") != "init":
+        return None
+    tools = data.get("tools")
+    return [t for t in tools if isinstance(t, str)] if isinstance(tools, list) else None
+
+
+def asked_tools(command: list[str]) -> list[str]:
+    """The program's own tools a Claude command asks for (`--tools`), for comparing with what it names."""
+    try:
+        return [t for t in command[command.index("--tools") + 1].split(",") if t]
+    except (ValueError, IndexError):
+        return []
 
 
 def claude_outside(line: str) -> bool:
@@ -415,7 +453,7 @@ def prepare_folder(path: str, user_id: int, recursive: bool = False) -> None:
 def build_vibe_command(*, name: str, user_id: int, model: str, ticket: str, job: str, effort: str = "",
                        net: str = "together", work_dir: str | None = None, image: str = VIBE_IMAGE,
                        network: str = NETWORK, memory: str = "480m", files_dir: str | None = None,
-                       code_dir: str | None = None, images: bool = False) -> list[str]:
+                       code_dir: str | None = None, images: bool = False, hub_tools=None) -> list[str]:
     """The `docker run` command of a Mistral run (Mistral Vibe, runner/vibe_entry.py): the chat ("chat-all",
     "chat-apart": no folder of any project) or an agent run ("run": the task's work folder at /work). Like Claude:
     run user, read-only, nothing but a home in memory, the ticket instead of the key, every request to the gateway,
@@ -445,6 +483,7 @@ def build_vibe_command(*, name: str, user_id: int, model: str, ticket: str, job:
         "-e", "HOME=/home/vibe", "-e", f"MISTRAL_API_KEY={ticket}", "-e", f"HUB_GATEWAY={MISTRAL_GATEWAY}",
         "-e", f"HUB_MODEL={model}", "-e", f"HUB_EFFORT={effort}", "-e", f"HUB_JOB={job}",
         "-e", f"HUB_TURNS={turns}", "-e", f"HUB_SECONDS={seconds}", "-e", f"HUB_IMAGES={1 if images is True else 0}",
+        "-e", "HUB_TOOLS=" + ",".join(dict.fromkeys(["look", *[n for n in (hub_tools or ()) if n in HUB_TOOL_NAMES]])),
         "-e", "NO_PROXY=egress", "-e", "no_proxy=egress", *_proxy_env(proxy),
         image, "python", "/opt/hub/vibe_entry.py",
     ]

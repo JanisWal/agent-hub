@@ -36,14 +36,14 @@ LOOK = "/opt/hub/hub_tools.py"   # the hub's tools; Vibe brings the others itsel
 LOOK_HINT = ("Use it to look at images and PDFs (their pages as pictures); read text files with read_file.")
 
 
-def config(model: str, level: str, images: bool = False, look: bool = True) -> str:
+def config(model: str, level: str, images: bool = False, look: bool = True, tools: str = "look") -> str:
     server = f'''
 [[mcp_servers]]
 name = "hub"
 transport = "stdio"
 command = ["/usr/local/bin/python", "{LOOK}"]
 prompt = "{LOOK_HINT}"
-env = {{ HUB_IMAGES = "{1 if images else 0}", HUB_TOOLS = "look" }}
+env = {{ HUB_IMAGES = "{1 if images else 0}", HUB_TOOLS = "{tools}" }}
 ''' if look else ""
     return f'''active_model = "hub"
 enable_telemetry = false
@@ -154,7 +154,9 @@ def main() -> int:
     vibe_home = HOME / ".vibe"
     vibe_home.mkdir(parents=True, exist_ok=True)
     images = os.environ.get("HUB_IMAGES") == "1"
-    (vibe_home / "config.toml").write_text(config(model, LEVELS.get(effort or "off", "off"), images, job not in ("chat-brief", "run-brief")))
+    tools = ",".join(t for t in os.environ.get("HUB_TOOLS", "look").split(",") if re.fullmatch(r"[a-z_]{1,20}", t))
+    (vibe_home / "config.toml").write_text(config(model, LEVELS.get(effort or "off", "off"), images,
+                                                  job not in ("chat-brief", "run-brief"), tools or "look"))
     workdir = Path("/work") if job == "run" else HOME / "scratch"
     workdir.mkdir(parents=True, exist_ok=True)
     out = HOME / "out"

@@ -287,6 +287,24 @@ CREATE TABLE IF NOT EXISTS project_status (
 );
 CREATE INDEX IF NOT EXISTS project_status_by_project ON project_status (project_id, id);
 -- Settings of the whole server, chosen by the owner (serversettings.py), e.g. how uploads are cut.
+-- The models each user's AI offered him (models.py, 21.11.2026): asked for by the runner once a day. Goes with the account.
+CREATE TABLE IF NOT EXISTS ai_models (
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider   TEXT NOT NULL,
+    models     TEXT NOT NULL DEFAULT '[]',
+    checked_at INTEGER NOT NULL DEFAULT 0,
+    tried_at   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, provider)
+);
+-- Whether an AI's own tools are really there, measured on its answers (toolcheck.py, 21.11.2026).
+CREATE TABLE IF NOT EXISTS tool_health (
+    provider   TEXT NOT NULL,
+    tool       TEXT NOT NULL,
+    missing    INTEGER NOT NULL DEFAULT 0,
+    note       TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (provider, tool)
+);
 CREATE TABLE IF NOT EXISTS server_settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL

@@ -11,12 +11,13 @@ The runner passes no user: a job carries the user from the database (see agents.
 """
 import dataclasses
 import hashlib
+import json
 import hmac
 import os
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 
-from .. import agents, ai_link, chat, claude_link, devices, power, throttle, users
+from .. import agents, ai_link, chat, claude_link, devices, models, power, throttle, users
 from ..deps import fail, ok
 
 TOKEN_HASH_ENV = "HUB_RUNNER_TOKEN_HASH"
@@ -100,8 +101,16 @@ def chat_thoughts(chat_id: int, text: str = Form("")):
 
 @router.post("/chat/{chat_id}/finish")
 def chat_finish(chat_id: int, success: str = Form("0"), answer: str = Form(""), tokens_in: int = Form(0),
-                tokens_out: int = Form(0), outside: str = Form("0")):
-    return ok() if chat.finish(chat_id, success == "1", answer, tokens_in, tokens_out, outside == "1") else fail(409)
+                tokens_out: int = Form(0), outside: str = Form("0"), tools_asked: str = Form(""),
+                tools_seen: str | None = Form(None)):
+    """`tools_seen`: the tools the AI's program named at its start (comma separated), missing = it named none we
+    could read (toolcheck.py)."""
+    tools = (_names(tools_asked), _names(tools_seen)) if isinstance(tools_seen, str) and tools_asked else None
+    return ok() if chat.finish(chat_id, success == "1", answer, tokens_in, tokens_out, outside == "1", tools) else fail(409)
+
+
+def _names(text: str) -> list[str]:
+    return [n for n in (part.strip() for part in text.split(",")) if n.isidentifier() and len(n) <= 40][:60]
 
 
 @router.get("/logins")
@@ -214,6 +223,24 @@ def device_login_url(user_id: int, provider: str, url: str = Form(""), code: str
 def key_noplan(user_id: int, provider: str):
     _key_provider(provider)
     return ok() if ai_link.mark_noplan(user_id, provider) else fail(409)
+
+
+@router.get("/model-checks")
+def model_checks():
+    """The users' AIs whose model list the runner asks for now (models.due)."""
+    return ok(checks=models.due())
+
+
+@router.post("/models/{user_id}/{provider}")
+def model_list(user_id: int, provider: str, models_json: str = Form("", alias="models")):
+    """The list the user's AI offered (raw, as the AI gave it); empty or broken = it could not be asked."""
+    if provider not in models.FETCHABLE:
+        return fail(404)
+    try:
+        raw = json.loads(models_json) if models_json else None
+    except ValueError:
+        raw = None
+    return ok(stored=models.save(user_id, provider, raw if isinstance(raw, list) else None))
 
 
 @router.get("/keys/wipes")

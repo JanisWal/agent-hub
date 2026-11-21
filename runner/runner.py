@@ -28,7 +28,7 @@ from pathlib import Path
 
 import threading
 
-from . import adapters, codex, custom, launcher, login, mistral, tokens, view, workspace
+from . import adapters, codex, custom, launcher, login, mistral, models, tokens, view, workspace
 
 LOGIN_TIMEOUT_AFTER_CODE = 90   # seconds Claude Code gets to accept the code
 LINK_TIMEOUT = 30               # seconds until the sign-in prints its link
@@ -70,9 +70,12 @@ class Thoughts:
         self.api, self.chat_id, self.adapter, self.clock = api, int(chat_id), adapter, clock
         self.waiting, self.sent = "", clock()
         self.outside = False   # the AI read something from outside (web): its new board items wait for the user
+        self.tools = None      # the tools the program named at its start (toolcheck.py); None: it named none we read
 
     def line(self, line: str) -> None:
         self.outside = self.outside or self.adapter.outside(line)
+        if self.tools is None and hasattr(self.adapter, "tools_seen"):
+            self.tools = self.adapter.tools_seen(line)
         self.waiting += self.adapter.thought(line)
         if self.waiting.strip() and self.clock() - self.sent >= THOUGHTS_EVERY:
             self.flush()
@@ -106,6 +109,8 @@ class Runner:
         self.run_tests = self._run_tests
         self.run_login = self._run_login
         self.device_logins: set[int] = set()
+        self.fetch_models = models.fetch
+        self.model_checks: set[tuple[int, str]] = set()
         # The user's files (and for the manager chat the code) as read-only folders of each job (view.py)
         self.views = views or view.Views(self.work.base, os.environ.get("HUB_FILES_SOURCE"))
         self.background = background
@@ -368,7 +373,7 @@ class Runner:
             command = adapter.chat_command(chat_id=chat_id, user_id=user_id, model=job["model"], ticket=ticket,
                                            mode=job.get("mode", "all"), effort=job.get("effort") or "",
                                            files_dir=files_dir, code_dir=code_dir, images=job.get("images") is True,
-                                           route=job.get("route"))
+                                           route=job.get("route"), hub_tools=job.get("hub_tools") or [])
             done = self.run_chat(command, job["prompt"], thoughts.line)
             thoughts.flush()
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(done.stdout)
@@ -383,8 +388,11 @@ class Runner:
         if login_problem:   # the AI says we are not signed in: show the connection as expired
             self._expired(user_id, provider)
         self._plan_check(user_id, provider, ok, text)
+        extra = {}
+        if thoughts.tools is not None:   # what the program named, with what we asked of it (toolcheck.py)
+            extra = {"tools_asked": ",".join(launcher.asked_tools(command)), "tools_seen": ",".join(thoughts.tools)}
         self._report(f"/runner/chat/{chat_id}/finish", success="1" if ok else "0", answer=text,
-                     tokens_in=tokens_in, tokens_out=tokens_out, outside="1" if thoughts.outside else "0")
+                     tokens_in=tokens_in, tokens_out=tokens_out, outside="1" if thoughts.outside else "0", **extra)
 
     # --- agent runs (web/app/agents.py, runtask.py): one container per run in the task's work folder
     def _run_agent(self, command: list[str], prompt: str):
@@ -450,7 +458,8 @@ class Runner:
             command = adapter.run_command(run_id=run_id, user_id=user_id, model=job["model"], ticket=ticket,
                                           net=job.get("net", "together"), effort=job.get("effort") or "",
                                           work_dir=str(folder), files_dir=files_dir,
-                                          images=job.get("images") is True, route=job.get("route"))
+                                          images=job.get("images") is True, route=job.get("route"),
+                                          hub_tools=job.get("hub_tools") or [])
             done = self.run_agent(command, job["prompt"])
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_run(done.stdout)
         except subprocess.TimeoutExpired:
@@ -552,6 +561,43 @@ class Runner:
             self.device_logins.discard(user_id)
         self._report(f"/runner/keys/{user_id}/chatgpt/done", success="1" if success else "0")
 
+    # --- the models each user's AI offers (runner/models.py, web/app/models.py), once a day
+    def handle_model_checks(self) -> None:
+        for item in self.api.call("GET", "/runner/model-checks").get("checks", []):
+            key = (int(item["user_id"]), str(item["provider"]))
+            if key not in self.model_checks:
+                self.model_checks.add(key)
+                self._start(self.do_model_check, {"user_id": key[0], "provider": key[1]})
+
+    def do_model_check(self, job: dict) -> None:
+        user_id, provider = int(job["user_id"]), job["provider"]
+        raw = None
+        try:
+            adapter = adapters.ADAPTERS.get(provider)
+            secret = self._secret(adapter, user_id)[0] if adapter else None
+            if secret is not None:
+                raw = (self._chatgpt_models(user_id, adapter, secret) if provider == "chatgpt"
+                       else self.fetch_models(provider, secret))
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            print(f"runner: model list of {provider} for user {user_id}: {type(error).__name__}", file=sys.stderr,
+                  flush=True)
+        finally:
+            self.model_checks.discard((user_id, provider))
+        self._report(f"/runner/models/{user_id}/{provider}", models=json.dumps(raw) if raw else "")
+
+    def _chatgpt_models(self, user_id: int, adapter, secret: str):
+        """Codex itself asks for the account's models (job "models" of codex_entry.py), with a ticket."""
+        ticket = self.tickets.issue(secret, "chatgpt", **adapter.route({"user_id": user_id}))
+        try:
+            command = launcher.build_codex_command(name=f"agent-chat-{900000000 + user_id}", user_id=user_id, model="",
+                                                   effort="", auth=adapter._auth(ticket, user_id), job="models")
+            done = self.run_agent(command, "")
+        finally:
+            self.tickets.revoke(ticket)
+        line = (done.stdout or "").strip().splitlines()[-1:] or ["{}"]
+        listed = json.loads(line[0]).get("models")
+        return listed if isinstance(listed, list) else None
+
     def handle_merges(self) -> None:
         """Approved tasks: merge their branch into the project's main, then the manager documents."""
         for item in self.api.call("GET", "/runner/merges").get("merges", []):
@@ -633,6 +679,7 @@ class Runner:
         self.handle_keys()
         self.handle_logins()
         self.handle_device_logins()
+        self.handle_model_checks()
         self.handle_merges()
         self.handle_cleanups()
         if self.busy():

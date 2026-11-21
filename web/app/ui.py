@@ -25,7 +25,8 @@ def ai_name(lang: str, provider: str) -> str:
 
 def tools_line(lang: str, provider: str) -> str:
     """Where the tools of an AI come from (catalog.tools_of), in one short line: own, from the hub, missing."""
-    tools = catalog.tools_of(provider)
+    from . import toolcheck   # what the AI's answers show, not only what the catalog says
+    tools = toolcheck.effective(provider)
     def names(source: str) -> list[str]:
         return [i18n.t(lang, f"tool_{t}") for t in catalog.TOOLS if tools.get(t) == source]
     own, hub, missing = names("own"), names("hub"), names("none")
@@ -39,7 +40,7 @@ def tools_line(lang: str, provider: str) -> str:
 
 def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model: str = "picker_model",
                  label_effort: str = "picker_effort", css: str = "m-select", setting: bool = True,
-                 providers: tuple[str, ...] = (catalog.DEFAULT_PROVIDER,)) -> str:
+                 providers: tuple[str, ...] = (catalog.DEFAULT_PROVIDER,), allowed: dict | None = None) -> str:
     """Two drop-downs in our own style, AI model and effort level, built from the list in catalog.py (Janis,
     14.11.2026). Used wherever a model is chosen: manager chat, regular checks, the roles. The level list holds every
     level of the provider; levels the chosen model does not have are hidden, and static/picker.js keeps that right
@@ -50,7 +51,10 @@ def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model
     model, effort = catalog.resolve(model, effort)
     own = catalog.provider_of(model)
     shown = [catalog.provider(p) for p in dict.fromkeys((*providers, own)) if p in catalog.PROVIDERS]
-    all_models = [(prov, m) for prov in shown for m in prov.models]
+    allowed = allowed or {}
+    # only what each user's account offers (models.py; None = not known yet: all), the chosen one always
+    all_models = [(prov, m) for prov in shown for m in prov.models
+                  if allowed.get(prov.id) is None or m.id in allowed[prov.id] or m.id == model]
     chosen = next(m for _, m in all_models if m.id == model)
     levels: list[str] = []
     for _, m in all_models:

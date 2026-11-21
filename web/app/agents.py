@@ -15,7 +15,8 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import ai_link, aichoice, board, catalog, db, files, memory, prompts, questions, reply, serversettings, workflow
+from . import (ai_link, aichoice, board, catalog, db, files, memory, models, prompts, questions, reply, serversettings,
+               toolcheck, workflow)
 
 # Models and effort levels are not fixed here: they come from catalog.py (Janis, 14.11.2026). A role without a
 # choice gets the provider's default model and that model's default level. Since 15.11.2026 the choice is kept per
@@ -97,6 +98,7 @@ class Job:
     prompt: str = ""                # the package for the AI (prompts.run): rules, memory, project, task
     mode: str = ""                  # "brief": one answer without tools and without /work (prompts.brief_run)
     route: dict = field(default_factory=dict)   # the own AI: its address and model name (ai_link.route_in)
+    hub_tools: list = field(default_factory=list)   # the hub's tools this AI gets (toolcheck.hub_tools)
     files: list = field(default_factory=list)   # the user's files for /files (files.for_agents): id, name, area, size
     links: list = field(default_factory=list)   # and the links: name, address
     images: bool = False            # the model sees pictures (catalog.sees_images): the adapter lets it look at them
@@ -158,6 +160,12 @@ def _choice(conn: sqlite3.Connection, user_id: int, role: str, provider: str | N
             model, effort = old, effort or _setting(conn, user_id, f"effort.{role}", "")
     if not model and (start := catalog.role_default(provider, role)):   # the AI's start for this role (catalog)
         model, effort = start[0], effort or start[1]
+    ids = models.allowed(conn, user_id, provider)
+    if ids is not None and model not in ids:   # not (any more) in his account's list: the role's start, the default, any
+        start = catalog.role_default(provider, role)
+        default = catalog.provider(provider).default_model
+        model = next((m for m in ((start or ("",))[0], default) if m in ids), None) or sorted(ids)[0]
+        effort = start[1] if start and start[0] == model else effort
     return catalog.resolve(model, effort, provider)
 
 
@@ -191,8 +199,9 @@ def net_in(conn: sqlite3.Connection, user_id: int, role: str) -> str:
 
 
 def settings(user_id: int) -> dict:
-    """{"strictness", "autonomy", "provider", "roles": {role: {"enabled", "model", "effort", "net"}}}, defaults filled
-    in. Model and effort are those of the standard AI ("provider")."""
+    """{"strictness", "autonomy", "provider", "roles": {role: {"enabled", "model", "effort", "net"}}, "models"}, defaults
+    filled in. Model and effort are those of the standard AI ("provider"). "models": per AI the model ids his account
+    offers (models.allowed; None = not known yet), for the drop-downs."""
     with db.connect() as conn:
         enabled = _enabled(conn, user_id)
         provider = aichoice.default_in(conn, user_id)
@@ -201,7 +210,8 @@ def settings(user_id: int) -> dict:
             model, effort = _choice(conn, user_id, r, provider)
             roles[r] = {"enabled": r in enabled, "model": model, "effort": effort, "net": net_in(conn, user_id, r)}
         return {"strictness": _strictness(conn, user_id), "autonomy": autonomy_in(conn, user_id),
-                "provider": provider, "roles": roles}
+                "provider": provider, "roles": roles,
+                "models": {p: models.allowed(conn, user_id, p) for p in catalog.PROVIDERS}}
 
 
 def configure(user_id: int, role: str | None = None, *, enabled: bool | None = None,
@@ -241,6 +251,9 @@ def configure(user_id: int, role: str | None = None, *, enabled: bool | None = N
                 catalog.check(model_for_effort, effort)
             except ValueError:
                 raise ValueError("Unbekanntes Modell oder unbekannte Stufe") from None
+            with db.connect() as conn:
+                if model is not None and not models.permits(conn, user_id, model):
+                    raise ValueError("Modell nicht im Konto")
             provider = catalog.provider_of(model_for_effort)     # kept per AI: switching back finds it again
             if model is not None:
                 changes.append((f"model.{role}.{provider}", model))   # the saved level stays (resolve on reading)
@@ -619,6 +632,7 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
                       task["note"], reports, net_in(conn, user_id, run["role"]), effort, provider)
             job.mode = "brief" if prompts.brief_run(conn, job) else ""
             job.route = ai_link.route_in(conn, user_id, provider)
+            job.hub_tools = toolcheck.hub_tools(provider)
             job.prompt = prompts.run(conn, job, brief=job.mode == "brief")
             if not job.mode:   # a brief run reads no files
                 job.files, job.links = files.for_agents(conn, user_id, task["project_id"])

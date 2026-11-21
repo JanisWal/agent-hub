@@ -660,7 +660,8 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
     `waiting`: (task, last report) of agents.waiting_tasks, the decisions of "waiting for you"."""
     chef = settings["roles"]["chef"]
     model = ui.model_picker(lang, "manager", chef["model"], chef.get("effort", ""),
-                            label_model="chat_model", label_effort="chat_effort", providers=ais)
+                            label_model="chat_model", label_effort="chat_effort", providers=ais,
+                            allowed=settings.get("models"))
     autonomy = _select(lang, "autonomy", "autonomy", AUTONOMY, settings["autonomy"])
     return fill(
         MANAGER,

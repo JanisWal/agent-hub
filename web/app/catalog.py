@@ -37,7 +37,7 @@ DEFAULT_PROVIDER = "claude"
 HINTS = ("fast", "balanced", "thorough", "deepest")
 TOOLS = ("read", "write", "shell", "search", "fetch", "look")   # look = see images and PDF pages
 SOURCES = ("own", "hub", "none")
-MAX_MODELS = 12
+MAX_MODELS = 24             # models.py fills the lists from the AIs themselves (21.11.2026)
 MAX_EFFORTS = 8
 _ID = re.compile(r"[a-z][a-z0-9.-]{0,47}")     # never starts with "-": it goes to a command line as one argument
 _EFFORT = re.compile(r"[a-z]{1,12}")
