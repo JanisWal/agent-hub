@@ -36,7 +36,8 @@ Fehlerarten an einer Stelle mit den echten Meldungen (der „5-hour limit“ wur
 ## Was als Nächstes ansteht
 
 1. **Echte Probe mit Janis:** ChatGPT anmelden (Gerätecode), eine Chat-Frage und ein Agentenlauf, Modell-Liste ansehen; optional ein API-Schlüssel und eine weitere KI (z. B. ein lokales Ollama, dessen Adresse unter „Freigegebene Adressen“ steht).
-2. Das Aussehen in Hell und am Handy prüfen; ein echter Lauf mit dem Testbrowser; das Taschenrechner-Board aufräumen (doppelte und erledigte Punkte archivieren, auf Janis' Wunsch).
+2. Das Aussehen in Hell und am Handy prüfen; ein echter Lauf mit dem Testbrowser.
+3. **Taschenrechner (aufgeräumt am 21.11.2026, Backup `hub-2026-11-21-before-board-tidy.db`):** 38 Punkte im Papierkorb des Boards (Umgebung, überholt, doppelt), die eskalierte Umgebungs-Aufgabe abgebrochen, die Funde zum Feinschliff in Vorschlag Nr. 81 zusammengefasst. Bei Janis: sechs Freigaben (Aufgaben 10, 11, 15, 16, 18, 19; 19 überschneidet sich mit 15, 16 und 18), eine Eskalation (17, Tests), die Frage des Programmierers an Aufgabe 11, Vorschlag 76 (Prozent-Semantik) und 81.
 3. Weitere KI: Modell aus `GET /models` als Auswahl statt Eintippen; Bilder; Werkzeuge je KI auf `/admin` umschaltbar.
 4. **Diff in der Oberfläche** bei der Freigabe (Daten liegen schon in `agent_tasks.diff`).
 5. Ein echter Lauf mit `hub-test.sh` in einem JavaScript-Projekt und ein echter Prüfer-Lauf ohne Werkzeuge.
