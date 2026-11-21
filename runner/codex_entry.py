@@ -26,7 +26,7 @@ OUTSIDE = {"chat-all": ("web_search", "command_execution"), "chat-apart": ("web_
            "run": ("web_search", "command_execution")}
 
 
-def config(model: str, effort: str, job: str) -> str:
+def config(model: str, effort: str, job: str, api: bool = False) -> str:
     """Codex's settings for one job: our gateway, no updates, no telemetry, the file store for the sign-in."""
     brief = job in ("chat-brief", "run-brief")
     lines = [
@@ -50,12 +50,13 @@ def config(model: str, effort: str, job: str) -> str:
         "[tools]",
         f"web_search = {'false' if brief else 'true'}",
         "",
-        # The ChatGPT sign-in, but plain requests to our gateway instead of a WebSocket (it passes one request on)
+        # The ChatGPT sign-in, but plain requests to our gateway instead of a WebSocket (it passes one request on); with
+        # the user's API key (HUB_KEY: its ticket) the OpenAI API behind the same gateway
         "[model_providers.hub]",
         'name = "ChatGPT"',
-        f'base_url = "{GATEWAY}/backend-api/codex"',
+        f'base_url = "{GATEWAY}/v1"' if api else f'base_url = "{GATEWAY}/backend-api/codex"',
         'wire_api = "responses"',
-        "requires_openai_auth = true",
+        'env_key = "HUB_KEY"' if api else "requires_openai_auth = true",
         "supports_websockets = false",
     ]
     return "\n".join(line for line in lines if line is not None) + "\n"
@@ -91,15 +92,16 @@ def say(data: dict) -> None:
 def main() -> int:
     model, effort, job = os.environ.get("HUB_MODEL", ""), os.environ.get("HUB_EFFORT", ""), os.environ.get("HUB_JOB", "")
     seconds = os.environ.get("HUB_SECONDS", "180")
-    auth = os.environ.get("HUB_AUTH", "")
+    auth, key = os.environ.get("HUB_AUTH", ""), os.environ.get("HUB_KEY", "")
     if ((model and not re.fullmatch(r"[a-z][a-z0-9.-]{0,47}", model)) or (effort and effort not in LEVELS)
-            or job not in JOBS or not seconds.isdigit() or not auth.startswith("{")):
+            or job not in JOBS or not seconds.isdigit() or not (auth.startswith("{") or key.startswith("hubrun-"))):
         say({"ok": False, "text": "", "tokens_in": 0, "tokens_out": 0, "outcome": "usage_error", "error": "bad settings"})
         return 0
     codex_home = HOME / ".codex"
     codex_home.mkdir(parents=True, exist_ok=True)
-    (codex_home / "auth.json").write_text(auth)
-    (codex_home / "config.toml").write_text(config(model, effort, job))
+    if auth:
+        (codex_home / "auth.json").write_text(auth)
+    (codex_home / "config.toml").write_text(config(model, effort, job, api=bool(key)))
     env = dict(os.environ, CODEX_HOME=str(codex_home), CODEX_AUTHAPI_BASE_URL=f"{GATEWAY}/auth")
     env.pop("HUB_AUTH", None)
     if job == "models":

@@ -14,8 +14,8 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import (agents, ai_link, aichoice, autofolders, board, catalog, db, devices, files, i18n, memory, models,
-               prompts, questions, reply, statusnote, toolcheck)
+from . import (agents, ai_link, aichoice, autofolders, board, catalog, credentials, db, devices, files, i18n, memory,
+               models, prompts, questions, reply, statusnote, toolcheck)
 
 # The manager is the role "chef": model and effort level are settings of the user (agents.py, list in catalog.py).
 # What the manager is told (rules, memory, project) is built in prompts.py, the same for every AI.
@@ -75,6 +75,7 @@ class ChatJob:
     images: bool = False       # the model sees pictures (catalog.sees_images): the adapter lets it look at them
     route: dict = field(default_factory=dict)   # the own AI: its address and model name (ai_link.route_in)
     hub_tools: list = field(default_factory=list)   # the hub's tools this AI gets (toolcheck.hub_tools)
+    credential: str = "plan"   # the user's plan or his API key (credentials.py)
 
 
 def _message(row: sqlite3.Row) -> Message:
@@ -208,24 +209,30 @@ def claim_next(now: int | None = None) -> ChatJob | None:
                     continue
                 _switch(conn, row, other, row["provider"])
                 row = conn.execute("SELECT * FROM chat_messages WHERE id = ?", (row["id"],)).fetchone()
-            conn.execute("UPDATE chat_messages SET status = 'running', started_at = ? WHERE id = ?", (now, row["id"]))
+            way = credentials.first(conn, row["user_id"], row["provider"], "chat")
+            conn.execute("UPDATE chat_messages SET status = 'running', started_at = ?, credential = ? WHERE id = ?",
+                         (now, way, row["id"]))
             route = ai_link.route_in(conn, row["user_id"], row["provider"])
             extra = toolcheck.hub_tools(row["provider"])
+            if way != "plan":   # the job carries its way (the runner takes the key instead of the plan)
+                extra_way = {"credential": way}
+            else:
+                extra_way = {}
             if row["kind"] == "status":   # no files and no code: the digest is all it reads
                 return ChatJob(row["id"], row["user_id"], row["model"],
                                statusnote.prompt_for(conn, row["user_id"], row["project_id"], now), "brief",
-                               row["effort"], row["provider"], 0, route=route, hub_tools=extra)
+                               row["effort"], row["provider"], 0, route=route, hub_tools=extra, **extra_way)
             if row["kind"] == autofolders.KIND:   # the list on stdin; with "include contents" the files, too
                 contents = row["mode"] != "brief"
                 stored, links = files.for_agents(conn, row["user_id"], row["project_id"]) if contents else ([], [])
                 return ChatJob(row["id"], row["user_id"], row["model"],
                                autofolders.prompt_for(conn, row["user_id"], row["project_id"], contents), row["mode"],
                                row["effort"], row["provider"], row["project_id"] if contents else 0, stored, links,
-                               contents and catalog.sees_images(row["model"]), route, extra)
+                               contents and catalog.sees_images(row["model"]), route, extra, **extra_way)
             stored, links = files.for_agents(conn, row["user_id"], row["project_id"])
             return ChatJob(row["id"], row["user_id"], row["model"], prompts.manager_chat(conn, row), row["mode"],
                            row["effort"], row["provider"], row["project_id"], stored, links,
-                           catalog.sees_images(row["model"]), route, extra)
+                           catalog.sees_images(row["model"]), route, extra, **extra_way)
     return None
 
 
@@ -259,6 +266,14 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
     if tools is not None:   # the tools the program named at its start (toolcheck.py)
         toolcheck.record(row["provider"], tools[0], tools[1])
     with db.connect() as conn:
+        # quota or sign-in of the plan: the user's key first, if he allows it (only plan -> key, never back: no loop)
+        if not ok and row["credential"] == "plan" and failure_kind(answer) in ("limit", "auth"):
+            other_way = credentials.next_way(conn, row["user_id"], row["provider"], "chat", row["credential"])
+            if other_way is not None:
+                conn.execute("UPDATE chat_messages SET status = 'queued', credential = ?, tokens_in = tokens_in + ?,"
+                             " tokens_out = tokens_out + ?, created_at = ? WHERE id = ?",
+                             (other_way, tokens_in, tokens_out, int(time.time()), chat_id))
+                return True
         if not ok and failure_kind(answer) in FALLBACK_KINDS:      # lost sign-in or quota: the user's next AI
             other = _next_ai(conn, row, row["provider"])
             if other is not None:

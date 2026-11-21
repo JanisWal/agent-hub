@@ -28,7 +28,7 @@ from pathlib import Path
 
 import threading
 
-from . import adapters, codex, custom, launcher, login, mistral, models, tokens, view, workspace
+from . import adapters, apikeys, codex, custom, launcher, login, mistral, models, tokens, view, workspace
 
 LOGIN_TIMEOUT_AFTER_CODE = 90   # seconds Claude Code gets to accept the code
 LINK_TIMEOUT = 30               # seconds until the sign-in prints its link
@@ -103,7 +103,8 @@ class Runner:
         self.run_chat = run_chat or self._run_chat
         self.run_power = run_power or self._run_power
         self.keys = keys or tokens.ProviderKeys(claude_base, os.environ.get("HUB_TOKEN_KEY"))
-        self.verifiers = verifiers or {"mistral": mistral, "custom": custom}   # check a pasted key with its AI: verify()
+        self.verifiers = verifiers or {"mistral": mistral, "custom": custom, "claude-api": apikeys.Verifier("claude-api"),
+                                       "chatgpt-api": apikeys.Verifier("chatgpt-api")}   # check a key with its AI
         self.work = work or workspace.Workspace(os.environ.get("HUB_WORK_DIR", "/opt/agent-hub/work"))
         self.run_agent = run_agent or self._run_agent
         self.run_tests = self._run_tests
@@ -261,19 +262,26 @@ class Runner:
         if not ok and provider == "chatgpt" and "(plan)" in (text or ""):
             self._report(f"/runner/keys/{int(user_id)}/chatgpt/noplan")
 
-    def _expired(self, user_id: int, provider: str) -> None:
+    def _expired(self, user_id: int, provider: str, credential: str = "plan") -> None:
         """The AI refused the credential (or there is none): the menu shows it, a refused API key is deleted."""
+        if credential == "api":   # the user's key next to the plan (its own connection)
+            name = f"{provider}-api"
+            self.keys.forget(int(user_id), name)
+            self.api.call("POST", f"/runner/keys/{int(user_id)}/{name}/expired")
+            return
         if provider == "claude":
             self.api.call("POST", f"/runner/logins/{int(user_id)}/expired")
         else:
             self.keys.forget(int(user_id), provider)
             self.api.call("POST", f"/runner/keys/{int(user_id)}/{provider}/expired")
 
-    def _secret(self, adapter, user_id: int):
+    def _secret(self, adapter, user_id: int, credential: str = "plan"):
         """(secret, problem): the credential, or None and the reason. A missing one shows the AI as expired; one that
-        is there but can not be read is the server's fault and stays (tokens.Unreadable)."""
+        is there but can not be read is the server's fault and stays (tokens.Unreadable). `credential` "api": the
+        user's API key next to the plan (web/app/credentials.py) instead of the plan."""
+        api = credential == "api" and adapter.provider in ("claude", "chatgpt")
         try:
-            secret = adapter.secret(self, user_id)
+            secret = self.keys.load(user_id, f"{adapter.provider}-api") if api else adapter.secret(self, user_id)
         except tokens.Unreadable as error:
             print(f"runner: the saved {adapter.provider} credential of user {user_id} can not be read "
                   f"({error}); nothing deleted", file=sys.stderr, flush=True)
@@ -283,9 +291,16 @@ class Runner:
                   file=sys.stderr, flush=True)
             return None, LATER
         if secret is None:   # no saved credential: the user links this AI again
-            self._expired(user_id, adapter.provider)
+            self._expired(user_id, adapter.provider, "api" if api else "plan")
             return None, "Not logged in: no saved credential. Please run /login"
         return secret, ""
+
+    @staticmethod
+    def _route(adapter, job: dict) -> dict:
+        """What the ticket must know besides the credential: for an API key of ChatGPT that it is one."""
+        if (job.get("credential") or "plan") == "api":
+            return {"upstream": "api"} if adapter.provider == "chatgpt" else {}
+        return adapter.route(job)
 
     def _view(self, name: str, job: dict, code: bool = False):
         """(files folder, code folder, view) of a job, or (None, None, None) when the view could not be made: the job
@@ -359,21 +374,23 @@ class Runner:
             self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="0",
                           answer="This AI is not available on the server.", tokens_in=0, tokens_out=0)
             return
-        secret, problem = self._secret(adapter, user_id)
+        way = job.get("credential") or "plan"
+        secret, problem = self._secret(adapter, user_id, way)
         if secret is None:
             self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="0", answer=problem, tokens_in=0,
                           tokens_out=0)
             return
         files_dir, code_dir, root = (self._view(f"chat-{chat_id}", job, code=True) if job.get("project_id")
                                      else (None, None, None))
-        ticket = self.tickets.issue(secret, provider, **adapter.route(job))
+        ticket = self.tickets.issue(secret, provider, **self._route(adapter, job))
         secret = None
         thoughts = Thoughts(self.api, chat_id, adapter, self.clock)
         try:
             command = adapter.chat_command(chat_id=chat_id, user_id=user_id, model=job["model"], ticket=ticket,
                                            mode=job.get("mode", "all"), effort=job.get("effort") or "",
                                            files_dir=files_dir, code_dir=code_dir, images=job.get("images") is True,
-                                           route=job.get("route"), hub_tools=job.get("hub_tools") or [])
+                                           route=job.get("route"), hub_tools=job.get("hub_tools") or [],
+                                           credential=job.get("credential") or "plan")
             done = self.run_chat(command, job["prompt"], thoughts.line)
             thoughts.flush()
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(done.stdout)
@@ -386,7 +403,7 @@ class Runner:
             self.tickets.revoke(ticket)   # from here on the ticket is worth nothing
             self._release(root)
         if login_problem:   # the AI says we are not signed in: show the connection as expired
-            self._expired(user_id, provider)
+            self._expired(user_id, provider, job.get("credential") or "plan")
         self._plan_check(user_id, provider, ok, text)
         extra = {}
         if thoughts.tools is not None:   # what the program named, with what we asked of it (toolcheck.py)
@@ -439,7 +456,8 @@ class Runner:
         adapter = adapters.ADAPTERS.get(provider)
         if adapter is None:
             return self._finish_run(run_id, "failed", "This AI is not available on the server.")
-        secret, problem = self._secret(adapter, user_id)
+        way = job.get("credential") or "plan"
+        secret, problem = self._secret(adapter, user_id, way)
         if secret is None:
             return self._finish_run(run_id, "failed", problem)
         if job.get("mode") == "brief":
@@ -451,7 +469,7 @@ class Runner:
             print(f"runner: work folder of task {task_id}: {type(error).__name__}", file=sys.stderr, flush=True)
             return self._finish_run(run_id, "failed", "The work folder could not be prepared.")
         files_dir, _, root = self._view(f"run-{run_id}", job)
-        ticket = self.tickets.issue(secret, provider, **adapter.route(job))
+        ticket = self.tickets.issue(secret, provider, **self._route(adapter, job))
         secret = None
         started = self.clock()
         try:
@@ -459,7 +477,7 @@ class Runner:
                                           net=job.get("net", "together"), effort=job.get("effort") or "",
                                           work_dir=str(folder), files_dir=files_dir,
                                           images=job.get("images") is True, route=job.get("route"),
-                                          hub_tools=job.get("hub_tools") or [])
+                                          hub_tools=job.get("hub_tools") or [], credential=job.get("credential") or "plan")
             done = self.run_agent(command, job["prompt"])
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_run(done.stdout)
         except subprocess.TimeoutExpired:
@@ -469,7 +487,7 @@ class Runner:
             self.tickets.revoke(ticket)
             self._release(root)
         if login_problem:
-            self._expired(user_id, provider)
+            self._expired(user_id, provider, job.get("credential") or "plan")
         self._plan_check(user_id, provider, ok, text)
         result, report = launcher.result_of(text, failed=not ok)
         extra = {}
@@ -489,11 +507,12 @@ class Runner:
         """A run that needs no tools (the reviewer of a small change, the manager's documentation): one answer, no
         work folder, no files, nothing to commit."""
         run_id, user_id = int(job["run_id"]), int(job["user_id"])
-        ticket = self.tickets.issue(secret, adapter.provider, **adapter.route(job))
+        ticket = self.tickets.issue(secret, adapter.provider, **self._route(adapter, job))
         started = self.clock()
         try:
             command = adapter.brief_command(run_id=run_id, user_id=user_id, model=job["model"], ticket=ticket,
-                                            effort=job.get("effort") or "", route=job.get("route"))
+                                            effort=job.get("effort") or "", route=job.get("route"),
+                                            credential=job.get("credential") or "plan")
             done = self.run_agent(command, job["prompt"])
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(done.stdout)
         except subprocess.TimeoutExpired:
@@ -502,7 +521,7 @@ class Runner:
         finally:
             self.tickets.revoke(ticket)
         if login_problem:
-            self._expired(user_id, adapter.provider)
+            self._expired(user_id, adapter.provider, job.get("credential") or "plan")
         result, report = launcher.result_of(text, failed=not ok)
         self._finish_run(run_id, result, report, tokens_in, tokens_out, int(self.clock() - started))
 

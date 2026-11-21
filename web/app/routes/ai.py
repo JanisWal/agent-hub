@@ -6,7 +6,7 @@ any request. The key is handed to the runner once and never stored here (ai_link
 from fastapi import APIRouter, Depends, Form
 from fastapi.responses import JSONResponse
 
-from .. import ai_link, aichoice, users
+from .. import ai_link, aichoice, credentials, db, users
 from ..deps import api_user, fail, ok
 
 router = APIRouter(prefix="/ai")
@@ -16,6 +16,46 @@ router = APIRouter(prefix="/ai")
 def make_default(provider: str = Form(""), user: users.User = Depends(api_user)):
     """Make one of the user's own connected AIs his standard (aichoice.py); 400 for anything else."""
     return ok(standard=aichoice.default(user.id)) if aichoice.set_default(user.id, provider) else fail(400)
+
+
+@router.get("/{provider}/api")
+def api_settings(provider: str, user: users.User = Depends(api_user)):
+    """The user's API key next to the plan of Claude or ChatGPT: its state and settings (credentials.py)."""
+    if provider not in credentials.API_FOR:
+        return fail(404)
+    with db.connect() as conn:
+        return ok(**credentials.settings_in(conn, user.id, provider))
+
+
+@router.post("/{provider}/api")
+def api_save(provider: str, key: str = Form(""), mode: str = Form("fallback"), scope: str = Form("all"),
+             daily: str = Form("0"), user: users.User = Depends(api_user)):
+    """Save the settings and, if one is given, a new key (the runner checks it). 400 with the field that does not fit."""
+    if provider not in credentials.API_FOR:
+        return fail(404)
+    try:
+        limit = int(daily.strip() or "0")
+        with db.connect() as conn:
+            credentials.configure_in(conn, user.id, provider, mode, scope, limit)
+    except ValueError:
+        return JSONResponse({"ok": False, "field": "settings"}, status_code=400)
+    if key.strip():
+        try:
+            if not ai_link.submit_key(user.id, credentials.API_FOR[provider], key):
+                return fail(409)
+        except ValueError:
+            return JSONResponse({"ok": False, "field": "key"}, status_code=400)
+    with db.connect() as conn:
+        return ok(**credentials.settings_in(conn, user.id, provider))
+
+
+@router.post("/{provider}/api/remove")
+def api_remove(provider: str, user: users.User = Depends(api_user)):
+    """Remove the key (the runner deletes it); the settings stay for a later key."""
+    if provider not in credentials.API_FOR:
+        return fail(404)
+    ai_link.disconnect(user.id, credentials.API_FOR[provider])
+    return ok()
 
 
 def _provider(provider: str) -> str | None:

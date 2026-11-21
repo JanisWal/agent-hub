@@ -33,19 +33,21 @@ class Claude:
         return runner.vault.load(user_id)
 
     def chat_command(self, *, chat_id, user_id, model, ticket, mode, effort, files_dir=None, code_dir=None,
-                     images=False, route=None, hub_tools=None):
+                     images=False, route=None, hub_tools=None, credential="plan"):
         return launcher.build_chat_command(chat_id=chat_id, user_id=user_id, model=model, ticket=ticket, mode=mode,
-                                           effort=effort, files_dir=files_dir, code_dir=code_dir, hub_tools=hub_tools)
+                                           effort=effort, files_dir=files_dir, code_dir=code_dir, hub_tools=hub_tools,
+                                           api=credential == "api")
 
     def run_command(self, *, run_id, user_id, model, ticket, net, effort, work_dir, files_dir=None, images=False,
-                    route=None, hub_tools=None):
+                    route=None, hub_tools=None, credential="plan"):
         return launcher.build_command(run_id=run_id, user_id=user_id, model=model, work_dir=work_dir, ticket=ticket,
-                                      net=net, effort=effort, files_dir=files_dir, hub_tools=hub_tools)
+                                      net=net, effort=effort, files_dir=files_dir, hub_tools=hub_tools,
+                                      api=credential == "api")
 
-    def brief_command(self, *, run_id, user_id, model, ticket, effort, route=None, hub_tools=None):
+    def brief_command(self, *, run_id, user_id, model, ticket, effort, route=None, hub_tools=None, credential="plan"):
         """A run without tools and without /work: one answer to the package (prompts.brief_run)."""
         return launcher.build_chat_command(chat_id=run_id, user_id=user_id, model=model, ticket=ticket, mode="brief",
-                                           effort=effort, name=f"agent-run-{int(run_id)}")
+                                           effort=effort, name=f"agent-run-{int(run_id)}", api=credential == "api")
 
     def parse_chat(self, stdout: str):
         return launcher.parse_chat_output(stdout)
@@ -80,19 +82,19 @@ class Mistral:
         return runner.keys.load(user_id, "mistral")
 
     def chat_command(self, *, chat_id, user_id, model, ticket, mode, effort, files_dir=None, code_dir=None,
-                     images=False, route=None, hub_tools=None):
+                     images=False, route=None, hub_tools=None, credential="plan"):
         return launcher.build_vibe_command(name=f"agent-chat-{int(chat_id)}", user_id=user_id, model=model,
                                            ticket=ticket, job={"apart": "chat-apart", "brief": "chat-brief"}.get(mode, "chat-all"),
                                            effort=effort, files_dir=files_dir, code_dir=code_dir, images=images,
                                            hub_tools=hub_tools)
 
     def run_command(self, *, run_id, user_id, model, ticket, net, effort, work_dir, files_dir=None, images=False,
-                    route=None, hub_tools=None):
+                    route=None, hub_tools=None, credential="plan"):
         return launcher.build_vibe_command(name=f"agent-run-{int(run_id)}", user_id=user_id, model=model,
                                            ticket=ticket, job="run", effort=effort, net=net, work_dir=work_dir,
                                            files_dir=files_dir, images=images, hub_tools=hub_tools)
 
-    def brief_command(self, *, run_id, user_id, model, ticket, effort, route=None, hub_tools=None):
+    def brief_command(self, *, run_id, user_id, model, ticket, effort, route=None, hub_tools=None, credential="plan"):
         return launcher.build_vibe_command(name=f"agent-run-{int(run_id)}", user_id=user_id, model=model,
                                            ticket=ticket, job="run-brief", effort=effort)
 
@@ -125,19 +127,19 @@ class Custom:
         return str((job_route or {}).get("remote_model") or "")
 
     def chat_command(self, *, chat_id, user_id, model, ticket, mode, effort, files_dir=None, code_dir=None,
-                     images=False, route=None, hub_tools=None):
+                     images=False, route=None, hub_tools=None, credential="plan"):
         return launcher.build_hubloop_command(name=f"agent-chat-{int(chat_id)}", user_id=user_id,
                                               model=self._model(route), ticket=ticket,
                                               job={"apart": "chat-apart", "brief": "chat-brief"}.get(mode, "chat-all"),
                                               files_dir=files_dir, code_dir=code_dir)
 
     def run_command(self, *, run_id, user_id, model, ticket, net, effort, work_dir, files_dir=None, images=False,
-                    route=None, hub_tools=None):
+                    route=None, hub_tools=None, credential="plan"):
         return launcher.build_hubloop_command(name=f"agent-run-{int(run_id)}", user_id=user_id,
                                               model=self._model(route), ticket=ticket, job="run", net=net,
                                               work_dir=work_dir, files_dir=files_dir)
 
-    def brief_command(self, *, run_id, user_id, model, ticket, effort, route=None, hub_tools=None):
+    def brief_command(self, *, run_id, user_id, model, ticket, effort, route=None, hub_tools=None, credential="plan"):
         return launcher.build_hubloop_command(name=f"agent-run-{int(run_id)}", user_id=user_id,
                                               model=self._model(route), ticket=ticket, job="run-brief")
 
@@ -183,27 +185,32 @@ class Codex:
             kept = self.kept.get(int(job["user_id"]), {})
         return {"upstream": kept.get("account", "")}
 
-    def _auth(self, ticket: str, user_id: int) -> str:
+    def _auth(self, ticket: str, user_id: int, credential: str = "plan") -> str:
+        """The run's auth.json for the plan; "" for an API key (the ticket then goes as the key, launcher)."""
+        if credential == "api":
+            return ""
         with self.lock:
             kept = self.kept.get(int(user_id), {})
         return codex.run_auth(ticket, kept)
 
     def chat_command(self, *, chat_id, user_id, model, ticket, mode, effort, files_dir=None, code_dir=None,
-                     images=False, route=None, hub_tools=None):
+                     images=False, route=None, hub_tools=None, credential="plan"):
         return launcher.build_codex_command(name=f"agent-chat-{int(chat_id)}", user_id=user_id, model=model,
-                                            effort=effort, auth=self._auth(ticket, user_id),
+                                            effort=effort, auth=self._auth(ticket, user_id, credential),
                                             job={"apart": "chat-apart", "brief": "chat-brief"}.get(mode, "chat-all"),
-                                            files_dir=files_dir, code_dir=code_dir)
+                                            files_dir=files_dir, code_dir=code_dir, key_ticket=ticket if credential == "api" else "")
 
     def run_command(self, *, run_id, user_id, model, ticket, net, effort, work_dir, files_dir=None, images=False,
-                    route=None, hub_tools=None):
+                    route=None, hub_tools=None, credential="plan"):
         return launcher.build_codex_command(name=f"agent-run-{int(run_id)}", user_id=user_id, model=model, effort=effort,
-                                            auth=self._auth(ticket, user_id), job="run", net=net, work_dir=work_dir,
-                                            files_dir=files_dir)
+                                            auth=self._auth(ticket, user_id, credential), job="run", net=net,
+                                            work_dir=work_dir, files_dir=files_dir,
+                                            key_ticket=ticket if credential == "api" else "")
 
-    def brief_command(self, *, run_id, user_id, model, ticket, effort, route=None, hub_tools=None):
+    def brief_command(self, *, run_id, user_id, model, ticket, effort, route=None, hub_tools=None, credential="plan"):
         return launcher.build_codex_command(name=f"agent-run-{int(run_id)}", user_id=user_id, model=model, effort=effort,
-                                            auth=self._auth(ticket, user_id), job="run-brief")
+                                            auth=self._auth(ticket, user_id, credential), job="run-brief",
+                                            key_ticket=ticket if credential == "api" else "")
 
     def parse_chat(self, stdout: str):
         return launcher.parse_vibe(stdout)

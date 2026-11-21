@@ -155,7 +155,7 @@ def _proxy_env(url: str) -> list[str]:
     return ["-e", f"HTTPS_PROXY={url}", "-e", f"https_proxy={url}"]
 
 
-def _claude_env(ticket: str) -> list[str]:
+def _claude_env(ticket: str, api: bool = False) -> list[str]:
     """How a run reaches Claude: an empty home in memory, the ticket as its token, every request to the gateway
     (never past the proxy: NO_PROXY), nothing else sent to Anthropic. The ticket stands on the command line of
     `docker run`, which is fine: it only counts inside the agent network and only while the run lasts."""
@@ -164,7 +164,7 @@ def _claude_env(ticket: str) -> list[str]:
     return [
         "--tmpfs", "/home/claude:rw,size=32m,mode=1777",
         "-e", "HOME=/home/claude", "-e", "CLAUDE_CONFIG_DIR=/home/claude/.claude",
-        "-e", f"CLAUDE_CODE_OAUTH_TOKEN={ticket}", "-e", f"ANTHROPIC_BASE_URL={GATEWAY}",
+        "-e", f"{'ANTHROPIC_API_KEY' if api else 'CLAUDE_CODE_OAUTH_TOKEN'}={ticket}", "-e", f"ANTHROPIC_BASE_URL={GATEWAY}",
         "-e", "NO_PROXY=egress", "-e", "no_proxy=egress", "-e", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1",
     ]
 
@@ -183,7 +183,7 @@ def _model_args(model: str, effort: str) -> list[str]:
 
 def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, ticket: str, net: str = "together",
                   effort: str = "", image: str = IMAGE, network: str = NETWORK, memory: str = "480m",
-                  files_dir: str | None = None, hub_tools=None) -> list[str]:
+                  files_dir: str | None = None, hub_tools=None, api: bool = False) -> list[str]:
     """The `docker run` command for one run. Raises ValueError for anything unexpected. `net` is the role's
     switch: "together" = open internet (public hosts only), "apart" = only Anthropic (code without internet).
     `effort` is the model's level (empty = Claude Code's own default)."""
@@ -203,7 +203,7 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, ticke
         "--network", network,
         "--mount", f"type=bind,src={work},dst=/work", "--workdir", "/work", *_read_only(files_dir),
         # Agents may use the internet (Janis, 08.11.2026): public hosts only, never the home network; per role switch.
-        *_claude_env(ticket), *_proxy_env(RUN_PROXY[net]),
+        *_claude_env(ticket, api), *_proxy_env(RUN_PROXY[net]),
         image,
         # Inside the isolated container the agent may use its tools freely; the prompt comes via stdin.
         "claude", "-p", *model_args, "--output-format", "json", "--dangerously-skip-permissions", *_hub_mcp(hub_tools),
@@ -239,7 +239,7 @@ def build_test_command(*, run_id: int, user_id: int, work_dir: str, net: str = "
 def build_chat_command(*, chat_id: int, user_id: int, model: str, ticket: str, mode: str = "all",
                        effort: str = "", image: str = IMAGE, network: str = NETWORK, memory: str = "480m",
                        files_dir: str | None = None, code_dir: str | None = None, name: str | None = None,
-                       hub_tools=None) -> list[str]:
+                       hub_tools=None, api: bool = False) -> list[str]:
     """The manager chat (see web/app/chat.py): one question to Claude, in a container like a run but with no
     work folder at all (nothing of any project is mounted; the project context comes on stdin). `mode` (see
     CHAT_MODES) decides the tools and the way out; "all" = web search and a shell, only Anthropic reachable.
@@ -268,7 +268,7 @@ def build_chat_command(*, chat_id: int, user_id: int, model: str, ticket: str, m
         "--read-only", "--tmpfs", f"/tmp:rw,size={'128m' if runs_code else '64m'},mode=1777", "--workdir", "/tmp",
         "--memory", memory, "--memory-swap", memory, "--pids-limit", "256", "--cpus", "2",
         "--network", network, *_read_only(files_dir, code_dir),
-        *_claude_env(ticket), "-e", "PYTHONDONTWRITEBYTECODE=1",
+        *_claude_env(ticket, api), "-e", "PYTHONDONTWRITEBYTECODE=1",
         *_proxy_env(spec["proxy"]),
         image,
         # stream-json: one line per event, so the runner can show the thoughts while they come (Janis, 18.11.2026);
@@ -527,8 +527,10 @@ def build_hubloop_command(*, name: str, user_id: int, model: str, ticket: str, j
 
 def build_codex_command(*, name: str, user_id: int, model: str, effort: str, auth: str, job: str, net: str = "together",
                         work_dir: str | None = None, image: str = CODEX_IMAGE, network: str = NETWORK,
-                        memory: str = "480m", files_dir: str | None = None, code_dir: str | None = None) -> list[str]:
-    """The `docker run` command of a ChatGPT run (Codex, runner/codex_entry.py). `auth` is the run's auth.json
+                        memory: str = "480m", files_dir: str | None = None, code_dir: str | None = None,
+                        key_ticket: str = "") -> list[str]:
+    """The `docker run` command of a ChatGPT run (Codex, runner/codex_entry.py). With `key_ticket` (the user's API
+    key, credentials.py) there is no auth.json: the ticket goes as the key (HUB_KEY), Codex talks to /v1 of the gateway. `auth` is the run's auth.json
     (codex.run_auth: the ticket in its wrapper, nothing real), checked to be that and nothing else; model and level
     after the same patterns as everywhere. Like the other runs: run user, read-only, a home in memory, every request to
     the gateway, the web only through the proxy of the job."""
@@ -538,7 +540,10 @@ def build_codex_command(*, name: str, user_id: int, model: str, effort: str, aut
         raise ValueError("bad name")
     if model or job != "models":
         _model_args(model, effort)
-    if not _codex_auth(auth):
+    if key_ticket:
+        if auth or not _TICKET.fullmatch(key_ticket):
+            raise ValueError("bad key ticket")
+    elif not _codex_auth(auth):
         raise ValueError("bad auth")
     proxy = ({"chat-all": WEB_PROXY, "chat-apart": API_PROXY, "chat-brief": API_PROXY, "run-brief": API_PROXY,
               "models": API_PROXY}.get(job) or RUN_PROXY.get(net))
@@ -553,7 +558,8 @@ def build_codex_command(*, name: str, user_id: int, model: str, effort: str, aut
         "--read-only", "--tmpfs", "/tmp:rw,size=128m,mode=1777", "--tmpfs", "/home/codex:rw,size=128m,mode=1777",
         "--memory", memory, "--memory-swap", memory, "--pids-limit", "256", "--cpus", "2",
         "--network", network, *mount, *_read_only(files_dir, code_dir),
-        "-e", "HOME=/home/codex", "-e", f"HUB_AUTH={auth}", "-e", f"HUB_GATEWAY={CHATGPT_GATEWAY}",
+        "-e", "HOME=/home/codex", *(["-e", f"HUB_KEY={key_ticket}"] if key_ticket else ["-e", f"HUB_AUTH={auth}"]),
+        "-e", f"HUB_GATEWAY={CHATGPT_GATEWAY}",
         "-e", f"HUB_MODEL={model}", "-e", f"HUB_EFFORT={effort}", "-e", f"HUB_JOB={job}",
         "-e", f"HUB_SECONDS={CODEX_JOBS[job]}", "-e", "NO_PROXY=egress", "-e", "no_proxy=egress", *_proxy_env(proxy),
         image, "python3", "/opt/hub/codex_entry.py",

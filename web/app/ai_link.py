@@ -23,6 +23,8 @@ import time
 from . import db
 
 PROVIDERS = ("mistral", "chatgpt", "custom")   # connections kept by the runner (Claude has claude_link.py)
+# API keys next to a plan (credentials.py, 21.11.2026): connections of their own, not AIs of their own
+API_KEYS = ("claude-api", "chatgpt-api")
 # ChatGPT (21.11.2026): no key at all; the user signs in at OpenAI with a one-time code the runner shows (runner/codex.py)
 DEVICE_LOGIN = ("chatgpt",)
 DEVICE_SECONDS = 16 * 60         # the code lasts 15 minutes; then the sign-in counts as failed
@@ -32,7 +34,9 @@ STATUSES = ("none", "connecting", "connected", "expired", "noplan")   # noplan: 
 CHECK_SECONDS = 120               # the runner has this long to check a key, else the connection counts as failed
 KEY_SECONDS = 300                 # a pasted key waits this long for the runner, then it is forgotten
 KEY = re.compile(r"[A-Za-z0-9_-]{16,200}")   # what an API key looks like (Mistral: 32 letters and digits)
-KEYS = {"mistral": KEY, "custom": re.compile(r"[!-~]{1,400}")}   # the same patterns as runner/tokens.KEY_PATTERNS
+KEYS = {"mistral": KEY, "custom": re.compile(r"[!-~]{1,400}"),     # the same patterns as runner/tokens.KEY_PATTERNS
+        "claude-api": re.compile(r"sk-ant-api[0-9]{2}-[A-Za-z0-9_-]{20,300}"),
+        "chatgpt-api": re.compile(r"sk-[A-Za-z0-9_-]{20,300}")}
 NO_KEY = "-"                                        # the own AI needs no key (runner/tokens.NO_KEY)
 ENDPOINT = re.compile(r"https?://[A-Za-z0-9.-]{1,253}(?::[0-9]{1,5})?(?:/[A-Za-z0-9._~/-]{0,200})?")   # = tokens.ENDPOINT
 REMOTE_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,99}")                                   # = launcher._REMOTE_MODEL
@@ -42,7 +46,7 @@ _keys: dict[tuple[int, str], tuple[str, int, str, str]] = {}
 
 
 def _check_provider(provider: str) -> None:
-    if provider not in PROVIDERS:
+    if provider not in PROVIDERS and provider not in API_KEYS:
         raise ValueError("provider")
 
 
