@@ -13,6 +13,7 @@ import time
 from . import catalog, credentials, db, serversettings
 
 KEY = "ai.default"
+PREVIOUS = "ai.previous"   # the standard before the current one (Janis, 21.11.2026: it moves to the second place)
 REST = "ai.rest."   # + provider: until when its quota is used up (unix time), agent_settings
 
 
@@ -54,11 +55,28 @@ def rest(conn: sqlite3.Connection, user_id: int, provider: str, now: int | None 
                  " ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value", (user_id, REST + provider, str(until)))
 
 
+def ranked_in(conn: sqlite3.Connection, user_id: int) -> list[str]:
+    """The user's connected AIs in the order they are shown and asked (Janis, 21.11.2026: it arranges itself, nobody
+    moves it by hand): the standard, the one that was the standard before it, then the others in the catalog's order."""
+    have = connected_list(conn, user_id)
+    if not have:
+        return []
+    first = default_in(conn, user_id)
+    row = conn.execute("SELECT value FROM agent_settings WHERE user_id = ? AND key = ?", (user_id, PREVIOUS)).fetchone()
+    second = row["value"] if row is not None and row["value"] in have and row["value"] != first else None
+    return [first] + ([second] if second else []) + [p for p in have if p not in (first, second)]
+
+
+def ranked(user_id: int) -> list[str]:
+    with db.connect() as conn:
+        return ranked_in(conn, user_id)
+
+
 def order_in(conn: sqlite3.Connection, user_id: int) -> list[str]:
-    """The AIs to ask, in turn: the standard first, then the user's other connected AIs (the fallback); an AI that is
+    """The AIs to ask, in turn (ranked_in: the standard, the one before it, the others: the fallback); an AI that is
     resting after a used-up quota comes after all the others."""
     first = default_in(conn, user_id)
-    order = [first] + [p for p in connected_list(conn, user_id) if p != first]
+    order = ranked_in(conn, user_id) or [first]
     return [p for p in order if not resting(conn, user_id, p)] + [p for p in order if resting(conn, user_id, p)]
 
 
@@ -77,6 +95,8 @@ def set_default(user_id: int, provider: str) -> bool:
     with db.connect() as conn:
         if provider not in catalog.PROVIDERS or not connected_in(conn, user_id, provider):
             return False
-        conn.execute("INSERT INTO agent_settings (user_id, key, value) VALUES (?, ?, ?)"
-                     " ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value", (user_id, KEY, provider))
+        before = default_in(conn, user_id)
+        for key, value in ((KEY, provider), (PREVIOUS, before)) if before != provider else ((KEY, provider),):
+            conn.execute("INSERT INTO agent_settings (user_id, key, value) VALUES (?, ?, ?)"
+                         " ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value", (user_id, key, value))
     return True

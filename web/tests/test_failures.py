@@ -54,6 +54,31 @@ class Base(unittest.TestCase):
         self.tmp.cleanup()
 
 
+class OrderTest(Base):
+    """The order arranges itself (Janis, 21.11.2026): the standard, the one before it, the other connected ones, then
+    the ones that are not connected; nobody moves it by hand."""
+
+    def test_the_standard_before_moves_to_the_second_place(self):
+        ai_link.submit_key(self.a.id, "mistral", "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6")
+        ai_link.take_keys()
+        ai_link.complete(self.a.id, "mistral", True)
+        self.assertEqual(aichoice.ranked(self.a.id), ["claude", "mistral", "chatgpt"])   # catalog order after the first
+        aichoice.set_default(self.a.id, "chatgpt")
+        self.assertEqual(aichoice.ranked(self.a.id), ["chatgpt", "claude", "mistral"])
+        aichoice.set_default(self.a.id, "mistral")
+        self.assertEqual(aichoice.ranked(self.a.id), ["mistral", "chatgpt", "claude"])
+        with db.connect() as conn:
+            self.assertEqual(aichoice.order_in(conn, self.a.id), ["mistral", "chatgpt", "claude"])   # the fallback too
+
+    def test_nothing_unconnected_between_connected_ones(self):
+        from app import ui
+        aichoice.set_default(self.a.id, "chatgpt")
+        page = ui.settings_bar(self.a)
+        chatgpt, claude, mistral = (page.index(x) for x in ('id="key-row-chatgpt"', 'id="claude-row"', 'id="key-row-mistral"'))
+        self.assertLess(chatgpt, claude)                                         # the standard on top, the one before
+        self.assertLess(claude, mistral)                                         # Mistral is not connected: after them
+
+
 class ChatTest(Base):
     def test_a_used_up_claude_hands_the_question_to_chatgpt_and_rests(self):
         chat.send(self.a.id, self.pa.id, "Hallo")

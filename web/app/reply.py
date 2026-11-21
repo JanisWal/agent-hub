@@ -18,7 +18,8 @@ import re
 from dataclasses import dataclass, field
 
 MAX_ASKS = 3
-MAX_TASKS = 8          # the manager splits a wish into small pieces (Janis, 19.11.2026)
+MAX_TASKS = 12         # the manager splits a wish into small pieces (Janis, 19.11.2026), a list of bugs into one
+                       # bug each (21.11.2026: up to 12 in one go)
 MAX_TITLE = 200
 MAX_BODY = 4000
 MAX_QUESTION = 1000
