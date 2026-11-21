@@ -94,14 +94,13 @@ def status_tile(lang: str, a: statusmod.Assessment | None, now: int, note: statu
     head = (f'<header><h2>{esc(i18n.t(lang, "manager_status"))}</h2>'
             f'{ui.info_dot(i18n.t(lang, "manager_status"), i18n.t(lang, "status_hint"))}'
             f'<button class="icon-button card-btn status-again" type="button" id="status-again" aria-label="{again}" '
-            f'data-tip="{again}" data-wait="{esc(i18n.t(lang, "status_again_wait"))}" '
-            f'data-none="{esc(i18n.t(lang, "status_again_none"))}" data-queued="{esc(i18n.t(lang, "status_again_queued"))}" data-note="{note.created_at if note else 0}">{icon("refresh")}</button>'
+            f'data-tip="{again}" '
+            f'data-note="{note.created_at if note else 0}">{icon("refresh")}</button>'
             f'<span class="m-lamp lamp-{lamp}" role="img" aria-label="{esc(i18n.t(lang, "status_lamp_" + lamp))}" '
             f'data-tip="{esc(i18n.t(lang, "status_lamp_" + lamp))}"></span></header>')
-    say = '<p class="muted status-say" id="status-say" role="status" aria-live="polite"></p>'
     if a is None or (a.total == 0 and a.last_activity is None and note is None):
         return (f'<section class="mtile glass m-status" id="status">{head}'
-                f'<p class="muted">{esc(i18n.t(lang, "status_empty"))}</p>{say}</section>')
+                f'<p class="muted">{esc(i18n.t(lang, "status_empty"))}</p></section>')
     facts = "".join(
         f'<div><dt>{esc(i18n.t(lang, key))}</dt><dd>{value}</dd></div>'
         for key, value in (("status_planned", a.planned), ("status_in_progress", a.in_progress),
@@ -126,7 +125,7 @@ def status_tile(lang: str, a: statusmod.Assessment | None, now: int, note: statu
         f'<dl class="status-facts">{facts}</dl>'
         + (f'<ul class="status-reasons">{reasons}</ul>' if reasons else "")
         + (f'<p class="muted status-extra">{esc(" · ".join(extra))}</p>' if extra else "")
-        + say + written + '</section>'
+        + written + '</section>'
     )
 
 

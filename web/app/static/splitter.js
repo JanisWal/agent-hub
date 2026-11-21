@@ -78,6 +78,7 @@
         // smaller than its content: it cuts off what does not fit (22.11.2026: before, text stood over other parts)
         tile.classList.toggle("m-folded", col.classList.contains("split-set") && height < full - 1);
         tile.classList.toggle("m-shut", share === 0);
+        tile.classList.toggle("m-headonly", col.classList.contains("split-set") && height <= headerOnly(tile) + 4);
       });
     }
 

@@ -1,21 +1,15 @@
 // The Status tile in the Manager view (Janis, 22.11.2026: its numbers follow the board, not only an AI). The tile is
 // asked for again on its own every REFRESH ms while it can be seen (counted from the database, no AI) and at once
 // after the round arrow, which also asks the hub for a new written status (statusnote.py): then it is asked for every
-// few seconds until the new note is there (at most three minutes). The answer of the arrow stays in the quiet line of
-// the tile (a fixed place, nothing floats). Texts come from data-* on the button.
+// few seconds until the new note is there (at most three minutes). No line of words for it (Janis, 22.11.2026: the
+// tile says by itself when its status is new).
 (function () {
   "use strict";
   var tile = document.getElementById("status");
   var project = document.querySelector(".project");
   if (!tile || !project) return;
   var REFRESH = 20000, QUICK = 4000, LIMIT = 45;
-  var polling = null, said = "";
-
-  function say(text) {
-    said = text || "";
-    var line = document.getElementById("status-say");
-    if (line) line.textContent = said;
-  }
+  var polling = null;
 
   // Only the content changes: the tile stays the same element, so the splitter keeps its place (and follows the
   // edge it snapped to when the parts change height).
@@ -30,7 +24,6 @@
         if (!fresh || (fresh.innerHTML === tile.innerHTML && fresh.className === tile.className)) return;
         tile.className = fresh.className;
         tile.innerHTML = fresh.innerHTML;
-        say(said);
       })
       .catch(function () {});
   }
@@ -59,7 +52,6 @@
       .then(function (response) { return response.json(); })
       .then(function (data) {
         button.disabled = false;
-        say(button.dataset[data.result] || button.dataset.wait);
         refresh();   // the numbers at once, whatever the AI does
         if (data.result === "queued") watch(button.dataset.note);
       }, function () { button.disabled = false; });
