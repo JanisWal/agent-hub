@@ -338,7 +338,8 @@ async def gateway(client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter
             return
         auth = values.get("authorization", "")
         bearer = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
-        if provider == "chatgpt" and not tokens.TICKET.fullmatch(bearer):   # the plan: the ticket inside its wrapper
+        wrapped = provider == "chatgpt" and not tokens.TICKET.fullmatch(bearer)
+        if wrapped:   # the plan: the ticket inside its wrapper (codex.run_auth); the API key: the bare ticket
             bearer = codex.ticket_of(bearer)
         if provider == "claude" and not bearer:            # Claude Code with an API key sends it as x-api-key
             bearer = values.get("x-api-key", "").strip()
@@ -357,6 +358,10 @@ async def gateway(client_r: asyncio.StreamReader, client_w: asyncio.StreamWriter
             return
         if provider == "chatgpt":   # the plan goes to ChatGPT, the user's API key to the OpenAI API: never mixed
             keyed = bool(tokens.OPENAI_API.fullmatch(token))
+            if keyed == wrapped:   # a plan's ticket comes only wrapped, a key's only bare
+                log(f"gateway {provider}: refused {method} {path.split('?')[0]} (ticket form)")
+                await _gateway_reply(client_w, "502 Bad Gateway", "no valid ticket")
+                return
             if keyed != path.startswith("/v1/"):
                 await _gateway_reply(client_w, "404 Not Found", "not available through the hub")
                 return

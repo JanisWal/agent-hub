@@ -249,6 +249,19 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(E.path_allowed("mistral", "/v1/batch/jobs"))
 
 
+    async def test_an_api_key_goes_as_x_api_key_and_the_run_sends_its_ticket_there_too(self):
+        from runner import tokens
+        key = "sk-ant-api03-" + "A1b2C3d4" * 5
+        ticket = tokens.Tickets(self.tmp.name).issue(key)
+        raw = (f"POST /v1/messages HTTP/1.1\r\nHost: egress:3130\r\nx-api-key: {ticket}\r\n"
+               f"Content-Length: 2\r\n\r\n{{}}").encode()
+        self.assertTrue((await self.send(raw)).startswith(b"HTTP/1.1 200"))
+        head = self.received[0].split(b"\r\n\r\n")[0]
+        self.assertIn(f"x-api-key: {key}".encode(), head)
+        self.assertNotIn(b"Authorization", head)
+        self.assertNotIn(ticket.encode(), head)
+
+
 class OwnAiGatewayTest(unittest.IsolatedAsyncioTestCase):
     """The gateway of the user's own AI (20.11.2026): the address comes from the ticket, never from the request."""
 
@@ -370,12 +383,25 @@ class ChatGptGatewayTest(OwnAiGatewayTest):
         self.assertIn(b"Host: chatgpt.com", head)
         self.assertEqual(self.targets, ["chatgpt.com"])
 
+    async def test_an_api_key_goes_to_the_openai_api_with_a_bare_ticket(self):
+        key = "sk-proj-" + "Z9y8X7w6" * 5
+        ticket = self.tickets.issue(key, "chatgpt", upstream="api")
+        self.assertTrue((await self.ask(ticket, "/v1/responses")).startswith(b"HTTP/1.1 200"))
+        head = self.received[0].split(b"\r\n\r\n")[0]
+        self.assertIn(f"Authorization: Bearer {key}".encode(), head)
+        self.assertIn(b"Host: api.openai.com", head)
+        self.assertNotIn(b"ChatGPT-Account-Id", head)                          # no account at the API
+        self.assertEqual(self.targets, ["api.openai.com"])
+        self.assertTrue((await self.ask(ticket)).startswith(b"HTTP/1.1 404"))   # a key never goes to ChatGPT
+
     async def test_other_addresses_and_bare_tickets_are_refused(self):
         from runner import codex
         ticket = self.tickets.issue("eyJhbGciOiJSUzI1NiJ9.eyJleHAiOjF9.signaturexyz", "chatgpt", upstream="acct-777")
         wrapped = codex.ticket_jwt(ticket, {"account": "acct-777"})
         self.assertTrue((await self.ask(wrapped, "/backend-api/wham/accounts/check")).startswith(b"HTTP/1.1 404"))
         self.assertTrue((await self.ask(ticket)).startswith(b"HTTP/1.1 502"))   # not wrapped
+        keyed = self.tickets.issue("sk-proj-" + "Z9y8X7w6" * 5, "chatgpt", upstream="api")
+        self.assertTrue((await self.ask(codex.ticket_jwt(keyed, {}), "/v1/responses")).startswith(b"HTTP/1.1 502"))
         self.assertTrue((await self.ask(wrapped, "/v1/chat/completions")).startswith(b"HTTP/1.1 400"))
         self.assertEqual(self.received, [])
 
