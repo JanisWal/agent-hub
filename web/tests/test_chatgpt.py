@@ -59,7 +59,8 @@ class SignInTest(Base):
         page = ui.settings_bar(self.a)
         self.assertIn('id="key-dialog-chatgpt"', page)
         self.assertIn("data-device-code", page)
-        self.assertNotIn("Kommt später", page)
+        row = page[page.index('id="key-row-chatgpt"'):]
+        self.assertNotIn("Kommt später", row[:row.index("</div>")])                 # a real row, not a placeholder
         self.assertIn("Werkzeuge: eigene", page)
 
 

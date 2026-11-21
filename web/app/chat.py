@@ -209,7 +209,10 @@ def claim_next(now: int | None = None) -> ChatJob | None:
                     continue
                 _switch(conn, row, other, row["provider"])
                 row = conn.execute("SELECT * FROM chat_messages WHERE id = ?", (row["id"],)).fetchone()
-            way = credentials.first(conn, row["user_id"], row["provider"], "chat")
+            # a question sent on with the key after the plan ran out keeps it while the user allows it (no way back)
+            way = (row["credential"] if row["credential"] == "api"
+                   and credentials.api_usable(conn, row["user_id"], row["provider"], "chat")
+                   else credentials.first(conn, row["user_id"], row["provider"], "chat"))
             conn.execute("UPDATE chat_messages SET status = 'running', started_at = ?, credential = ? WHERE id = ?",
                          (now, way, row["id"]))
             route = ai_link.route_in(conn, row["user_id"], row["provider"], row["model"])
