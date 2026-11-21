@@ -144,6 +144,16 @@ class StatusTileTest(LoopTest):
         other = users.create_user("o@example.com", "Oooo!pass12")
         self.assertEqual(manager_routes.status_tile(self.pa.id, user=other).status_code, 404)
 
+    def test_the_arrow_turns_and_waits_while_a_status_is_on_its_way(self):
+        from app import statusnote
+        from app.routes import manager as manager_routes
+        self.assertNotIn("spinning", manager_routes.status_tile(self.pa.id, user=self.a)["html"])
+        self.start()
+        self.assertEqual(statusnote.request(self.a.id, self.pa.id), "queued")
+        html = manager_routes.status_tile(self.pa.id, user=self.a)["html"]
+        self.assertIn("status-again spinning", html)
+        self.assertIn(" disabled", html[html.index('id="status-again"'):html.index('id="status-again"') + 200])
+
 
 class HoverTest(unittest.TestCase):
     """Nothing that moves under the pointer may leave the pointer behind (Janis, 22.11.2026, the third time): a hover

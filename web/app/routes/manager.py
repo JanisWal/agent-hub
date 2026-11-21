@@ -45,7 +45,8 @@ def status_tile(project_id: int, user: users.User = Depends(api_user)):
     if assessment is None:
         return fail(404)
     return ok(html=managerpage.status_tile(user.language, assessment, int(time.time()),
-                                           statusnote.latest(user.id, project_id)))
+                                           statusnote.latest(user.id, project_id),
+                                           statusnote.writing(user.id, project_id)))
 
 
 # "Waiting for you" (Janis, 19.11.2026): the user answers questions and decides about tasks right in the tile.

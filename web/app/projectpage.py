@@ -286,6 +286,7 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
                                     assessment=status.assess(user.id, project.id),
                                     device_list=devices.list_devices(user.id, project.id),
                                     note=statusnote.latest(user.id, project.id),
+                                    writing=statusnote.writing(user.id, project.id),
                                     asks=devices.open_requests(user.id, project.id),
                                     open_questions=questions.open_questions(user.id, project.id)),
         ROLES=roles + rolepage.render_me(lang, entries),

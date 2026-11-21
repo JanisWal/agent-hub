@@ -222,6 +222,12 @@ def _queue(conn: sqlite3.Connection, user_id: int, project_id: int, now: int) ->
     return True
 
 
+def writing(user_id: int, project_id: int) -> bool:
+    """Is a new written status of the user's project on its way (the tile's arrow turns and can not be pressed)?"""
+    with db.connect() as conn:
+        return _owner(conn, project_id) == user_id and _waiting(conn, project_id)
+
+
 def _waiting(conn: sqlite3.Connection, project_id: int) -> bool:
     return conn.execute("SELECT 1 FROM chat_messages WHERE project_id = ? AND kind = 'status' AND status IN"
                         " ('queued', 'running')", (project_id,)).fetchone() is not None
