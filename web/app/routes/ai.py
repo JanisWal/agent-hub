@@ -27,7 +27,9 @@ def status(provider: str, user: users.User = Depends(api_user)):
     """The state of the user's own connection; during a ChatGPT sign-in also the link and the one-time code."""
     if not _provider(provider):
         return fail(404)
-    link, code = ai_link.device_prompt(user.id, provider) if provider in ai_link.DEVICE_LOGIN else ("", "")
+    if provider not in ai_link.DEVICE_LOGIN:
+        return ok(status=ai_link.status(user.id, provider))
+    link, code = ai_link.device_prompt(user.id, provider)
     return ok(status=ai_link.status(user.id, provider), url=link, code=code)
 
 

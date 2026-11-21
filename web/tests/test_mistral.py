@@ -36,7 +36,7 @@ class Base(unittest.TestCase):
 
 class CatalogTest(Base):
     def test_both_providers_and_every_model_belongs_to_one(self):
-        self.assertEqual(catalog.PROVIDERS, ("claude", "mistral", "custom"))   # custom: the user's own AI
+        self.assertEqual(catalog.PROVIDERS, ("claude", "mistral", "chatgpt", "custom"))   # custom: the user's own AI
         mistral = catalog.provider("mistral")
         self.assertEqual(mistral.name, "Mistral")
         self.assertEqual(mistral.model("mistral-small-2603").efforts, ("none", "high"))
@@ -110,7 +110,7 @@ class ConnectionTest(Base):
         self.assertEqual(ai_link.take_keys(now=1000 + ai_link.KEY_SECONDS + 1), [])     # an old key is forgotten
 
     def test_unknown_providers_are_404(self):
-        self.assertEqual(ai_routes.status("chatgpt", user=self.a).status_code, 404)
+        self.assertEqual(ai_routes.status("nobody", user=self.a).status_code, 404)
         self.assertEqual(ai_routes.connect("claude", KEY, endpoint="", model="", user=self.a).status_code, 404)
 
     def test_deleting_an_account_queues_its_keys(self):
