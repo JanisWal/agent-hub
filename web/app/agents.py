@@ -15,8 +15,8 @@ import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import (ai_link, aichoice, board, catalog, credentials, db, files, memory, models, prompts, questions, reply,
-               serversettings, toolcheck, workflow)
+from . import (ai_link, aichoice, board, catalog, credentials, db, failures, files, memory, models, prompts, questions,
+               reply, serversettings, toolcheck, workflow)
 
 # Models and effort levels are not fixed here: they come from catalog.py (Janis, 14.11.2026). A role without a
 # choice gets the provider's default model and that model's default level. Since 15.11.2026 the choice is kept per
@@ -618,12 +618,14 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
             if run["role"] == "chef" and not task["merged"]:
                 continue                                   # the runner merges the approved branch first
             provider, model, effort = run["provider"], run["model"], run["effort"]
-            if not aichoice.connected_in(conn, user_id, provider):
-                order = aichoice.order_in(conn, user_id)
+            if not aichoice.connected_in(conn, user_id, provider) or aichoice.resting(conn, user_id, provider):
+                tried = set(run["tried"].split(",")) - {""}
+                order = [p for p in aichoice.order_in(conn, user_id) if p not in tried] or aichoice.order_in(conn, user_id)
                 if not aichoice.connected_in(conn, user_id, order[0]):
                     continue                               # none of his AIs: the run waits
-                provider = order[0]
-                model, effort = _choice(conn, user_id, run["role"], provider)
+                if order[0] != provider:                   # its AI is gone or resting after a used-up quota
+                    provider = order[0]
+                    model, effort = _choice(conn, user_id, run["role"], provider)
             way = (run["credential"] if run["credential"] == "api" and credentials.api_usable(conn, user_id, provider, "run")
                    else credentials.first(conn, user_id, provider, "run"))
             conn.execute("UPDATE agent_runs SET status = 'running', started_at = ?, provider = ?, model = ?, effort = ?,"
@@ -646,6 +648,36 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
     return None
 
 
+def _try_again(conn: sqlite3.Connection, run: sqlite3.Row, user_id: int, report: str, tokens_in: int,
+               tokens_out: int) -> bool:
+    """A run failed for its AI, not for its work (failures.py): the same run is queued again, with the user's API key
+    when the plan ran out (only plan -> key, never back), else with his next AI that has not failed it yet (noted in
+    `tried`, so nothing goes round in circles). An AI whose quota ran out rests a while (aichoice.rest). False when
+    there is no other way: then the run fails as before."""
+    kind = failures.kind(report)
+    if kind not in failures.SWITCH:
+        return False
+    if kind == "limit":
+        aichoice.rest(conn, user_id, run["provider"])
+    used = (max(0, int(tokens_in)), max(0, int(tokens_out)))
+    if run["credential"] == "plan" and kind in failures.EXHAUSTED:
+        other = credentials.next_way(conn, user_id, run["provider"], "run", run["credential"])
+        if other is not None:
+            conn.execute("UPDATE agent_runs SET status = 'queued', credential = ?, tokens_in = tokens_in + ?,"
+                         " tokens_out = tokens_out + ? WHERE id = ?", (other, *used, run["id"]))
+            return True
+    tried = [p for p in run["tried"].split(",") if p] + [run["provider"]]
+    nxt = next((p for p in aichoice.order_in(conn, user_id)
+                if p not in tried and aichoice.connected_in(conn, user_id, p)), None)
+    if nxt is None:
+        return False
+    model, effort = _choice(conn, user_id, run["role"], nxt)
+    conn.execute("UPDATE agent_runs SET status = 'queued', provider = ?, model = ?, effort = ?, credential = 'plan',"
+                 " tried = ?, tokens_in = tokens_in + ?, tokens_out = tokens_out + ? WHERE id = ?",
+                 (nxt, model, effort, ",".join(dict.fromkeys(tried)), *used, run["id"]))
+    return True
+
+
 def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, tokens_out: int = 0,
                seconds: int = 0, now: int | None = None, change: tuple[str, str] | None = None,
                tests: tuple[int, str] | None = None) -> bool:
@@ -665,14 +697,8 @@ def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, t
         if workflow.STAGE_ROLE.get(task["status"]) != run["role"]:
             return False
         user_id = _owner(conn, task["id"])
-        # quota or sign-in of the plan: the user's key first (only plan -> key, never back: no loop)
-        if result == "failed" and run["credential"] == "plan" and credentials.EXHAUSTED.search(report or ""):
-            other = credentials.next_way(conn, user_id, run["provider"], "run", run["credential"])
-            if other is not None:
-                conn.execute("UPDATE agent_runs SET status = 'queued', credential = ?, tokens_in = tokens_in + ?,"
-                             " tokens_out = tokens_out + ? WHERE id = ?",
-                             (other, max(0, int(tokens_in)), max(0, int(tokens_out)), run_id))
-                return True
+        if result == "failed" and _try_again(conn, run, user_id, report or "", tokens_in, tokens_out):
+            return True
         if result not in workflow.RESULTS.get(run["role"], ()) or result == "skipped":   # skipped: the hub's own
             report = (report + f"\n\n(The run gave the result {result[:20]!r}, which this role does not have.)").strip()
             result = "failed"

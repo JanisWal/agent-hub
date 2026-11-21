@@ -12,7 +12,9 @@ PARALLEL = (1, 2, 4, 6, 8, 12)            # requests on their way at the same ti
 # memory, so a small server stays at one; 0 = no limit, for a server with plenty of memory.
 AI_PARALLEL = (1, 2, 3, 4, 0)
 REQUEST_MB = (16, 32, 64, 90, 190, 490)   # largest request in MB
-DEFAULTS = {"upload_parallel": 6, "upload_request_mb": 32, "ai_parallel": 1}
+# How long an AI whose quota ran out goes to the end of a user's order (aichoice.rest, 21.11.2026), in minutes.
+AI_REST = (0, 15, 30, 60, 120, 300)
+DEFAULTS = {"upload_parallel": 6, "upload_request_mb": 32, "ai_parallel": 1, "ai_rest": 30}
 
 
 def _get(key: str) -> int:
@@ -32,6 +34,21 @@ def ai_parallel() -> int:
     """How many AI runs may go at the same time (0 = no limit); 1 until the owner chose something."""
     value = _get("ai_parallel")
     return value if value in AI_PARALLEL else DEFAULTS["ai_parallel"]
+
+
+def ai_rest() -> int:
+    """Minutes an AI with a used-up quota rests (0 = never: it is tried first again at once)."""
+    value = _get("ai_rest")
+    return value if value in AI_REST else DEFAULTS["ai_rest"]
+
+
+def set_choice(key: str, value: int, choices: tuple) -> None:
+    """Keep one of the owner's choices. Raises ValueError for a value that is not one of them."""
+    if value not in choices:
+        raise ValueError("not a choice")
+    with db.connect() as conn:
+        conn.execute("INSERT INTO server_settings (key, value) VALUES (?, ?)"
+                     " ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, str(value)))
 
 
 def set_ai_parallel(value: int) -> None:

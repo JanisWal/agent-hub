@@ -338,6 +338,7 @@ NEW_COLUMNS = {
                  "memory_seeded": "INTEGER NOT NULL DEFAULT 0"},   # the fixed memory files were made (memory.py)
     "chat_messages": {"mode": "TEXT NOT NULL DEFAULT 'web'", "model": "TEXT NOT NULL DEFAULT 'haiku'",
                       "credential": "TEXT NOT NULL DEFAULT 'plan'",   # plan or api key of the user (credentials.py)
+                   "tried": "TEXT NOT NULL DEFAULT ''",            # AIs that failed this run already (agents.py)
                       "extra": "TEXT NOT NULL DEFAULT ''",          # contents of files the manager asked for (memory.py)
                       "rounds": "INTEGER NOT NULL DEFAULT 0",       # how often it was answered again with such files
                       "memory_saved": "INTEGER NOT NULL DEFAULT 0",   # the answer updated the memory file

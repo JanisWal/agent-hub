@@ -9,13 +9,12 @@ The runner takes the questions from `claim_next` and reports the answers with `f
 the user comes from the database (the message), never from the runner's request. Every user keeps at
 most MAX_STORED messages (the oldest go first) and can delete the history from the menu (`delete_all`).
 """
-import re
 import sqlite3
 import time
 from dataclasses import dataclass, field
 
-from . import (agents, ai_link, aichoice, autofolders, board, catalog, credentials, db, devices, files, i18n, memory,
-               models, prompts, questions, reply, statusnote, toolcheck)
+from . import (agents, ai_link, aichoice, autofolders, board, catalog, credentials, db, devices, failures, files, i18n,
+               memory, models, prompts, questions, reply, statusnote, toolcheck)
 
 # The manager is the role "chef": model and effort level are settings of the user (agents.py, list in catalog.py).
 # What the manager is told (rules, memory, project) is built in prompts.py, the same for every AI.
@@ -32,15 +31,9 @@ NET_TO_MODE = {"together": "all", "apart": "apart"}
 # Why a question failed, read from the reason the runner sent (Janis, 14.11.2026: show a short text, not what Claude
 # Code says). The reason stays in the answer column for looking into problems; the page only gets the kind.
 FAILURES = ("auth", "timeout", "steps", "limit", "server", "plan", "other")
-# The account's plan does not include the AI's program (ChatGPT without Codex, runner/codex_entry.py: outcome "plan").
-_PLAN = re.compile(r"\(plan\)")
-# The server can not read a saved credential (runner.UNREADABLE): its own fault, nothing was deleted (20.11.2026).
-_SERVER = re.compile(r"^Server: the saved credential")
-_AUTH = re.compile(r"authenticat|not logged in|/login|oauth|invalid api key|\b401\b", re.I)
-# The AI's quota or rate limit (Claude: "usage limit reached", Mistral: 429 when the month's credit is used up).
-_LIMIT = re.compile(r"usage limit|limit reached|rate.?limit|\b429\b|no credit|quota", re.I)
-# A question whose AI fails like this goes to the user's next AI (aichoice.order_in), Janis 15.11.2026.
-FALLBACK_KINDS = ("auth", "limit", "server", "plan")
+# A question whose AI fails like this goes to the user's next AI (aichoice.order_in), Janis 15.11.2026; the kinds and
+# their patterns are shared with the agent runs (failures.py).
+FALLBACK_KINDS = failures.SWITCH
 
 
 @dataclass
@@ -84,21 +77,8 @@ def _message(row: sqlite3.Row) -> Message:
 
 
 def failure_kind(reason: str) -> str:
-    """auth (lost sign-in), limit, timeout, steps (the step limit was reached), server or other, for a failed answer."""
-    if _SERVER.search(reason):
-        return "server"
-    if _PLAN.search(reason):
-        return "plan"
-    if _AUTH.search(reason):
-        return "auth"
-    if _LIMIT.search(reason):
-        return "limit"
-    if reason.lower().startswith("timeout"):
-        return "timeout"
-    if reason.startswith("Too many steps"):
-        return "steps"
-    return "other"
-
+    """auth (lost sign-in), limit, timeout, steps (the step limit was reached), server, plan or other (failures.py)."""
+    return failures.kind(reason)
 
 def _drop_stale(conn: sqlite3.Connection, now: int) -> None:
     """A question that got no answer in time fails. While all AI slots are taken (serversettings.ai_parallel), a
@@ -203,11 +183,13 @@ def claim_next(now: int | None = None) -> ChatJob | None:
             return None   # as many AI containers at once as the owner allows (agent runs included)
         statusnote.scan(conn, now)   # the written status of projects that changed (statusnote.py), at most every few minutes
         for row in conn.execute("SELECT * FROM chat_messages WHERE status = 'queued' ORDER BY id").fetchall():
-            if not aichoice.connected_in(conn, row["user_id"], row["provider"]):
+            gone = not aichoice.connected_in(conn, row["user_id"], row["provider"])
+            if gone or aichoice.resting(conn, row["user_id"], row["provider"]):   # resting: its quota ran out
                 other = _next_ai(conn, row, row["provider"])
-                if other is None:
-                    continue
-                _switch(conn, row, other, row["provider"])
+                if other is not None and (gone or not aichoice.resting(conn, row["user_id"], other)):
+                    _switch(conn, row, other, row["provider"])
+                elif gone:
+                    continue                                # none of his AIs can: the question waits
                 row = conn.execute("SELECT * FROM chat_messages WHERE id = ?", (row["id"],)).fetchone()
             # a question sent on with the key after the plan ran out keeps it while the user allows it (no way back)
             way = (row["credential"] if row["credential"] == "api"
@@ -277,6 +259,8 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
                              " tokens_out = tokens_out + ?, created_at = ? WHERE id = ?",
                              (other_way, tokens_in, tokens_out, int(time.time()), chat_id))
                 return True
+        if not ok and failure_kind(answer) == "limit":            # its quota ran out: other AIs go first a while
+            aichoice.rest(conn, row["user_id"], row["provider"])
         if not ok and failure_kind(answer) in FALLBACK_KINDS:      # lost sign-in or quota: the user's next AI
             other = _next_ai(conn, row, row["provider"])
             if other is not None:
