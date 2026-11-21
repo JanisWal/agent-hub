@@ -43,11 +43,11 @@ class TaskTest(unittest.TestCase):
         self.assertEqual(got.text, "")
 
     def test_limits(self):
-        self.assertEqual(len(reply.parse('<task kind="bug" title="t">b</task>' * 13).tasks), reply.MAX_TASKS)
-        self.assertEqual(reply.MAX_TASKS, 12)                                  # a list of bugs: one each (21.11.2026)
+        self.assertEqual(len(reply.parse('<task kind="bug" title="t">b</task>' * 61).tasks), reply.MAX_TASKS)
+        self.assertEqual(len(reply.parse('<task kind="bug" title="t">b</task>' * 30).tasks), 30)   # 30 named: 30 there
         from app import prompts
         self.assertIn("make each distinct problem its own bug", prompts.BOARD)
-        self.assertIn("At most 12 per answer", prompts.BOARD)
+        self.assertNotIn("At most", prompts.BOARD)
         got = reply.parse('<task kind="bug" title="' + "t" * 500 + '">' + "b" * 9000 + "</task>").tasks[0]
         self.assertEqual((len(got.title), len(got.body)), (reply.MAX_TITLE, reply.MAX_BODY))
 

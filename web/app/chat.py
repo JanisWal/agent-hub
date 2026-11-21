@@ -233,11 +233,9 @@ def add_thoughts(chat_id: int, text: str) -> bool:
     return cur.rowcount == 1
 
 
-def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: int = 0, outside: bool = False,
+def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: int = 0,
            tools: tuple[list, list | None] | None = None) -> bool:
-    """Runner: the answer (or the reason for failure). False if the question is not running any more. `outside`: the
-    AI read from the web (or ran a shell with internet) for it, so its new board items wait for the user's yes:
-    something it read there could have asked for them (Janis, 20.11.2026).
+    """Runner: the answer (or the reason for failure). False if the question is not running any more.
 
     A good answer is read for two things (memory.py). A new memory file inside <memory> is saved as the project's
     MEMORY.md and cut out of the answer. If the manager asks for files with <read>, the question is put back in
@@ -324,14 +322,14 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
                 devices.request_action(conn, row["user_id"], row["project_id"], name, action, reason)
             for ask in open_asks:   # they wait for the user's answer in "waiting for you" (questions.py)
                 questions.add(conn, row["project_id"], "chef", ask)
-            held = 0
             for task in tasks:   # on the board of the question's project; the user's request goes to the programmer
-                approved = not outside and (task.origin == "user" or task.kind == "bug")
-                if board.add_from_ai(conn, row["project_id"], task.kind, task.title, task.body, approved=approved,
-                                     source="manager") and not approved and outside:
-                    held += 1
+                # what the user asked for starts at once, also when the manager read on the web for it (Janis,
+                # 22.11.2026: an injected instruction would hardly reach the programmer clearly); its own ideas wait
+                approved = task.origin == "user" or task.kind == "bug"
+                board.add_from_ai(conn, row["project_id"], task.kind, task.title, task.body, approved=approved,
+                                  source="manager")
             late = [e for e in edits if not board.edit_from_ai(conn, row["project_id"], e.item_id, e.kind, e.title, e.body)]
-            notes = ([("chat_edit_late", len(late))] if late else []) + ([("chat_outside_held", held)] if held else [])
+            notes = [("chat_edit_late", len(late))] if late else []
             if notes:   # the programmer was faster, or items wait because the web was read: the user reads why
                 lang = (conn.execute("SELECT language FROM users WHERE id = ?", (row["user_id"],)).fetchone() or {"language": "de"})["language"]
                 lang = lang if lang in ("de", "en") else "de"

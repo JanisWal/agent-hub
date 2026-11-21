@@ -1,4 +1,4 @@
-/* The pencil next to the project title opens a drop-down with name and description (Janis, 07.11.2026).
+/* The project's name (a button since 22.11.2026, the pencil is gone) opens a drop-down with name and description.
    It closes with a click elsewhere, with Escape, with "Cancel" and after saving (the page reloads). */
 (function () {
   "use strict";

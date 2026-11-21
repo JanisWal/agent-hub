@@ -28,7 +28,10 @@
   animation-delay: calc(var(--i, 0) * 70ms);
 }
 .tile[data-id] { transition: translate 0.3s cubic-bezier(0.3, 1.4, 0.5, 1), box-shadow 0.3s; cursor: grab; touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
-.tile[data-id]:hover { translate: 0 -3px; } /* translate is separate from the transform the springs write */
+.tile[data-id]:hover { translate: 0 -3px; }
+/* The lifted tile keeps its hit area (pattern .file-row, 22.11.2026): 5 px past every edge while lifted, behind it. */
+.tile[data-id]::after, .tile.plus::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.tile[data-id]:hover::after, .tile.plus:hover::after { inset: -5px; pointer-events: auto; } /* translate is separate from the transform the springs write */
 
 /* The project's name on top, its state below (Janis, 07.11.2026 and 17.11.2026): lamp, the AI's headline, its text. */
 .tile-link { color: inherit; text-decoration: none; display: flex; flex-direction: column; gap: 10px; height: 100%; padding-right: 40px; }

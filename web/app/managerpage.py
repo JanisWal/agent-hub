@@ -85,7 +85,7 @@ def _when(lang: str, moment: int | None, now: int) -> str:
     return i18n.t(lang, "status_ago_days", n=seconds // 86400)
 
 
-def _status_tile(lang: str, a: statusmod.Assessment | None, now: int, note: statusnote.Note | None = None) -> str:
+def status_tile(lang: str, a: statusmod.Assessment | None, now: int, note: statusnote.Note | None = None) -> str:
     """The state of the project: the written status of the AI (statusnote.py) as headline and one or two sentences,
     else the counted wording (status.py); the lamp (the AI's level, never below what the hub counted), the progress,
     the numbers and what explains an amber or red lamp. The round arrow asks for a new written status."""
@@ -672,7 +672,7 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
     return fill(
         MANAGER,
         lang,
-        STATUS=_status_tile(lang, assessment, int(now if now is not None else time.time()), note),
+        STATUS=status_tile(lang, assessment, int(now if now is not None else time.time()), note),
         DEVICES=devicepage.tile(lang, device_list or []),
         CHECKS=_checks_tile(lang, regular_checks or [], int(now if now is not None else time.time())),
         FILES=_files_tile(lang, stored_files or [], files_confirm),

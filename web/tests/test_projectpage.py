@@ -132,18 +132,20 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn("stations.js", page)
         self.assertNotIn('id="manager"', page)                                # the hash must not make the page scroll
 
-    def test_pencil_next_to_the_title_opens_the_drop_down_for_name_and_description(self):
+    def test_the_title_itself_opens_the_drop_down_for_name_and_description(self):
         projects.update_details(self.user.id, self.project.id, "My <b>project</b>", "About <script>x</script> %BODY%")
         self.project = projects.get_project(self.user.id, self.project.id)
         page = self.html()
         bar = page[page.index('<header class="topbar">'):page.index("</header>")]
         wrap = bar[bar.index('<div class="title-wrap">'):]
-        self.assertLess(wrap.index('class="project-title"'), wrap.index('id="title-edit"'))
+        self.assertLess(wrap.index('class="project-title"'), wrap.index('id="title-edit"'))   # the button is inside it
+        self.assertIn('<button class="title-button" id="title-edit"', wrap)
+        self.assertNotIn("pencil", wrap)
         self.assertLess(wrap.index('id="title-edit"'), wrap.index('id="title-menu"'))
         self.assertIn('aria-expanded="false"', wrap)
-        self.assertIn('aria-label="Projekt bearbeiten"', wrap)
+        self.assertIn('data-tip="Projekt bearbeiten"', wrap)
         menu = wrap[wrap.index('<form class="title-menu glass"'):]
-        self.assertIn(" hidden", menu.split(">")[0])                          # closed until the pencil is pressed
+        self.assertIn(" hidden", menu.split(">")[0])                          # closed until the title is pressed
         self.assertIn(f'action="/projects/{self.project.id}/settings"', menu)
         self.assertIn('value="My &lt;b&gt;project&lt;/b&gt;"', menu)
         self.assertIn("About &lt;script&gt;x&lt;/script&gt; %BODY%", menu)    # escaped, not expanded
@@ -152,10 +154,8 @@ class ProjectPageTest(unittest.TestCase):
         self.assertIn("titlemenu.js", page)
         self.assertIn("Edit project", self.html("en"))
         self.assertIn("left: 38.2%", css_of("app.css")[css_of("app.css").index(".title-wrap"):][:200])  # still at the golden section
-        pencil = css_of("app.css")[css_of("app.css").index(".title-edit {"):]
-        pencil = pencil[:pencil.index("}")]
-        for part in ("width: 38px", "border-radius: 50%", "translate: 0 calc(var(--line) - 45px)"):
-            self.assertIn(part, pencil)                                       # like the round buttons, on their line
+        title = css_of("app.css")[css_of("app.css").index(".title-button {"):]
+        self.assertNotIn("translate", title[:title.index("}")])                  # nothing moves under the pointer
 
     def test_the_manager_chat_is_the_big_tile_and_the_old_window_is_gone(self):
         page = self.html()

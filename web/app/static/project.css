@@ -54,6 +54,9 @@ a.station:not(.active):hover { color: var(--text); }
 .card { position: relative; display: flex; align-items: flex-start; gap: var(--space); padding: 13px 6px 13px 8px; border-radius: 12px; background: none; border: 0; box-shadow: none; cursor: grab; transition: translate 0.25s cubic-bezier(0.3, 1.4, 0.5, 1), background 0.2s; touch-action: pan-y; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .card::after { content: ""; position: absolute; left: 3%; right: 3%; bottom: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--line-core) 50%, transparent); box-shadow: 0 0 8px var(--line-glow); pointer-events: none; }
 .cards > .card:last-child::after { display: none; }
+/* The lifted card keeps its hit area (pattern .file-row): 4 px past every edge while lifted, behind its content. */
+.open-list .card::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.open-list .card:hover::before { inset: -4px; pointer-events: auto; }
 .open-list .card:hover { translate: 0 -1px; background: color-mix(in srgb, var(--field) 45%, transparent); }
 
 .card-title { flex: 1; min-width: 0; padding-top: 4px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; user-select: none; }
@@ -87,7 +90,7 @@ a.station:not(.active):hover { color: var(--text); }
 .card-btn.go svg, .card-btn.stop svg { width: 18px; height: 18px; stroke-width: 2.4; }
 .card-btn.go { color: var(--on-go); background: linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0) 55%), var(--go); box-shadow: 0 6px 16px color-mix(in srgb, var(--go) 45%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.45); }
 .card-btn.stop { color: var(--on-danger); background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0) 55%), var(--danger); box-shadow: 0 6px 16px color-mix(in srgb, var(--danger) 42%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.45); }
-.card-btn.go:hover, .card-btn.stop:hover { color: inherit; filter: brightness(1.08); transform: translateY(-1px); }
+.card-btn.go:hover, .card-btn.stop:hover { color: inherit; filter: brightness(1.08); }   /* no lift: see app.css */
 .card-btn.go:hover { color: var(--on-go); }
 .card-btn.stop:hover { color: var(--on-danger); }
 
@@ -565,22 +568,23 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 /* ===== Status tile: how work is going, how far the project is, the numbers (status.py) ===== */
 .status-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
 .status-line small { color: var(--muted); font-size: 0.8rem; }
-.status-progress { display: flex; align-items: center; gap: 10px; margin-top: 12px; font-size: 0.82rem; color: var(--muted); }
+.status-progress { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 0.82rem; color: var(--muted); }
 .status-progress span { white-space: nowrap; }
 .status-progress progress { flex: 1; min-width: 0; height: 8px; border: 0; border-radius: 999px; overflow: hidden; appearance: none; -webkit-appearance: none; background: var(--field); }
 .status-progress progress::-webkit-progress-bar { background: var(--field); }
 .status-progress progress::-webkit-progress-value { border-radius: 999px; background: var(--accent); }
 .status-progress progress::-moz-progress-bar { border-radius: 999px; background: var(--accent); }
-.status-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin: 12px 0 0; }
-.status-facts div { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.status-facts dt { color: var(--muted); font-size: 0.82rem; }
+/* Compact (Janis, 22.11.2026): the four numbers in one row, each its number over its word. */
+.status-facts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px 10px; margin: 8px 0 0; }
+.status-facts div { display: flex; flex-direction: column-reverse; align-items: flex-start; gap: 0; min-width: 0; }
+.status-facts dt { color: var(--muted); font-size: 0.72rem; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
 .status-facts dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
-.status-reasons { margin: 12px 0 0; padding-left: 18px; font-size: 0.85rem; font-weight: 600; }
-.status-extra { margin-top: 10px; font-size: 0.8rem; }
+.status-reasons { margin: 8px 0 0; padding-left: 18px; font-size: 0.85rem; font-weight: 600; }
+.status-extra { margin-top: 6px; font-size: 0.8rem; }
 /* The written status of the AI (statusnote.py, 17.11.2026): headline in bold above, one or two sentences below. The
    round arrow asks for a new one; what the hub answers stands in the quiet line at the foot (fixed place, empty = no
    height). */
-.status-note { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--file-line); font-size: 0.9rem; line-height: 1.45; overflow-wrap: anywhere; }
+.status-note { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--file-line); font-size: 0.9rem; line-height: 1.45; overflow-wrap: anywhere; }
 .status-line strong { overflow-wrap: anywhere; }
 .m-status header .status-again { flex: none; }
 .status-say { font-size: 0.8rem; margin-top: 8px; min-height: 0; }

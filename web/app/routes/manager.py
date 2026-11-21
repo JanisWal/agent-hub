@@ -5,6 +5,8 @@ They belong to the user (agents.configure, role "chef"), so they hold for everyt
 for the chat. Only the fields that are sent change. The answer has all of them as the server has them now: after a
 new model the level may have become that model's default (catalog.resolve), and the page shows that.
 """
+import time
+
 from fastapi import APIRouter, Depends, Form
 
 from .. import agents, chat, db, i18n, questions, users
@@ -32,6 +34,18 @@ def status_again(project_id: int, user: users.User = Depends(api_user)):
     from .. import statusnote
     result = statusnote.request(user.id, project_id)
     return fail(404) if result == "missing" else ok(result=result)
+
+
+@router.get("/projects/{project_id}/status/tile")
+def status_tile(project_id: int, user: users.User = Depends(api_user)):
+    """The status tile alone (Janis, 22.11.2026: its numbers must follow the board without a reload and without an AI):
+    counted from the database, with the newest written status. Light enough to ask for every few seconds."""
+    from .. import managerpage, status, statusnote
+    assessment = status.assess(user.id, project_id)
+    if assessment is None:
+        return fail(404)
+    return ok(html=managerpage.status_tile(user.language, assessment, int(time.time()),
+                                           statusnote.latest(user.id, project_id)))
 
 
 # "Waiting for you" (Janis, 19.11.2026): the user answers questions and decides about tasks right in the tile.

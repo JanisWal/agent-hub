@@ -127,5 +127,36 @@ class LoopTest(unittest.TestCase):
         agents.finish_run(job.run_id, "ok", "Keine Einwände.")
         self.assertEqual(agents.get_task(self.a.id, task.id).status, "awaiting_approval")
 
+class StatusTileTest(LoopTest):
+    def test_the_tile_alone_follows_the_board_without_an_ai(self):
+        from app.routes import manager as manager_routes
+        answer = manager_routes.status_tile(self.pa.id, user=self.a)
+        self.assertIn('id="status"', answer["html"])
+        self.start()                                                               # a task is under way now
+        self.assertIn("<dd>1</dd>", manager_routes.status_tile(self.pa.id, user=self.a)["html"])
+        other = users.create_user("o@example.com", "Oooo!pass12")
+        self.assertEqual(manager_routes.status_tile(self.pa.id, user=other).status_code, 404)
+
+
+class HoverTest(unittest.TestCase):
+    """Nothing that moves under the pointer may leave the pointer behind (Janis, 22.11.2026, the third time): a hover
+    rule that shifts an element is allowed only for the cards that keep their hit area while lifted (.file-row)."""
+    LIFTED = {".file-row", ".open-list .card", ".tile[data-id]", ".tile.plus"}
+
+    def test_no_hover_moves_a_control(self):
+        import glob
+        import re
+        for path in glob.glob(os.path.join(os.path.dirname(__file__), "..", "app", "static", "*.css")):
+            css = open(path).read()
+            for selectors, body in re.findall(r"([^{}]*:hover[^{}]*)\{([^}]*)\}", css):
+                if not re.search(r"translate\s*:\s*(?!none)|translate[XY]?\(", body):
+                    continue
+                for selector in selectors.split(","):
+                    base = selector.strip().split("\n")[-1].replace(":hover", "").strip()
+                    self.assertIn(base, self.LIFTED, f"{os.path.basename(path)}: {selector.strip()} moves under the pointer")
+                    self.assertRegex(css, re.escape(base) + r":hover::(after|before)\s*\{[^}]*(inset|top)\s*:\s*-",
+                                     f"{base} lifts without keeping its hit area")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -40,8 +40,7 @@ BOARD = (
     "the user reports problems, one or many in one go and however roughly (\"this does not work, that is bad\"), make "
     "each distinct problem its own bug: one cause, one bug; complaints with the same cause become one bug; a complaint "
     "that is really a wish becomes a minor or major. Say each in plain words: where, how to see it, what should happen "
-    "instead. Drop nothing: if more than fit, add the most important first and tell the user which are left. At most "
-    "12 per answer, never one that is on the board already. Each piece includes its polish (edge cases, messages, "
+    "instead. Drop nothing. Never one that is on the board already. Each piece includes its polish (edge cases, messages, "
     "looks, tests): never plan a separate polish, cleanup or test-only piece. Tell the user in one sentence what you put "
     "there."
 )
