@@ -6,7 +6,7 @@ from .icons import icon
 from .layout import esc, fill, page
 from .users import User
 
-from . import ai_link, aichoice, claude_link
+from . import ai_link, aichoice, claude_link, db
 
 
 def info_dot(label: str, text: str) -> str:
@@ -141,8 +141,11 @@ CUSTOM_DIALOG = """<dialog class="dialog" id="key-dialog-custom" data-provider="
 
 # ChatGPT (ai_link.DEVICE_LOGIN, 21.11.2026): no key; the server starts a sign-in at OpenAI and shows its link and
 # one-time code (ailink.js fills them in from the status). The password is typed at OpenAI only.
-DEVICE_DIALOG = """<dialog class="dialog" id="key-dialog-%ID%" data-provider="%ID%">
+DEVICE_DIALOG = """<dialog class="dialog wide" id="key-dialog-%ID%" data-provider="%ID%">
   <h2>%t.device_title%</h2>
+  <div class="link-split">
+  <section class="link-plan">
+  <h3 class="link-head">%t.api_plan_title%</h3>
   <form data-step="key" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
     <p class="muted">%t.device_steps%</p>
     <div class="actions">
@@ -171,6 +174,9 @@ DEVICE_DIALOG = """<dialog class="dialog" id="key-dialog-%ID%" data-provider="%I
       <button type="button" data-close autofocus>%t.cancel%</button>
       <button class="danger-btn" type="button" data-disconnect>%t.claude_disconnect%</button>
     </div>
+  </div>
+  </section>
+  %API%
   </div>
 </dialog>"""
 
@@ -247,8 +253,11 @@ KEY_DIALOG = """<dialog class="dialog" id="key-dialog-%ID%" data-provider="%ID%"
 
 # The dialog of the Claude connection. claude.js shows one step at a time; all texts are here,
 # translated by the server, none in the script.
-CLAUDE_DIALOG = """<dialog class="dialog" id="claude-dialog">
+CLAUDE_DIALOG = """<dialog class="dialog wide" id="claude-dialog">
   <h2>%t.claude_title%</h2>
+  <div class="link-split">
+  <section class="link-plan">
+  <h3 class="link-head">%t.api_plan_title%</h3>
   <div data-step="wait">
     <p class="muted" role="status">%t.claude_wait%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p>
     <div class="actions"><button type="button" data-cancel>%t.cancel%</button></div>
@@ -289,6 +298,9 @@ CLAUDE_DIALOG = """<dialog class="dialog" id="claude-dialog">
   <div class="actions">
     <button type="button" data-close autofocus>%t.cancel%</button>
     <button class="danger-btn" type="button" id="chat-clear-yes">%t.chat_clear_yes%</button>
+  </div>
+  </section>
+  %API%
   </div>
 </dialog>"""
 
@@ -346,12 +358,54 @@ def _key_row(lang: str, provider: str, state: str, first: bool = False, as_defau
     )
 
 
-def _key_dialogs(lang: str) -> str:
+API_MODES = ("fallback", "always", "off")
+API_SCOPES = ("all", "runs", "chat")
+
+
+def api_panel(lang: str, provider: str, user_id: int) -> str:
+    """The right half of the dialog of Claude and ChatGPT (Janis, 21.11.2026): the user's API key next to the plan, its
+    state and settings (credentials.py). Sent by aiapi.js; the key leaves the page once and is never shown again."""
+    from . import credentials
+    with db.connect() as conn:
+        now = credentials.settings_in(conn, user_id, provider)
+    def options(name: str, values: tuple, chosen: str) -> str:
+        return "".join(f'<option value="{v}"{" selected" if v == chosen else ""}>{esc(i18n.t(lang, f"api_{name}_{v}"))}'
+                       f'</option>' for v in values)
+    state = {"connected": "api_state_on", "connecting": "api_state_checking", "expired": "api_state_refused"}.get(
+        now["status"], "api_state_none")
+    spent = (f' {esc(i18n.t(lang, "api_spent", n=now["spent"], limit=now["daily"]))}' if now["daily"] else "")
+    remove = (f'<button class="link" type="button" data-api-remove>{esc(i18n.t(lang, "api_remove"))}</button>'
+              if now["status"] in ("connected", "expired") else "")
+    chevron = icon("chevron_down")
+    return (
+        f'<section class="link-api" data-api="{provider}">'
+        f'<h3 class="link-head">{esc(i18n.t(lang, "api_title"))}</h3>'
+        f'<p class="muted link-note">{esc(i18n.t(lang, "api_costs"))}</p>'
+        f'<p class="api-state" role="status" data-api-state>{esc(i18n.t(lang, state))}{spent}</p>'
+        f'<form data-api-form novalidate data-saved="{esc(i18n.t(lang, "api_saved"))}" '
+        f'data-failed="{esc(i18n.t(lang, "api_failed"))}">'
+        f'<label class="setting"><span class="setting-label">{esc(i18n.t(lang, "api_key"))}</span>'
+        f'<input type="password" name="key" maxlength="300" autocomplete="off" spellcheck="false" '
+        f'placeholder="{esc(i18n.t(lang, "api_key_kept" if now["connected"] else "api_key_new"))}"></label>'
+        f'<label class="setting has-select"><span class="setting-label">{esc(i18n.t(lang, "api_mode"))}</span>'
+        f'<select name="mode">{options("mode", API_MODES, now["mode"])}</select>{chevron}</label>'
+        f'<label class="setting has-select"><span class="setting-label">{esc(i18n.t(lang, "api_scope"))}</span>'
+        f'<select name="scope">{options("scope", API_SCOPES, now["scope"])}</select>{chevron}</label>'
+        f'<label class="setting"><span class="setting-label">{esc(i18n.t(lang, "api_daily"))}</span>'
+        f'<input type="text" name="daily" inputmode="numeric" maxlength="7" value="{now["daily"] or ""}" '
+        f'placeholder="{esc(i18n.t(lang, "api_daily_none"))}"></label>'
+        f'<div class="actions"><button type="submit">{esc(i18n.t(lang, "api_save"))}</button></div>{remove}'
+        f'</form></section>'
+    )
+
+
+def _key_dialogs(lang: str, user_id: int) -> str:
     def dialog(provider: str) -> str:
         if provider == "custom":   # address, model and an optional key instead of a page to make a key on
             return fill(CUSTOM_DIALOG, lang)
-        if provider in ai_link.DEVICE_LOGIN:   # sign-in at OpenAI with a one-time code
-            return fill(DEVICE_DIALOG, lang, ID=provider, NAME=esc(ai_name(lang, provider)))
+        if provider in ai_link.DEVICE_LOGIN:   # sign-in at OpenAI with a one-time code, and the API key beside it
+            return fill(DEVICE_DIALOG, lang, ID=provider, NAME=esc(ai_name(lang, provider)),
+                        API=api_panel(lang, provider, user_id))
         name = ai_name(lang, provider)                        # the AI's name comes from the catalog, never from here
         return fill(KEY_DIALOG, lang, ID=provider, PAGE=esc(KEY_PAGES[provider]),
                     **{part.upper(): esc(i18n.t(lang, f"key_{part}", name=name)) for part in ("title", "steps", "open", "done")})
@@ -402,8 +456,8 @@ def settings_bar(user: User, extras: str = "") -> str:
         SERVICES=_service_rows(lang, claude_link.status(user.id), {p: ai_link.status(user.id, p) for p in ai_link.PROVIDERS},
                                aichoice.default(user.id), tuple(aichoice.connected(user.id))),
         ADMIN=_admin_button(user),
-        CLAUDE_DIALOG=fill(CLAUDE_DIALOG, lang),
-        KEY_DIALOGS=_key_dialogs(lang),
+        CLAUDE_DIALOG=fill(CLAUDE_DIALOG, lang, API=api_panel(lang, "claude", user.id)),
+        KEY_DIALOGS=_key_dialogs(lang, user.id),
     )
 
 
@@ -423,5 +477,5 @@ def logged_in_page(
     return page(
         title, body, user.language,
         top_right=settings_bar(user, drawer_extras), top_center=top_center, top_left=top_left,
-        scripts=("claude.js", "ailink.js", *scripts), styles=styles, body_class=body_class,
+        scripts=("claude.js", "ailink.js", "aiapi.js", *scripts), styles=styles, body_class=body_class,
     )

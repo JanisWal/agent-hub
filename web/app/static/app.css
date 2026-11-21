@@ -682,6 +682,19 @@ a.primary { display: flex; align-items: center; justify-content: center; text-de
 .dialog[open] { animation: rise 0.45s cubic-bezier(0.3, 1.25, 0.5, 1) both; }
 .dialog::backdrop { background: rgba(30, 14, 6, 0.42); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
 .dialog h2 { margin: 0 0 calc(var(--space) * 2); font-size: 1.4rem; letter-spacing: -0.02em; line-height: 1.25; }
+/* Connect an AI (Janis, 21.11.2026): plan on the left, API key on the right; below each other on small screens.
+   The dialog is wider than the others; the two halves are plain areas inside its glass, split by a quiet line. */
+.dialog.wide { max-width: 760px; }
+.link-split { display: grid; grid-template-columns: 1fr 1fr; gap: calc(var(--space) * 3); }
+.link-api { padding-left: calc(var(--space) * 3); border-left: 1px solid var(--glass-border); }
+.link-head { margin: 0 0 var(--space); font-size: 1rem; font-weight: 700; letter-spacing: -0.01em; }
+.link-note { margin: 0 0 var(--space); font-size: 0.86rem; line-height: 1.4; }
+.api-state { margin: 0 0 calc(var(--space) * 2); font-size: 0.86rem; font-weight: 600; color: var(--muted); }
+.link-api .setting { margin-bottom: var(--space); }
+@media (max-width: 700px) {
+  .link-split { grid-template-columns: 1fr; }
+  .link-api { padding-left: 0; padding-top: calc(var(--space) * 3); border-left: 0; border-top: 1px solid var(--glass-border); }
+}
 /* The one-time code of a ChatGPT sign-in (ui.DEVICE_DIALOG): large, easy to type at OpenAI */
 .device-code { margin: calc(var(--space) * 2) 0; font: 600 1.6rem/1.2 ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.12em; text-align: center; user-select: all; }
 .muted { margin: 0 0 calc(var(--space) * 2); color: var(--muted); overflow-wrap: anywhere; }
