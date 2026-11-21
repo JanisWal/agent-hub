@@ -313,6 +313,9 @@ CLAUDE_DIALOG = """<dialog class="dialog wide" id="claude-dialog">
       <button class="danger-btn" type="button" data-disconnect>%t.claude_disconnect%</button>
     </div>
   </div>
+  </section>
+  %API%
+  </div>
 </dialog>
 <dialog class="dialog danger" id="chat-clear-dialog">
   <h2>%t.chat_clear_title%</h2>

@@ -155,6 +155,10 @@ class DialogTest(Base):
             users.set_profile(self.a.id, "", lang)
             page = ui.settings_bar(users.get_by_id(self.a.id))
             self.assertEqual(page.count('class="link-split"'), 2)                   # Claude and ChatGPT
+            for dialog, provider in (("claude-dialog", "claude"), ("key-dialog-chatgpt", "chatgpt")):
+                part = page[page.index(f'id="{dialog}"'):]
+                part = part[:part.index("</dialog>")]
+                self.assertIn(f'data-api="{provider}"', part)                       # the key half in its own dialog
             self.assertIn(plan, page)
             self.assertIn(costs, page)
             self.assertNotIn("%t.", page)
