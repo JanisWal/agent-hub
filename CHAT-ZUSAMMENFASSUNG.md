@@ -1,6 +1,6 @@
 # Agent-Hub – Übergabe an einen neuen Chat
 
-Stand: 20.11.2026 (Durchsicht des ganzen Systems und Umbau der KI-Pakete) · Zweck: Einstieg in einen neuen Chat. Quelle der Wahrheit: `PROJEKT.md` („Auf einen Blick“, Fahrplan in 11a), `PROTOKOLL.md` (alle Änderungen, neueste zuerst), `KONZEPT-AGENTEN.md` (9.2a Werkzeuge je KI, 9.3a Pakete je Rolle), `DESIGN.md`, `CLAUDE.md`. Die vorige Übergabe (bis 19.11.2026) liegt in `archiv/CHAT-ZUSAMMENFASSUNG-2026-11-19.md`.
+Stand: 21.11.2026 (ChatGPT, API-Schlüssel neben dem Abo, weitere KIs; davor 20.11.2026: Durchsicht des ganzen Systems und Umbau der KI-Pakete) · Zweck: Einstieg in einen neuen Chat. Quelle der Wahrheit: `PROJEKT.md` („Auf einen Blick“, Fahrplan in 11a), `PROTOKOLL.md` (alle Änderungen, neueste zuerst), `KONZEPT-AGENTEN.md` (9.2a Werkzeuge je KI, 9.3a Pakete je Rolle), `DESIGN.md`, `CLAUDE.md`. Die vorige Übergabe (bis 19.11.2026) liegt in `archiv/CHAT-ZUSAMMENFASSUNG-2026-11-19.md`.
 
 ## In einem Satz
 
@@ -13,38 +13,30 @@ Selbst gehostetes Verwaltungstool auf einem Raspberry Pi 4B, live unter `https:/
 - **Entschieden von Janis:** Automatik aus dem Chat bleibt (ohne Bestätigung); Schlüssel werden bei Ablehnung gelöscht, nie wenn der Server sie nicht lesen kann; jede KI soll anbindbar sein, mit eigenem Werkzeug oder Ersatz vom Hub (Kacheln Claude, Mistral, ChatGPT, „Eigene KI“).
 - **Bewusst nicht gemacht:** WAL-Modus für SQLite (das Backup als root ließe Dateien zurück, die der Web-Dienst nicht öffnen kann; stattdessen 15 s Wartezeit). PROJEKT.md weiter verdichten (nur mechanisch geteilt, kein Inhalt gelöscht).
 
-## Stand mitten im Auftrag (21.11.2026, Zwischenstand vor dem Komprimieren des Chats)
+## Was am 21.11.2026 dazukam (Auftrag von Janis, alles in einem Deploy)
 
-**Fertig und getestet, Deploy steht aus:** Branch `chatgpt` (ChatGPT über Codex, Modell-Listen, Werkzeug-Prüfung). Die ganze Web-Suite lief beim Schreiben; danach `bash ~/deploy-chatgpt.sh` auf dem Pi (Skript im Scratchpad als `deploy-chatgpt.sh`, baut zusätzlich `agent-hub-codex`). Die Runner-Tests (184) sind grün.
-
-**In Arbeit (Branch `api-option`, auf `chatgpt` aufgesetzt):** erst `web/app/credentials.py` geschrieben, sonst nichts. Der Plan, von Janis am 21.11.2026 so bestellt:
-
-1. **API-Option für Claude und ChatGPT** (Abo und Schlüssel nebeneinander):
-   - Der Verknüpfen-Dialog wird zweispaltig (bis etwa 760 px, auf dem Handy untereinander): links „Mit Abo anmelden“ mit kurzer Info und dem heutigen Ablauf (ein Hauptknopf), rechts „Mit API-Schlüssel“: Schlüsselfeld, Hinweis „Kann Zusatzkosten verursachen. Prüfe die Preise und setze eine Ausgabengrenze bei deinem Anbieter.“ (allgemein, kein fester Preis), Einstellungen, normaler Knopf „Speichern“, Link „Schlüssel entfernen“.
-   - Einstellungen je Nutzer und KI (`agent_settings` `api.<anbieter>.mode/scope/daily`): **Modus** „Erst wenn das Abo aufgebraucht ist“ (Standard) / „Immer statt Abo“ (das Abo-Kontingent bleibt) / „Aus“; **Bereich** Chat und Agenten / nur Agentenläufe / nur Chat; **Tagesgrenze** in Tausend Tokens (0 = keine). Weitere Sonderfälle bei Bedarf, Bedienung kompakt.
-   - Technik: der Schlüssel ist eine eigene Verbindung (`ai_connections` `claude-api`, `chatgpt-api`), geprüft vom Runner (Anthropic `GET /v1/models` mit `x-api-key`, OpenAI `GET /v1/models`). Neue Spalten `chat_messages.credential`, `agent_runs.credential` („plan“ oder „api“). Wechsel Abo → Schlüssel bei Fehlerart `limit` innerhalb derselben KI, bevor die nächste KI einspringt (Chat und Läufe). Gateways erkennen die Art am echten Geheimnis: Claude `sk-ant-api…` → Kopf `x-api-key` statt OAuth, ChatGPT `sk-…` → `api.openai.com/v1/responses` statt `chatgpt.com/backend-api`; die Läufe bekommen weiter nur ein Ticket (Claude Code `ANTHROPIC_API_KEY=Ticket`, Codex eigener Anbieter mit `env_key`).
-   - Designvorgaben prüfen: Glas, Lichtkante, `.has-select` für Auswahlfelder, ein Hauptknopf je Dialog, kein `title` per Skript, Texte in `i18n.py`.
-2. **Allgemeine Kachel statt „Eigene KI“**, neuer Name „Weitere KI“ (Vorschlag; „allgemeine Anbindung“ verworfen, weil zu technisch): bleibt immer stehen, damit man jederzeit eine weitere verbindet; jede verbundene ist eine eigene Zeile mit selbst gewähltem Namen (mehrere je Nutzer). Ein Name je Verbindung, Modell aus `GET /models` als Drop-down statt Eintippen.
-3. **Platzhalter** für KIs, bei denen sich ein eigener Adapter lohnt (eigenes Programm, eigene Abo-Anmeldung): **Gemini** (Gemini CLI, Google-Konto) und **GitHub Copilot** (Copilot CLI, GitHub-Abo); alles andere über die allgemeine Kachel.
-4. **KI im Heimnetz:** Janis' Gedanke ist genau der Ansatz von `own-ai`: Eine Adresse im eigenen Netz des Servers gibt der Owner frei, **neu als Schalter in den Systemeinstellungen** (heute automatisch für die eigene KI des Owners); die lokale KI eines Kollegen bei ihm zu Hause ist von hier nicht erreichbar, außer sie ist öffentlich erreichbar (eigener Tunnel, HTTPS): dann braucht es keine Freigabe; eine KI auf einem Server im Internet ebenso nicht. **Später:** Geräte und KIs in fremden Netzen über ein VPN (Tailscale, Adressen 100.64/10, schon als Heimnetz-Adresse erlaubt), siehe PROJEKT.md Abschnitt 4 „Geräteliste und Netzwege“.
-5. Danach alles ordentlich dokumentieren (PROTOKOLL.md, PROJEKT.md, DESIGN.md für den Dialog, CLAUDE.md).
+- **ChatGPT über Codex** (`chatgpt`): Anmeldung mit dem ChatGPT-Konto per Gerätecode, ohne API; Tokens erneuert nur der Runner; Läufe mit Ticket-Hülle über Gateway 3133. **Modell-Listen** täglich von jeder KI selbst, je Nutzer (auch Claude: keine Modelle mehr fest im Code). **Werkzeug-Prüfung:** Ersatz vom Hub nur, wenn das Programm ein Werkzeug dreimal in Folge lesbar nicht nennt; Fehler im Lauf zählen nie (Schutz davor, dass ein Fehler von uns dauerhaft den Ersatz einschaltet).
+- **API-Schlüssel neben dem Abo** (`api-option`): zweigeteilter Verknüpfen-Dialog bei Claude und ChatGPT (links Abo, rechts Schlüssel mit Modus „Erst wenn das Abo aufgebraucht ist“ / „Immer statt Abo“ / „Aus“, Bereich, Tagesgrenze, Hinweis „Kann Zusatzkosten verursachen“ ohne Preis). Wechsel nur Abo → Schlüssel derselben KI, nie zurück, dann die nächste KI.
+- **Weitere KIs** (`more-ais`): bis zu acht je Nutzer mit eigenem Namen, offene Kachel „Weitere KI“ bleibt stehen, Platzhalter Gemini und GitHub Copilot, Schalter „KI im Heimnetz“ für den Owner in den Systemeinstellungen. KIs in fremden Netzen später über VPN: Plan in PROJEKT.md 4 („KIs in fremden Netzen“).
+- Beim Testen gefunden und behoben: Gateway 3133 nahm auch ein bloßes Abo-Ticket an; jetzt gilt die Hülle nur für das Abo, das bloße Ticket nur für einen Schlüssel.
+- **Noch nie echt gelaufen:** ChatGPT-Anmeldung und -Lauf (braucht Janis' Anmeldung), Go-Abo, Anthropic `/v1/models` mit dem Abo-Token, ein API-Schlüssel gegen Anthropic oder OpenAI, eine weitere KI gegen eine echte API.
 
 **Erkenntnisse aus diesem Chat (für spätere Entscheidungen):**
 - Abo und API liefern dieselben Modelle und dieselbe Qualität bei gleichem Tokenverbrauch. Unterschiede: Kosten nach Verbrauch, keine Wochengrenze, sauberere Nutzungsbedingungen für Automatisierung, Schlüssel ohne Ablauf, alle Modelle, Ausgabengrenze beim Anbieter.
-- Das Chat-Format von OpenAI ist der gemeinsame Standard fast aller Anbieter (auch Gemini und Anthropic per Kompatibilitätsadresse, lokal Ollama, LM Studio, vLLM); Unterschiede bei Werkzeugaufrufen, Bildern, Denkstufe.
-- Codex: ist das Programm, die Modelle sind die GPT-Familie; das normale Chat-Backend von ChatGPT ist keine Schnittstelle für fremde Programme. Ob das Go-Abo Codex enthält, ist widersprüchlich dokumentiert; ohne Freigabe lehnt der Server jedes Programm ab (Meldung „Abo ohne Codex“); sich als die Desktop-App auszugeben scheidet aus (vorgetäuschte Programmkennung, wie bei Claude am 14.11.2026). Codex verbindet sich standardmäßig per WebSocket; mit eigenem Anbieter-Eintrag (`supports_websockets = false`) nimmt es einfache Anfragen; es nimmt die Ticket-Hülle an und erneuert nicht selbst (mit Schein-Server erprobt).
-- Eigene Werkzeuge der KIs sind fast immer besser und sparsamer (darauf trainiert, im zwischengespeicherten Teil des Pakets); der Ersatz des Hubs kostet je Schritt 1000 bis 2000 Tokens mehr, die Textform am meisten. Deshalb Ersatz nur bei klarem Befund (`toolcheck.py`).
-
-## Was am 21.11.2026 dazukam
-
-- **ChatGPT über Codex** (`chatgpt`): Anmeldung mit dem ChatGPT-Konto per Gerätecode, Tokens erneuert nur der Runner, Läufe mit Ticket-Hülle über Gateway 3133; Modell-Listen täglich von jeder KI selbst; Werkzeug-Ersatz nur bei klarem Befund. **Noch nie echt gelaufen:** Janis meldet sich einmal an, dann prüfen: Chat, Agentenlauf, Modell-Liste, Go-Abo.
+- Das Chat-Format von OpenAI ist der gemeinsame Standard fast aller Anbieter (auch Gemini und Anthropic per Kompatibilitätsadresse, lokal Ollama, LM Studio, vLLM); Unterschiede bei Werkzeugaufrufen, Bildern, Denkstufe. Ein eigener Adapter lohnt nur bei einem Programm mit eigenen Werkzeugen und Abo-Anmeldung (Gemini CLI, GitHub Copilot CLI).
+- Codex ist das Programm, die Modelle sind die GPT-Familie; das normale Chat-Backend von ChatGPT ist keine Schnittstelle für fremde Programme. Ob das Go-Abo Codex enthält, ist widersprüchlich dokumentiert; ohne Freigabe lehnt der Server ab (Meldung „Abo ohne Codex“). Sich als die Desktop-App auszugeben scheidet aus (vorgetäuschte Programmkennung). Codex verbindet sich standardmäßig per WebSocket; mit eigenem Anbieter-Eintrag (`supports_websockets = false`) nimmt es einfache Anfragen, nimmt die Ticket-Hülle an und erneuert nicht selbst (mit Schein-Server erprobt). `--with-access-token` braucht ein Agenten-JWT, für Privatkonten unbrauchbar.
+- Eigene Werkzeuge der KIs sind fast immer besser und sparsamer (darauf trainiert, im zwischengespeicherten Teil des Pakets); der Ersatz des Hubs kostet je Schritt 1000 bis 2000 Tokens mehr, die Textform am meisten.
+- Heimnetz: Die KI eines Kollegen bei ihm zu Hause ist vom Server aus nicht erreichbar; öffentlich erreichbar (eigener Tunnel, https) braucht sie keine Freigabe. Das Heimnetz des Servers gibt nur der Owner frei, und nur für seine eigenen KIs.
 
 ## Was als Nächstes ansteht
 
-1. ~~Ersatzwerkzeuge~~ **live seit 20.11.2026, abends (`own-ai`):** „Eigene KI“ in der Schublade (jede API im OpenAI-Format, auch lokal beim Owner), `runner/hubloop.py`, `runner/hub_tools.py`, Gateway 3132, Werkzeugzeile unter jeder KI. **Noch nie echt gelaufen** (kein Konto bei einer solchen API verbunden); offen: Werkzeuge je KI auf `/admin` umschaltbar, Bilder für die eigene KI.
-2. **Diff in der Oberfläche** bei der Freigabe (Daten liegen schon in `agent_tasks.diff`).
-3. Ein echter Lauf mit `hub-test.sh` in einem JavaScript-Projekt und ein echter Prüfer-Lauf ohne Werkzeuge (nur mit Tests geprüft).
-4. Die 6 eskalierten Aufgaben in den Testprojekten aufräumen (abbrechen oder neu starten); eskalierte Punkte mit Automatik halten ihr Projekt jetzt an.
+1. **Echte Probe mit Janis:** ChatGPT anmelden (Gerätecode), eine Chat-Frage und ein Agentenlauf, Modell-Liste ansehen; optional ein API-Schlüssel und eine weitere KI (z. B. ein lokales Ollama mit „KI im Heimnetz“).
+2. Das Aussehen des zweigeteilten Dialogs und der Schublade in Hell und Dunkel am Bildschirm prüfen.
+3. Weitere KI: Modell aus `GET /models` als Auswahl statt Eintippen; Bilder; Werkzeuge je KI auf `/admin` umschaltbar.
+4. **Diff in der Oberfläche** bei der Freigabe (Daten liegen schon in `agent_tasks.diff`).
+5. Ein echter Lauf mit `hub-test.sh` in einem JavaScript-Projekt und ein echter Prüfer-Lauf ohne Werkzeuge.
+6. Die 6 eskalierten Aufgaben in den Testprojekten aufräumen.
+7. Später: Adapter für Gemini und GitHub Copilot; KIs und Geräte in fremden Netzen über Tailscale (PROJEKT.md 4).
 
 ## Wie Claude hier arbeitet
 
