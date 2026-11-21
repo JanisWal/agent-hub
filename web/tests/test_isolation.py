@@ -538,7 +538,7 @@ class IsolationTest(unittest.TestCase):
         from app.routes import ai as ai_routes
         key = "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6"
         ai_link._keys.clear()
-        ai_routes.connect("mistral", key, endpoint="", model="", user=self.a)
+        ai_routes.connect("mistral", key, endpoint="", model="", label="", user=self.a)
         self.assertEqual(ai_routes.status("mistral", user=self.b)["status"], "none")
         ai_routes.disconnect("mistral", user=self.b)                                  # B can not cancel A's check
         self.assertEqual(ai_link.take_keys(), [{"user_id": self.a.id, "provider": "mistral", "key": key}])         # the user comes from the hub
@@ -550,6 +550,25 @@ class IsolationTest(unittest.TestCase):
         self.assertFalse(aichoice.set_default(self.b.id, "mistral"))                 # nor as his standard
         self.assertEqual(aichoice.connected(self.b.id), [])
         self.assertEqual(ai_link.status(self.a.id, "mistral"), "connected")
+
+    def test_further_ais_and_api_keys_of_a_are_only_his(self):
+        from app import ai_link, aichoice, credentials, models
+        from app.routes import ai as ai_routes
+        ai_link._keys.clear()
+        answer = ai_routes.connect("custom", "sk-a", "https://a.example/v1", "llama", "Büro", user=self.a)
+        self.assertEqual(answer["provider"], "custom-1")
+        self.assertEqual(ai_routes.status("custom-1", user=self.b)["status"], "none")
+        ai_routes.disconnect("custom-1", user=self.b)                                 # B can not cancel A's check
+        self.assertEqual([k["user_id"] for k in ai_link.take_keys()], [self.a.id])
+        ai_link.complete(self.a.id, "custom-1", True)
+        with db.connect() as conn:
+            self.assertEqual(ai_link.route_in(conn, self.b.id, "custom", "own-1"), {})
+            self.assertEqual(ai_link.custom_rows(conn, self.b.id), [])
+            self.assertFalse(models.permits(conn, self.b.id, "own-1"))
+            self.assertFalse(credentials.api_usable(conn, self.b.id, "claude"))
+        self.assertFalse(aichoice.set_default(self.b.id, "custom"))
+        self.assertNotIn("Büro", ui.settings_bar(self.b))
+        self.assertEqual(ai_link.status(self.a.id, "custom-1"), "connected")
 
     def test_b_can_not_start_or_decide_tasks_of_a(self):
         from app import agents

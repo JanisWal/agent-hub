@@ -661,7 +661,7 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
     chef = settings["roles"]["chef"]
     model = ui.model_picker(lang, "manager", chef["model"], chef.get("effort", ""),
                             label_model="chat_model", label_effort="chat_effort", providers=ais,
-                            allowed=settings.get("models"))
+                            allowed=settings.get("models"), names=settings.get("model_names"))
     autonomy = _select(lang, "autonomy", "autonomy", AUTONOMY, settings["autonomy"])
     return fill(
         MANAGER,

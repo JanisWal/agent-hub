@@ -52,6 +52,18 @@ def ai_settings(value: int = Form(-1), user: users.User = Depends(api_user)):
     return ok()
 
 
+@router.post("/system/ai-home")
+def ai_home(value: int = Form(-1), user: users.User = Depends(api_user)):
+    """May the owner's further AIs be in the home network (serversettings.ai_home_network)? Only the owner decides:
+    it opens his own network to them."""
+    if user.role != "owner":
+        return fail(403)
+    if value not in (0, 1):
+        return fail(400)
+    serversettings.set_ai_home_network(bool(value))
+    return ok()
+
+
 @router.get("/system/backup")
 def backup_status(user: users.User = Depends(api_user)):
     """How the latest manual backup is doing: none, running, ok or failed (the page asks until it is over)."""

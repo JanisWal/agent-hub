@@ -12,7 +12,7 @@ PARALLEL = (1, 2, 4, 6, 8, 12)            # requests on their way at the same ti
 # memory, so a small server stays at one; 0 = no limit, for a server with plenty of memory.
 AI_PARALLEL = (1, 2, 3, 4, 0)
 REQUEST_MB = (16, 32, 64, 90, 190, 490)   # largest request in MB
-DEFAULTS = {"upload_parallel": 6, "upload_request_mb": 32, "ai_parallel": 1}
+DEFAULTS = {"upload_parallel": 6, "upload_request_mb": 32, "ai_parallel": 1, "ai_home_network": 0}
 
 
 def _get(key: str) -> int:
@@ -41,6 +41,17 @@ def set_ai_parallel(value: int) -> None:
     with db.connect() as conn:
         conn.execute("INSERT INTO server_settings (key, value) VALUES ('ai_parallel', ?)"
                      " ON CONFLICT(key) DO UPDATE SET value = excluded.value", (str(value),))
+
+
+def ai_home_network() -> bool:
+    """May the owner's further AIs be in this server's home network (Janis, 21.11.2026)? Off until he switches it on."""
+    return _get("ai_home_network") == 1
+
+
+def set_ai_home_network(on: bool) -> None:
+    with db.connect() as conn:
+        conn.execute("INSERT INTO server_settings (key, value) VALUES ('ai_home_network', ?)"
+                     " ON CONFLICT(key) DO UPDATE SET value = excluded.value", ("1" if on else "0",))
 
 
 def set_upload(parallel: int, request_mb: int) -> None:

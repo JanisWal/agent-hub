@@ -594,6 +594,8 @@ main { padding-bottom: 96px; } /* room for the toggle */
 .service.pending .status::before { background: var(--accent); opacity: 1; }
 .service.expired .status { color: var(--error); }
 .service.expired .status::before { background: var(--error); opacity: 1; }
+/* An AI that gets its own adapter later (ui.SOON): quiet, no button. */
+.service.soon .setting-label, .service.soon .status { color: var(--muted); }
 a.primary { display: flex; align-items: center; justify-content: center; text-decoration: none; }
 .dialog .primary + label, .dialog a.primary + label { margin-top: calc(var(--space) * 2); }
 .dialog .error[hidden], .dialog [data-step][hidden] { display: none; }

@@ -98,10 +98,12 @@ SEED = {
     # The user's own AI (20.11.2026): any API in the OpenAI chat format. The real model name is the user's (ai_link.py,
     # per connection); here one stand-in model. It brings no tools: the hub's loop gives its own (runner/hubloop.py).
     "custom": {
-        "name": "Eigene KI",
-        "default_model": "own",
+        "name": "Weitere KI",
+        "default_model": "own-1",
         "tools": {"read": "hub", "write": "hub", "shell": "hub", "search": "none", "fetch": "hub", "look": "hub"},
-        "models": [{"id": "own", "name": "LLM", "efforts": ["none"], "default_effort": "none", "images": False}],
+        # one stand-in per place of a further AI (ai_link.SLOTS); the page shows the user's own names for them
+        "models": [{"id": f"own-{n}", "name": f"KI {n}", "efforts": ["none"], "default_effort": "none", "images": False}
+                   for n in range(1, 9)],
     },
 }
 

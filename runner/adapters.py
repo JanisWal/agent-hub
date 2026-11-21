@@ -117,7 +117,7 @@ class Custom:
     provider = "custom"
 
     def secret(self, runner, user_id: int):
-        return runner.keys.load(user_id, "custom")
+        return None   # the key sits at the AI's place, which only the job knows (Runner._secret, _key_name)
 
     def route(self, job: dict) -> dict:
         route = job.get("route") or {}

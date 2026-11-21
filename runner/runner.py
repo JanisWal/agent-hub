@@ -103,7 +103,7 @@ class Runner:
         self.run_chat = run_chat or self._run_chat
         self.run_power = run_power or self._run_power
         self.keys = keys or tokens.ProviderKeys(claude_base, os.environ.get("HUB_TOKEN_KEY"))
-        self.verifiers = verifiers or {"mistral": mistral, "custom": custom, "claude-api": apikeys.Verifier("claude-api"),
+        self.verifiers = verifiers or {"mistral": mistral, **{f"custom-{n}": custom for n in range(1, 9)}, "claude-api": apikeys.Verifier("claude-api"),
                                        "chatgpt-api": apikeys.Verifier("chatgpt-api")}   # check a key with its AI
         self.work = work or workspace.Workspace(os.environ.get("HUB_WORK_DIR", "/opt/agent-hub/work"))
         self.run_agent = run_agent or self._run_agent
@@ -233,7 +233,7 @@ class Runner:
             success = False
             if adapter is not None and tokens.KEY_PATTERNS.get(provider) and tokens.KEY_PATTERNS[provider].fullmatch(api_key):
                 result = (adapter.verify(api_key, str(item.get("endpoint") or ""), item.get("lan") is True)
-                          if provider == "custom" else adapter.verify(api_key))
+                          if provider.startswith("custom-") else adapter.verify(api_key))
                 if result == "ok":
                     try:
                         self.keys.save(user_id, provider, api_key)
@@ -262,7 +262,15 @@ class Runner:
         if not ok and provider == "chatgpt" and "(plan)" in (text or ""):
             self._report(f"/runner/keys/{int(user_id)}/chatgpt/noplan")
 
-    def _expired(self, user_id: int, provider: str, credential: str = "plan") -> None:
+    @staticmethod
+    def _key_name(provider: str, job: dict | None) -> str:
+        """The saved connection a job of this AI uses: a further AI's place ("custom-3", from the job's route)."""
+        if provider != "custom":
+            return provider
+        slot = ((job or {}).get("route") or {}).get("slot")
+        return f"custom-{slot}" if isinstance(slot, int) and 1 <= slot <= 8 else "custom-0"   # custom-0: never saved
+
+    def _expired(self, user_id: int, provider: str, credential: str = "plan", job: dict | None = None) -> None:
         """The AI refused the credential (or there is none): the menu shows it, a refused API key is deleted."""
         if credential == "api":   # the user's key next to the plan (its own connection)
             name = f"{provider}-api"
@@ -271,17 +279,26 @@ class Runner:
             return
         if provider == "claude":
             self.api.call("POST", f"/runner/logins/{int(user_id)}/expired")
-        else:
-            self.keys.forget(int(user_id), provider)
-            self.api.call("POST", f"/runner/keys/{int(user_id)}/{provider}/expired")
+            return
+        name = self._key_name(provider, job)
+        if name == "custom-0":
+            return
+        self.keys.forget(int(user_id), name)
+        self.api.call("POST", f"/runner/keys/{int(user_id)}/{name}/expired")
 
-    def _secret(self, adapter, user_id: int, credential: str = "plan"):
+    def _secret(self, adapter, user_id: int, credential: str = "plan", job: dict | None = None):
         """(secret, problem): the credential, or None and the reason. A missing one shows the AI as expired; one that
         is there but can not be read is the server's fault and stays (tokens.Unreadable). `credential` "api": the
         user's API key next to the plan (web/app/credentials.py) instead of the plan."""
         api = credential == "api" and adapter.provider in ("claude", "chatgpt")
         try:
-            secret = self.keys.load(user_id, f"{adapter.provider}-api") if api else adapter.secret(self, user_id)
+            if api:
+                secret = self.keys.load(user_id, f"{adapter.provider}-api")
+            elif adapter.provider == "custom":   # the place of the further AI the job is for
+                name = self._key_name("custom", job)
+                secret = None if name == "custom-0" else self.keys.load(user_id, name)
+            else:
+                secret = adapter.secret(self, user_id)
         except tokens.Unreadable as error:
             print(f"runner: the saved {adapter.provider} credential of user {user_id} can not be read "
                   f"({error}); nothing deleted", file=sys.stderr, flush=True)
@@ -291,7 +308,7 @@ class Runner:
                   file=sys.stderr, flush=True)
             return None, LATER
         if secret is None:   # no saved credential: the user links this AI again
-            self._expired(user_id, adapter.provider, "api" if api else "plan")
+            self._expired(user_id, adapter.provider, "api" if api else "plan", job)
             return None, "Not logged in: no saved credential. Please run /login"
         return secret, ""
 
@@ -375,7 +392,7 @@ class Runner:
                           answer="This AI is not available on the server.", tokens_in=0, tokens_out=0)
             return
         way = job.get("credential") or "plan"
-        secret, problem = self._secret(adapter, user_id, way)
+        secret, problem = self._secret(adapter, user_id, way, job)
         if secret is None:
             self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="0", answer=problem, tokens_in=0,
                           tokens_out=0)
@@ -403,7 +420,7 @@ class Runner:
             self.tickets.revoke(ticket)   # from here on the ticket is worth nothing
             self._release(root)
         if login_problem:   # the AI says we are not signed in: show the connection as expired
-            self._expired(user_id, provider, job.get("credential") or "plan")
+            self._expired(user_id, provider, job.get("credential") or "plan", job)
         self._plan_check(user_id, provider, ok, text)
         extra = {}
         if thoughts.tools is not None:   # what the program named, with what we asked of it (toolcheck.py)
@@ -457,7 +474,7 @@ class Runner:
         if adapter is None:
             return self._finish_run(run_id, "failed", "This AI is not available on the server.")
         way = job.get("credential") or "plan"
-        secret, problem = self._secret(adapter, user_id, way)
+        secret, problem = self._secret(adapter, user_id, way, job)
         if secret is None:
             return self._finish_run(run_id, "failed", problem)
         if job.get("mode") == "brief":
@@ -487,7 +504,7 @@ class Runner:
             self.tickets.revoke(ticket)
             self._release(root)
         if login_problem:
-            self._expired(user_id, provider, job.get("credential") or "plan")
+            self._expired(user_id, provider, job.get("credential") or "plan", job)
         self._plan_check(user_id, provider, ok, text)
         result, report = launcher.result_of(text, failed=not ok)
         extra = {}
@@ -521,7 +538,7 @@ class Runner:
         finally:
             self.tickets.revoke(ticket)
         if login_problem:
-            self._expired(user_id, adapter.provider, job.get("credential") or "plan")
+            self._expired(user_id, adapter.provider, job.get("credential") or "plan", job)
         result, report = launcher.result_of(text, failed=not ok)
         self._finish_run(run_id, result, report, tokens_in, tokens_out, int(self.clock() - started))
 

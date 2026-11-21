@@ -70,6 +70,8 @@ def plan_in(conn: sqlite3.Connection, user_id: int, provider: str) -> bool:
     """Is the user's plan of this AI connected?"""
     if provider == "claude":
         return claude_link.connected_in(conn, user_id)
+    if provider == "custom":   # any of his further AIs
+        return bool(ai_link.custom_connected(conn, user_id))
     return provider in ai_link.PROVIDERS and ai_link.connected_in(conn, user_id, provider)
 
 

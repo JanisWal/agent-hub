@@ -340,7 +340,8 @@ NEW_COLUMNS = {
     "ai_connections": {"endpoint": "TEXT NOT NULL DEFAULT ''",       # the user's own AI: its address (ai_link.py)
                        "remote_model": "TEXT NOT NULL DEFAULT ''",   # ... and the model name there
                        "login_url": "TEXT NOT NULL DEFAULT ''",      # ChatGPT sign-in: the page at OpenAI ...
-                       "login_code": "TEXT NOT NULL DEFAULT ''"},    # ... and the one-time code (21.11.2026)
+                       "login_code": "TEXT NOT NULL DEFAULT ''",     # ... and the one-time code (21.11.2026)
+                       "label": "TEXT NOT NULL DEFAULT ''"},         # a further AI: the name the user gave it
     "agent_runs": {"effort": "TEXT NOT NULL DEFAULT ''",     # effort level of the run's model (catalog.py)
                    "credential": "TEXT NOT NULL DEFAULT 'plan'",   # plan or api key of the user (credentials.py)
                    "provider": "TEXT NOT NULL DEFAULT 'claude'"},   # which AI does the run (aichoice.py)

@@ -72,9 +72,9 @@ class CatalogTest(Base):
 class ConnectionTest(Base):
     def test_whole_connection_as_the_user_does_it(self):
         self.assertEqual(ai_routes.status("mistral", user=self.a), {"ok": True, "status": "none"})
-        self.assertEqual(ai_routes.connect("mistral", "short", endpoint="", model="", user=self.a).status_code, 400)
-        self.assertEqual(ai_routes.connect("mistral", KEY, endpoint="", model="", user=self.a)["status"], "connecting")
-        self.assertEqual(ai_routes.connect("mistral", KEY, endpoint="", model="", user=self.a).status_code, 409)   # one check at a time
+        self.assertEqual(ai_routes.connect("mistral", "short", endpoint="", model="", label="", user=self.a).status_code, 400)
+        self.assertEqual(ai_routes.connect("mistral", KEY, endpoint="", model="", label="", user=self.a)["status"], "connecting")
+        self.assertEqual(ai_routes.connect("mistral", KEY, endpoint="", model="", label="", user=self.a).status_code, 409)   # one check at a time
         self.assertEqual(ai_link.take_keys(), [{"user_id": self.a.id, "provider": "mistral", "key": KEY}])
         self.assertEqual(ai_link.take_keys(), [])                                         # handed over once
         ai_link.complete(self.a.id, "mistral", True)
@@ -111,7 +111,7 @@ class ConnectionTest(Base):
 
     def test_unknown_providers_are_404(self):
         self.assertEqual(ai_routes.status("nobody", user=self.a).status_code, 404)
-        self.assertEqual(ai_routes.connect("claude", KEY, endpoint="", model="", user=self.a).status_code, 404)
+        self.assertEqual(ai_routes.connect("claude", KEY, endpoint="", model="", label="", user=self.a).status_code, 404)
 
     def test_deleting_an_account_queues_its_keys(self):
         self.connect(self.b)

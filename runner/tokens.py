@@ -106,7 +106,7 @@ def _secret_ok(provider: str, secret: str) -> bool:
         return bool(TOKEN.fullmatch(secret) or CLAUDE_API.fullmatch(secret))
     if provider == "chatgpt":
         return bool(CHATGPT_ACCESS.fullmatch(secret) or OPENAI_API.fullmatch(secret))
-    pattern = KEY_PATTERNS.get(provider)
+    pattern = KEY_PATTERNS.get("custom-1" if provider == "custom" else provider)   # a further AI's ticket
     return bool(pattern and pattern.fullmatch(secret))
 
 
@@ -201,7 +201,9 @@ ACCOUNT = re.compile(r"[A-Za-z0-9-]{1,80}")
 # gateway of their AI (claude 3130: x-api-key instead of the sign-in; chatgpt 3133: api.openai.com instead of ChatGPT).
 CLAUDE_API = re.compile(r"sk-ant-api[0-9]{2}-[A-Za-z0-9_-]{20,300}")
 OPENAI_API = re.compile(r"sk-[A-Za-z0-9_-]{20,300}")
-KEY_PATTERNS = {"mistral": re.compile(r"[A-Za-z0-9_-]{16,200}"), "custom": re.compile(r"[!-~]{1,400}"),
+# A further AI keeps its key at its place ("custom-1" .. "custom-8", web/app/ai_link.SLOTS); its ticket is "custom".
+KEY_PATTERNS = {"mistral": re.compile(r"[A-Za-z0-9_-]{16,200}"),
+                **{f"custom-{n}": re.compile(r"[!-~]{1,400}") for n in range(1, 9)},
                 "chatgpt": CHATGPT_KEPT, "claude-api": CLAUDE_API, "chatgpt-api": OPENAI_API}
 NO_KEY = "-"
 # The address of such an API: http(s), a host name or address, an optional port and path; nothing else (web/app/ai_link.py

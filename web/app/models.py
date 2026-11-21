@@ -143,7 +143,11 @@ def due(now: int | None = None) -> list[dict]:
 
 
 def allowed(conn: sqlite3.Connection, user_id: int, provider: str) -> set[str] | None:
-    """The model ids the user's AI offered him, or None while his list is not known (then every model counts)."""
+    """The model ids the user's AI offered him, or None while his list is not known (then every model counts). For his
+    further AIs: the stand-ins of the places he connected."""
+    if provider == "custom":
+        from . import ai_link
+        return {f"own-{n}" for n in ai_link.custom_connected(conn, user_id)}
     row = conn.execute("SELECT models FROM ai_models WHERE user_id = ? AND provider = ? AND models != '[]'",
                        (user_id, provider)).fetchone()
     return None if row is None else {m["id"] for m in json.loads(row["models"])}

@@ -30,9 +30,9 @@ class Base(unittest.TestCase):
 
 class SignInTest(Base):
     def test_the_sign_in_with_a_one_time_code(self):
-        answer = ai_routes.connect("chatgpt", "", endpoint="", model="", user=self.a)
+        answer = ai_routes.connect("chatgpt", "", endpoint="", model="", label="", user=self.a)
         self.assertEqual(answer["status"], "connecting")
-        self.assertEqual(ai_routes.connect("chatgpt", "", endpoint="", model="", user=self.a).status_code, 409)
+        self.assertEqual(ai_routes.connect("chatgpt", "", endpoint="", model="", label="", user=self.a).status_code, 409)
         self.assertEqual(runner_routes.device_logins()["logins"], [{"user_id": self.a.id, "provider": "chatgpt"}])
         self.assertEqual(ai_routes.status("chatgpt", user=self.a)["url"], "")
         self.assertEqual(runner_routes.device_login_url(self.a.id, "chatgpt", "https://evil.example/x", "AB12-CDE34").status_code, 400)

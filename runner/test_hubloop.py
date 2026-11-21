@@ -151,16 +151,48 @@ class VerifyTest(unittest.TestCase):
         class Hub:
             def call(self, method, path, **form):
                 if path == "/runner/keys/claim":
-                    return {"keys": [{"user_id": 2, "provider": "custom", "key": "-",
+                    return {"keys": [{"user_id": 2, "provider": "custom-3", "key": "-",
                                       "endpoint": "http://192.168.1.5:11434/v1", "lan": True}]}
                 seen.append((path, form))
                 return {"ok": True}
         r = runner.Runner(Hub(), "/nowhere", vault=object(), tickets=object(), keys=Keys(),
-                          verifiers={"custom": Verifier()}, background=False)
+                          verifiers={"custom-3": Verifier()}, background=False)
         r.handle_keys()
         self.assertEqual(seen[0], ("-", "http://192.168.1.5:11434/v1", True))
-        self.assertEqual(seen[1], (2, "custom", "-"))
-        self.assertEqual(seen[2], ("/runner/keys/2/custom/done", {"success": "1"}))
+        self.assertEqual(seen[1], (2, "custom-3", "-"))
+        self.assertEqual(seen[2], ("/runner/keys/2/custom-3/done", {"success": "1"}))
+
+    def test_a_job_of_a_further_ai_uses_the_key_of_its_place(self):
+        loaded, calls = [], []
+
+        class Keys:
+            def load(self, user_id, name):
+                loaded.append(name)
+                return None if name == "custom-5" else "sk-local"
+
+            def forget(self, user_id, name):
+                calls.append(("forget", name))
+
+        class Hub:
+            def call(self, method, path, **form):
+                calls.append(path)
+                return {"ok": True}
+        r = runner.Runner(Hub(), "/nowhere", vault=object(), tickets=object(), keys=Keys(), background=False)
+        adapter = runner.adapters.ADAPTERS["custom"]
+        self.assertEqual(r._secret(adapter, 2, "plan", {"route": {"slot": 3}}), ("sk-local", ""))
+        self.assertEqual(loaded, ["custom-3"])
+        self.assertIsNone(r._secret(adapter, 2, "plan", {"route": {"slot": 5}})[0])   # gone: that place shows expired
+        self.assertEqual(calls, [("forget", "custom-5"), "/runner/keys/2/custom-5/expired"])
+        calls.clear()
+        self.assertIsNone(r._secret(adapter, 2, "plan", {"route": {"slot": "1; rm"}})[0])   # no place: nothing touched
+        self.assertEqual(calls, [])
+        self.assertEqual(loaded, ["custom-3", "custom-5"])
+
+    def test_keys_of_further_ais_are_kept_per_place_and_tickets_take_them(self):
+        self.assertTrue(all(f"custom-{n}" in tokens.KEY_PATTERNS for n in range(1, 9)))
+        self.assertNotIn("custom", tokens.KEY_PATTERNS)
+        self.assertNotIn("custom-9", tokens.KEY_PATTERNS)
+        self.assertTrue(tokens._secret_ok("custom", "sk-local"))
 
 
 if __name__ == "__main__":

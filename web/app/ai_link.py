@@ -22,7 +22,10 @@ import time
 
 from . import db
 
-PROVIDERS = ("mistral", "chatgpt", "custom")   # connections kept by the runner (Claude has claude_link.py)
+PROVIDERS = ("mistral", "chatgpt")   # AIs whose connection the runner keeps (Claude has claude_link.py)
+# More AIs in the OpenAI format (catalog provider "custom", 21.11.2026): as many as SLOTS per user, each its own
+# connection with its own name ("custom-1" ...); the tile to add one more always stays in the menu.
+SLOTS = tuple(f"custom-{n}" for n in range(1, 9))
 # API keys next to a plan (credentials.py, 21.11.2026): connections of their own, not AIs of their own
 API_KEYS = ("claude-api", "chatgpt-api")
 # ChatGPT (21.11.2026): no key at all; the user signs in at OpenAI with a one-time code the runner shows (runner/codex.py)
@@ -34,7 +37,7 @@ STATUSES = ("none", "connecting", "connected", "expired", "noplan")   # noplan: 
 CHECK_SECONDS = 120               # the runner has this long to check a key, else the connection counts as failed
 KEY_SECONDS = 300                 # a pasted key waits this long for the runner, then it is forgotten
 KEY = re.compile(r"[A-Za-z0-9_-]{16,200}")   # what an API key looks like (Mistral: 32 letters and digits)
-KEYS = {"mistral": KEY, "custom": re.compile(r"[!-~]{1,400}"),     # the same patterns as runner/tokens.KEY_PATTERNS
+KEYS = {"mistral": KEY, **{slot: re.compile(r"[!-~]{1,400}") for slot in SLOTS},   # = runner/tokens.KEY_PATTERNS
         "claude-api": re.compile(r"sk-ant-api[0-9]{2}-[A-Za-z0-9_-]{20,300}"),
         "chatgpt-api": re.compile(r"sk-[A-Za-z0-9_-]{20,300}")}
 NO_KEY = "-"                                        # the own AI needs no key (runner/tokens.NO_KEY)
@@ -46,8 +49,41 @@ _keys: dict[tuple[int, str], tuple[str, int, str, str]] = {}
 
 
 def _check_provider(provider: str) -> None:
-    if provider not in PROVIDERS and provider not in API_KEYS:
+    if provider not in PROVIDERS and provider not in API_KEYS and provider not in SLOTS:
         raise ValueError("provider")
+
+
+def is_custom(name: str) -> bool:
+    return name in SLOTS
+
+
+def custom_rows(conn: sqlite3.Connection, user_id: int, now: int | None = None) -> list[dict]:
+    """The user's further AIs: {slot, name, state, label, endpoint, model}, in the order of SLOTS (not the deleted)."""
+    now = int(now if now is not None else time.time())
+    rows = {r["provider"]: r for r in conn.execute(
+        "SELECT * FROM ai_connections WHERE user_id = ? AND provider LIKE 'custom-%'", (user_id,))}
+    out = []
+    for n, slot in enumerate(SLOTS, 1):
+        row = rows.get(slot)
+        state = _effective(row, now) if row is not None else "none"
+        if state != "none":
+            out.append({"slot": n, "name": slot, "state": state, "label": row["label"] or f"KI {n}",
+                        "endpoint": row["endpoint"], "model": row["remote_model"]})
+    return out
+
+
+def custom_connected(conn: sqlite3.Connection, user_id: int) -> list[int]:
+    """The slots of the user's further AIs that are connected."""
+    return [r["slot"] for r in custom_rows(conn, user_id) if r["state"] == "connected"]
+
+
+def free_slot(conn: sqlite3.Connection, user_id: int) -> str | None:
+    """The next free place for one more AI, or None when all SLOTS are taken. A place whose key the runner has still
+    to delete ("wipe") is not free yet: a new key there could go with the old one's deletion."""
+    taken = {r["name"] for r in custom_rows(conn, user_id)} | {r["provider"] for r in conn.execute(
+        "SELECT provider FROM ai_connections WHERE user_id = ? AND provider LIKE 'custom-%' AND status = 'wipe'",
+        (user_id,))}
+    return next((s for s in SLOTS if s not in taken), None)
 
 
 def _row(conn: sqlite3.Connection, user_id: int, provider: str) -> sqlite3.Row | None:
@@ -96,15 +132,16 @@ def _owner(conn: sqlite3.Connection, user_id: int) -> bool:
 
 
 def submit_key(user_id: int, provider: str, key: str, now: int | None = None, endpoint: str = "",
-               model: str = "") -> bool:
+               model: str = "", label: str = "") -> bool:
     """The user pasted a key (connect, or a new key after "expired"). ValueError("key") for something that is not a
     key; False while a check of an earlier key is still running. A key that works replaces the old one.
-    The own AI also needs `endpoint` and `model`: ValueError("endpoint") or ("model") for bad ones (plain http only for
-    the owner); its key may be empty."""
+    The own AI also needs `endpoint` and `model`: ValueError("endpoint") or ("model") for bad ones, ("home") for plain
+    http without the owner's switch (home_allowed); its key may be empty."""
     _check_provider(provider)
     key = key.strip()
     endpoint, model = endpoint.strip().rstrip("/"), model.strip()
-    if provider == "custom":
+    label = " ".join(label.split())[:40]
+    if is_custom(provider):
         key = key or NO_KEY
         if not REMOTE_MODEL.fullmatch(model):
             raise ValueError("model")
@@ -114,13 +151,13 @@ def submit_key(user_id: int, provider: str, key: str, now: int | None = None, en
         raise ValueError("key")
     now = int(now if now is not None else time.time())
     with db.connect() as conn:
-        if provider == "custom" and endpoint.startswith("http://") and not _owner(conn, user_id):
-            raise ValueError("endpoint")
+        if is_custom(provider) and endpoint.startswith("http://") and not home_allowed(conn, user_id):
+            raise ValueError("home")   # plain http only in the home network, and that only for the owner who allows it
         before = status_in(conn, user_id, provider, now)
         if before == "connecting":
             return False
         _save(conn, user_id, provider, "connecting", now, before if before in ("connected", "expired") else "")
-    _keys[(user_id, provider)] = (key, now + KEY_SECONDS, endpoint, model)
+    _keys[(user_id, provider)] = (key, now + KEY_SECONDS, endpoint, model, label)
     return True
 
 
@@ -172,13 +209,13 @@ def take_keys(now: int | None = None) -> list[dict]:
     endpoint and lan (the owner's own AI may be in the home network)."""
     now = int(now if now is not None else time.time())
     taken = []
-    for (user_id, provider), (key, until, endpoint, _model) in list(_keys.items()):
+    for (user_id, provider), (key, until, endpoint, _model, label) in list(_keys.items()):
         if until >= now and status(user_id, provider, now) == "connecting":
             item = {"user_id": user_id, "provider": provider, "key": key}
-            if provider == "custom":   # the key stays until `complete`: endpoint and model are taken over with it
+            if is_custom(provider):   # the key stays until `complete`: endpoint and model are taken over with it
                 with db.connect() as conn:
-                    item.update(endpoint=endpoint, lan=_owner(conn, user_id))
-                _keys[(user_id, provider)] = ("", until, endpoint, _model)
+                    item.update(endpoint=endpoint, lan=home_allowed(conn, user_id))
+                _keys[(user_id, provider)] = ("", until, endpoint, _model, label)
             else:
                 del _keys[(user_id, provider)]
             taken.append(item)
@@ -201,9 +238,9 @@ def complete(user_id: int, provider: str, ok: bool, now: int | None = None) -> b
         if ok:
             _save(conn, user_id, provider, "connected", now)
             pending = _keys.pop((user_id, provider), None)
-            if provider == "custom" and pending:   # the checked address and model become the connection's
-                conn.execute("UPDATE ai_connections SET endpoint = ?, remote_model = ? WHERE user_id = ? AND provider = ?",
-                             (pending[2], pending[3], user_id, provider))
+            if is_custom(provider) and pending:   # the checked address, model and name become the connection's
+                conn.execute("UPDATE ai_connections SET endpoint = ?, remote_model = ?, label = ? WHERE user_id = ?"
+                             " AND provider = ?", (pending[2], pending[3], pending[4], user_id, provider))
         elif row["previous"]:
             _save(conn, user_id, provider, row["previous"], now)   # the runner kept the old key file
         else:
@@ -211,14 +248,28 @@ def complete(user_id: int, provider: str, ok: bool, now: int | None = None) -> b
     return True
 
 
-def route_in(conn: sqlite3.Connection, user_id: int, provider: str) -> dict:
-    """What a job of the own AI needs besides the ticket: {endpoint, remote_model, lan}; {} for the other AIs."""
+def home_allowed(conn: sqlite3.Connection, user_id: int) -> bool:
+    """May this user's further AI be in the server's home network (plain http too)? Only the owner's, and only when
+    he switched it on in the system settings (serversettings.ai_home_network, 21.11.2026). A colleague's AI at his
+    home is not in this network: reachable only if it is public (then no switch is needed) or later over a VPN."""
+    from . import serversettings
+    return _owner(conn, user_id) and serversettings.ai_home_network()
+
+
+def route_in(conn: sqlite3.Connection, user_id: int, provider: str, model: str = "") -> dict:
+    """What a job of a further AI needs besides the ticket: {slot, endpoint, remote_model, lan}; {} for other AIs.
+    The slot comes from the model ("own-3"); one that is not connected (a stand-in of the cheapest model) takes the
+    user's first connected one."""
     if provider != "custom":
         return {}
-    row = _row(conn, user_id, provider)
+    connected = custom_connected(conn, user_id)
+    wanted = int(model.split("-")[1]) if model.startswith("own-") and model.split("-")[1].isdigit() else 0
+    slot = wanted if wanted in connected else (connected[0] if connected else 0)
+    row = _row(conn, user_id, f"custom-{slot}") if slot else None
     if row is None:
         return {}
-    return {"endpoint": row["endpoint"], "remote_model": row["remote_model"], "lan": _owner(conn, user_id)}
+    return {"slot": slot, "endpoint": row["endpoint"], "remote_model": row["remote_model"],
+            "lan": home_allowed(conn, user_id)}
 
 
 def mark_noplan(user_id: int, provider: str) -> bool:

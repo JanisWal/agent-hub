@@ -212,7 +212,7 @@ def claim_next(now: int | None = None) -> ChatJob | None:
             way = credentials.first(conn, row["user_id"], row["provider"], "chat")
             conn.execute("UPDATE chat_messages SET status = 'running', started_at = ?, credential = ? WHERE id = ?",
                          (now, way, row["id"]))
-            route = ai_link.route_in(conn, row["user_id"], row["provider"])
+            route = ai_link.route_in(conn, row["user_id"], row["provider"], row["model"])
             extra = toolcheck.hub_tools(row["provider"])
             if way != "plan":   # the job carries its way (the runner takes the key instead of the plan)
                 extra_way = {"credential": way}

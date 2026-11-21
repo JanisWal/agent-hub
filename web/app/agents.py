@@ -212,7 +212,8 @@ def settings(user_id: int) -> dict:
             roles[r] = {"enabled": r in enabled, "model": model, "effort": effort, "net": net_in(conn, user_id, r)}
         return {"strictness": _strictness(conn, user_id), "autonomy": autonomy_in(conn, user_id),
                 "provider": provider, "roles": roles,
-                "models": {p: models.allowed(conn, user_id, p) for p in catalog.PROVIDERS}}
+                "models": {p: models.allowed(conn, user_id, p) for p in catalog.PROVIDERS},
+                "model_names": {f"own-{r['slot']}": r["label"] for r in ai_link.custom_rows(conn, user_id)}}
 
 
 def configure(user_id: int, role: str | None = None, *, enabled: bool | None = None,
@@ -634,7 +635,7 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
                       branch_name(task["id"]), task["title"], task["kind"], task["round"],
                       task["note"], reports, net_in(conn, user_id, run["role"]), effort, provider)
             job.mode = "brief" if prompts.brief_run(conn, job) else ""
-            job.route = ai_link.route_in(conn, user_id, provider)
+            job.route = ai_link.route_in(conn, user_id, provider, model)
             job.hub_tools = toolcheck.hub_tools(provider)
             job.credential = way
             job.prompt = prompts.run(conn, job, brief=job.mode == "brief")

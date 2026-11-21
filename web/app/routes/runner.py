@@ -182,7 +182,7 @@ def login_expired(user_id: int):
 # --- AIs with an API key (ai_link.py, Mistral): the runner fetches pasted keys once, checks them with the provider,
 # keeps them encrypted and reports how it went; it deletes the keys of disconnected or deleted users.
 def _key_provider(provider: str) -> None:
-    if provider not in ai_link.PROVIDERS and provider not in ai_link.API_KEYS:
+    if provider not in ai_link.PROVIDERS and provider not in ai_link.API_KEYS and provider not in ai_link.SLOTS:
         raise HTTPException(status_code=404)
 
 
