@@ -58,7 +58,7 @@ function parse(argv) {
     else if (a === "--fill") { const v = next(); const at = v.indexOf("="); if (at < 1) throw new Error("--fill SELECTOR=TEXT"); steps.push(["fill", v.slice(0, at), v.slice(at + 1)]); }
     else if (a === "--press") steps.push(["press", next()]);
     else if (a === "--wait") steps.push(["wait", Math.min(10000, parseInt(next(), 10) || 0)]);
-    else if (a === "--shot") steps.push(["shot", argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[++i] : ""]);
+    else if (a === "--shot") steps.push(["shot", argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[++i] : `shot-${steps.filter((x) => x[0] === "shot").length + 1}`]);
     else if (a === "--size") { const m = /^(\d{2,4})x(\d{2,4})$/.exec(next()); if (!m) throw new Error("--size WxH"); size = [+m[1], +m[2]]; }
     else if (!a.startsWith("--") && page === null) page = a;
     else throw new Error(`unknown: ${a}`);
@@ -81,10 +81,13 @@ async function main() {
   const browser = await chromium.launch({ executablePath: CHROMIUM, headless: true,
     args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--no-proxy-server"] });
   const notes = [];
-  let shots = 0, failed = false;
+  let failed = false;
   try {
     const page = await browser.newPage({ viewport: { width: args.size[0], height: args.size[1] } });
-    page.on("console", (m) => notes.push(`console.${m.type()}: ${m.text()}`));
+    // a missing file is named with its address (the console only says "Failed to load resource"); the browser's own
+    // request for a page icon is no fault of the page
+    page.on("console", (m) => { if (!m.text().startsWith("Failed to load resource")) notes.push(`console.${m.type()}: ${m.text()}`); });
+    page.on("response", (r) => { if (r.status() >= 400 && !r.url().endsWith("/favicon.ico")) notes.push(`HTTP ${r.status()}: ${r.url()}`); });
     page.on("pageerror", (e) => notes.push(`page error: ${e.message}`));
     page.on("requestfailed", (r) => notes.push(`request failed: ${r.url()} (${r.failure() && r.failure().errorText})`));
     const answer = await page.goto(url, { waitUntil: "load", timeout: 20000 });
@@ -97,7 +100,7 @@ async function main() {
         else if (step[0] === "wait") await page.waitForTimeout(step[1]);
         else if (step[0] === "shot") {
           fs.mkdirSync(SHOTS, { recursive: true });
-          const name = (step[1] || `shot-${++shots}`).replace(/[^\w.-]/g, "_").replace(/\.png$/, "") + ".png";
+          const name = step[1].replace(/[^\w.-]/g, "_").replace(/\.png$/, "") + ".png";
           await page.screenshot({ path: path.join(SHOTS, name), fullPage: true });
           console.log(`screenshot: ${path.join(SHOTS, name)}`);
         }
