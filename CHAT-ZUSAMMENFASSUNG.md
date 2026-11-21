@@ -33,6 +33,10 @@ Selbst gehostetes Verwaltungstool auf einem Raspberry Pi 4B, live unter `https:/
 
 Fehlerarten an einer Stelle mit den echten Meldungen (der „5-hour limit“ wurde nicht erkannt); Läufe weichen wie der Chat auf Schlüssel und nächste KI aus; eine erschöpfte KI pausiert. Die Agentenkette erledigt alles zur Aufgabe Gehörende selbst, legt nur Fehler außerhalb und neue Funktionen an, Umgebungsprobleme werden Hinweise unter „Wartet auf dich“, Doppelte werden erkannt (Board und Fragen), Fragen beendeter Aufgaben verschwinden, saubere Aufgaben werden nach der Selbstständigkeit des Managers selbst zusammengeführt. Code-Download im Programmierer-Tab. Testbrowser `hub-browser` (am Pi erprobt). Alle Grenzen, die nur vom kleinen Pi kommen, sind Einstellungen in der Verwaltung. Auswahllisten schweben über allen Kacheln; „Verknüpft“ ohne Knopf-Optik. GitHub: `main` war aktuell; veraltete Branches aufgeräumt.
 
+## Am 22.11.2026 (`polish-ui`)
+
+Chat-Punkte starten sofort (Regel „im Web gelesen“ aufgehoben); keine Obergrenze je Antwort; keine Wackel-Schleife mehr (Regel und Test); Projekttitel klickbar; Trenner rasten ein; Statuskachel kompakt, selbst auffrischend, „neu schreiben“ ohne Limit und neben Läufen, alle 2 Minuten bei laufender Arbeit; KI je Rolle über Pillen; Notschalter „KIs pausieren“; Dateibetrachter ohne Fokus-Ring.
+
 ## Was als Nächstes ansteht
 
 1. **Echte Probe mit Janis:** ChatGPT anmelden (Gerätecode), eine Chat-Frage und ein Agentenlauf, Modell-Liste ansehen; optional ein API-Schlüssel und eine weitere KI (z. B. ein lokales Ollama, dessen Adresse unter „Freigegebene Adressen“ steht).
