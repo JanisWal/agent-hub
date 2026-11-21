@@ -258,6 +258,10 @@ CLAUDE_DIALOG = """<dialog class="dialog wide" id="claude-dialog">
   <div class="link-split">
   <section class="link-plan">
   <h3 class="link-head">%t.api_plan_title%</h3>
+  <div data-step="start" hidden>
+    <p class="muted">%t.claude_start_text%</p>
+    <button class="primary" type="button" data-start>%t.device_start%</button>
+  </div>
   <div data-step="wait">
     <p class="muted" role="status">%t.claude_wait%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p>
     <div class="actions"><button type="button" data-cancel>%t.cancel%</button></div>
@@ -329,7 +333,7 @@ def _make_default(lang: str, provider: str) -> str:
             f'data-tip="{label}. {esc(i18n.t(lang, "ai_default_hint"))}">{icon("star")}</button>')
 
 
-def _claude_row(lang: str, state: str, first: bool = True, as_default: bool = False) -> str:
+def _claude_row(lang: str, state: str, first: bool = True, as_default: bool = False, api: str = "") -> str:
     """The Claude block: state and the link of its dialog (claude.js), or "make standard" (`as_default`)."""
     style, text_key, action_key = CLAUDE_STATES.get(state, ("", "not_connected", "connect"))
     action = (f'<button class="link inline" type="button" id="claude-open" data-status="{esc(state)}">'
@@ -340,11 +344,11 @@ def _claude_row(lang: str, state: str, first: bool = True, as_default: bool = Fa
         f'data-expired="{esc(i18n.t(lang, "claude_expired"))}" data-renew="{esc(i18n.t(lang, "claude_renew"))}">'
         f'<span class="setting-label">{esc(ai_name(lang, "claude"))}</span>{corner}'
         f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>{action}</span>'
-        f'<span class="service-tools">{esc(tools_line(lang, "claude"))}</span></div>'
+        f'<span class="service-tools">{esc(tools_line(lang, "claude"))}{api}</span></div>'
     )
 
 
-def _key_row(lang: str, provider: str, state: str, first: bool = False, as_default: bool = False) -> str:
+def _key_row(lang: str, provider: str, state: str, first: bool = False, as_default: bool = False, api: str = "") -> str:
     """The block of an AI with an API key: state and one link that opens its dialog (ailink.js), or "make standard"."""
     style, text_key, action_key = KEY_STATES.get(state, ("", "not_connected", "connect"))
     action = (f'<button class="link inline" type="button" data-key-open="{provider}" data-status="{esc(state)}">'
@@ -354,12 +358,24 @@ def _key_row(lang: str, provider: str, state: str, first: bool = False, as_defau
         f'<div class="setting service {style}" id="key-row-{provider}" data-ai="{provider}">'
         f'<span class="setting-label">{esc(ai_name(lang, provider))}</span>{corner}'
         f'<span class="service-line"><span class="status">{esc(i18n.t(lang, text_key))}</span>{action}</span>'
-        f'<span class="service-tools">{esc(tools_line(lang, provider))}</span></div>'
+        f'<span class="service-tools">{esc(tools_line(lang, provider))}{api}</span></div>'
     )
 
 
 API_MODES = ("fallback", "always", "off")
 API_SCOPES = ("all", "runs", "chat")
+
+
+def _api_lines(lang: str, user_id: int) -> dict[str, str]:
+    """Per AI with a plan, the short note in its drawer row when the user has an API key: how it is used."""
+    from . import credentials
+    lines = {}
+    with db.connect() as conn:
+        for provider in credentials.API_FOR:
+            now = credentials.settings_in(conn, user_id, provider)
+            if now["connected"]:
+                lines[provider] = " · " + esc(i18n.t(lang, "api_row", mode=i18n.t(lang, f"api_mode_{now['mode']}")))
+    return lines
 
 
 def api_panel(lang: str, provider: str, user_id: int) -> str:
@@ -413,7 +429,7 @@ def _key_dialogs(lang: str, user_id: int) -> str:
 
 
 def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | None = None,
-                  standard: str = "claude", connected: tuple[str, ...] = ()) -> str:
+                  standard: str = "claude", connected: tuple[str, ...] = (), api: dict | None = None) -> str:
     """The AIs and the chat history button (Janis, 15.11.2026). On top the standard AI with the arrow; below, folded
     (Janis, 11.11.2026: the list grows with every AI), the others in a fixed order: Claude, ChatGPT (not built yet),
     the AIs with a key. With two or more connected, each connected one that is not the standard has the green star
@@ -423,9 +439,10 @@ def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | Non
 
     def row(name: str, first: bool) -> str:
         as_default = several and not first
+        line = (api or {}).get(name, "")
         if name == "claude":
-            return _claude_row(lang, claude_state, first, as_default)
-        return _key_row(lang, name, key_states.get(name, "none"), first, as_default)
+            return _claude_row(lang, claude_state, first, as_default, line)
+        return _key_row(lang, name, key_states.get(name, "none"), first, as_default, line)
 
     names = ["claude", *ai_link.PROVIDERS]
     top = standard if standard in names else "claude"
@@ -454,7 +471,7 @@ def settings_bar(user: User, extras: str = "") -> str:
         GEAR=icon("gear"),
         ARROW=icon("arrow_left", "drawer-arrow"),
         SERVICES=_service_rows(lang, claude_link.status(user.id), {p: ai_link.status(user.id, p) for p in ai_link.PROVIDERS},
-                               aichoice.default(user.id), tuple(aichoice.connected(user.id))),
+                               aichoice.default(user.id), tuple(aichoice.connected(user.id)), _api_lines(lang, user.id)),
         ADMIN=_admin_button(user),
         CLAUDE_DIALOG=fill(CLAUDE_DIALOG, lang, API=api_panel(lang, "claude", user.id)),
         KEY_DIALOGS=_key_dialogs(lang, user.id),

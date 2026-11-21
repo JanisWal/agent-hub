@@ -94,9 +94,14 @@
       dialog.showModal();
       return;
     }
+    show("start");   // nothing starts until the user wants the plan (the right half may be all he wants: an API key)
+    dialog.showModal();
+  });
+
+  var startButton = dialog.querySelector("[data-start]");
+  if (startButton) startButton.addEventListener("click", function () {
     show("wait");
     since = Date.now();
-    dialog.showModal();
     post("/claude/connect").then(function (data) {
       if (!data.ok) return end("failed");
       started = true;
