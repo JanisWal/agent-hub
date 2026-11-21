@@ -217,6 +217,12 @@ Grenzen (Vorschlag, beim Bau festzulegen): höchstens 3 `<ask>`, 5 `<task>`, 1 `
 - Das Paket nennt nur die Werkzeuge, die es gibt (`prompts.tools_text`). Eine KI ohne Dateiwerkzeug bekommt die Liste der Dateien und fragt mit `<read>`; eine KI ganz ohne Werkzeuge bekommt alles Nötige im Paket.
 - **Gebaut am 20.11.2026 (`own-ai`):** `runner/hub_tools.py` (look, Dateien lesen, suchen, schreiben, Shell, Webseiten) als MCP-Server für Programme, denen Werkzeuge fehlen, und `runner/hubloop.py` für KIs, die nur eine API im OpenAI-Format haben (die Schleife fährt der Hub im Container selbst, Werkzeugaufrufe der API oder als Text). Die „Eigene KI“ ist der Anbieter `custom`: Adresse und Modell je Nutzer, Gateway 3132 mit der Adresse im Ticket.
 
+### 9.2b ChatGPT, Modell-Listen, Werkzeug-Prüfung (21.11.2026, gebaut)
+
+- **ChatGPT** läuft über Codex (das Programm, Modelle der GPT-Familie) mit der Anmeldung des ChatGPT-Kontos; alle Rollen, je Rolle ein passendes Modell (`catalog` "roles"). Tokens nur beim Runner, Läufe mit Ticket-Hülle über Gateway 3133 (`runner/codex.py`).
+- **Modell-Listen** fragt der Runner täglich bei jeder KI mit den Zugangsdaten des Nutzers ab; der Hub macht daraus den Katalog und die Auswahl je Nutzer (`models.py`).
+- **Werkzeug-Prüfung** (`toolcheck.py`): Ersatz vom Hub nur, wenn das Programm ein angefragtes Werkzeug dreimal in Folge lesbar nicht nennt; heute misst das nur Claude Code (`init`), die anderen bleiben beim Katalog.
+
 ### 9.3a Pakete je Rolle (Janis, 20.11.2026, gebaut in `web/app/prompts.py`)
 
 Jede Rolle bekommt nur, was sie braucht; die Regeln stehen vorne (gleich für eine Rolle, der Anbieter kann sie zwischenspeichern), dann Erinnerung, Lage, Auftrag.

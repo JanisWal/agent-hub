@@ -13,6 +13,10 @@ Selbst gehostetes Verwaltungstool auf einem Raspberry Pi 4B, live unter `https:/
 - **Entschieden von Janis:** Automatik aus dem Chat bleibt (ohne Bestätigung); Schlüssel werden bei Ablehnung gelöscht, nie wenn der Server sie nicht lesen kann; jede KI soll anbindbar sein, mit eigenem Werkzeug oder Ersatz vom Hub (Kacheln Claude, Mistral, ChatGPT, „Eigene KI“).
 - **Bewusst nicht gemacht:** WAL-Modus für SQLite (das Backup als root ließe Dateien zurück, die der Web-Dienst nicht öffnen kann; stattdessen 15 s Wartezeit). PROJEKT.md weiter verdichten (nur mechanisch geteilt, kein Inhalt gelöscht).
 
+## Was am 21.11.2026 dazukam
+
+- **ChatGPT über Codex** (`chatgpt`): Anmeldung mit dem ChatGPT-Konto per Gerätecode, Tokens erneuert nur der Runner, Läufe mit Ticket-Hülle über Gateway 3133; Modell-Listen täglich von jeder KI selbst; Werkzeug-Ersatz nur bei klarem Befund. **Noch nie echt gelaufen:** Janis meldet sich einmal an, dann prüfen: Chat, Agentenlauf, Modell-Liste, Go-Abo.
+
 ## Was als Nächstes ansteht
 
 1. ~~Ersatzwerkzeuge~~ **live seit 20.11.2026, abends (`own-ai`):** „Eigene KI“ in der Schublade (jede API im OpenAI-Format, auch lokal beim Owner), `runner/hubloop.py`, `runner/hub_tools.py`, Gateway 3132, Werkzeugzeile unter jeder KI. **Noch nie echt gelaufen** (kein Konto bei einer solchen API verbunden); offen: Werkzeuge je KI auf `/admin` umschaltbar, Bilder für die eigene KI.
