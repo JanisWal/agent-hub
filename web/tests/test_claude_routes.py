@@ -97,10 +97,9 @@ class DrawerTest(unittest.TestCase):
             self.assertIn(title, html)
             self.assertNotIn("%t.", html)                                         # every text was translated
 
-    def test_chatgpt_stays_a_placeholder_and_the_page_loads_the_script(self):
+    def test_chatgpt_can_be_connected_and_the_page_loads_the_script(self):
         _, html = self.row()
-        self.assertIn("ChatGPT", html)
-        self.assertIn("disabled", html[html.index("ChatGPT"):])
+        self.assertIn('data-key-open="chatgpt"', html[html.index("ChatGPT"):])
         page = ui.logged_in_page(self.a, "Title", "<p>x</p>")
         self.assertIn("claude.js", page)
 

@@ -381,8 +381,8 @@ class ChatRoutesTest(Base):
         self.connect(self.a)
         chat.send(self.a.id, self.pa.id, "Hi")
         job = runner_routes.chat_claim()["job"]
-        self.assertEqual(sorted(job), ["chat_id", "effort", "files", "images", "links", "mode", "model", "project_id", "prompt",
-                                       "provider", "route", "hub_tools", "user_id"])
+        self.assertEqual(sorted(job), ["chat_id", "effort", "files", "hub_tools", "images", "links", "mode", "model",
+                                       "project_id", "prompt", "provider", "route", "user_id"])
         self.assertEqual(runner_routes.chat_thoughts(job["chat_id"], "Hm."), {"ok": True})
         self.assertEqual(runner_routes.chat_finish(job["chat_id"], "1", "Hello back", 3, 4), {"ok": True})
         self.assertEqual(runner_routes.chat_thoughts(job["chat_id"], "late").status_code, 409)
