@@ -168,8 +168,10 @@ def similar(a: str, b: str, threshold: float = 0.6) -> bool:
     na, nb = {w for w in wa if w.isdigit()}, {w for w in wb if w.isdigit()}
     if na and nb and na != nb:                         # "Schritt 1 ..." and "Schritt 2 ...": two pieces
         return False
+    if min(len(wa), len(wb)) < 2:                      # one word says too little: then only the same words count
+        return wa == wb
     shared = len(wa & wb)
-    return shared >= min(2, len(wa), len(wb)) and shared / min(len(wa), len(wb)) >= threshold
+    return shared >= 2 and shared / min(len(wa), len(wb)) >= threshold
 
 
 def device_asks(answer: str) -> tuple[str, list[tuple[str, str, str]]]:

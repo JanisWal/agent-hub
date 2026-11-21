@@ -181,6 +181,7 @@ class AgentRunTest(Base):
         self.assertEqual((job.provider, job.model), ("mistral", "mistral-small-2603"))
 
     def test_approval_merge_and_the_managers_notes(self):
+        agents.configure(self.a.id, autonomy="all")   # it waits for the approval (else it merges by itself)
         self.mistral(self.a)
         task = agents.start_item(self.a.id, self.item.id)
         self.stage("done", "built")
@@ -264,6 +265,7 @@ class BoardTest(Base):
         return projectpage.render(self.a, self.pa, board.list_items(self.a.id, self.pa.id))
 
     def test_from_the_card_to_the_approval(self):
+        agents.configure(self.a.id, autonomy="all")   # it waits for the approval (else it merges by itself)
         self.mistral(self.a)
         page = self.html()
         self.assertIn(i18n.t("de", "task_queued"), page)                     # made by hand: it starts by itself

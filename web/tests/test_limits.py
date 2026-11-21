@@ -54,9 +54,9 @@ class LimitsTest(unittest.TestCase):
     def test_every_job_carries_them(self):
         serversettings.set_choice("run_memory_mb", 1024, serversettings.CHOICES["run_memory_mb"])
         chat.send(self.owner.id, self.pa.id, "Hallo")
-        self.assertEqual(chat.claim_next().limits["memory_mb"], 1024)
-        chat_done = chat.list_messages(self.owner.id, self.pa.id)
-        self.assertTrue(chat_done)
+        job = chat.claim_next()
+        self.assertEqual(job.limits["memory_mb"], 1024)
+        chat.finish(job.chat_id, True, "Hi")                                      # one AI run at a time
         item = board.create_item(self.owner.id, self.pa.id, "minor", "Addieren")
         agents.start_item(self.owner.id, item.id)
         self.assertEqual(agents.claim_next(can_mac=False).limits["memory_mb"], 1024)
