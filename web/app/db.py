@@ -338,7 +338,6 @@ NEW_COLUMNS = {
                  "memory_seeded": "INTEGER NOT NULL DEFAULT 0"},   # the fixed memory files were made (memory.py)
     "chat_messages": {"mode": "TEXT NOT NULL DEFAULT 'web'", "model": "TEXT NOT NULL DEFAULT 'haiku'",
                       "credential": "TEXT NOT NULL DEFAULT 'plan'",   # plan or api key of the user (credentials.py)
-                   "tried": "TEXT NOT NULL DEFAULT ''",            # AIs that failed this run already (agents.py)
                       "extra": "TEXT NOT NULL DEFAULT ''",          # contents of files the manager asked for (memory.py)
                       "rounds": "INTEGER NOT NULL DEFAULT 0",       # how often it was answered again with such files
                       "memory_saved": "INTEGER NOT NULL DEFAULT 0",   # the answer updated the memory file
@@ -354,6 +353,7 @@ NEW_COLUMNS = {
                        "label": "TEXT NOT NULL DEFAULT ''"},         # a further AI: the name the user gave it
     "agent_runs": {"effort": "TEXT NOT NULL DEFAULT ''",     # effort level of the run's model (catalog.py)
                    "credential": "TEXT NOT NULL DEFAULT 'plan'",   # plan or api key of the user (credentials.py)
+                   "tried": "TEXT NOT NULL DEFAULT ''",            # AIs that failed this run already (agents.py)
                    "provider": "TEXT NOT NULL DEFAULT 'claude'"},   # which AI does the run (aichoice.py)
     "agent_tasks": {"merged": "INTEGER NOT NULL DEFAULT 0",    # the runner merged the approved branch (agents.py)
                     "diff_stat": "TEXT NOT NULL DEFAULT ''",   # what the task changed against main: files and lines
