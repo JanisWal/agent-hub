@@ -57,6 +57,8 @@ Chat-Punkte starten sofort (Regel „im Web gelesen“ aufgehoben); keine Obergr
 
 **Danach (`live-update`):** ein Weg für alles Aktualisieren in `core.js` (`swap` gebündelt und nur Geändertes, `act` faltet sofort weg, `live` als einziger Zeitgeber); Board, Rollen-Tabs, Status, „Für dich“, Prüfungen und Startseite umgestellt (PROTOKOLL.md).
 
+**Danach:** LAN-Kabel am Server: Tunnel hing (zwei Wege ins Netz), Neustart des Tunnel-Containers half. Später Stillstand von 22:40 bis 22:58 durch blockierte Speicherkarte (PROJEKT.md 11, erster Punkt); Seite danach wieder normal.
+
 ## Was als Nächstes ansteht
 
 0. **Die 11 alten Entscheidungen** durchgehen (siehe oben). Noch nie echt gelaufen: eine Rückfrage über den Manager, „Für dich“ mit `RESULT: blocked`, Pause an einem langen Lauf, Konfliktauflösung durch den Programmierer, ein Lauf über 15 Minuten.
