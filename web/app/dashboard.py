@@ -70,7 +70,8 @@ def _project_tile(project: Project, index: int, lang: str, brief=None) -> str:
     return (
         f'<article class="tile glass" data-id="{project.id}" style="--i:{index}">'
         f'<a class="tile-link" href="/projects/{project.id}" draggable="false">'
-        f'<span class="tile-name">{esc(project.name)}</span>{_state(brief, lang)}</a>'
+        f'<span class="tile-name">{esc(project.name)}</span>'
+        f'<span class="tile-live" id="tile-live-{project.id}">{_state(brief, lang)}</span></a>'
         f'<button class="icon-button tile-delete" type="button" data-id="{project.id}" '
         f'aria-label="{esc(i18n.t(lang, "delete_project"))}">{icon("trash")}</button>'
         "</article>"

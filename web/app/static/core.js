@@ -22,20 +22,119 @@
   // fetches the page again and puts the new content of these elements in place; the elements themselves stay, so
   // listeners on them keep working. Work that a reload would break holds it (`hold(true)` ... `hold(false)`): a
   // reload asked for meanwhile waits until nothing is held.
+  //
+  // One way to update every page (Janis, 22.11.2026: "fast, at once, without the user noticing a reload"):
+  // - swap(ids): all swaps asked for in the same moment share one request; a part whose content is what the server
+  //   sent last time is left alone (nothing flickers, an opened detail stays open).
+  // - act(url, body, {gone, parts}): an action the user sees at once. `gone` (a row, a card) folds away with a spring
+  //   before the server answers, the rows below move up; then `parts` are swapped. If the server refuses, the parts
+  //   are swapped anyway, so the row comes back as it is. While an action is on its way no live look runs.
+  // - live({parts | run, every, when}): one timer for all parts of a page that follow the server by themselves. It
+  //   waits while the page is hidden, a dialog is open, something is dragged, the user types in a field, or a reload
+  //   is held. `parts` and `every` may be functions (asked each time); `run` is for a part with its own request.
+  var sent = {};                 // id -> the content the server sent last for it
+  var batch = null;              // the swap being collected in this moment
   function swap(ids) {
-    return fetch(location.pathname + location.search, { credentials: "same-origin" }).then(function (response) {
+    if (!batch) {
+      batch = { ids: {}, waiting: [] };
+      Promise.resolve().then(flush);
+    }
+    ids.forEach(function (id) { batch.ids[id] = true; });
+    return new Promise(function (resolve, reject) { batch.waiting.push({ ids: ids, resolve: resolve, reject: reject }); });
+  }
+  function flush() {
+    var mine = batch;
+    batch = null;
+    fetch(location.pathname + location.search, { credentials: "same-origin" }).then(function (response) {
       if (!response.ok) throw new Error("swap");
       return response.text();
     }).then(function (html) {
       var fresh = new DOMParser().parseFromString(html, "text/html");
-      ids.forEach(function (id) {
+      fresh.changed = [];        // the ids whose content was replaced (a caller may skip its own work when none)
+      Object.keys(mine.ids).forEach(function (id) {
         var now = document.getElementById(id), next = fresh.getElementById(id);
-        if (!now || !next) throw new Error("swap");
-        now.innerHTML = next.innerHTML;
+        if (!now || !next) return;
+        var before = id in sent ? sent[id] : now.innerHTML;
+        sent[id] = next.innerHTML;
+        if (next.innerHTML !== before) { now.innerHTML = next.innerHTML; fresh.changed.push(id); }
       });
-      return fresh;   // for a caller that takes more from the same page (ailink.js: the model pickers)
+      mine.waiting.forEach(function (w) {
+        var missing = w.ids.some(function (id) { return !document.getElementById(id) || !fresh.getElementById(id); });
+        if (missing) w.reject(new Error("swap")); else w.resolve(fresh);   // ailink.js takes more from `fresh`
+      });
+    }).catch(function (error) {
+      mine.waiting.forEach(function (w) { w.reject(error); });
     });
   }
+
+  var acting = 0;
+  function fold(el) {            // the row folds away: height, opacity and a little scale, then it is hidden
+    var height = el.getBoundingClientRect().height;
+    el.dataset.leaving = "1";
+    el.style.overflow = "hidden";
+    el.style.pointerEvents = "none";
+    if (!window.Motion || Motion.reduced()) { el.hidden = true; return; }
+    var style = getComputedStyle(el), my = parseFloat(style.marginTop) || 0, mb = parseFloat(style.marginBottom) || 0;
+    var spring = Motion.spring(1, Motion.MOVE, function (v) {
+      v = Math.max(0, v);
+      el.style.opacity = String(v);
+      el.style.transform = "scale(" + (0.96 + 0.04 * v) + ")";
+      el.style.height = height * v + "px";
+      el.style.marginTop = my * v + "px";
+      el.style.marginBottom = mb * v + "px";
+      if (v === 0) el.hidden = true;
+    }, 0.002);
+    spring.to(0);
+  }
+  function unfold(el) {
+    ["overflow", "pointerEvents", "opacity", "transform", "height", "marginTop", "marginBottom"].forEach(function (k) { el.style[k] = ""; });
+    el.hidden = false;
+    delete el.dataset.leaving;
+  }
+  function act(url, body, options) {
+    options = options || {};
+    var gone = options.gone, parts = options.parts || [];
+    acting += 1;
+    if (gone) fold(gone);
+    var init = { method: "POST", credentials: "same-origin" };
+    if (body) init.body = body;
+    return fetch(url, init).then(function (response) {
+      var ok = response.ok;
+      if (!ok && gone) unfold(gone);
+      return (parts.length ? swap(parts) : Promise.resolve()).then(function () { return response; });
+    }, function (error) {
+      if (gone) unfold(gone);
+      throw error;
+    }).finally(function () { acting -= 1; });
+  }
+
+  var watchers = [];
+  function quiet() {
+    if (document.hidden || holds || acting || batch) return false;
+    if (document.querySelector("dialog[open]") || root.classList.contains("dragging-active")) return false;
+    var typing = document.activeElement;
+    return !(typing && typing.matches && typing.matches("input, textarea, select, [contenteditable]") && typing.closest("[data-live-part], .role-view, #board, .dash"));
+  }
+  function value(x) { return typeof x === "function" ? x() : x; }
+  function live(options) {
+    var watcher = { options: options, due: Date.now() + (value(options.every) || 10000) };
+    watchers.push(watcher);
+    return { soon: function () { watcher.due = Date.now(); } };
+  }
+  setInterval(function () {
+    if (!watchers.length || !quiet()) return;
+    var now = Date.now();
+    watchers.forEach(function (w) {
+      if (w.busy || w.due > now) return;
+      var o = w.options;
+      if (o.when && !o.when()) { w.due = now + (value(o.every) || 10000); return; }
+      w.busy = true;
+      var done = function () { w.busy = false; w.due = Date.now() + (value(o.every) || 10000); };
+      var job = o.run ? o.run() : swap(value(o.parts) || []);
+      Promise.resolve(job).then(done, done);
+    });
+  }, 1000);
+
   var holds = 0, waiting = null;
   function hold(on) {
     holds = Math.max(0, holds + (on ? 1 : -1));
@@ -159,7 +258,7 @@
     }
   });
 
-  window.AgentHub = Object.assign(window.AgentHub || {}, { validate: validate, clear: clear, reload: reload, swap: swap, hold: hold, copyButton: copyButton });
+  window.AgentHub = Object.assign(window.AgentHub || {}, { validate: validate, clear: clear, reload: reload, swap: swap, act: act, live: live, hold: hold, copyButton: copyButton });
 
   document.addEventListener("submit", function (event) {
     var form = event.target;

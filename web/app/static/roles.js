@@ -5,7 +5,6 @@
 (function () {
   "use strict";
   var EVERY = 8000, IDLE = 30000;
-  var timer = null;
 
   function parts(view) {
     if (view === "me") return ["me-list", "me-count", "me-badge"];
@@ -92,18 +91,16 @@
       .catch(function () { pill.disabled = false; });
   });
 
-  function tick() {
-    timer = null;
+  // The open role view follows the server through the page's one timer (core.js): quickly while its role has a run
+  // going or waiting, now and then otherwise.
+  function openView() {
     var view = document.body.dataset.openView;
-    var panel = document.querySelector('[data-view-panel="' + view + '"].role-view');
-    if (!panel) return;
-    if (document.hidden) { timer = setTimeout(tick, EVERY); return; }
-    var next = live(view) ? EVERY : IDLE;   // nothing going: look now and then whether a run started
-    AgentHub.swap(parts(view)).catch(function () {}).then(function () { timer = setTimeout(tick, next); });
+    return document.querySelector('[data-view-panel="' + view + '"].role-view') ? view : null;
   }
-
-  document.addEventListener("agenthub:view", function () {
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(tick, EVERY);
+  var watch = AgentHub.live({
+    every: function () { var view = openView(); return view && live(view) ? EVERY : IDLE; },
+    when: function () { return !!openView(); },
+    parts: function () { return parts(openView()); },
   });
+  document.addEventListener("agenthub:view", function () { if (openView()) watch.soon(); });
 })();
