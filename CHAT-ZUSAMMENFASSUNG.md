@@ -37,8 +37,13 @@ Fehlerarten an einer Stelle mit den echten Meldungen (der „5-hour limit“ wur
 
 Chat-Punkte starten sofort (Regel „im Web gelesen“ aufgehoben); keine Obergrenze je Antwort; keine Wackel-Schleife mehr (Regel und Test); Projekttitel klickbar; Trenner rasten ein; Statuskachel kompakt, selbst auffrischend, „neu schreiben“ ohne Limit und neben Läufen, alle 2 Minuten bei laufender Arbeit; KI je Rolle über Pillen; Notschalter „KIs pausieren“; Dateibetrachter ohne Fokus-Ring.
 
+- **Live seit 22.11.2026** (`main` 012c69d, Backup `hub-2026-11-22-before-polish-ui.db`; Runner, Web, Egress und die drei Lauf-Images neu; Tabelle `run_stops` da).
+- **Vor dem Deploy gefunden:** Eine Status-Runde konnte den Platz einer Frage im Manager-Chat nehmen (die Frage wartete eine Abfrage länger, die nächste bekam „busy“). Jetzt gehen Fragen vor. Sieben Tests passten nicht mehr zum neuen Stand und sind angepasst; die Fallen stehen in PROJEKT.md 9 („Fallen beim Testen“).
+- **Offen:** Die neuen Teile auf der Live-Seite durchklicken (Einrasten der Trenner, drehender Status-Pfeil, KI-Pillen mit Seitenrad und Ziehen, „KIs pausieren“ und „KIs fortfahren“ an einem echten Lauf, Titel als Knopf); einen Status während eines echten Laufs alle 2 Minuten beobachten.
+
 ## Was als Nächstes ansteht
 
+1. **`polish-ui` live prüfen:** Trenner, Status-Pfeil, Pillen, Notschalter an einem echten Lauf, Titel (siehe oben).
 1. **Echte Probe mit Janis:** ChatGPT anmelden (Gerätecode), eine Chat-Frage und ein Agentenlauf, Modell-Liste ansehen; optional ein API-Schlüssel und eine weitere KI (z. B. ein lokales Ollama, dessen Adresse unter „Freigegebene Adressen“ steht).
 2. Das Aussehen in Hell und am Handy prüfen; ein echter Lauf mit dem Testbrowser.
 3. **Taschenrechner (aufgeräumt am 21.11.2026, Backup `hub-2026-11-21-before-board-tidy.db`):** 38 Punkte im Papierkorb des Boards (Umgebung, überholt, doppelt), die eskalierte Umgebungs-Aufgabe abgebrochen, die Funde zum Feinschliff in Vorschlag Nr. 81 zusammengefasst. Bei Janis: sechs Freigaben (Aufgaben 10, 11, 15, 16, 18, 19; 19 überschneidet sich mit 15, 16 und 18), eine Eskalation (17, Tests), die Frage des Programmierers an Aufgabe 11, Vorschlag 76 (Prozent-Semantik) und 81.

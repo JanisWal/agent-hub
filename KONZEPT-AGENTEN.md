@@ -281,6 +281,7 @@ Der Hub liest aus einer Antwort nur die Markierungen der Rolle (`prompts.ALLOWED
 - Der Manager setzt ihn mit `<status level="green|yellow|red">` und einem Satz. Der Hub zeigt ihn als **Lampe und Satz** auf der Status-Kachel des Managers und auf der Projektkachel im Dashboard, mit Zeitpunkt.
 - **Was der Hub selbst sicher weiß, zählt zusätzlich:** ein gescheiterter Lauf, eine eskalierte Aufgabe oder eine unbeantwortete Rückfrage machen den Status **mindestens gelb**; eine abgelaufene Claude-Verbindung macht ihn rot. So hängt der Status nicht allein an der KI.
 - Geplante Tabelle `project_status` (project_id, level, text, source `manager`/`hub`, created_at); der Verlauf bleibt zum Nachschauen.
+- **So gebaut (Stand 22.11.2026):** Den Satz schreibt ein kleiner Auftrag des Hubs (`statusnote.py`, günstigstes Modell, ohne Werkzeuge, nur ein Auszug der Lage), nicht der Manager im Chat. Bei laufender Arbeit alle 2 Minuten, sonst selten; „neu schreiben“ ohne Grenze; neben den Agentenläufen, aber nach einer Frage des Nutzers. Einzelheiten in PROJEKT.md 3 („Geschriebener Status“).
 
 ### 9.8 Modell je Rolle, mit Automatik (PROJEKT.md 11a, Punkt 4e)
 
