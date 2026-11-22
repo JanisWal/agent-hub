@@ -115,7 +115,7 @@ def board_state(lang: str, where) -> str:
 
 def _column(kind: str, items: list[Item], lang: str) -> str:
     agreed = [i for i in items if i.kind == kind and i.status == "open"]
-    proposed = [i for i in items if i.kind == kind and i.status == "proposed"]   # in the same list, below (19.11.2026)
+    proposed = [i for i in items if i.kind == kind and i.status == "proposed"]   # in the same list, on top: what waits for a yes comes first (22.11.2026)
     add = esc(i18n.t(lang, "add_item"))
     return (
         f'<section class="column glass" data-kind="{kind}">'
@@ -123,7 +123,7 @@ def _column(kind: str, items: list[Item], lang: str) -> str:
         f'<span class="count">{len(agreed) + len(proposed)}</span>'
         f'<button class="icon-button add" type="button" data-kind="{kind}" aria-label="{add}" title="{add}">'
         f'{icon("plus")}</button></header>'
-        f'<div class="cards open-list" data-kind="{kind}">{"".join(_card(i, lang) for i in agreed + proposed)}</div>'
+        f'<div class="cards open-list" data-kind="{kind}">{"".join(_card(i, lang) for i in proposed + agreed)}</div>'
         f"</section>"
     )
 
