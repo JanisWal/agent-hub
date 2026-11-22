@@ -171,7 +171,7 @@ class HoverTest(unittest.TestCase):
                 for selector in selectors.split(","):
                     base = selector.strip().split("\n")[-1].replace(":hover", "").strip()
                     self.assertIn(base, self.LIFTED, f"{os.path.basename(path)}: {selector.strip()} moves under the pointer")
-                    self.assertRegex(css, re.escape(base) + r":hover::(after|before)\s*\{[^}]*(inset|top)\s*:\s*-",
+                    self.assertRegex(css, re.escape(base) + r":hover::(after|before)\s*(,[^{]*)?\{[^}]*(inset|top)\s*:\s*-",
                                      f"{base} lifts without keeping its hit area")
 
 
