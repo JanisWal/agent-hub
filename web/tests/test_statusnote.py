@@ -105,17 +105,17 @@ class StatusNoteTest(unittest.TestCase):
         with db.connect() as conn:
             for i in range(statusnote.DAILY_MAX):
                 conn.execute("INSERT INTO project_status (project_id, source, fingerprint, created_at) VALUES (?, 'ai', ?, ?)",
-                             (self.pa.id, f"x{i}", NOW - 600))
+                             (self.pa.id, f"x{i}", NOW - 60))
             task = conn.execute("INSERT INTO agent_tasks (project_id, title, kind, stage, created_at, finished_at)"
-                                " VALUES (?, 'T', 'bug', 'done', ?, ?)", (self.pa.id, NOW - 900, NOW - 300)).lastrowid
+                                " VALUES (?, 'T', 'bug', 'done', ?, ?)", (self.pa.id, NOW - 900, NOW - 30)).lastrowid
             conn.execute("INSERT INTO agent_runs (task_id, role, model, status, created_at, finished_at)"
-                         " VALUES (?, 'programmer', 'm', 'done', ?, ?)", (task, NOW - 900, NOW - 300))
-        self.assertEqual(self.scan(NOW - 300 + statusnote.ACTIVE_GAP - 200), 0)   # the gap first
-        self.assertEqual(self.scan(NOW), 1)                                          # then once, over the cap
+                         " VALUES (?, 'programmer', 'm', 'done', ?, ?)", (task, NOW - 900, NOW - 30))
+        self.assertEqual(self.scan(NOW), 0)                                          # the gap first
+        self.assertEqual(self.scan(NOW + statusnote.ACTIVE_GAP), 1)                 # then once, over the cap
         with db.connect() as conn:
             conn.execute("DELETE FROM chat_messages WHERE kind = 'status'")
             conn.execute("INSERT INTO project_status (project_id, source, fingerprint, created_at) VALUES (?, 'ai', 'y', ?)",
-                         (self.pa.id, NOW))
+                         (self.pa.id, NOW + statusnote.ACTIVE_GAP))
         board.create_item(self.a.id, self.pa.id, "bug", "Y")
         self.assertEqual(self.scan(NOW + 3600), 0)                                   # quiet again: the cap holds
 
