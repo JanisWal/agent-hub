@@ -49,8 +49,11 @@ Chat-Punkte starten sofort (Regel „im Web gelesen“ aufgehoben); keine Obergr
 - **Echter Lauf** im Projekt „Agenten-Test“ (Aufgabe 25, `--count` für primes.py): Programmierer (Claude) 41 s, Tests 23 grün, Tester und Prüfer (ChatGPT), Merge, Doku, fertig in knapp 2 Minuten.
 - **Nach der Migration bei dir:** 11 alte Aufgaben warten als Entscheidung (Projekt 1: 5, 8, 9; Taschenrechner 10, 11, 15–19; Kassenbuch 23), Hinweis „Aufgabe von vor dem Umbau“. „Weiter“ holt `main` in den Branch und löst die alten Konflikte über den Programmierer; „Abbrechen“ legt den Punkt in den Papierkorb. 5 alte Umgebungshinweise stehen jetzt in „Für dich“.
 
+**Danach (`roles-on`, live):** Tester, Prüfer und Manager immer an; „Gerade“ in einer Zeile; „Worauf achten“ als Markdown (Datei hineinziehen, Pfeil zum Herunterladen, nur für den Prüfer); Status-Pfeil dreht rund; Trenner rasten fein an jeder Zeile ein und nach einem Neuladen wieder an derselben Stelle. **Offen, wartet auf Janis' Ja:** ein Verbrauchsbuch für Tokens (Vorschlag unten in „Was als Nächstes ansteht“).
+
 ## Was als Nächstes ansteht
 
+0. **Verbrauch zuverlässig zählen** (Vorschlag vom 22.11.2026, abends, wartet auf Janis' Ja): Heute fehlen beendete und abgebrochene Läufe (0 Tokens), die Statustexte und Ordnerpläne (ihre Zeilen werden gelöscht) und Chat-Antworten nach „Chatverlauf löschen“; Lesen aus dem Zwischenspeicher zählt bei Claude voll als Eingabe. Plan: Tabelle `ai_usage` (eine Zeile je KI-Aufruf, mit KI, Modell, Abo oder Schlüssel, Eingabe, Ausgabe, Zwischenspeicher lesen und schreiben), auch für beendete Läufe aus dem, was der Runner im Stream gesehen hat; Anzeige je KI.
 0. **Die 11 alten Entscheidungen** durchgehen (siehe oben). Noch nie echt gelaufen: eine Rückfrage über den Manager, „Für dich“ mit `RESULT: blocked`, Pause an einem langen Lauf, Konfliktauflösung durch den Programmierer, ein Lauf über 15 Minuten.
 1. **`polish-ui` live prüfen:** Trenner, Status-Pfeil, Pillen, Notschalter an einem echten Lauf, Titel (siehe oben).
 1. **Echte Probe mit Janis:** ChatGPT anmelden (Gerätecode), eine Chat-Frage und ein Agentenlauf, Modell-Liste ansehen; optional ein API-Schlüssel und eine weitere KI (z. B. ein lokales Ollama, dessen Adresse unter „Freigegebene Adressen“ steht).
