@@ -582,8 +582,10 @@ class IsolationTest(unittest.TestCase):
         from app import agents
         from app.routes import board as board_routes
         from app.routes import roles as role_routes
-        for action in ("accept", "reject", "agent-start"):
+        for action in ("accept", "reject"):
             self.assertEqual(board_routes.item_action(self.proposed.id, action, user=self.b).status_code, 404)
+        with self.assertRaises(HTTPException):                                # no start by hand any more
+            board_routes.item_action(self.proposed.id, "agent-start", user=self.a)
         self.assertEqual(role_routes.review_focus(self.project.id, "planted", user=self.b).status_code, 404)
         self.assertIsNone(agents.review_focus(self.b.id, self.project.id))
         self.assertEqual(agents.review_focus(self.a.id, self.project.id), "")

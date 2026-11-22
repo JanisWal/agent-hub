@@ -105,16 +105,16 @@ class StandardTest(Base):
         self.assertNotIn('value="sonnet"', page)
         self.assertIn('data-ai="Mistral"', page)
 
-    def test_old_choices_still_count_for_their_ai(self):
-        with db.connect() as conn:                                            # a setting from before 15.11.2026
-            conn.execute("INSERT INTO agent_settings (user_id, key, value) VALUES (?, 'model.chef', 'opus'),"
-                         " (?, 'effort.chef', 'max')", (self.a.id, self.a.id))
+    def test_choices_are_kept_per_ai(self):
         self.claude(self.a)
+        agents.configure(self.a.id, "chef", model="opus", effort="max")
         chef = agents.settings(self.a.id)["roles"]["chef"]
         self.assertEqual((chef["model"], chef["effort"]), ("opus", "max"))
         self.mistral(self.a)
         aichoice.set_default(self.a.id, "mistral")
         self.assertEqual(agents.settings(self.a.id)["roles"]["chef"]["model"], "mistral-small-2603")
+        aichoice.set_default(self.a.id, "claude")
+        self.assertEqual(agents.settings(self.a.id)["roles"]["chef"]["model"], "opus")   # found again
 
 
 class FallbackTest(Base):

@@ -487,7 +487,8 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
                 if order[0] != provider:
                     provider = order[0]
                     model, effort = _choice(conn, user_id, run["role"], provider)
-                if aichoice.resting(conn, user_id, provider):
+                api = run["credential"] == "api" and credentials.api_usable(conn, user_id, provider, "run")
+                if aichoice.resting(conn, user_id, provider) and not api:
                     continue                               # all of his AIs are used up: it waits until one rested
             way = (run["credential"] if run["credential"] == "api" and credentials.api_usable(conn, user_id, provider, "run")
                    else credentials.first(conn, user_id, provider, "run"))
@@ -700,11 +701,11 @@ def _finish_work(conn: sqlite3.Connection, run: sqlite3.Row, task: sqlite3.Row, 
         _queue(conn, user_id, task["id"], run["role"], "result", now, ref=run["id"], provider=run["provider"])
         return
     _apply(conn, run["role"], task, user_id, result, report, now, committed=committed, markers=markers,
-           tests_exit=None if tests is None else int(tests[0]))
+           tests_exit=None if tests is None else int(tests[0]), run_id=run["id"])
 
 
 def _apply(conn: sqlite3.Connection, role: str, task: sqlite3.Row, user_id: int, result: str, report: str, now: int,
-           committed: bool | None = None, markers=(), tests_exit: int | None = None) -> None:
+           committed: bool | None = None, markers=(), tests_exit: int | None = None, run_id: int | None = None) -> None:
     """A role's valid answer moves the task: what it noticed goes on the board, into "For you" or to the manager, and
     the task goes on (workflow.after_run)."""
     if result not in workflow.RESULTS.get(role, ()):
@@ -712,6 +713,8 @@ def _apply(conn: sqlite3.Connection, role: str, task: sqlite3.Row, user_id: int,
                                                             "format"), now)
         return
     found = reply.parse(report)
+    if run_id is not None:                            # the report as the user reads it: without the markers
+        conn.execute("UPDATE agent_runs SET report = ? WHERE id = ?", (found.text[:MAX_REPORT], run_id))
     # Only a bug outside the task (on the board at once) and a new feature (waits for the user) come from a role; a
     # "minor" is part of the task and is done in it (Janis, 21.11.2026: 29 improvements for one calculator).
     for item in [t for t in found.tasks if t.kind in ("bug", "major")][:FOUND_MAX]:
@@ -770,7 +773,8 @@ def _finish_result(conn: sqlite3.Connection, run: sqlite3.Row, task: sqlite3.Row
     conn.execute("UPDATE agent_runs SET result = ? WHERE id = ?", (result, parent["id"]))
     tests_exit = task["tests_exit"] if run["role"] == "programmer" else None
     committed = bool(task["diff"].strip()) if run["role"] == "programmer" else None
-    _apply(conn, run["role"], task, user_id, result, parent["report"], now, committed=committed, tests_exit=tests_exit)
+    _apply(conn, run["role"], task, user_id, result, parent["report"], now, committed=committed, tests_exit=tests_exit,
+           run_id=parent["id"])
 
 
 def _finish_decide(conn: sqlite3.Connection, run: sqlite3.Row, task: sqlite3.Row, user_id: int, result: str,
