@@ -55,6 +55,8 @@ Chat-Punkte starten sofort (Regel „im Web gelesen“ aufgehoben); keine Obergr
 
 **Danach (`chrome-fixes`):** Janis hat Claude in Chrome eingerichtet; ab jetzt wird jede Änderung an der Oberfläche dort mit seiner Anmeldung aus Nutzersicht angesehen. Erster Rundgang fand: Status nach dem Ende einer Aufgabe kam nie (Tagesgrenze von den Arbeitsrunden aufgebraucht), „Gerade“ zweizeilig bei 1470 px, Seite springt 12 px zwischen Reitern, Zahlen englisch formatiert, „Wartet auf …“ abgeschnitten. Alles behoben (PROTOKOLL.md). In „Für dich“ beim Taschenrechner standen 11 Einträge des Prüfers, alle von der Art, die `self-reliant` abstellt.
 
+**Danach (`live-update`):** ein Weg für alles Aktualisieren in `core.js` (`swap` gebündelt und nur Geändertes, `act` faltet sofort weg, `live` als einziger Zeitgeber); Board, Rollen-Tabs, Status, „Für dich“, Prüfungen und Startseite umgestellt (PROTOKOLL.md).
+
 ## Was als Nächstes ansteht
 
 0. **Die 11 alten Entscheidungen** durchgehen (siehe oben). Noch nie echt gelaufen: eine Rückfrage über den Manager, „Für dich“ mit `RESULT: blocked`, Pause an einem langen Lauf, Konfliktauflösung durch den Programmierer, ein Lauf über 15 Minuten.
