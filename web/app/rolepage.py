@@ -123,6 +123,8 @@ def _usage(lang: str, usage: dict) -> str:
         return f'<p class="muted">{esc(i18n.t(lang, "role_usage_none"))}</p>'
     line = i18n.t(lang, "role_usage_line", runs=usage["runs"], tin=_tokens(usage["tokens_in"]),
                   tout=_tokens(usage["tokens_out"]), time=_duration(lang, usage["seconds"]))
+    if usage.get("cache_read"):   # the part of the input read from the AI's cache (it weighs less on the quota)
+        line += " · " + i18n.t(lang, "role_usage_cache", n=_tokens(usage["cache_read"]))
     return f"<p>{esc(line)}</p>"
 
 

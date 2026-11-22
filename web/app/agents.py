@@ -24,7 +24,7 @@ import time
 from dataclasses import dataclass, field
 
 from . import (ai_link, aichoice, board, catalog, credentials, db, failures, files, memory, models, prompts, questions,
-               reply, serversettings, todos, toolcheck, workflow)
+               reply, serversettings, todos, toolcheck, usage, workflow)
 
 # Models and effort levels come from catalog.py (Janis, 14.11.2026), kept per role AND per AI ("model.<role>.<provider>"),
 # so switching the standard AI and back finds them again. A role without a choice gets its AI's start for the role.
@@ -601,16 +601,18 @@ def _wait_for_an_ai(conn: sqlite3.Connection, run: sqlite3.Row, report: str, tok
 def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, tokens_out: int = 0,
                seconds: int = 0, now: int | None = None, change: tuple[str, str] | None = None,
                tests: tuple[int, str] | None = None, committed: bool | None = None,
-               markers: list[str] | None = None) -> bool:
+               markers: list[str] | None = None, cache: tuple[int, int] = (0, 0), partial: bool = False) -> bool:
     """Runner: a run is over. `result`: the value of its RESULT line, "none" (the answer had none), "failed" (the AI or
     its program failed; the report says why) or "stopped" (the runner ended it: no output for too long, or the longest
     time). `change` (stat, diff): what the task changed so far, after a run that commits; `committed`: that run's commit
     changed something; `tests` (exit code, output): the project's tests the hub ran after the programmer; `markers`:
-    files that still have conflict markers. False if the run is not running any more (cancelled, given up)."""
+    files that still have conflict markers. `cache` (read, written): the part of the input from the provider's cache;
+    `partial`: the runner ended the run and counted what it saw. Every run goes into the usage ledger (usage.py), also a
+    failed one before the next try. False if the run is not running any more (cancelled, given up)."""
     now = int(now if now is not None else time.time())
     with db.connect() as conn:
         done = _finish(conn, run_id, result, report or "", tokens_in, tokens_out, seconds, now, change, tests,
-                       committed, markers or [])
+                       committed, markers or [], cache, partial)
     if isinstance(done, tuple):   # the manager's memory notes, after the transaction (files.py opens its own)
         owner, project_id, notes, edits, the_run = done
         for name, body in notes.items():
@@ -633,12 +635,20 @@ def _close(conn: sqlite3.Connection, run_id: int, result: str, report: str, toke
 
 
 def _finish(conn: sqlite3.Connection, run_id: int, result: str, report: str, tokens_in: int = 0, tokens_out: int = 0,
-            seconds: int = 0, now: int = 0, change=None, tests=None, committed=None, markers=()):
-    run = conn.execute("SELECT * FROM agent_runs WHERE id = ? AND status = 'running'", (run_id,)).fetchone()
-    if run is None:
+            seconds: int = 0, now: int = 0, change=None, tests=None, committed=None, markers=(), cache=(0, 0),
+            partial: bool = False):
+    run = conn.execute("SELECT * FROM agent_runs WHERE id = ?", (run_id,)).fetchone()
+    if run is None or (run["status"] != "running" and not (tokens_in or tokens_out)):
         return False
     task = _task_row(conn, run["task_id"])
     user_id = _owner(conn, task["id"])
+    # What it used counts even when the hub closed the run meanwhile (cancelled, lost and given up): the AI worked.
+    usage.record(conn, user_id=user_id, project_id=task["project_id"], provider=run["provider"], model=run["model"],
+                 credential=run["credential"], kind="run", role=run["role"], purpose=run["purpose"], ref=run_id,
+                 tokens_in=tokens_in, tokens_out=tokens_out, cache_read=cache[0], cache_write=cache[1],
+                 seconds=seconds, partial=partial, now=now)
+    if run["status"] != "running":
+        return False
     if result == "failed" and _try_again(conn, run, user_id, report, tokens_in, tokens_out):
         return True
     if result == "failed" and _wait_for_an_ai(conn, run, report, tokens_in, tokens_out):
@@ -956,20 +966,12 @@ def last_report(user_id: int, task_id: int) -> str:
 
 
 def usage(user_id: int, project_id: int | None = None, role: str | None = None) -> dict:
-    """Tokens and seconds used by this user's runs (of one project, or of all; of one role, or of all)."""
-    sql = ("SELECT COALESCE(SUM(r.tokens_in), 0) AS tokens_in, COALESCE(SUM(r.tokens_out), 0) AS tokens_out,"
-           " COALESCE(SUM(r.seconds), 0) AS seconds, COUNT(r.id) AS runs FROM agent_runs r"
-           " JOIN agent_tasks t ON t.id = r.task_id JOIN projects p ON p.id = t.project_id"
-           " WHERE p.user_id = ? AND r.status IN ('done', 'failed') AND r.model != ?")
-    args: list = [user_id, HUB_MODEL]
-    if project_id is not None:
-        sql += " AND p.id = ?"
-        args.append(project_id)
-    if role is not None:
-        sql += " AND r.role = ?"
-        args.append(role)
-    with db.connect() as conn:
-        return dict(conn.execute(sql, args).fetchone())
+    """What this user's agent runs used (of one project, or of all; of one role, or of all), from the usage ledger
+    (usage.py, so also runs that were ended or switched to another AI): runs, tokens in (with the cache part) and out,
+    seconds."""
+    sums = usage.totals(user_id, project_id=project_id, role=role, kind="run")
+    return {"runs": sums["calls"], "tokens_in": sums["tokens_in"], "tokens_out": sums["tokens_out"],
+            "cache_read": sums["cache_read"], "seconds": sums["seconds"]}
 
 
 @dataclass

@@ -176,7 +176,8 @@ class ChainTest(Base):
         self.assertEqual(self.task().stage, "done")
         self.assertEqual(self.item_status(self.item.id), "archived")
         self.assertEqual(agents.usage(self.a.id, self.project.id)["tokens_in"], 40)
-        self.assertEqual(agents.usage(self.b.id), {"tokens_in": 0, "tokens_out": 0, "seconds": 0, "runs": 0})
+        self.assertEqual(agents.usage(self.b.id), {"runs": 0, "tokens_in": 0, "tokens_out": 0, "cache_read": 0,
+                                                   "seconds": 0})
 
     def test_after_every_return_the_whole_chain_runs_again(self):
         self.connect(self.a)

@@ -95,13 +95,13 @@ def loop(prompt: str, model: str, job: str, turns: int, seconds: int, clock=time
     tools = hub_tools.schemas(enabled)
     native = bool(tools)
     messages = [{"role": "user", "content": prompt}]
-    tokens_in = tokens_out = 0
+    tokens_in = tokens_out = cached = 0
     went_out = False
     end = clock() + seconds
     for _ in range(max(1, turns)):
         if clock() > end:
-            return {"ok": False, "text": "", "tokens_in": tokens_in, "tokens_out": tokens_out, "outcome": "time",
-                    "error": "time limit"}
+            return {"ok": False, "text": "", "tokens_in": tokens_in, "tokens_out": tokens_out, "cache_read": cached,
+                    "outcome": "time", "error": "time limit"}
         body = {"model": model, "messages": messages}
         if native:
             body["tools"] = [{"type": "function", "function": {"name": t["name"], "description": t["description"],
@@ -114,11 +114,13 @@ def loop(prompt: str, model: str, job: str, turns: int, seconds: int, clock=time
                 names = "\n".join(f"- {t['name']}: {t['description']}" for t in tools)
                 messages[0] = {"role": "user", "content": TEXT_RULE + names + "\n\n" + prompt}
                 continue
-            return {"ok": False, "text": "", "tokens_in": tokens_in, "tokens_out": tokens_out, "outcome": "refused",
-                    "error": str(stop)}
+            return {"ok": False, "text": "", "tokens_in": tokens_in, "tokens_out": tokens_out, "cache_read": cached,
+                    "outcome": "refused", "error": str(stop)}
         usage = data.get("usage") or {}
         tokens_in += int(usage.get("prompt_tokens") or 0)
         tokens_out += int(usage.get("completion_tokens") or 0)
+        cached += int((usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0)
+        say({"usage_so_far": {"tokens_in": tokens_in, "tokens_out": tokens_out, "cache_read": cached}})
         message = ((data.get("choices") or [{}])[0] or {}).get("message") or {}
         thought = message.get("reasoning_content") or message.get("reasoning")
         if isinstance(thought, str) and thought.strip():
@@ -141,9 +143,9 @@ def loop(prompt: str, model: str, job: str, turns: int, seconds: int, clock=time
             messages += [{"role": "assistant", "content": text}, {"role": "user", "content": "\n\n".join(results)}]
             continue
         return {"ok": bool(text.strip()), "text": text, "tokens_in": tokens_in, "tokens_out": tokens_out,
-                "outcome": "finished", "error": "" if text.strip() else "empty answer"}
-    return {"ok": False, "text": "", "tokens_in": tokens_in, "tokens_out": tokens_out, "outcome": "steps",
-            "error": "Too many steps"}
+                "cache_read": cached, "outcome": "finished", "error": "" if text.strip() else "empty answer"}
+    return {"ok": False, "text": "", "tokens_in": tokens_in, "tokens_out": tokens_out, "cache_read": cached,
+            "outcome": "steps", "error": "Too many steps"}
 
 
 def main() -> int:

@@ -6,7 +6,7 @@ from .icons import icon
 from .layout import esc, fill, page
 from .users import User
 
-from . import ai_link, aichoice, claude_link, db
+from . import ai_link, aichoice, claude_link, db, usage
 
 
 def info_dot(label: str, text: str) -> str:
@@ -531,14 +531,15 @@ def _key_dialogs(lang: str, user_id: int) -> str:
 
 def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | None = None,
                   connected: tuple[str, ...] = (), api: dict | None = None,
-                  custom: list[dict] | None = None, paused: bool = False) -> str:
+                  custom: list[dict] | None = None, paused: bool = False, used: dict | None = None) -> str:
     """The AIs and the chat history button (Janis, 15.11.2026). On top the standard AI with the arrow; below, folded
     (Janis, 11.11.2026: the list grows with every AI), the others. The order arranges itself (Janis, 21.11.2026):
     `connected` comes ranked (aichoice.ranked: the standard, the one before it, the other connected ones), then the AIs
     that are not connected in a fixed order (Claude, Mistral, ChatGPT, the further AIs: ai_link.custom_rows), the open
     tile and the placeholders (SOON); nothing unconnected stands between connected ones.
     With two or more connected, each connected one that is not the standard has the green star
-    "use as standard" at its top right; every connected AI keeps "disconnect". The button is type="button": no submit."""
+    "use as standard" at its top right; every connected AI keeps "disconnect". The button is type="button": no submit.
+    `used` (usage.by_ai): under its tools each AI says what it used today and in the last 7 days (22.11.2026)."""
     key_states = dict(key_states or {})
     several = len(connected) >= 2
     custom = custom or []
@@ -563,9 +564,12 @@ def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | Non
     def row(name: str, first: bool) -> str:
         as_default = several and kind(name) != kind(top)
         line = (api or {}).get(name, "")
+        spent = (used or {}).get(name)
+        shown = line + (f'<span class="service-usage">{esc(i18n.t(lang, "ai_usage_line", today=_tokens(spent["today"]), week=_tokens(spent["week"])))}</span>'
+                        if spent and spent["week"] else "")
         if name == "claude":
-            return _claude_row(lang, claude_state, first, as_default, line, bool(line))
-        return _key_row(lang, name, key_states.get(name, "none"), first, as_default, line, labels.get(name, ""),
+            return _claude_row(lang, claude_state, first, as_default, shown, bool(line))
+        return _key_row(lang, name, key_states.get(name, "none"), first, as_default, shown, labels.get(name, ""),
                         bool(line))
 
     rest = [row(n, False) for n in names if n != top]
@@ -584,6 +588,11 @@ def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | Non
     more = f'<div class="ai-more" id="ai-more" hidden>\n        {others}\n      </div>'
     services = f'<div class="ai-services" id="ai-services">{row(top, True)}\n      {more}</div>'   # swapped as one
     return "\n      ".join([services, pause, clear])
+
+
+def _tokens(n: int) -> str:
+    """12345 -> "12.3k", 2.5 million -> "2.5M" (the same short form as the roles' tabs)."""
+    return f"{n / 1e6:.1f}M" if n >= 1_000_000 else f"{n / 1000:.1f}k" if n >= 1000 else str(n)
 
 
 def _admin_button(user: User) -> str:
@@ -605,7 +614,7 @@ def settings_bar(user: User, extras: str = "") -> str:
         ARROW=icon("arrow_left", "drawer-arrow"),
         SERVICES=_service_rows(lang, claude_link.status(user.id), {p: ai_link.status(user.id, p) for p in ai_link.PROVIDERS},
                                tuple(aichoice.ranked(user.id)), _api_lines(lang, user.id),
-                               _custom_rows(user.id), _paused(user.id)),
+                               _custom_rows(user.id), _paused(user.id), usage.by_ai(user.id)),
         ADMIN=_admin_button(user),
         CLAUDE_DIALOG=fill(CLAUDE_DIALOG, lang, API=api_panel(lang, "claude", user.id),
                            DISCONNECT=_disconnect_text(lang, "claude", user.id, "claude_disconnect_text")),

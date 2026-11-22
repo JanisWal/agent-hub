@@ -61,7 +61,7 @@ def config(model: str, effort: str, job: str, api: bool = False) -> str:
 
 
 def summary(events: list[dict], code: int, stderr: str) -> dict:
-    text, tokens_in, tokens_out, error, outcome = "", 0, 0, "", "finished"
+    text, tokens_in, tokens_out, cached, error, outcome = "", 0, 0, 0, "", "finished"
     for event in events:
         kind = event.get("type")
         item = event.get("item") if isinstance(event.get("item"), dict) else {}
@@ -71,6 +71,7 @@ def summary(events: list[dict], code: int, stderr: str) -> dict:
             usage = event.get("usage") or {}
             tokens_in += int(usage.get("input_tokens") or 0)
             tokens_out += int(usage.get("output_tokens") or 0)
+            cached += int(usage.get("cached_input_tokens") or 0)   # part of the input, from OpenAI's cache
         elif kind in ("turn.failed", "error"):
             detail = event.get("error") if isinstance(event.get("error"), dict) else event
             error = str(detail.get("message") or "")[:500]
@@ -80,7 +81,7 @@ def summary(events: list[dict], code: int, stderr: str) -> dict:
     if re.search(r"\b403\b|not (?:included|available) (?:in|on) your plan|upgrade your plan", error, re.I):
         outcome = "plan"
     return {"ok": outcome == "finished" and bool(text.strip()), "text": text, "tokens_in": tokens_in,
-            "tokens_out": tokens_out, "outcome": outcome, "error": error}
+            "tokens_out": tokens_out, "cache_read": cached, "outcome": outcome, "error": error}
 
 
 def say(data: dict) -> None:
@@ -132,6 +133,9 @@ def main() -> int:
                 item = event.get("item") if isinstance(event.get("item"), dict) else {}
                 if event.get("type") == "item.completed" and item.get("type") == "reasoning" and item.get("text"):
                     say({"thought": str(item["text"]).strip()})
+                if event.get("type") == "turn.completed":   # what was used so far, for a run that gets ended (usage ledger)
+                    so_far = summary(events, 0, "")
+                    say({"usage_so_far": {k: so_far[k] for k in ("tokens_in", "tokens_out", "cache_read")}})
             code = proc.wait(timeout=int(seconds))
         except subprocess.TimeoutExpired:
             proc.kill()

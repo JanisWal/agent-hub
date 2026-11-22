@@ -326,8 +326,8 @@ class Runner:
             proc.wait()
         finally:
             timer.cancel()
-        if late.is_set():
-            raise subprocess.TimeoutExpired(command, self._limits()["chat_seconds"])
+        if late.is_set():   # what it printed until then still counts for the usage ledger
+            raise subprocess.TimeoutExpired(command, self._limits()["chat_seconds"], output="".join(lines))
         return subprocess.CompletedProcess(command, proc.returncode, "".join(lines), "")
 
     # --- API keys (web/app/ai_link.py): check a pasted key with the provider, keep it encrypted, delete old ones
@@ -518,11 +518,13 @@ class Runner:
             done = self.run_chat(command, job["prompt"], thoughts.line)
             thoughts.flush()
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(done.stdout)
+            used = launcher.usage_of(done.stdout)
             if not ok and done.returncode:
                 text = f"{text} (exit code {done.returncode})".strip()
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as late:
             subprocess.run(["docker", "rm", "-f", f"agent-chat-{chat_id}"], capture_output=True)
             ok, text, tokens_in, tokens_out, login_problem = False, "Timeout: no answer in time.", 0, 0, False
+            used = launcher.usage_of(late.output or "")
         finally:
             self.tickets.revoke(ticket)   # from here on the ticket is worth nothing
             self._release(root)
@@ -532,8 +534,8 @@ class Runner:
         extra = {}
         if thoughts.tools is not None:   # what the program named, with what we asked of it (toolcheck.py)
             extra = {"tools_asked": ",".join(launcher.asked_tools(command)), "tools_seen": ",".join(thoughts.tools)}
-        self._report(f"/runner/chat/{chat_id}/finish", success="1" if ok else "0", answer=text,
-                     tokens_in=tokens_in, tokens_out=tokens_out, **extra)
+        self._report(f"/runner/chat/{chat_id}/finish", success="1" if ok else "0", answer=text, **self._used(used),
+                     **extra)
 
     # --- agent runs (web/app/agents.py, runtask.py): one container per run in the task's work folder
     def _limits(self, job: dict | None = None) -> dict:
@@ -611,6 +613,12 @@ class Runner:
         self._report(f"/runner/runs/{run_id}/finish", result=result, report=report,
                      tokens_in=tokens_in, tokens_out=tokens_out, seconds=seconds, **extra)
 
+    @staticmethod
+    def _used(used: dict) -> dict:
+        """The usage numbers of a job as the hub's finish routes take them (usage ledger, 22.11.2026)."""
+        return {"tokens_in": used["tokens_in"], "tokens_out": used["tokens_out"], "cache_read": used["cache_read"],
+                "cache_write": used["cache_write"], "partial": "1" if used["partial"] else ""}
+
     def _stopped(self, reason: str) -> str:
         limits = self._limits()
         seconds = limits["silence_seconds"] if reason == "silence" else limits["max_seconds"]
@@ -652,11 +660,13 @@ class Runner:
             watch = Watch(self, run_id, ticket, adapter, f"agent-run-{run_id}", limits)
             output, code, stopped = self.run_agent(command, prompt, watch)
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_run(output)
+            used = launcher.usage_of(output)
         finally:
             self.tickets.revoke(ticket)
             self._release(root)
-        if stopped == "stop":
-            return                                   # the hub gave the run up (its task was cancelled)
+        if stopped == "stop":                        # the hub gave the run up (its task was cancelled): what it used
+            self._report(f"/runner/runs/{run_id}/finish", result="stopped", report="Cancelled.", **self._used(used))
+            return
         if login_problem:
             self._expired(user_id, provider, way, job)
         self._plan_check(user_id, provider, ok, text)
@@ -680,7 +690,7 @@ class Runner:
                 extra["markers"] = "\n".join(left)
         if role == "programmer" and result in ("done", "none") and "markers" not in extra:
             extra["tests_exit"], extra["tests"] = self._tests(run_id, user_id, task_id, folder, job.get("net", "apart"))
-        self._finish_run(run_id, result, report, tokens_in, tokens_out, int(self.clock() - started), **extra)
+        self._finish_run(run_id, result, report, seconds=int(self.clock() - started), **self._used(used), **extra)
 
     def _brief_run(self, job: dict, adapter, secret: str) -> None:
         """A run that needs no tools (the reviewer of a small change, the manager's short jobs): one answer, no work
@@ -697,16 +707,18 @@ class Runner:
             watch = Watch(self, run_id, ticket, adapter, f"agent-run-{run_id}", limits)
             output, code, stopped = self.run_agent(command, job["prompt"], watch)
             ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(output)
+            used = launcher.usage_of(output)
         finally:
             self.tickets.revoke(ticket)
         if stopped == "stop":
+            self._report(f"/runner/runs/{run_id}/finish", result="stopped", report="Cancelled.", **self._used(used))
             return
         if login_problem:
             self._expired(user_id, adapter.provider, way, job)
         result, report = ("stopped", self._stopped(stopped)) if stopped else launcher.result_of(text, failed=not ok)
         if job.get("purpose") in ("decide", "explain", "doc") and result == "none":
             result = "done"                          # the manager's jobs are read for their markers, not a RESULT line
-        self._finish_run(run_id, result, report, tokens_in, tokens_out, int(self.clock() - started))
+        self._finish_run(run_id, result, report, seconds=int(self.clock() - started), **self._used(used))
 
     # --- ChatGPT sign-in with a one-time code (runner/codex.py): one container per sign-in, in a thread of its own
     def handle_device_logins(self) -> None:

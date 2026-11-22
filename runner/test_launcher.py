@@ -361,5 +361,37 @@ class ConsistencyTest(unittest.TestCase):
         self.assertEqual(L._EFFORT.pattern, catalog._EFFORT.pattern)
 
 
+class UsageTest(unittest.TestCase):
+    """What a job used, read from its output for the usage ledger (22.11.2026): nothing estimated."""
+
+    def test_the_final_result_of_claude_code_with_the_cache_apart(self):
+        out = "\n".join(json.dumps(x) for x in (
+            {"type": "assistant", "message": {"id": "m1", "usage": {"input_tokens": 1, "output_tokens": 1}}},
+            {"type": "result", "result": "ok", "usage": {"input_tokens": 100, "cache_read_input_tokens": 900,
+                                                         "cache_creation_input_tokens": 50, "output_tokens": 40}}))
+        self.assertEqual(L.usage_of(out), {"tokens_in": 1050, "tokens_out": 40, "cache_read": 900, "cache_write": 50,
+                                           "partial": False})
+
+    def test_a_run_that_was_ended_counts_each_finished_message_once(self):
+        msg = lambda i, n: json.dumps({"type": "assistant", "message": {"id": i, "usage": {   # noqa: E731
+            "input_tokens": n, "cache_read_input_tokens": 10, "output_tokens": 5}}})
+        out = "\n".join([msg("m1", 100), msg("m1", 100), msg("m2", 200),
+                         json.dumps({"type": "stream_event", "event": {"usage": {"input_tokens": 999}}})])
+        self.assertEqual(L.usage_of(out), {"tokens_in": 320, "tokens_out": 10, "cache_read": 20, "cache_write": 0,
+                                           "partial": True})
+
+    def test_the_entry_scripts_summary_or_their_usage_so_far(self):
+        summary = json.dumps({"ok": True, "text": "x", "tokens_in": 30, "tokens_out": 9, "cache_read": 4})
+        self.assertEqual(L.usage_of(summary)["tokens_in"], 30)
+        self.assertFalse(L.usage_of(summary)["partial"])
+        so_far = "\n".join([json.dumps({"thought": "hm"}), json.dumps({"usage_so_far": {"tokens_in": 12, "tokens_out": 3,
+                                                                                      "cache_read": 2}}),
+                            json.dumps({"usage_so_far": {"tokens_in": 40, "tokens_out": 8, "cache_read": 6}})])
+        self.assertEqual(L.usage_of(so_far), {"tokens_in": 40, "tokens_out": 8, "cache_read": 6, "cache_write": 0,
+                                              "partial": True})
+        self.assertEqual(L.usage_of("nothing readable"), {"tokens_in": 0, "tokens_out": 0, "cache_read": 0,
+                                                          "cache_write": 0, "partial": False})
+
+
 if __name__ == "__main__":
     unittest.main()

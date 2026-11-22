@@ -192,7 +192,8 @@ class RunnerTest(unittest.TestCase):
         self.assertEqual(tickets.issued[0][1:], (KEY, "mistral"))
         self.assertEqual(tickets.revoked, [tickets.issued[0][0]])
         self.assertEqual(hub.posted("/runner/chat/9/finish"),
-                         [{"success": "1", "answer": "Hallo", "tokens_in": 30, "tokens_out": 9}])
+                         [{"success": "1", "answer": "Hallo", "tokens_in": 30, "tokens_out": 9, "cache_read": 0,
+                           "cache_write": 0, "partial": ""}])
 
     def test_a_key_the_server_can_not_read_stays(self):
         job = {"chat_id": 9, "user_id": 5, "model": "mistral-small-2603", "prompt": "P", "provider": "mistral"}

@@ -340,6 +340,51 @@ def claude_tokens(data: dict) -> tuple[int, int]:
     return tokens_in, int(usage.get("output_tokens") or 0)
 
 
+def usage_of(stdout: str) -> dict:
+    """What a job used, for the usage ledger (22.11.2026): {"tokens_in", "tokens_out", "cache_read", "cache_write",
+    "partial"}. From the final summary when there is one (Claude Code's result, the one JSON line of Vibe, Codex and the
+    hub's loop); else what the stream showed until the job was ended (Claude Code's finished messages, each counted
+    once, or the last {"usage_so_far": ...} line of the entry scripts), marked `partial`. tokens_in is the whole input,
+    the cache numbers are the part of it read from or written to the AI's cache. Nothing is estimated."""
+    def numbers(u: dict) -> tuple[int, int, int, int]:
+        read, write = int(u.get("cache_read_input_tokens") or 0), int(u.get("cache_creation_input_tokens") or 0)
+        return int(u.get("input_tokens") or 0) + read + write, int(u.get("output_tokens") or 0), read, write
+    out = {"tokens_in": 0, "tokens_out": 0, "cache_read": 0, "cache_write": 0, "partial": False}
+    try:
+        tin, tout, read, write = numbers(claude_result(stdout).get("usage") or {})
+        return dict(out, tokens_in=tin, tokens_out=tout, cache_read=read, cache_write=write)
+    except (ValueError, AttributeError, TypeError):
+        pass
+    messages, so_far, summary = {}, None, None
+    for line in (stdout or "").splitlines():
+        if '"usage' not in line and '"tokens_in"' not in line:
+            continue
+        try:
+            data = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(data, dict):
+            continue
+        message = data.get("message") if data.get("type") == "assistant" else None
+        if isinstance(message, dict) and isinstance(message.get("usage"), dict):
+            messages[message.get("id") or len(messages)] = message["usage"]
+        elif isinstance(data.get("usage_so_far"), dict):
+            so_far = data["usage_so_far"]
+        elif "tokens_in" in data:
+            summary = data
+    for found, partial in ((summary, False), (so_far, True)):
+        if found is not None:
+            try:
+                tin, tout, read = (int(found.get(k) or 0) for k in ("tokens_in", "tokens_out", "cache_read"))
+            except (TypeError, ValueError):
+                continue
+            return dict(out, tokens_in=tin, tokens_out=tout, cache_read=read, partial=partial)
+    if messages:
+        sums = [sum(v) for v in zip(*(numbers(u) for u in messages.values()))]
+        return dict(out, tokens_in=sums[0], tokens_out=sums[1], cache_read=sums[2], cache_write=sums[3], partial=True)
+    return out
+
+
 def claude_result(stdout: str) -> dict:
     """The result object of `claude -p`: the whole output (--output-format json, agent runs) or the last line of type
     "result" (stream-json, the chat). ValueError if there is none."""

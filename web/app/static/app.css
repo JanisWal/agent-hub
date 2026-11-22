@@ -905,3 +905,5 @@ main { overflow: clip; } /* shadows may reach to the window edge, but their empt
 .m-lamp.lamp-rest { --lamp: var(--rest); opacity: 1; }
 .m-lamp.lamp-yellow { --lamp: var(--warn); opacity: 1; }
 .m-lamp.lamp-red { --lamp: var(--danger); opacity: 1; }
+/* What an AI used, under its tools in the drawer (usage.by_ai, 22.11.2026): quiet, one line. */
+.service-usage { display: block; margin-top: 2px; font-size: 0.74rem; color: var(--muted); }
