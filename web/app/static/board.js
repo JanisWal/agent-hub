@@ -235,11 +235,13 @@
   // board when the programmer takes it); not while dragging, typing or the tab is hidden.
   // Through the page's one timer (core.js): the swap leaves the board alone when nothing changed, and lets cards glide
   // when something did; a failed look waits for the next one instead of reloading the page.
-  AgentHub.live({
+  var watch = AgentHub.live({
     every: 4000,
     when: function () {
-      return !board.hidden && !!(document.querySelector("#board-state [data-live]") || document.querySelector("#board .card:not(.proposed)"));
+      return !!board.offsetParent && !!(   // only while the board can be seen (another tab: its own parts)
+        document.querySelector("#board-state [data-live]") || document.querySelector("#board .card:not(.proposed)"));
     },
     run: function () { return reload(true); },
   });
+  document.addEventListener("agenthub:view", function () { watch.soon(); });   // back on the board: look at once
 })();
