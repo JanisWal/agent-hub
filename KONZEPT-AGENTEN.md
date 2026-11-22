@@ -447,7 +447,7 @@ Drei Branches übereinander, ein Deploy (Hub und Runner gehören zusammen): `cha
 - das Lesen aus dem Zwischenspeicher zählte bei Claude voll als Eingabe (es wiegt beim Kontingent weniger);
 - je KI war nichts sichtbar (nur die Summe je Rolle im Tab).
 
-**Lösung (gebaut, `usage`):**
+**Lösung (gebaut und live seit 22.11.2026, `usage`):**
 - **Ein Verbrauchsbuch** `ai_usage` (`web/app/usage.py`): eine Zeile je Aufruf einer KI, geschrieben genau dort, wo der Runner ein Ende meldet (`chat.finish`, `agents.finish_run`, also auch Status, Ordnerpläne, Nachfragen, kurze Aufträge des Managers, Wiederholungen nach einem Wechsel der KI). Spalten: Nutzer, Projekt, KI, Modell, Abo oder Schlüssel, Art (`chat`, `status`, `folders`, `run`), Rolle, Zweck, Eingabe gesamt, Ausgabe, davon aus dem Zwischenspeicher gelesen und dorthin geschrieben, Sekunden, `partial` (aus einem beendeten Lauf mitgezählt), Zeitpunkt. Wird nie mit dem Chatverlauf gelöscht; geht mit dem Konto (`ON DELETE CASCADE`), bei einem gelöschten Projekt bleibt die Zeile ohne Projekt (sie gehört zum Konto).
 - **Teilverbrauch:** Der Runner zählt mit, was er im Stream sieht: bei Claude Code die `usage` jeder fertigen Antwort (`type: assistant`, je Nachricht einmal), bei Codex und der Schleife des Hubs eine Zeile `{"usage_so_far": …}`, die ihre Startskripte nach jedem Zug ausgeben. Endet ein Lauf ohne Ergebnis (oder eine Chat-Antwort durch die Zeitgrenze), meldet er diese Summe (`partial`). Vibe meldet seinen Verbrauch erst am Ende (Export der Sitzung): ein beendeter Vibe-Lauf zählt weiter 0 (bekannte Lücke).
 - **Zwischenspeicher getrennt:** `tokens_in` bleibt die ganze Eingabe; `cache_read` und `cache_write` sind der Anteil davon (heute nur Claude Code, die anderen melden 0).
