@@ -109,7 +109,7 @@ def _now(lang: str, role: str, runs: list[agents.RoleRun], now: int, where=None)
                      f'{esc(i18n.t(lang, "bs_" + state, role=role_name, title=task.title))}</p>')
     if not lines:
         return f'<p class="muted">{esc(i18n.t(lang, "role_idle"))}</p>'
-    if mine:
+    if mine and role != "programmer":                  # the programmer's task tile has it already
         lines.append(f'<div class="r-actions">{_cancel(lang, where[0])}</div>')
     return "".join(lines)
 
