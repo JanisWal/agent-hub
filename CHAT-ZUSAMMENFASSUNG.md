@@ -1,6 +1,6 @@
 # Agent-Hub – Übergabe an einen neuen Chat
 
-Stand: 21.11.2026 (ChatGPT, API-Schlüssel neben dem Abo, weitere KIs; davor 20.11.2026: Durchsicht des ganzen Systems und Umbau der KI-Pakete) · Zweck: Einstieg in einen neuen Chat. Quelle der Wahrheit: `PROJEKT.md` („Auf einen Blick“, Fahrplan in 11a), `PROTOKOLL.md` (alle Änderungen, neueste zuerst), `KONZEPT-AGENTEN.md` (9.2a Werkzeuge je KI, 9.3a Pakete je Rolle), `DESIGN.md`, `CLAUDE.md`. Die vorige Übergabe (bis 19.11.2026) liegt in `archiv/CHAT-ZUSAMMENFASSUNG-2026-11-19.md`.
+Stand: 22.11.2026 abends (die Kette der Agenten neu gebaut); davor 21.11.2026 (ChatGPT, API-Schlüssel neben dem Abo, weitere KIs; davor 20.11.2026: Durchsicht des ganzen Systems und Umbau der KI-Pakete) · Zweck: Einstieg in einen neuen Chat. Quelle der Wahrheit: `PROJEKT.md` („Auf einen Blick“, Fahrplan in 11a), `PROTOKOLL.md` (alle Änderungen, neueste zuerst), `KONZEPT-AGENTEN.md` (9.2a Werkzeuge je KI, 9.3a Pakete je Rolle), `DESIGN.md`, `CLAUDE.md`. Die vorige Übergabe (bis 19.11.2026) liegt in `archiv/CHAT-ZUSAMMENFASSUNG-2026-11-19.md`.
 
 ## In einem Satz
 
@@ -41,8 +41,17 @@ Chat-Punkte starten sofort (Regel „im Web gelesen“ aufgehoben); keine Obergr
 - **Vor dem Deploy gefunden:** Eine Status-Runde konnte den Platz einer Frage im Manager-Chat nehmen (die Frage wartete eine Abfrage länger, die nächste bekam „busy“). Jetzt gehen Fragen vor. Sieben Tests passten nicht mehr zum neuen Stand und sind angepasst; die Fallen stehen in PROJEKT.md 9 („Fallen beim Testen“).
 - **Offen:** Die neuen Teile auf der Live-Seite durchklicken (Einrasten der Trenner, drehender Status-Pfeil, KI-Pillen mit Seitenrad und Ziehen, „KIs pausieren“ und „KIs fortfahren“ an einem echten Lauf, Titel als Knopf); einen Status während eines echten Laufs alle 2 Minuten beobachten.
 
+## Am 22.11.2026, abends: die Kette der Agenten neu gebaut (`chain`, live)
+
+- **Befund vorher** (echte Datenbank, 24 Aufgaben): 7 von 10 Eskalationen waren Merge-Konflikte, die nie lösbar waren (der Branch holte `main` nie nach); mehrere Aufgaben eines Projekts liefen parallel; kleine Updates liefen vor den großen, auf denen sie aufbauen (Prüfer wandte sechsmal zu Recht ein); eine fehlende `RESULT:`-Zeile eskalierte; Läufe endeten nach 20 Minuten, Tickets nach einer Stunde.
+- **Janis' Ablauf, so gebaut** (KONZEPT-AGENTEN.md 10): Manager fragt im Chat und legt Punkte aufs Board; das Board ist die Warteschlange, der Programmierer nimmt Punkte selbst (sie verlassen das Board); Programmierer → Tests → Tester → Prüfer, jeder Mangel zurück, danach die ganze Kette neu; ok des Prüfers → Merge → Doku, **keine Freigabe**. Rückfragen der Rollen erst zum Manager (entscheidet nach Selbstständigkeit oder fragt dich einfach und mit Vorschlag), Handarbeit nach „Für dich“, festgefahrene Aufgaben als Entscheidung (Weiter mit Hinweis, So übernehmen, Abbrechen). Mac bleibt vorgesehen (`needs`). Läufe ohne festes Zeitlimit (Stillstand 15 min, Höchstdauer 4 h), Pause friert ein, Runner-Neustart verliert nichts.
+- **Live seit 22.11.2026** (`main` b433167, Backup `hub-2026-11-22-before-chain.db`; Web, Runner, Egress neu, Lauf-Images unverändert). Tests: 703 Web (vor den letzten Korrekturen; die betroffenen Module danach grün), 197 Runner, HTTP-Test mit zwei Konten, Probe der Migration an einer Kopie, Vorschau mit Beispieldaten im Browser angesehen.
+- **Echter Lauf** im Projekt „Agenten-Test“ (Aufgabe 25, `--count` für primes.py): Programmierer (Claude) 41 s, Tests 23 grün, Tester und Prüfer (ChatGPT), Merge, Doku, fertig in knapp 2 Minuten.
+- **Nach der Migration bei dir:** 11 alte Aufgaben warten als Entscheidung (Projekt 1: 5, 8, 9; Taschenrechner 10, 11, 15–19; Kassenbuch 23), Hinweis „Aufgabe von vor dem Umbau“. „Weiter“ holt `main` in den Branch und löst die alten Konflikte über den Programmierer; „Abbrechen“ legt den Punkt in den Papierkorb. 5 alte Umgebungshinweise stehen jetzt in „Für dich“.
+
 ## Was als Nächstes ansteht
 
+0. **Die 11 alten Entscheidungen** durchgehen (siehe oben). Noch nie echt gelaufen: eine Rückfrage über den Manager, „Für dich“ mit `RESULT: blocked`, Pause an einem langen Lauf, Konfliktauflösung durch den Programmierer, ein Lauf über 15 Minuten.
 1. **`polish-ui` live prüfen:** Trenner, Status-Pfeil, Pillen, Notschalter an einem echten Lauf, Titel (siehe oben).
 1. **Echte Probe mit Janis:** ChatGPT anmelden (Gerätecode), eine Chat-Frage und ein Agentenlauf, Modell-Liste ansehen; optional ein API-Schlüssel und eine weitere KI (z. B. ein lokales Ollama, dessen Adresse unter „Freigegebene Adressen“ steht).
 2. Das Aussehen in Hell und am Handy prüfen; ein echter Lauf mit dem Testbrowser.

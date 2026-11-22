@@ -1,6 +1,6 @@
 # Agent-Hub – Konzept: Claude-Instanzen und Zusammenarbeit der Agenten
 
-Stand: 20.11.2026 (Abschnitt 9.3a: Pakete je Rolle, 9.2a: Werkzeuge je KI; Abschnitte 2, 6a und „Dateizugriff 13.11.“ sind Geschichte, der heutige Stand steht jeweils oben im Hinweis) · davor 14.11.2026 (Abschnitt 9: Konzept für den KI-unabhängigen Ablauf) · zuerst 07.11.2026, Branch `agent-core` · Ergänzt PROJEKT.md (Abschnitte 3 und 5). Hier steht die Logik hinter dem Bereich „Projekte“; das Aussehen kommt später (DESIGN.md).
+Stand: 22.11.2026 (Abschnitt 10: die Kette neu gebaut, gilt vor 3 bis 5 und 9.4/9.5) · davor 20.11.2026 (Abschnitt 9.3a: Pakete je Rolle, 9.2a: Werkzeuge je KI; Abschnitte 2, 6a und „Dateizugriff 13.11.“ sind Geschichte, der heutige Stand steht jeweils oben im Hinweis) · davor 14.11.2026 (Abschnitt 9: Konzept für den KI-unabhängigen Ablauf) · zuerst 07.11.2026, Branch `agent-core` · Ergänzt PROJEKT.md (Abschnitte 3 und 5). Hier steht die Logik hinter dem Bereich „Projekte“; das Aussehen kommt später (DESIGN.md).
 
 ## 1. Überblick
 
@@ -304,3 +304,127 @@ Der Hub liest aus einer Antwort nur die Markierungen der Rolle (`prompts.ALLOWED
 - **Dateinamen immer englisch:** `MEMORY.md`, `PROJECT.md`, `ROADMAP.md`, `RULES.md`. **Inhalt** (Überschriften, Text) in der Sprache, die beim Anlegen des Projekts eingestellt ist. Begründung: Die Namen sind technische Schlüssel, auf die Regelteil, Hub und Tests sich beziehen, und sehen in jedem Projekt gleich aus; den Inhalt lesen Menschen. Verworfen: übersetzte Namen (jede Stelle bräuchte beide), gemischte Namen (MEMORY neben REGELN). Vorschlag von Claude am 14.11.2026, von Janis im selben Zug angenommen.
 - **`ARCHIVE.md` (seit 15.11.2026, live):** die Geschichte des Projekts (was es gab, was verworfen oder geändert wurde, warum). Sie wächst nur: Der Hub hängt an, was der Manager hineinschreibt, mit Datum (PROJEKT.md, Änderungsprotokoll `memory-archive`).
 - **Umgesetzt 20.11.2026:** `memory.SKELETON` legt in jeder Sprache `PROJECT.md` und `RULES.md` an; bestehende Projekte wurden einmalig umbenannt (Inhalt blieb, `db._prepare`, Merker `done.memory_names`).
+
+## 10. Die Kette neu (Janis' Ablauf, gebaut und live seit 22.11.2026, Branch `chain`)
+
+Anlass: Durchsicht der echten Läufe (7 von 10 Eskalationen waren unlösbare Merge-Konflikte). Janis: alles zur Kette neu aufbauen, Funktionierendes übernehmen, keine Altlasten. Ersetzt die Abschnitte 3 bis 5 und 9.4/9.5, soweit sie die Kette betreffen. **Abweichungen beim Bau:** die kurzen Aufträge des Managers (`decide`, `explain`) gehen vor die Arbeitsläufe; sind alle KIs des Nutzers verbraucht, wartet der Lauf in der Warteschlange (auch ein Lauf auf dem API-Schlüssel wartet nicht auf das ruhende Abo); „Abbrechen“ steht im Programmierer-Tab nur in der Aufgabenkachel; der Vergleich „derselbe Einwand zweimal“ wurde nicht gebaut (bei langen Berichten unzuverlässig), stattdessen gilt „nach einer Rückgabe nichts geändert“ als festgefahren.
+
+### 10.1 Ablauf (Janis)
+
+1. **Manager-Chat:** Der Nutzer beschreibt, was er will. Der Manager fragt nach, was ihm auffällt, **direkt im Chat** (normaler Text; kein `<ask>` im Chat, nichts unter „Wartet auf dich“). Er legt die Teile mit `<task from="user">` aufs Board; die starten ohne Bestätigung. Eigene Ideen (`from="idea"`) und neue Funktionen, die einer Rolle auffallen, sind Vorschläge mit Annehmen/Ablehnen; ein Fehler einer Rolle kommt direkt aufs Board.
+2. **Das Board ist die Warteschlange.** Je Projekt eine Aufgabe zur Zeit. Reihenfolge: Fehler zuerst (in Board-Reihenfolge), dann kleine und große Updates gemeinsam: von den beiden Spaltenköpfen der mit der kleineren Nummer (früher angelegt) zuerst; Ziehen innerhalb einer Spalte gilt weiter.
+3. **Übernimmt der Programmierer, verlässt der Punkt das Board** (`board_items.status = 'working'`). Sichtbar ist er unter „Gerade“ im Tab der Rolle, die dran ist (er wandert Programmierer → Tester → Prüfer), und in den Läufen.
+4. **Kette:**
+```
+coding ──► [hub-test.sh] ──► testing ──► reviewing ──► merging ──► documenting ──► done
+  ▲      rot │                  │ fail        │ objections
+  └──────────┴──────────────────┴─────────────┘   jede Rückgabe: returns + 1
+```
+   Nach jeder Rückgabe läuft die ganze Kette wieder: Programmierer → Tests → Tester → Prüfer. Prüfer ok → der Runner führt zusammen → der Manager führt die Erinnerung nach → fertig, Punkt ins Archiv. **Keine Freigabe durch den Nutzer mehr, kein „Noch eine Runde“.** Ausgeschaltete Rollen werden übersprungen (ohne Tester: Merker „von Hand prüfen“).
+5. **Rückfragen einer Rolle:** Hängt ihr Weg an einer Entscheidung, endet sie mit `<ask>` und `RESULT: question`; die Aufgabe hält an (`hold = 'question'`). Der Manager bekommt die Frage (kurzer Lauf ohne Werkzeuge mit MEMORY.md, PROJECT.md, RULES.md, der Aufgabe und der Frage) und
+   - entscheidet selbst: `<decide>Antwort</decide>`, die Rolle läuft mit der Antwort weiter, oder
+   - fragt den Nutzer: schreibt die Frage neu, einfach, ohne Technik-Überschrift, mit Vorschlag: `<ask>Frage<option recommended>Vorschlag</option><option>B</option></ask>`. „Wartet auf dich“ zeigt die Möglichkeiten als Knöpfe (der Vorschlag hervorgehoben) und ein eigenes Feld. Die Antwort setzt die Rolle fort.
+   - Selbstständigkeit: „Entscheidet selbst“ = der Manager entscheidet jede Frage; „Fragt bei Großem“ = Kleines entscheidet er (z. B. Anordnung der Knöpfe), Großes kommt zum Nutzer (Technik, Daten, Kosten, Löschen, Hardware, Sicherheit); „Fragt auch bei Kleinem“ = jede Frage kommt zum Nutzer, immer neu formuliert. Ist der Manager ausgeschaltet, kommt die Frage unverändert.
+   - Eine Frage ohne `RESULT: question` (die Rolle hat trotzdem fertig gemacht) geht denselben Weg, hält aber nicht an; die Antwort bekommt der nächste Lauf der Aufgabe.
+   - Wartezeit zählt nicht fürs Zeitlimit der Aufgabe.
+
+### 10.2 Schutzmechanismen
+
+| Fall | Bisher | Neu |
+|---|---|---|
+| `main` hat sich bewegt | Konflikt beim Merge, jede neue Runde scheitert wieder | Vor jedem Programmierer-Lauf holt der Runner `main` in den Branch. Bei Konflikt bleiben die Marker in den Dateien, das Paket nennt sie, der Programmierer löst sie; danach prüft der Runner, dass keine Marker übrig sind (sonst Rückgabe). Konflikt beim Merge nach dem Prüfer: zurück zum Programmierer, nicht zum Nutzer. |
+| Mehrere Aufgaben eines Projekts | Start von Hand und Wiederöffnen umgingen die Regel | Eine je Projekt, durchgesetzt an einer Stelle (`agents.take_next`); kein Start von Hand mehr, jeder offene Punkt läuft von selbst. |
+| Reihenfolge | klein vor groß | wie in 10.1, Punkt 2 |
+| `RESULT:` fehlt | gescheitert, Eskalation | kurzer Nachfrage-Lauf derselben KI ohne Werkzeuge (Bericht, erlaubte Werte, „nur die Zeile“); fehlt sie wieder: Entscheidung |
+| Einwand, den der Programmierer nicht beheben kann (fehlende Datei, Gerät, echte Daten) | verbrannte Runden | Regel für Tester und Prüfer: Einwand nur für das, was sich in `/work` ändern lässt; Fehlendes als `<env>`, Merker „von Hand prüfen“, hält nicht auf |
+| festgefahren | lief bis zum Rundenende | nach einer Rückgabe ändert der Programmierer nichts: Entscheidung (der Wortvergleich zweier Einwände ist nicht gebaut) |
+| zu viele Rückgaben | 3 Runden, dann Endzustand „eskaliert“ | höchstens 6 Rückgaben je Aufgabe, dann Entscheidung |
+| Rolle meldet `failed`, Lauf ohne Meldung, Container weg | Eskalation | einmal von selbst wiederholen, beim zweiten Mal Entscheidung |
+| KI am Limit, Anmeldung abgelehnt | Schlüssel, dann nächste KI | bleibt (`failures.py`); ist keine KI frei, wartet die Aufgabe ohne Eskalation |
+| Runner startet neu | Läufe hingen bis zum Zeitlimit, dann Eskalation | der Runner meldet sich beim Start (`POST /runner/hello`), der Hub stellt dessen laufende Läufe zurück in die Warteschlange |
+| Programmierer ändert nichts und meldet fertig | Tester und Prüfer prüften nichts | Entscheidung („nichts geändert“, mit seinem Bericht) |
+| viele Rückfragen | – | höchstens 3 anhaltende Rückfragen je Aufgabe, dann Entscheidung |
+| Notschalter | beendete die Container, der Lauf begann von vorn | friert ein statt zu beenden (10.8) |
+| Zeit | 20 min je Lauf, 2 h je Aufgabe, Ticket gilt 1 h | kein festes Zeitlimit für Arbeit, die vorankommt (10.8) |
+
+**Entscheidung** (`hold = 'decision'`): Die Aufgabe steht, das Projekt wartet. Der Manager erklärt in einfachen Worten, was hakt, und empfiehlt einen Weg (`<stuck recommend="again|accept|cancel">`). „Wartet auf dich“ zeigt die Erklärung und drei Knöpfe, die Empfehlung leuchtet: **Weiter** (optionaler Hinweis an den Programmierer, Rückgaben zurück auf 0), **So übernehmen** (zusammenführen mit Merker „von Hand prüfen“), **Abbrechen** (Punkt in den Papierkorb).
+
+### 10.3 Daten (eine Migration, vorher an einer Kopie der echten Datenbank geprobt)
+
+- `agent_tasks`: id, project_id, item_id, title, kind, **stage** (coding, testing, reviewing, merging, documenting, done, cancelled), **hold** ('', question, todo, decision), **hold_why**, **held_since**, **returns**, **asks**, manual_check, **hint** (Hinweis aus „Weiter“), deadline, created_at, finished_at, diff_stat, diff, tests, tests_exit. Weg: status, round, note, merged. `needs` (any, mac) bleibt (10.8).
+- `agent_runs`: zusätzlich **purpose** (work, decide, explain, result, doc); die Manager-Läufe behalten die Rolle `chef`.
+- `questions`: zusätzlich **via** (manager: wartet auf den Manager; user), **recommended** (Nummer der Option), **answered_by** (manager, user). Fragen des Manager-Chats und Hinweise (`kind = 'note'`) entfallen; offene Hinweise werden einmalig Einträge in „Für dich“.
+- `board_items.status`: zusätzlich `working`. `projects.review_focus` (Text aus dem Prüfer-Tab, geht mit dem Projekt).
+- Umwandlung einmalig: offene alte Aufgaben (eskaliert, wartet auf Freigabe) werden `hold = 'decision'` („Aufgabe von vor dem Umbau“); fertige und abgebrochene bleiben. Einstellung `strictness` weg; alte Schlüssel `model.<rolle>` einmal umgeschrieben, der Rückfall in `agents._choice` entfällt.
+
+### 10.4 Schnittstellen
+
+`workflow.py` (rein, ohne Datenbank):
+```python
+STAGES = ("coding", "testing", "reviewing", "merging", "documenting")
+STAGE_ROLE = {"coding": "programmer", "testing": "tester", "reviewing": "reviewer", "documenting": "chef"}
+RESULTS = {"programmer": ("done", "question", "blocked", "failed"),
+           "tester": ("pass", "fail", "not_testable", "question", "blocked", "failed"),
+           "reviewer": ("ok", "objections", "question", "blocked", "failed"), "chef": ("done", "failed")}
+MAX_RETURNS, MAX_ASKS = 6, 3
+
+@dataclass(frozen=True)
+class Step:
+    stage: str; hold: str; returns: int; manual_check: bool; why: str = ""
+
+def after_run(stage, returns, manual_check, result, enabled, *, stuck=False, changed=True, retried=False) -> Step
+def after_tests(returns, manual_check, passed: bool, enabled) -> Step
+def after_merge(ok: bool, returns, manual_check, enabled) -> Step
+def after_decision(choice: str, returns, manual_check, enabled, changed: bool) -> Step   # again | accept | cancel
+```
+`agents.py`:
+```python
+take_next(conn, now) -> int          # nächster Punkt je freiem Projekt; ersetzt start_task, start_item, autostart, pick_next
+claim_next(can_mac: bool, now=None) -> Job | None
+finish_run(run_id, result, report, tokens_in=0, tokens_out=0, seconds=0, now=None,
+           change=None, tests=None, markers_left=False) -> bool   # result "none" = Zeile fehlt
+answer_question(user_id, question_id, text) -> bool
+decide(user_id, task_id, choice, hint="") -> bool     # nur bei hold = decision
+cancel(user_id, task_id) -> bool                      # jederzeit, Punkt in den Papierkorb
+requeue_running(now=None) -> int                      # Runner-Neustart
+pending_merges() / merge_done(task_id, ok)
+current_task(user_id, project_id, role=None) -> Task | None
+```
+Weg: start_task, start_item, autostart, pick_next, item_task, tasks_by_item, waiting_tasks, waiting_reason, _auto_approve, _skip_waiting_tests, Strenge, `Job.note`, Freigabe, `deadline`.
+`prompts.py`: Manager-Chat ohne `ASK`; `run()` mit Prüf-Schwerpunkt, Hinweis des Nutzers und Konflikt-Text; neu `decide(conn, question)` und `explain(conn, task)`; Regeln für `RESULT: question` und `<env>` statt Einwand. `reply.py`: `<decide>`, `<stuck recommend>`, `<option recommended>`.
+Runner: `Workspace.prepare(...) -> (Path, list[str])` (Konfliktdateien); der Job bringt den Konflikt-Text aus `prompts.py` mit, der Runner hängt nur die Dateinamen an; nach dem Lauf übrige Marker → `markers_left`; fehlende Zeile → Ergebnis `none`; `POST /runner/hello` beim Start; Merge als eigene Stufe.
+
+### 10.5 Oberfläche
+
+- **Board:** nur wartende Punkte und Vorschläge, kompakte Zeilen (Stichpunkt, Kontext zum Aufklappen); keine Aufgabenkarten, kein Start-, Freigabe- oder „Noch eine Runde“-Knopf. Vorschläge: zwei eckige Knöpfe mit weichen Ecken (Rundung 8 px, 30 px hoch), „Annehmen“ grün leuchtend (`--go`), „Ablehnen“ rot leuchtend (`--danger`), Ablehnen legt in den Papierkorb. Eine Zeile oben sagt, woran die Agenten gerade sind oder worauf sie warten.
+- **Rollen-Tabs:** „Gerade“ zeigt die Aufgabe im Tab der Rolle, die dran ist, mit „Abbrechen“. Prüfer-Tab: Feld „Worauf achten“ (leer = Korrektheit, Sicherheit, Struktur).
+- **„Wartet auf dich“:** neu formulierte Fragen (Möglichkeiten als Knöpfe, Vorschlag hervorgehoben, eigenes Feld), Entscheidungen (Erklärung, drei Knöpfe), Keine Freigaben, keine Umgebungshinweise (die stehen in „Für dich“, 10.8). Antworten erscheinen nie im Manager-Chat.
+
+### 10.6 Entscheidungen mit Vorgabe (gelten, wenn Janis nichts anderes sagt)
+
+1. `hub-test.sh` grün → der Tester läuft trotzdem (prüft das Verhalten, auch im Testbrowser, und kennt das Testergebnis); rot → direkt zurück, ohne KI-Tester. Verworfen: Tester bei grün überspringen (spart Tokens, aber dann prüft nur der Programmierer seine eigenen Tests).
+2. Prüf-Schwerpunkt je Projekt im Prüfer-Tab. Verworfen: Abschnitt in RULES.md (unsichtbar).
+3. Abgebrochen → Papierkorb (wiederherstellbar). Verworfen: zurück aufs Board (liefe sofort wieder los).
+4. Die Rolle heißt in den Daten weiter `chef`; Umbenennen wäre nur Kosmetik quer durch Chat und Einstellungen.
+
+### 10.7 Bau
+
+Drei Branches übereinander, ein Deploy (Hub und Runner gehören zusammen): `chain-core` (Migration, workflow, agents, prompts, reply, Routen, Tests), `chain-runner` (workspace, runner, Tests), `chain-ui` (Board, „Wartet auf dich“, Rollen-Tabs, i18n, DESIGN.md). Dann Migration an einer Kopie der echten Datenbank, Backup, Deploy, ein echter Lauf im Testprojekt. Tests zu Freigabe, Strenge und Start von Hand gehen mit dem Code.
+
+### 10.8 Ergänzungen nach Janis' Rückmeldung (22.11.2026)
+
+**„Für dich“ statt „Wartet auf dich“ für Handarbeit.** Fehlt einer Rolle etwas, das nur der Nutzer beschaffen oder tun kann (Dateien hochladen, ein Gerät anschließen, ein Konto anlegen), meldet sie es mit `<env>`; der Hub legt einen Eintrag in „Für dich“ an (`todos`, Quelle = die Rolle, `task_id`), nie in „Wartet auf dich“. Ob es ohne weitergeht, entscheidet die Rolle selbst mit der Aufgabe vor Augen: geht es, arbeitet sie weiter und lässt das Fehlende offen; geht nichts Sinnvolles, endet sie mit `RESULT: blocked`, die Aufgabe hält an (`hold = 'todo'`). Hakt der Nutzer den Eintrag ab (mit der Notiz, was er getan hat), läuft die Aufgabe weiter, die Notiz steht im Paket. Ebenso landet die Checkliste eines Testers bei `not_testable` als Eintrag in „Für dich“ („Von Hand prüfen: …“). „Wartet auf dich“ ist damit nur noch für Entscheidungen da.
+
+**Antworten nie im Manager-Chat.** Eine Antwort in „Wartet auf dich“ geht an die Rolle oder die Entscheidung, zu der sie gehört; der Chat bekommt keine Nachricht mehr (`routes/manager.answer_question` sendet nichts an `chat.send`).
+
+**Mac bleibt vorgesehen** (PROJEKT.md 4, „Mac-Integration“; das Mac-Programm wird später gebaut). Es bleiben `agent_tasks.needs` (`any`, `mac`) und `claim_next(can_mac)`, dieselbe Schnittstelle für Pi- und Mac-Runner. Der Manager markiert Aufgaben, die ein Apple-Gerät brauchen, mit `<task needs="mac">`. Programmierer und Tester einer solchen Aufgabe laufen nur auf einem Runner mit `can_mac`; Prüfer, Merge und Doku auf dem Pi. Ohne Mac wartet sie sichtbar („wartet auf Mac“), ohne Eskalation. Der Knopf „Lokale Ressourcen verwenden“ (Einmal-Ticket, `agenthub://`) kommt mit dem Mac-Programm. Weg fällt nur das Überspringen von Tests nach der Strenge (ein ungetesteter Mac-Code wäre genau das, was nicht passieren soll).
+
+**Zeit: arbeiten lassen, solange es vorangeht.**
+- Heute endet ein Lauf nach 20 Minuten (Einstellung `run_minutes`), eine Aufgabe nach 2 Stunden, und das Ticket eines Laufs gilt nur eine Stunde (`tokens.TICKET_AGE`): ein langer Lauf verlöre mitten in der Arbeit den Zugang.
+- Neu: Läufe geben ihre Ausgabe laufend aus (`stream-json` wie im Chat, für alle Adapter). Der Runner beendet einen Lauf nur bei **Stillstand**: keine Ausgabe für eine einstellbare Zeit (Standard 15 min, Auswahl 10 bis 60). Solange Zeilen kommen, läuft er.
+- **Höchstdauer je Lauf** nur gegen Ausreißer, großzügig und einstellbar (Standard 4 h, Auswahl 1 bis 12 h). Das Gesamtzeitlimit der Aufgabe entfällt (gegen Endlosschleifen stehen die Grenzen für Rückgaben und Rückfragen).
+- Der Runner meldet jeden lebenden Lauf einmal je Minute beim Hub (`POST /runner/runs/{id}/alive`, dabei die neuen Gedanken für die Läufe-Ansicht) und frischt dabei das Ticket auf; tot ist ein Lauf für den Hub erst ohne Meldung (Runner weg).
+- Endet ein Lauf an Stillstand oder Höchstdauer, gilt die Arbeit nicht als verloren: der Runner committet den Stand, derselbe Schritt startet noch einmal mit dem Hinweis „dein letzter Lauf wurde nach … beendet, der Stand ist gespeichert, mach dort weiter“. Erst beim zweiten Mal kommt eine Entscheidung (dort: **Weiter** = noch ein Lauf).
+- Fest bleibt nur die Zeit der Projekttests (`hub-test.sh`): sie laufen ohne KI und brauchen eine Grenze.
+
+**Pausieren friert ein, beendet nichts.** „KIs pausieren“ hält die laufenden Container an (`docker pause`, die Prozesse stehen still, Arbeitsspeicher und Dateien bleiben), startet nichts Neues und lässt den Manager-Chat frei; „KIs fortfahren“ macht weiter (`docker unpause`), ohne Neustart. Während der Pause stehen Stillstand und Höchstdauer still, das Ticket bleibt gültig. Ein angehaltener Lauf zählt nicht als belegter KI-Platz, damit der Chat geht (auf dem kleinen Server teilen sich dann beide den Speicher). Bricht eine Verbindung der KI während einer langen Pause ab, versucht ihr Programm es selbst noch einmal; scheitert der Lauf trotzdem, greift der Weg von oben (Stand committet, derselbe Schritt noch einmal). Die Tabelle `run_stops` wird zu Paus- und Weiter-Aufträgen für den Runner.
