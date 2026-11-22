@@ -63,7 +63,7 @@ ICONS = {
     # Device actions and the device window (17.11.2026): power, restart (a circle with an arrow), update (a line with
     # an arrow up above it), the shell, the files and the logs of a device
     "power": '<path d="M12 3v8"/><path d="M6.3 6.8a8 8 0 1 0 11.4 0"/>',
-    "refresh": '<path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/>',
+    "refresh": '<path d="M20 11.91a8 8 0 1 0-2.3 5.7"/><path d="M20 4.91v7h-7"/>',   # circle around (12, 12): spins true
     "update": '<path d="M5 20h14"/><path d="M12 16V4M7 9l5-5 5 5"/>',
     "terminal": '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M12 15h5"/>',
     "folder": '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',

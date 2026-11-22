@@ -430,14 +430,13 @@ class RoleViewsTest(unittest.TestCase):
 
     def test_each_role_shows_its_settings_its_runs_and_its_usage(self):
         from app import agents
-        agents.configure(self.user.id, "tester", enabled=True, net="apart")
+        agents.configure(self.user.id, "tester", net="apart")
         self.run_task([("done", "Built <it>"), ("pass", "All green")])
         page = self.html()
         prog = page[page.index('id="view-programmer"'):page.index('id="view-tester"')]
         tester = page[page.index('id="view-tester"'):page.index('id="view-reviewer"')]
         self.assertIn('data-settings-url="/roles/programmer/settings"', prog)
-        self.assertNotIn('id="role-programmer-enabled"', prog)               # the programmer is always on
-        self.assertIn('id="role-tester-enabled"', tester)
+        self.assertNotIn('-enabled"', page)                                  # every role is always on (22.11.2026)
         self.assertIn('id="role-tester-model"', tester)
         self.assertIn('id="role-tester-net" data-setting="net" data-on="together" data-off="apart" aria-pressed="false"', tester)
         self.assertIn("Built &lt;it&gt;", prog)                               # the report, escaped
@@ -495,13 +494,11 @@ class RoleViewsTest(unittest.TestCase):
         from app.routes import roles as routes
 
         def call(role, **form):
-            values = {"enabled": "", "model": "", "net": "", "effort": "", "provider": "-"} | form
+            values = {"model": "", "net": "", "effort": "", "provider": "-"} | form
             return routes.role_settings(role, user=self.user, **values)
-        answer = call("tester", enabled="0", net="apart")
-        self.assertEqual((answer["enabled"], answer["net"]), ("0", "apart"))
-        self.assertFalse(agents.settings(self.user.id)["roles"]["tester"]["enabled"])
+        answer = call("tester", net="apart")
+        self.assertEqual(answer["net"], "apart")
+        self.assertNotIn("enabled", answer)
         self.assertEqual(call("reviewer", model="opus", effort="max")["effort"], "max")
-        self.assertEqual(call("programmer", enabled="0").status_code, 400)    # the programmer stays on
         self.assertEqual(call("chef", net="apart").status_code, 400)          # the manager has its own route
-        self.assertEqual(call("tester", enabled="yes").status_code, 400)
         self.assertEqual(call("tester", model="gpt-9").status_code, 400)

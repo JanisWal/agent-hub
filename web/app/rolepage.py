@@ -2,7 +2,7 @@
 version to work with; what exactly belongs there is decided later, PROJEKT.md 11a, Stufe 2).
 
 A role view has two columns. Left: "Right now" (what the role is doing in this project, with its settings in the head:
-on or off, code with internet, model and level) and its usage. Right: its runs, newest first, each with its report.
+code with internet, model and level) and its usage. Right: its runs, newest first, each with its report.
 "For you" (Janis, 16.11.2026) is the user's own work list (todos.py): what he does himself, physically or technically,
 and what he did. Decisions wait in the Manager view ("waiting for you", managerpage.py), not here.
 
@@ -126,16 +126,6 @@ def _usage(lang: str, usage: dict) -> str:
     return f"<p>{esc(line)}</p>"
 
 
-def _enabled_select(lang: str, role: str, enabled: bool) -> str:
-    """On or off for tester and reviewer, in our own drop-down (core.js); the programmer is always on."""
-    label = esc(i18n.t(lang, "role_switch"))
-    options = "".join(
-        f'<option value="{value}"{" selected" if (value == "1") == enabled else ""}>{esc(i18n.t(lang, key))}</option>'
-        for value, key in (("1", "role_on"), ("0", "role_off")))
-    return (f'<label class="m-select has-select"><select name="enabled" data-setting="enabled" id="role-{role}-enabled" '
-            f'aria-label="{label}">{options}</select>{icon("chevron_down")}</label>')
-
-
 def _net_pill(lang: str, role: str, current: str) -> str:
     """The same round globe button as the manager's (managerpage._net_switch), for this role."""
     label, tip = esc(i18n.t(lang, "net_together")), esc(i18n.t(lang, "net_together_tip"))
@@ -217,15 +207,19 @@ def _trail(lang: str, runs: list[agents.RoleRun]) -> str:
             f'<div class="r-scroll" id="role-programmer-trail">{body}</div></section>')
 
 
-def _focus_tile(lang: str, focus: str) -> str:
-    """What the reviewer looks at in this project (Janis, 22.11.2026), saved as it is typed (roles.js)."""
-    title = i18n.t(lang, "r_focus")
-    return (f'<section class="mtile glass r-focus"><header><h2>{esc(title)}</h2>'
-            f'{ui.info_dot(title, i18n.t(lang, "r_focus_hint"))}</header>'
-            f'<textarea class="field-text" id="review-focus" rows="3" maxlength="{agents.MAX_FOCUS}" '
-            f'placeholder="{esc(i18n.t(lang, "r_focus_placeholder"))}" aria-label="{esc(title)}">{esc(focus)}</textarea>'
-            f'<p class="muted r-focus-state" id="review-focus-state" role="status" data-saved="{esc(i18n.t(lang, "r_focus_saved"))}">'
-            f'</p></section>')
+def _focus_tile(lang: str, focus: str, project_id: int | None) -> str:
+    """What the reviewer looks at in this project (Janis, 22.11.2026): Markdown, saved as it is typed; a text file
+    dropped on the tile takes its place, the arrow next to the "i" downloads it as a file (roles.js)."""
+    title, down = i18n.t(lang, "r_focus"), i18n.t(lang, "r_focus_download")
+    arrow = (f'<a class="icon-button card-btn r-focus-down" href="/projects/{int(project_id)}/review-focus.md" download '
+             f'aria-label="{esc(down)}" data-tip="{esc(down)}">{icon("download")}</a>' if project_id else "")
+    t = lambda key: esc(i18n.t(lang, key))   # noqa: E731
+    return (f'<section class="mtile glass r-focus" id="review-focus-tile"><header><h2>{esc(title)}</h2>'
+            f'{ui.info_dot(title, i18n.t(lang, "r_focus_hint"))}{arrow}</header>'
+            f'<textarea class="field-text" id="review-focus" rows="5" maxlength="{agents.MAX_FOCUS}" '
+            f'placeholder="{t("r_focus_placeholder")}" aria-label="{esc(title)}">{esc(focus)}</textarea>'
+            f'<p class="muted r-focus-state" id="review-focus-state" role="status" data-saved="{t("r_focus_saved")}" '
+            f'data-taken="{t("r_focus_taken")}" data-bad="{t("r_focus_bad")}"></p></section>')
 
 
 def _programmer(lang: str, settings: dict, runs: list[agents.RoleRun], usage: dict, ais: tuple[str, ...], now: int,
@@ -274,7 +268,7 @@ def _programmer(lang: str, settings: dict, runs: list[agents.RoleRun], usage: di
 
 def render_role(lang: str, role: str, settings: dict, runs: list[agents.RoleRun], usage: dict,
                 ais: tuple[str, ...] = (catalog.DEFAULT_PROVIDER,), now: int | None = None, current=None, where=None,
-                focus: str = "") -> str:
+                focus: str = "", project_id: int | None = None) -> str:
     """One role's view. `settings` is agents.settings(user_id); `runs` agents.role_runs(...) for this project;
     `current` agents.current_task(...), `where` agents.where(...) for this project; `focus` the reviewer's focus."""
     now = int(now if now is not None else time.time())
@@ -283,8 +277,7 @@ def render_role(lang: str, role: str, settings: dict, runs: list[agents.RoleRun]
     mine = settings["roles"][role]
     picker = ui.model_picker(lang, f"role-{role}", mine["model"], mine.get("effort", ""), providers=(mine["provider"],),
                              allowed=settings.get("models"), names=settings.get("model_names"))
-    switch = "" if role == "programmer" else _enabled_select(lang, role, mine["enabled"])
-    tools = f'<span class="m-chat-tools">{switch}{_net_pill(lang, role, mine["net"])}{picker}</span>'
+    tools = f'<span class="m-chat-tools">{_net_pill(lang, role, mine["net"])}{picker}</span>'
     name = i18n.t(lang, f"station_{role}")
     listed = "".join(_run_row(lang, r, now) for r in runs)
     runs_html = (f'<ol class="r-runs">{listed}</ol>' if listed
@@ -296,7 +289,7 @@ def render_role(lang: str, role: str, settings: dict, runs: list[agents.RoleRun]
         f'<section class="mtile glass r-head"><header><h2>{esc(i18n.t(lang, "role_now"))}</h2>'
         f'{ui.info_dot(name, i18n.t(lang, f"role_hint_{role}"))}{tools}</header>'
         f'<div id="role-{role}-now">{_now(lang, role, runs, now, where)}</div></section>'
-        f'{_focus_tile(lang, focus) if role == "reviewer" else ""}'
+        f'{_focus_tile(lang, focus, project_id) if role == "reviewer" else ""}'
         f'<section class="mtile glass"><header><h2>{esc(i18n.t(lang, "role_usage"))}</h2></header>'
         f'<div id="role-{role}-usage">{_usage(lang, usage)}</div></section>'
         f'</div><div class="mcol">'

@@ -18,6 +18,7 @@ Two sides:
 
 A run starts only with one of the user's own AIs (aichoice.py); nobody else's connection is ever used.
 """
+import re
 import sqlite3
 import time
 from dataclasses import dataclass, field
@@ -160,11 +161,6 @@ def _put(conn: sqlite3.Connection, user_id: int, key: str, value: str) -> None:
                  " ON CONFLICT(user_id, key) DO UPDATE SET value = excluded.value", (user_id, key, value))
 
 
-def _enabled(conn: sqlite3.Connection, user_id: int) -> frozenset[str]:
-    roles = {r for r in workflow.ROLES if _setting(conn, user_id, f"enabled.{r}", "1") == "1"}
-    return frozenset(roles | {"programmer"})   # without the programmer nothing happens at all
-
-
 def _choice(conn: sqlite3.Connection, user_id: int, role: str, provider: str | None = None) -> tuple[str, str]:
     """(model, effort) of a role for one AI (default: the user's standard), made valid against the current list
     (catalog.resolve) and against the models his account offers (models.allowed)."""
@@ -213,30 +209,29 @@ def role_provider_in(conn: sqlite3.Connection, user_id: int, role: str, chosen_o
 
 
 def settings(user_id: int) -> dict:
-    """{"autonomy", "provider", "roles": {role: {"enabled", "model", "effort", "net", "provider", "chosen"}},
+    """{"autonomy", "provider", "roles": {role: {"model", "effort", "net", "provider", "chosen"}},
     "models", "model_names"}, defaults filled in. "models": per AI the model ids his account offers (None = not known
     yet), for the drop-downs."""
     with db.connect() as conn:
-        enabled = _enabled(conn, user_id)
         roles = {}
         for r in workflow.ROLES:
             mine = role_provider_in(conn, user_id, r)
             model, effort = _choice(conn, user_id, r, mine)
-            roles[r] = {"enabled": r in enabled, "model": model, "effort": effort, "net": net_in(conn, user_id, r),
+            roles[r] = {"model": model, "effort": effort, "net": net_in(conn, user_id, r),
                         "provider": mine, "chosen": role_provider_in(conn, user_id, r, chosen_only=True) or ""}
         return {"autonomy": autonomy_in(conn, user_id), "provider": aichoice.default_in(conn, user_id), "roles": roles,
                 "models": {p: models.allowed(conn, user_id, p) for p in catalog.PROVIDERS},
                 "model_names": {f"own-{r['slot']}": r["label"] for r in ai_link.custom_rows(conn, user_id)}}
 
 
-def configure(user_id: int, role: str | None = None, *, enabled: bool | None = None, model: str | None = None,
+def configure(user_id: int, role: str | None = None, *, model: str | None = None,
               autonomy: str | None = None, net: str | None = None, effort: str | None = None,
               provider: str | None = None) -> None:
-    """Change a setting of this user. Raises ValueError for unknown values or for switching the programmer off. Model
+    """Change a setting of this user (every role is always on). Raises ValueError for unknown values. Model
     and effort are checked against the list (catalog.py) and his account (models.py); `provider` is the AI of the role
     (one of his connected AIs; "" goes back to the standard)."""
     changes: list[tuple[str, str]] = []
-    if (enabled is not None or model is not None or net is not None or effort is not None or provider is not None) \
+    if (model is not None or net is not None or effort is not None or provider is not None) \
             and role not in workflow.ROLES:
         raise ValueError("Unbekannte Rolle")
     if provider is not None:
@@ -253,10 +248,6 @@ def configure(user_id: int, role: str | None = None, *, enabled: bool | None = N
         if net not in NET_MODES:
             raise ValueError("Unbekannter Netzmodus")
         changes.append((f"net.{role}", net))
-    if enabled is not None:
-        if role == "programmer" and not enabled:
-            raise ValueError("Der Programmierer bleibt immer an")
-        changes.append((f"enabled.{role}", "1" if enabled else "0"))
     if model is not None or effort is not None:
         if model is None:
             with db.connect() as conn:
@@ -281,20 +272,28 @@ def configure(user_id: int, role: str | None = None, *, enabled: bool | None = N
 
 
 def review_focus(user_id: int, project_id: int) -> str | None:
-    """What the reviewer of the project looks at (Janis, 22.11.2026; "" = correctness, security, structure)."""
+    """What the reviewer of the project looks at (Janis, 22.11.2026; "" = correctness, security, structure). Markdown:
+    the user types it, drops a file on the field or downloads it again; only the reviewer's package has it."""
     with db.connect() as conn:
         row = conn.execute("SELECT review_focus FROM projects WHERE id = ? AND user_id = ?",
                            (project_id, user_id)).fetchone()
     return None if row is None else row["review_focus"]
 
 
-MAX_FOCUS = 1000
+MAX_FOCUS = 6000
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def clean_focus(text: str) -> str:
+    """Markdown as it was written: lines kept, control characters, trailing blanks and runs of empty lines gone."""
+    lines = [line.rstrip() for line in _CONTROL.sub("", (text or "").replace("\r\n", "\n").replace("\r", "\n")).split("\n")]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()[:MAX_FOCUS]
 
 
 def set_review_focus(user_id: int, project_id: int, text: str) -> bool:
     with db.connect() as conn:
         return conn.execute("UPDATE projects SET review_focus = ? WHERE id = ? AND user_id = ?",
-                            (" ".join((text or "").split())[:MAX_FOCUS], project_id, user_id)).rowcount == 1
+                            (clean_focus(text), project_id, user_id)).rowcount == 1
 
 
 # --- the emergency switch (Janis, 22.11.2026): "AIs pause" in the drawer freezes the user's agent runs where they are
@@ -426,9 +425,8 @@ def _enter(conn: sqlite3.Connection, user_id: int, task_id: int, step: workflow.
         conn.execute("UPDATE board_items SET status = ? WHERE id = ? AND status = 'working'",
                      ("archived" if step.stage == "done" else "trash", old["item_id"]))
         return
-    if step.hold == "decision":
-        if "chef" in _enabled(conn, user_id):
-            _queue(conn, user_id, task_id, "chef", "explain", now)
+    if step.hold == "decision":                        # the manager explains it in plain words
+        _queue(conn, user_id, task_id, "chef", "explain", now)
         return
     if step.hold:
         return
@@ -743,7 +741,7 @@ def _apply(conn: sqlite3.Connection, role: str, task: sqlite3.Row, user_id: int,
     else:
         diff = conn.execute("SELECT diff FROM agent_tasks WHERE id = ?", (task["id"],)).fetchone()["diff"]
         step = workflow.after_run(task["stage"], result, task["returns"], bool(task["manual_check"]),
-                                  _enabled(conn, user_id), tests=None if tests_exit is None else tests_exit == 0,
+                                  tests=None if tests_exit is None else tests_exit == 0,
                                   changed=bool(diff.strip()),
                                   stuck=role == "programmer" and task["returns"] > 0 and committed is False)
     if blocking and step.hold == "question":
@@ -754,10 +752,7 @@ def _apply(conn: sqlite3.Connection, role: str, task: sqlite3.Row, user_id: int,
 
 
 def _to_manager(conn: sqlite3.Connection, user_id: int, task_id: int, question_id: int, now: int) -> None:
-    if "chef" in _enabled(conn, user_id):
-        _queue(conn, user_id, task_id, "chef", "decide", now, ref=question_id)
-    else:
-        questions.to_user(conn, question_id)
+    _queue(conn, user_id, task_id, "chef", "decide", now, ref=question_id)
 
 
 def _finish_result(conn: sqlite3.Connection, run: sqlite3.Row, task: sqlite3.Row, user_id: int, result: str,
@@ -1033,8 +1028,7 @@ def merge_done(task_id: int, ok: bool, now: int | None = None) -> bool:
             conn.execute("UPDATE agent_tasks SET resume = ? WHERE id = ?",
                          ("The project's main changed while you worked; the hub brings it into your branch now. "
                           "Resolve any conflict markers and check that everything still works.", task_id))
-        _enter(conn, user_id, task_id, workflow.after_merge(ok, task["returns"], bool(task["manual_check"]),
-                                                             _enabled(conn, user_id)), now)
+        _enter(conn, user_id, task_id, workflow.after_merge(ok, task["returns"], bool(task["manual_check"])), now)
     return True
 
 

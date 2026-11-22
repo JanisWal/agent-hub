@@ -974,5 +974,17 @@ button.p-ai:focus-visible { outline: 2px solid var(--accent); outline-offset: 2p
 .r-now.paused .r-dot { background: var(--accent); }
 .w-btns { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 .w-rec { font-size: 0.75rem; color: var(--muted); }
-.r-focus textarea { min-height: 72px; margin-top: 0; }
 .r-focus-state { min-height: 1.2em; margin: 4px 0 0; font-size: 0.78rem; }
+/* "Right now" of a role (Janis, 22.11.2026, on a MacBook): title, "i", globe and the AI's model in one row, the "i" close
+   to the title as in the manager chat; only when the tile is really too narrow does the group move below as a whole. */
+.role-view .r-head header { gap: 8px; }
+.role-view .r-head header .info-dot { width: 30px; height: 30px; margin-left: -6px; }
+.role-view .r-head header .m-chat-tools { flex-wrap: nowrap; }
+/* "What to look at" of the reviewer: the download arrow sits next to the "i"; a file dragged over the tile lights its
+   frame (the same accent as dropping a file on the files tile). */
+.r-focus header .r-focus-down { width: 30px; height: 30px; margin-left: -4px; color: var(--muted); }
+.r-focus header .r-focus-down:hover { color: var(--text); }
+.r-focus header .r-focus-down svg { width: 16px; height: 16px; }
+.r-focus textarea { min-height: 110px; margin-top: 0; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.84rem; }
+.r-focus.dropping { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent); }
+@media (pointer: coarse) { .r-focus textarea { font-size: 16px; } }   /* no zoom on a phone */

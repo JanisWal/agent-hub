@@ -181,7 +181,7 @@ class RoleAiTest(LoopTest):
         class role_routes:   # the route called directly: every form field passed
             @staticmethod
             def role_settings(role, provider, user):
-                return roles.role_settings(role, enabled="", model="", net="", effort="", provider=provider, user=user)
+                return roles.role_settings(role, model="", net="", effort="", provider=provider, user=user)
         self.connect_chatgpt()
         self.assertEqual(agents.settings(self.a.id)["roles"]["programmer"]["provider"], "claude")   # the standard
         self.assertEqual(role_routes.role_settings("programmer", provider="mistral", user=self.a).status_code, 400)

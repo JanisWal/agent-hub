@@ -149,7 +149,7 @@ ROLES = {
         "blocked; or failed when you could not test at all. What is wrong with this change is your result, never a "
         "board item."),
     "reviewer": (
-        "You are the reviewer. Read the change in <change> critically for: {focus}. Change no code. What can not be "
+        "You are the reviewer. Read the change in <change> critically for what <review-focus> names. Change no code. What can not be "
         "checked here (a missing file, a device, real data) is no objection: name it with <env>. RESULT: ok; objections "
         "(list them, most important first, only what the programmer can change in /work); question; blocked; or failed "
         "when you could not review. Objections to this change are your result, never a board item."),
@@ -163,7 +163,7 @@ ROLES = {
 BRIEF = "You have no tools for this job: everything you need is below."
 CHANGE_FOR = {"tester": 20000, "reviewer": 40000, "chef": 0}   # characters of the task's change (diff) per role
 RULES_FOR = ("programmer", "reviewer")                         # roles that get RULES.md
-DEFAULT_FOCUS = "correctness, security, structure, and whether it fits <rules>"
+DEFAULT_FOCUS = "Correctness, security, structure, and whether it fits <rules>."
 MAX_REPORT_IN = 6000
 MAX_RULES = 8000
 # The markers the hub reads from an answer of each role (agents.py, chat.py); the rest stays plain text.
@@ -343,10 +343,7 @@ def run(conn: sqlite3.Connection, job, brief: bool = False) -> str:
     task = conn.execute("SELECT t.diff_stat, t.diff, t.tests, t.tests_exit, t.hint, t.resume, p.review_focus"
                         " FROM agent_tasks t JOIN projects p ON p.id = t.project_id WHERE t.id = ? AND t.project_id = ?"
                         " AND p.user_id = ?", (job.task_id, job.project_id, job.user_id)).fetchone()
-    role_text = ROLES[job.role]
-    if job.role == "reviewer":
-        role_text = role_text.replace("{focus}", (task["review_focus"] if task else "") or DEFAULT_FOCUS)
-    rules.append(f"{role_text} Allowed results: {allowed}.")
+    rules.append(f"{ROLES[job.role]} Allowed results: {allowed}.")
     parts = ["\n\n".join(rules)]
     if job.role in RULES_FOR:
         text = memory.inline(conn, job.user_id, job.project_id, only=(memory.RULES_NAME,), budget=MAX_RULES)
@@ -355,6 +352,8 @@ def run(conn: sqlite3.Connection, job, brief: bool = False) -> str:
         text = memory.inline(conn, job.user_id, job.project_id, only=(memory.MEMORY_NAME, "ROADMAP.md"),
                              budget=memory.MAX_MEMORY, can_open=False)
         parts.append(f"<memory>\n{text or '(empty)'}\n</memory>")
+    if job.role == "reviewer":                           # what the user wants looked at, only for the reviewer
+        parts.append(f"<review-focus>\n{(task['review_focus'] if task else '') or DEFAULT_FOCUS}\n</review-focus>")
     parts.append(_project_block(conn, job))
     parts.append(_task_block(conn, job))
     if task is not None and task["hint"] and job.role == "programmer":
