@@ -24,7 +24,8 @@ import time
 from dataclasses import dataclass, field
 
 from . import (ai_link, aichoice, board, catalog, credentials, db, failures, files, memory, models, prompts, questions,
-               reply, serversettings, todos, toolcheck, usage, workflow)
+               reply, serversettings, todos, toolcheck, workflow)
+from . import usage as ledger   # the module; usage() below is this module's view for the roles' tabs
 
 # Models and effort levels come from catalog.py (Janis, 14.11.2026), kept per role AND per AI ("model.<role>.<provider>"),
 # so switching the standard AI and back finds them again. A role without a choice gets its AI's start for the role.
@@ -643,7 +644,7 @@ def _finish(conn: sqlite3.Connection, run_id: int, result: str, report: str, tok
     task = _task_row(conn, run["task_id"])
     user_id = _owner(conn, task["id"])
     # What it used counts even when the hub closed the run meanwhile (cancelled, lost and given up): the AI worked.
-    usage.record(conn, user_id=user_id, project_id=task["project_id"], provider=run["provider"], model=run["model"],
+    ledger.record(conn, user_id=user_id, project_id=task["project_id"], provider=run["provider"], model=run["model"],
                  credential=run["credential"], kind="run", role=run["role"], purpose=run["purpose"], ref=run_id,
                  tokens_in=tokens_in, tokens_out=tokens_out, cache_read=cache[0], cache_write=cache[1],
                  seconds=seconds, partial=partial, now=now)
@@ -969,7 +970,7 @@ def usage(user_id: int, project_id: int | None = None, role: str | None = None) 
     """What this user's agent runs used (of one project, or of all; of one role, or of all), from the usage ledger
     (usage.py, so also runs that were ended or switched to another AI): runs, tokens in (with the cache part) and out,
     seconds."""
-    sums = usage.totals(user_id, project_id=project_id, role=role, kind="run")
+    sums = ledger.totals(user_id, project_id=project_id, role=role, kind="run")
     return {"runs": sums["calls"], "tokens_in": sums["tokens_in"], "tokens_out": sums["tokens_out"],
             "cache_read": sums["cache_read"], "seconds": sums["seconds"]}
 

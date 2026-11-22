@@ -384,9 +384,9 @@ class ChatRoutesTest(Base):
         self.assertEqual(sorted(job), ["chat_id", "credential", "effort", "files", "hub_tools", "images", "limits", "links",
                                        "mode", "model", "project_id", "prompt", "provider", "route", "user_id"])
         self.assertEqual(runner_routes.chat_thoughts(job["chat_id"], "Hm."), {"ok": True})
-        self.assertEqual(runner_routes.chat_finish(job["chat_id"], "1", "Hello back", 3, 4), {"ok": True})
+        self.assertEqual(runner_routes.chat_finish(job["chat_id"], "1", "Hello back", 3, 4, "", None, 2, 0, ""), {"ok": True})
         self.assertEqual(runner_routes.chat_thoughts(job["chat_id"], "late").status_code, 409)
-        self.assertEqual(runner_routes.chat_finish(job["chat_id"], "1", "again", 0, 0).status_code, 409)
+        self.assertEqual(runner_routes.chat_finish(job["chat_id"], "1", "again", 0, 0, "", None, 0, 0, "").status_code, 409)
         self.assertEqual(chat.list_messages(self.a.id, self.pa.id)[0].answer, "Hello back")
         for route in runner_routes.router.routes:                       # the new routes hang on the token, too
             self.assertTrue(any(d.call is runner_routes.runner_only for d in route.dependant.dependencies), route.path)
