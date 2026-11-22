@@ -56,7 +56,8 @@ class LoopTest(unittest.TestCase):
         result, lines = self.run_loop([reply(calls=[call], thinking="Erst lesen."), reply("Es sind 12 V.")])
         self.assertEqual((result["ok"], result["text"], result["tokens_in"], result["tokens_out"]),
                          (True, "Es sind 12 V.", 20, 6))
-        self.assertEqual(lines, [{"thought": "Erst lesen."}])
+        self.assertEqual([x for x in lines if "usage_so_far" not in x], [{"thought": "Erst lesen."}])
+        self.assertEqual(lines[-1], {"usage_so_far": {"tokens_in": 20, "tokens_out": 6, "cache_read": 0}})   # for an ended run
         first, second = self.sent
         self.assertEqual(first["model"], "llama3.1:8b")
         self.assertNotIn("fetch", [t["function"]["name"] for t in first["tools"]])   # apart: no web

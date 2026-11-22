@@ -351,8 +351,10 @@ def usage_of(stdout: str) -> dict:
         return int(u.get("input_tokens") or 0) + read + write, int(u.get("output_tokens") or 0), read, write
     out = {"tokens_in": 0, "tokens_out": 0, "cache_read": 0, "cache_write": 0, "partial": False}
     try:
-        tin, tout, read, write = numbers(claude_result(stdout).get("usage") or {})
-        return dict(out, tokens_in=tin, tokens_out=tout, cache_read=read, cache_write=write)
+        result = claude_result(stdout)
+        if result.get("type") == "result" or isinstance(result.get("usage"), dict):   # not the entry scripts' summary
+            tin, tout, read, write = numbers(result.get("usage") or {})
+            return dict(out, tokens_in=tin, tokens_out=tout, cache_read=read, cache_write=write)
     except (ValueError, AttributeError, TypeError):
         pass
     messages, so_far, summary = {}, None, None
