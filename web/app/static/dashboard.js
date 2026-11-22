@@ -80,4 +80,15 @@
         .catch(function () { wrong.hidden = false; });
     });
   }
+
+  // The lamp, headline and text of every project follow the server through the page's one timer (core.js, Janis
+  // 22.11.2026: "the test is still running" stood there until the page was opened again); not while a tile is dragged.
+  if (window.AgentHub && AgentHub.live) {
+    AgentHub.live({
+      every: 30000,
+      parts: function () {
+        return Array.prototype.map.call(document.querySelectorAll(".tile-live[id]"), function (el) { return el.id; });
+      },
+    });
+  }
 })();

@@ -101,7 +101,8 @@
   document.getElementById("check-confirm-yes").addEventListener("click", function () {
     var id = pendingId;
     confirmDialog.close();
-    if (id) fetch("/checks/" + id + "/delete", { method: "POST" }).then(refresh, refresh);
+    var row = id && document.querySelector('.check-row[data-id="' + id + '"]');
+    if (id) AgentHub.act("/checks/" + id + "/delete", null, { gone: row, parts: ["checks"] }).catch(refresh);
   });
   confirmDialog.addEventListener("close", function () { pendingId = null; });
 })();

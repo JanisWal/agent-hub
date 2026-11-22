@@ -205,3 +205,6 @@ html.dragging-active .tile[data-id]:not(.drop-target):hover { translate: none; }
   .plus-hint { font-size: 0.85rem; line-height: 1.25; }
 
 }
+
+/* The state of a project tile follows the server (dashboard.js, AgentHub.live, 22.11.2026): its holder adds no box. */
+.tile-live { display: contents; }

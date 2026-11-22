@@ -10,13 +10,14 @@
   // Only the board and the trash/archive change (no reload, a running upload goes on); if that fails, the page reloads.
   // Janis, 19.11.2026 ("like the user list"): every card glides from where it was to its new place (FLIP), a new one
   // fades in, and a context that was unfolded stays unfolded.
-  function reload() {
+  function reload(quietly) {
     var before = {}, open = {};
     cards().forEach(function (card) {
       before[card.dataset.id] = card.getBoundingClientRect();
       if (card.querySelector(".card-title.open")) open[card.dataset.id] = true;
     });
-    return AgentHub.swap(["board", "board-state", "vault"]).then(function () {
+    return AgentHub.swap(["board", "board-state", "vault"]).then(function (fresh) {
+      if (quietly && !fresh.changed.length) return;   // a look that found nothing new does nothing
       setView(currentView, false);
       refreshCounts();
       cards().forEach(function (card) {
@@ -29,7 +30,7 @@
         var now = card.getBoundingClientRect();
         glide(card, was.left - now.left, was.top - now.top);
       });
-    }).catch(function () { AgentHub.reload(); });
+    }).catch(function () { if (!quietly) AgentHub.reload(); });
   }
   function glide(card, dx, dy) {
     if (Motion.reduced() || (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5)) return;
@@ -232,25 +233,13 @@
   // While a task is on its way (the line above the board) or items wait in the queue, the board looks again every few
   // seconds and swaps in what changed (Janis, 19.11.2026: "I do not see that he works"; 22.11.2026: an item leaves the
   // board when the programmer takes it); not while dragging, typing or the tab is hidden.
-  var lastFetched = null;   // the board as the server sent it last (the page's own copy is changed by core.js)
-  var LOOK = 4000;
-  function look() {
-    var busy = document.hidden || document.querySelector("dialog[open]") || document.documentElement.classList.contains("dragging-active")
-      || !(document.querySelector("#board-state [data-live]") || document.querySelector("#board .card:not(.proposed)"))
-      || board.hidden;
-    if (busy) return;
-    fetch(location.pathname, { credentials: "same-origin" }).then(function (response) {
-      return response.ok ? response.text() : null;
-    }).then(function (html) {
-      if (!html) return;
-      var page = new DOMParser().parseFromString(html, "text/html");
-      var next = page.getElementById("board"), state = page.getElementById("board-state");
-      if (!next) return;
-      var seen = next.innerHTML + (state ? state.outerHTML : "");
-      var changed = lastFetched !== null && seen !== lastFetched;
-      lastFetched = seen;
-      if (changed) reload();
-    }).catch(function () {});
-  }
-  setInterval(look, LOOK);
+  // Through the page's one timer (core.js): the swap leaves the board alone when nothing changed, and lets cards glide
+  // when something did; a failed look waits for the next one instead of reloading the page.
+  AgentHub.live({
+    every: 4000,
+    when: function () {
+      return !board.hidden && !!(document.querySelector("#board-state [data-live]") || document.querySelector("#board .card:not(.proposed)"));
+    },
+    run: function () { return reload(true); },
+  });
 })();

@@ -73,7 +73,9 @@
   document.getElementById("todo-confirm-yes").addEventListener("click", function () {
     var id = pendingId;
     confirmDialog.close();
-    if (id) post("/todos/" + id + "/delete");
+    var row = id && tile.querySelector('.todo-row[data-id="' + id + '"]');
+    if (id) AgentHub.act("/todos/" + id + "/delete", null, { gone: row, parts: ["me-list", "me-count", "me-badge"] })
+      .catch(refresh);   // folds away at once; the next one can be deleted right after
   });
   confirmDialog.addEventListener("close", function () { pendingId = null; });
 })();
