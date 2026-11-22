@@ -162,8 +162,7 @@ class OwnAiTest(unittest.TestCase):
         self.assertIn("reading web pages", job.prompt)                               # the hub's fetch
         self.assertIn(prompts.FILES_OPEN, job.prompt)                                # it can open files
         chat.finish(job.chat_id, True, "Hi")
-        item = board.create_item(self.a.id, self.pa.id, "minor", "Addieren")
-        agents.start_item(self.a.id, item.id)
+        board.create_item(self.a.id, self.pa.id, "minor", "Addieren")
         run = agents.claim_next(can_mac=False)
         self.assertEqual((run.provider, run.route["endpoint"]), ("custom", "https://api.example.com/v1"))
         claimed = runner_routes.claim("0")["job"]

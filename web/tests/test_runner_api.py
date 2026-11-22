@@ -70,23 +70,35 @@ class RunnerApiTest(unittest.TestCase):
     def test_job_and_result_flow(self):
         claude_link.begin(self.a.id)
         claude_link.complete(self.a.id, True)
-        agents.start_task(self.a.id, self.project.id, self.item.id)
-        job = runner.claim(can_mac="1")["job"]
-        self.assertEqual((job["user_id"], job["role"], job["model"]), (self.a.id, "programmer", "sonnet"))
+        job = runner.claim(can_mac="1")["job"]                          # the programmer takes the item himself
+        self.assertEqual((job["user_id"], job["role"], job["model"], job["purpose"], job["sync"]),
+                         (self.a.id, "programmer", "sonnet", "work", True))
         self.assertEqual(sorted(job), sorted([
-            "run_id", "user_id", "project_id", "task_id", "role", "model", "branch", "title", "kind",
-            "round", "note", "reports", "net", "effort", "provider", "prompt", "mode", "route", "hub_tools", "files", "links", "images",
-            "credential", "limits"]))
+            "run_id", "user_id", "project_id", "task_id", "role", "model", "branch", "title", "kind", "reports", "net",
+            "effort", "provider", "purpose", "prompt", "mode", "sync", "conflict_note", "route", "hub_tools", "files",
+            "links", "images", "credential", "limits"]))
         self.assertEqual(job["effort"], "high")                         # Sonnet's default level
-        self.assertIsNone(runner.claim(can_mac="1")["job"])         # one run at a time
-        plain = dict(diff_stat=None, diff=None, tests_exit=-1, tests="")   # what the runner leaves out
-        self.assertEqual(runner.finish(job["run_id"], "done", "ok", 5, 6, 7, "a.py | 1 +", "+x", 0, "ok"), {"ok": True})
+        self.assertIn("{files}", job["conflict_note"])                  # the runner adds only the names
+        self.assertIsNone(runner.claim(can_mac="1")["job"])             # one run at a time
+        self.assertEqual(runner.run_alive(job["run_id"], "denkt nach")["state"], "run")
+        plain = dict(diff_stat=None, diff=None, tests_exit=-1, tests="", committed="", markers="")
+        self.assertEqual(runner.finish(job["run_id"], "done", "ok", 5, 6, 7, "a.py | 1 +", "+x", 0, "ok", "1", ""),
+                         {"ok": True})
         self.assertEqual(runner.finish(job["run_id"], "done", "", 0, 0, 0, **plain).status_code, 409)   # only once
+        self.assertEqual(runner.run_alive(job["run_id"], "")["state"], "stop")
         nxt = runner.claim()["job"]
-        self.assertEqual(nxt["role"], "reviewer")                         # the hub's tests were green: no AI tester
+        self.assertEqual(nxt["role"], "tester")                          # green tests: the tester checks the behaviour
         self.assertIn("+x", nxt["prompt"])
-        self.assertEqual(runner.finish(nxt["run_id"], "done", "", 0, 0, 0, **plain), {"ok": True})   # not a reviewer's word
-        self.assertEqual(agents.list_tasks(self.a.id, self.project.id)[0].status, "escalated")
+        self.assertEqual(runner.finish(nxt["run_id"], "done", "", 0, 0, 0, **plain), {"ok": True})   # not a tester's word
+        task = agents.list_tasks(self.a.id, self.project.id)[0]
+        self.assertEqual((task.hold, task.hold_why), ("decision", "format"))
+
+    def test_a_restarted_runner_says_hello_and_gets_its_jobs_again(self):
+        claude_link.begin(self.a.id)
+        claude_link.complete(self.a.id, True)
+        job = runner.claim(can_mac="0")["job"]
+        self.assertEqual(runner.hello(), {"ok": True, "runs": 1, "chats": 0})
+        self.assertEqual(runner.claim(can_mac="0")["job"]["run_id"], job["run_id"])
 
     def test_login_channel(self):
         claude_link.begin(self.a.id)
@@ -148,8 +160,11 @@ class CleanupTest(unittest.TestCase):
         self.owner = users.create_user("o@example.com", "Oooo!pass12", role="owner")
         self.a = users.create_user("a@example.com", "Aaaa!pass12")
         self.project = projects.create_project(self.a.id, "P")
-        item = board.create_item(self.a.id, self.project.id, "bug", "x")
-        self.task = agents.start_task(self.a.id, self.project.id, item.id)
+        board.create_item(self.a.id, self.project.id, "bug", "x")
+        claude_link.begin(self.a.id)
+        claude_link.complete(self.a.id, True)
+        agents.claim_next(can_mac=False)                                # the programmer took it: a task with a folder
+        self.task = agents.list_tasks(self.a.id, self.project.id)[0]
 
     def tearDown(self):
         self.tmp.cleanup()

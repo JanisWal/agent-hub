@@ -60,16 +60,19 @@ REPORTS = {
     "tester": "Alle 6 Tests laufen durch. Von Hand geprüft: Ein, Aus, schnelles Umschalten.",
     "reviewer": "Sauber aufgebaut. Kleinigkeit: die Pin-Nummer als Konstante oben in der Datei.",
 }
-first = board.create_item(user.id, project.id, "minor", "Relais per Knopf schalten")
-agents.start_task(user.id, project.id, first.id)
+CHANGE = ("relay.py | 12 ++++", "+PIN = 17\n")
+board.create_item(user.id, project.id, "minor", "Relais per Knopf schalten")
 for role, result in (("programmer", "done"), ("tester", "pass"), ("reviewer", "ok")):
     job = agents.claim_next(can_mac=True)
-    agents.finish_run(job.run_id, result, REPORTS[role], tokens_in=52317, tokens_out=2049, seconds=28)
-second = board.create_item(user.id, project.id, "bug", "Anzeige flackert beim Start")
-agents.start_task(user.id, project.id, second.id)
+    agents.finish_run(job.run_id, result, REPORTS[role], tokens_in=52317, tokens_out=2049, seconds=28,
+                      **({"change": CHANGE, "committed": True} if role == "programmer" else {}))
+agents.merge_done(agents.list_tasks(user.id, project.id)[0].id, True)
+job = agents.claim_next(can_mac=True)                     # the manager's documentation
+agents.finish_run(job.run_id, "done", "Dokumentiert.")
+board.create_item(user.id, project.id, "bug", "Anzeige flackert beim Start")
 job = agents.claim_next(can_mac=True)
 agents.finish_run(job.run_id, "done", "Flackern behoben: Puffer wird vor dem ersten Bild geleert.", tokens_in=40100,
-                  tokens_out=900, seconds=19)
+                  tokens_out=900, seconds=19, change=CHANGE, committed=True)
 agents.claim_next(can_mac=True)   # the tester's run is going
 
 from app import todos  # noqa: E402

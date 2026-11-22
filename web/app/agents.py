@@ -469,7 +469,9 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
             return None
         for run in conn.execute(
             "SELECT r.*, t.needs, t.project_id, t.hold, t.stage, t.title, t.kind FROM agent_runs r"
-            " JOIN agent_tasks t ON t.id = r.task_id WHERE r.status = 'queued' ORDER BY r.created_at, r.id"
+            " JOIN agent_tasks t ON t.id = r.task_id WHERE r.status = 'queued'"
+            # the manager's short jobs first: they are small and what they bring (an answer) is wanted by the next run
+            " ORDER BY r.purpose IN ('decide', 'explain') DESC, r.created_at, r.id"
         ).fetchall():
             user_id = _owner(conn, run["task_id"])
             if paused_in(conn, user_id):
@@ -485,6 +487,8 @@ def claim_next(can_mac: bool, now: int | None = None) -> Job | None:
                 if order[0] != provider:
                     provider = order[0]
                     model, effort = _choice(conn, user_id, run["role"], provider)
+                if aichoice.resting(conn, user_id, provider):
+                    continue                               # all of his AIs are used up: it waits until one rested
             way = (run["credential"] if run["credential"] == "api" and credentials.api_usable(conn, user_id, provider, "run")
                    else credentials.first(conn, user_id, provider, "run"))
             conn.execute("UPDATE agent_runs SET status = 'running', started_at = ?, alive_at = ?, provider = ?,"
@@ -583,6 +587,18 @@ def _try_again(conn: sqlite3.Connection, run: sqlite3.Row, user_id: int, report:
     return True
 
 
+def _wait_for_an_ai(conn: sqlite3.Connection, run: sqlite3.Row, report: str, tokens_in: int, tokens_out: int) -> bool:
+    """Every AI of the user is used up (it rests, aichoice.rest) or signed out: the run waits in the queue until one can
+    again, instead of failing the task (KONZEPT-AGENTEN.md 10.2). Only when resting really makes it wait."""
+    kind = failures.kind(report)
+    if not (kind == "auth" or (kind == "limit" and serversettings.ai_rest() > 0)):
+        return False
+    conn.execute("UPDATE agent_runs SET status = 'queued', started_at = NULL, alive_at = NULL, tried = '',"
+                 " tokens_in = tokens_in + ?, tokens_out = tokens_out + ? WHERE id = ?",
+                 (max(0, int(tokens_in)), max(0, int(tokens_out)), run["id"]))
+    return True
+
+
 def finish_run(run_id: int, result: str, report: str = "", tokens_in: int = 0, tokens_out: int = 0,
                seconds: int = 0, now: int | None = None, change: tuple[str, str] | None = None,
                tests: tuple[int, str] | None = None, committed: bool | None = None,
@@ -625,6 +641,8 @@ def _finish(conn: sqlite3.Connection, run_id: int, result: str, report: str, tok
     task = _task_row(conn, run["task_id"])
     user_id = _owner(conn, task["id"])
     if result == "failed" and _try_again(conn, run, user_id, report, tokens_in, tokens_out):
+        return True
+    if result == "failed" and _wait_for_an_ai(conn, run, report, tokens_in, tokens_out):
         return True
     _close(conn, run_id, result, report, tokens_in, tokens_out, seconds, now)
     if task["stage"] in workflow.ENDS:

@@ -37,19 +37,19 @@ class LimitsTest(unittest.TestCase):
 
     def test_the_defaults_are_what_the_pi_used(self):
         self.assertEqual(serversettings.run_limits(),
-                         {"memory_mb": 480, "cpus": 2, "pids": 512, "run_seconds": 1100, "chat_seconds": 200,
-                          "test_seconds": 300, "view_mb": 200, "browser": 1})
-        self.assertEqual(serversettings.task_seconds(), 2 * 3600)
+                         {"memory_mb": 480, "cpus": 2, "pids": 512, "silence_seconds": 900, "max_seconds": 4 * 3600,
+                          "chat_seconds": 200, "test_seconds": 600, "view_mb": 200, "browser": 1})
 
     def test_only_choices_and_only_system_admins(self):
         self.assertEqual(post({"run_memory_mb": "2048"}, self.a).status_code, 403)
         for bad in ({"run_memory_mb": "999"}, {"run_memory_mb": "lots"}, {"upload_parallel": "4"}, {}):
             self.assertEqual(post(bad, self.owner).status_code, 400, bad)
         self.assertEqual(post({"run_memory_mb": "2048", "run_cpus": "4"}, self.owner), {"ok": True})
-        self.assertEqual(post({"run_minutes": "60"}, self.owner), {"ok": True})
+        self.assertEqual(post({"run_silence_minutes": "30", "run_max_hours": "8"}, self.owner), {"ok": True})
+        self.assertEqual(post({"run_minutes": "60"}, self.owner).status_code, 400)  # gone: no fixed time for work
         limits = serversettings.run_limits()
-        self.assertEqual((limits["memory_mb"], limits["cpus"], limits["run_seconds"]), (2048, 4, 3500))
-        self.assertEqual(serversettings.task_seconds(), 6 * 3600)                    # the task grows with the run
+        self.assertEqual((limits["memory_mb"], limits["cpus"], limits["silence_seconds"], limits["max_seconds"]),
+                         (2048, 4, 1800, 8 * 3600))
 
     def test_every_job_carries_them(self):
         serversettings.set_choice("run_memory_mb", 1024, serversettings.CHOICES["run_memory_mb"])
@@ -57,13 +57,11 @@ class LimitsTest(unittest.TestCase):
         job = chat.claim_next()
         self.assertEqual(job.limits["memory_mb"], 1024)
         chat.finish(job.chat_id, True, "Hi")                                      # one AI run at a time
-        item = board.create_item(self.owner.id, self.pa.id, "minor", "Addieren")
-        agents.start_item(self.owner.id, item.id)
+        board.create_item(self.owner.id, self.pa.id, "minor", "Addieren")
         self.assertEqual(agents.claim_next(can_mac=False).limits["memory_mb"], 1024)
 
     def test_the_browser_is_named_only_when_it_is_on(self):
-        item = board.create_item(self.owner.id, self.pa.id, "minor", "Addieren")
-        agents.start_item(self.owner.id, item.id)
+        board.create_item(self.owner.id, self.pa.id, "minor", "Addieren")
         job = agents.claim_next(can_mac=False)
         self.assertIn("hub-browser", job.prompt)                                    # programmer, browser on
         serversettings.set_choice("agent_browser", 0, serversettings.CHOICES["agent_browser"])

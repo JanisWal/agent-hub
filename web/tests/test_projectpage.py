@@ -79,11 +79,11 @@ class ProjectPageTest(unittest.TestCase):
     def test_suggestions_stand_in_the_list_with_two_pills(self):
         page = self.html()
         idea = page[page.index("An idea") - 300:page.index("An idea") + 700]   # Janis, 19.11.2026: text pills
-        self.assertIn('class="pill-btn go" type="button" data-action="accept"', idea)
-        self.assertIn('class="pill-btn quiet" type="button" data-action="reject"', idea)
+        self.assertIn('class="sq-btn go" type="button" data-action="accept">Annehmen', idea)   # square, green
+        self.assertIn('class="sq-btn stop" type="button" data-action="reject">Ablehnen', idea)  # square, red
         self.assertIn("proposed", idea)
         self.assertIn("Vorschlag", idea)
-        self.assertLess(idea.index("pill-btn quiet"), idea.index("pill-btn go"))   # reject left, take over right
+        self.assertLess(idea.index("sq-btn stop"), idea.index("sq-btn go"))      # reject left, accept right
         column = page[page.rindex('<div class="cards open-list"', 0, page.index("An idea")):page.index("An idea")]
         self.assertNotIn("</div></section>", column)                           # in the same list, no own group
         self.assertNotIn("group-label", page)
@@ -418,13 +418,15 @@ class RoleViewsTest(unittest.TestCase):
 
     def run_task(self, results):
         from app import agents, claude_link
+        board.discard(self.user.id, self.agent_bug.id)                      # so the programmer takes "A bug"
         claude_link.begin(self.user.id)
         claude_link.complete(self.user.id, True)
-        task = agents.start_task(self.user.id, self.project.id, self.bug.id)
         for result, report in results:
             job = agents.claim_next(can_mac=True)
-            self.assertTrue(agents.finish_run(job.run_id, result, report, tokens_in=1200, tokens_out=30, seconds=12))
-        return task
+            change = {"change": ("bug.py | 1 +", "+fix"), "committed": True} if job.role == "programmer" else {}
+            self.assertTrue(agents.finish_run(job.run_id, result, report, tokens_in=1200, tokens_out=30, seconds=12,
+                                              **change))
+        return agents.list_tasks(self.user.id, self.project.id)[0]
 
     def test_each_role_shows_its_settings_its_runs_and_its_usage(self):
         from app import agents
@@ -452,19 +454,19 @@ class RoleViewsTest(unittest.TestCase):
         self.assertIn("Your jobs", self.html("en"))
 
     def test_decisions_wait_in_the_manager_tile_not_in_for_you(self):
-        from app import agents
-        agents.configure(self.user.id, autonomy="all")   # it waits for the approval (else it merges by itself)
         page = self.html()
         self.assertIn("Nichts wartet auf dich.", page)
-        self.run_task([("done", "Built"), ("pass", "Green"), ("ok", "Fine by me")])
+        self.run_task([("failed", "Could not"), ("failed", "Still could not")])      # twice: the user decides
         page = self.html()
         waiting = page[page.index('id="waiting"'):page.index("</section>", page.index('id="waiting"'))]
         self.assertIn("A bug", waiting)
-        self.assertIn("Wartet auf deine Freigabe", waiting)
-        self.assertIn("Fine by me", waiting)
+        self.assertIn("Entscheidung", waiting)
+        self.assertIn("Still could not", waiting)
         self.assertIn('<span class="count">1</span>', waiting)
-        self.assertIn('data-decide="approve"', waiting)                       # since 19.11.2026: decided right here
-        self.assertIn('class="w-input"', waiting)                              # with a remark of your own
+        for choice in ("again", "accept", "cancel"):
+            self.assertIn(f'data-decide="{choice}"', waiting)
+        self.assertIn('class="w-input"', waiting)                              # a hint of your own
+        self.assertIn("„A bug“ wartet auf deine Entscheidung", page)            # and the line above the board says it
         me = page[page.index('id="view-me"'):]
         self.assertNotIn("A bug", me)
 

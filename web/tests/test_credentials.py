@@ -139,8 +139,7 @@ class SwitchTest(Base):
     def test_an_agent_run_switches_the_same_way(self):
         self.plan(self.a)
         self.key(self.a, scope="runs")
-        item = board.create_item(self.a.id, self.pa.id, "minor", "Addieren")
-        agents.start_item(self.a.id, item.id)
+        board.create_item(self.a.id, self.pa.id, "minor", "Addieren")
         run = agents.claim_next(can_mac=False)
         self.assertEqual(run.credential, "plan")
         self.assertTrue(agents.finish_run(run.run_id, "failed", "You've hit your usage limit"))

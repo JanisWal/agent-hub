@@ -335,27 +335,111 @@ class RunChatTest(unittest.TestCase):
         self.assertEqual(out[:13], ["docker", "run", "--tmpfs", "/tmp:rw,size=512m,mode=1777", "--memory", "2048m",
                                     "--memory-swap", "2048m", "--pids-limit", "1024", "--cpus", "4", launcher.IMAGE])
         self.assertEqual(out[-2:], ["--memory", "x"])                              # the program's own words stay
-        bad = launcher.checked({"memory_mb": "9999; rm", "cpus": 0, "pids": True, "run_seconds": 10 ** 9})
-        self.assertEqual((bad["memory_mb"], bad["cpus"], bad["pids"], bad["run_seconds"]), (480, 2, 256, 1100))
+        bad = launcher.checked({"memory_mb": "9999; rm", "cpus": 0, "pids": True, "silence_seconds": 10 ** 9})
+        self.assertEqual((bad["memory_mb"], bad["cpus"], bad["pids"], bad["silence_seconds"], bad["max_seconds"]),
+                         (480, 2, 256, 900, 14400))
 
 
-class StopTest(unittest.TestCase):
-    def test_the_emergency_switch_removes_the_containers_and_says_so(self):
-        calls, removed = [], []
+class WatchTest(unittest.TestCase):
+    """A run works as long as it moves on (Janis, 22.11.2026): ended only after a standstill or the longest time,
+    frozen while its user paused the agents, stopped when the hub gave it up; paused time counts for neither."""
+
+    def setUp(self):
+        self.clock, self.states, self.docker, self.touched = [0.0], ["run"], [], []
+        test = self
 
         class Hub:
             def call(self, method, path, **form):
-                calls.append((method, path))
-                return {"runs": [7]} if path == "/runner/stops" else {"ok": True}
+                test.posts.append((path, form))
+                return {"ok": True, "state": test.states[0]}
+
+        class Tickets:
+            def touch(self, ticket):
+                test.touched.append(ticket)
+        self.posts = []
+        self.r = runner.Runner(Hub(), "/nowhere", vault=object(), tickets=Tickets(), keys=object(), background=False,
+                               docker=lambda args: self.docker.append(args) or 0)
+
+        class Adapter:
+            def thought(self, line):
+                return line.strip() + " "
+        self.watch = runner.Watch(self.r, 9, "hubrun-x", Adapter(), "agent-run-9",
+                                  {"silence_seconds": 60, "max_seconds": 300}, clock=lambda: self.clock[0])
+
+    def at(self, seconds):
+        self.clock[0] = seconds
+        return self.watch.tick()
+
+    def test_it_tells_the_hub_keeps_the_ticket_and_hands_over_the_thoughts(self):
+        self.watch.line("thinking about it\n")
+        self.assertTrue(self.at(1))
+        self.assertEqual(self.posts[0], ("/runner/runs/9/alive", {"thoughts": "thinking about it "}))
+        self.assertEqual(self.touched, ["hubrun-x"])
+        self.assertTrue(self.at(5))
+        self.assertEqual(len(self.posts), 1)                                  # every ALIVE_EVERY seconds only
+
+    def test_a_standstill_ends_it_output_keeps_it_going(self):
+        for second in range(10, 290, 10):
+            self.watch.line("tool call\n")
+            self.assertTrue(self.at(second))                                   # long, but it moves on
+        self.assertFalse(self.at(400))                                         # then nothing for over a minute
+        self.assertEqual(self.watch.reason, "silence")
+
+    def test_the_longest_time_ends_it(self):
+        for second in range(10, 320, 10):
+            self.watch.line("x\n")
+            if not self.at(second):
+                break
+        self.assertEqual(self.watch.reason, "limit")
+
+    def test_a_pause_freezes_it_and_the_time_stands_still(self):
+        self.at(10)
+        self.states[0] = "pause"
+        self.assertTrue(self.at(20))
+        self.assertEqual(self.docker, [["pause", "agent-run-9"]])
+        self.assertTrue(self.at(3000))                                         # paused: no standstill, no limit
+        self.states[0] = "run"
+        self.assertTrue(self.at(3010))
+        self.assertEqual(self.docker[-1], ["unpause", "agent-run-9"])
+        self.assertTrue(self.at(3050))                                         # the standstill starts again
+        self.assertLess(self.watch.worked, 100)
+
+    def test_the_hub_stops_it(self):
+        self.states[0] = "stop"
+        self.assertFalse(self.at(10))
+        self.assertEqual(self.watch.reason, "stop")
+
+    def test_a_hub_that_restarts_does_not_end_it(self):
+        def down(method, path, **form):
+            raise ConnectionRefusedError()
+        self.r.api.call = down
+        self.watch.line("x\n")
+        self.assertTrue(self.at(10))
+
+
+class HelloTest(unittest.TestCase):
+    def test_a_fresh_runner_removes_the_containers_of_before_and_says_hello_once(self):
+        calls, commands = [], []
+
+        class Hub:
+            def call(self, method, path, **form):
+                calls.append(path)
+                return {"ok": True}
         r = runner.Runner(Hub(), "/nowhere", vault=object(), tickets=object(), keys=object(), background=False)
         real = runner.subprocess.run
-        runner.subprocess.run = lambda command, **kw: removed.append(command[-1])
+
+        def fake(command, **kw):
+            commands.append(command)
+            return types.SimpleNamespace(stdout="abc\ndef\n" if command[1] == "ps" else "", returncode=0)
+        runner.subprocess.run = fake
         try:
-            r.handle_stops()
+            r.handle_hello()
+            r.handle_hello()
         finally:
             runner.subprocess.run = real
-        self.assertEqual(removed, ["agent-run-7", "agent-test-7"])
-        self.assertIn(("POST", "/runner/stops/7/done"), calls)
+        self.assertEqual(calls, ["/runner/hello"])
+        self.assertIn("--filter=name=agent-run-", commands[0])
+        self.assertEqual(commands[1], ["docker", "rm", "-f", "abc", "def"])
 
 
 class ChatRunTest(unittest.TestCase):

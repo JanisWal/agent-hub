@@ -1,14 +1,14 @@
-"""Questions of the manager and the roles, answered in "waiting for you", and deciding about tasks there
-(questions.py, routes/manager.py; Janis 19.11.2026)."""
+"""Questions of the roles: first to the manager, then, written anew, to the user in "waiting for you"; decisions on
+tasks that stopped; nothing goes into the manager chat (questions.py, routes/manager.py; Janis 22.11.2026)."""
 import os
 import tempfile
 import unittest
 
-from app import agents, board, chat, claude_link, db, i18n, managerpage, projects, questions, statusnote, users
+from app import agents, board, chat, claude_link, db, managerpage, projects, questions, reply, statusnote, users
 from app.routes import manager as manager_routes
 
-ASK = ('Welche Spannung hat das Relais?<ask kind="choice">Welche Spannung hat das Relais?<option>12 V</option>'
-       '<option>24 V</option></ask>')
+ASK = '<ask kind="choice">Welche Spannung hat das Relais?<option>12 V</option><option>24 V</option></ask>'
+CHANGE = ("relay.py | 1 +", "+ON = 1\n")
 
 
 class QuestionsTest(unittest.TestCase):
@@ -25,94 +25,84 @@ class QuestionsTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def chat_answer(self, text, prompt="Wie geht es weiter?"):
-        chat.send(self.a.id, self.pa.id, prompt)
-        job = chat.claim_next()
-        self.assertTrue(chat.finish(job.chat_id, True, text))
-        return job
+    def task(self):
+        return agents.list_tasks(self.a.id, self.pa.id)[0]
 
-    def test_the_manager_asks_and_the_answer_goes_on_as_a_chat_message(self):
-        job = self.chat_answer(ASK)
-        self.assertIn("<ask kind=", job.prompt)                               # the rule is in his package
-        self.assertNotIn("<ask", chat.list_messages(self.a.id, self.pa.id)[-1].answer)
+    def test_the_manager_chat_asks_in_the_chat_itself(self):
+        chat.send(self.a.id, self.pa.id, "Wie geht es weiter?")
+        job = chat.claim_next()
+        self.assertNotIn("<ask kind=", job.prompt)                            # no question marker in his package
+        self.assertTrue(chat.finish(job.chat_id, True, "Kurz gefragt:" + ASK))
+        answer = chat.list_messages(self.a.id, self.pa.id)[-1].answer
+        self.assertIn("Welche Spannung hat das Relais?", answer)              # a marked question stays as text
+        self.assertIn("- 12 V", answer)
+        self.assertEqual(questions.open_questions(self.a.id, self.pa.id), [])   # never in "waiting for you"
+
+    def test_a_role_asks_the_manager_writes_it_anew_and_the_user_answers_in_the_tile(self):
+        board.create_item(self.a.id, self.pa.id, "minor", "Relais schalten")
+        job = agents.claim_next(can_mac=False)
+        self.assertTrue(agents.finish_run(job.run_id, "question", "Ich brauche die Spannung.\n" + ASK, change=CHANGE,
+                                          committed=True))
+        decide = agents.claim_next(can_mac=False)
+        self.assertEqual(decide.purpose, "decide")
+        agents.finish_run(decide.run_id, "done", '<ask kind="choice">Mit welcher Spannung läuft die Heizung?'
+                                                 '<option recommended>12 V, wie das Bordnetz</option><option>24 V</option></ask>')
         [q] = questions.open_questions(self.a.id, self.pa.id)
-        self.assertEqual((q.role, q.kind, q.options, q.task_id), ("chef", "choice", ["12 V", "24 V"], None))
+        self.assertEqual((q.role, q.task_id, q.via, q.blocks, q.recommended), ("programmer", self.task().id, "user",
+                                                                               True, 0))
+        tile = managerpage._waiting_tile("de", "", [], [], [q])
+        self.assertIn('class="sq-btn go rec" type="button" data-reply="12 V, wie das Bordnetz"', tile)   # suggestion first
+        self.assertIn('data-reply="24 V"', tile)
+        self.assertIn('class="w-input"', tile)
         self.assertEqual(manager_routes.answer_question(q.id, "12 V", user=self.b).status_code, 404)   # not B's
         self.assertEqual(manager_routes.answer_question(q.id, "  ", user=self.a).status_code, 404)    # nothing said
-        self.assertEqual(manager_routes.answer_question(q.id, "12 V", user=self.a), {"ok": True, "sent": True})
-        self.assertEqual(questions.open_questions(self.a.id, self.pa.id), [])
-        message = chat.list_messages(self.a.id, self.pa.id)[-1]
-        self.assertEqual(message.prompt, i18n.t("de", "w_answer_prompt", question="Welche Spannung hat das Relais?",
-                                                 answer="12 V"))
-        self.assertNotIn("<answers>\n- You asked", chat.claim_next().prompt)               # sent as a message, not twice
+        self.assertEqual(manager_routes.answer_question(q.id, "12 V, wie das Bordnetz", user=self.a), {"ok": True})
+        job = agents.claim_next(can_mac=False)
+        self.assertEqual(job.role, "programmer")
+        self.assertIn("Answer of the user: 12 V, wie das Bordnetz", job.prompt)
+        self.assertEqual(chat.list_messages(self.a.id, self.pa.id), [])         # nothing went to the chat
 
-    def test_while_a_question_runs_the_answer_comes_with_the_next_one(self):
-        self.chat_answer(ASK)
-        [q] = questions.open_questions(self.a.id, self.pa.id)
-        chat.send(self.a.id, self.pa.id, "Noch etwas")                          # runs now
-        self.assertEqual(manager_routes.answer_question(q.id, "24 V", user=self.a), {"ok": True, "sent": False})
-        job = chat.claim_next()
-        self.assertIn("<answers>\n- You asked: Welche Spannung hat das Relais?\n  The user answered: 24 V", job.prompt)
-        chat.finish(job.chat_id, True, "Danke.")
-        chat.send(self.a.id, self.pa.id, "Und jetzt?")
-        self.assertNotIn("<answers>\n- You asked", chat.claim_next().prompt)               # delivered once
-
-    def test_a_role_asks_in_a_run_and_the_answer_comes_with_the_next_run(self):
-        item = board.create_item(self.a.id, self.pa.id, "minor", "Relais schalten")
-        job = agents.claim_next(can_mac=False)                                  # made by hand: it starts by itself
-        self.assertEqual(job.title, "Relais schalten")
-        self.assertIn("<ask kind=", job.prompt)
-        self.assertTrue(agents.finish_run(job.run_id, "done", "Gebaut mit 12 V.\n" + ASK.split("?", 1)[1]))
-        [q] = questions.open_questions(self.a.id, self.pa.id)
-        self.assertEqual((q.role, q.task_id), ("programmer", agents.item_task(self.a.id, item.id).id))
-        self.assertEqual(manager_routes.answer_question(q.id, "24 V", user=self.a), {"ok": True, "sent": False})
+    def test_a_question_that_does_not_hold_the_task_comes_with_a_later_run(self):
+        board.create_item(self.a.id, self.pa.id, "minor", "Relais schalten")
+        job = agents.claim_next(can_mac=False)
+        agents.finish_run(job.run_id, "done", "Gebaut mit 12 V.\n" + ASK, change=CHANGE, committed=True)
+        self.assertEqual((self.task().stage, self.task().hold), ("testing", ""))   # it goes on
+        decide = agents.claim_next(can_mac=False)                             # the manager's question job first (older)
+        self.assertEqual(decide.purpose, "decide")
+        agents.finish_run(decide.run_id, "done", "<decide>12 V, das Bordnetz hat 12 V.</decide>")
         tester = agents.claim_next(can_mac=False)
         self.assertEqual(tester.role, "tester")
-        self.assertIn("The user answered: 24 V", tester.prompt)
-        self.assertEqual(chat.list_messages(self.a.id, self.pa.id), [])          # nothing went to the chat
+        self.assertIn("Answer of the manager: 12 V, das Bordnetz hat 12 V.", tester.prompt)
 
-    def test_deciding_in_the_tile_with_a_remark(self):
-        agents.configure(self.a.id, autonomy="all")   # it waits for the approval (else it merges by itself)
-        item = board.create_item(self.a.id, self.pa.id, "minor", "Relais schalten")
-        for result in ("done", "pass", "ok"):
-            job = agents.claim_next(can_mac=False)
-            agents.finish_run(job.run_id, result, "Bericht")
-        task = agents.item_task(self.a.id, item.id)
-        self.assertEqual(task.status, "awaiting_approval")
-        self.assertEqual(manager_routes.decide_task(task.id, "approve", "", user=self.b).status_code, 404)
-        self.assertEqual(manager_routes.decide_task(task.id, "nonsense", "", user=self.a).status_code, 400)
-        self.assertEqual(manager_routes.decide_task(task.id, "reject", "Bitte 24 V nehmen.", user=self.a), {"ok": True})
-        again = agents.get_task(self.a.id, task.id)
-        self.assertEqual((again.status, again.note), ("coding", "Bitte 24 V nehmen."))
+    def test_deciding_in_the_tile(self):
+        board.create_item(self.a.id, self.pa.id, "minor", "Relais schalten")
+        job = agents.claim_next(can_mac=False)
+        agents.finish_run(job.run_id, "done", "Gebaut", change=None)          # changed nothing: the user decides
+        task = self.task()
+        tile = managerpage._waiting_tile("de", "", [(task, "Gebaut")], [], [])
+        for choice in ("again", "accept", "cancel"):
+            self.assertIn(f'data-decide="{choice}"', tile)
+        self.assertIn("hat aber nichts geändert", tile)                        # the hub's reason until the manager wrote
+        self.assertEqual(manager_routes.decide_task(task.id, "again", "", user=self.b).status_code, 404)
+        self.assertEqual(manager_routes.decide_task(task.id, "approve", "", user=self.a).status_code, 400)
+        self.assertEqual(manager_routes.decide_task(task.id, "again", "Bitte 24 V nehmen.", user=self.a), {"ok": True})
+        again = self.task()
+        self.assertEqual((again.stage, again.hold, again.hint), ("coding", "", "Bitte 24 V nehmen."))
         self.assertIn("Bitte 24 V nehmen.", agents.claim_next(can_mac=False).prompt)   # the programmer reads it
 
-    def test_the_tile_shows_questions_and_decisions_with_their_fields(self):
-        agents.configure(self.a.id, autonomy="all")   # it waits for the approval (else it merges by itself)
-        self.chat_answer(ASK)
-        item = board.create_item(self.a.id, self.pa.id, "minor", "Relais schalten")
-        for result in ("done", "pass", "ok"):
-            job = agents.claim_next(can_mac=False)
-            agents.finish_run(job.run_id, result, "Bericht")
-        waiting = [(t, agents.last_report(self.a.id, t.id)) for t in agents.waiting_tasks(self.a.id, self.pa.id)]
-        tile = managerpage._waiting_tile("de", "", waiting, [], questions.open_questions(self.a.id, self.pa.id))
-        self.assertIn("Der Manager fragt", tile)
-        self.assertIn('data-reply="12 V"', tile)
-        self.assertIn('class="w-input"', tile)
-        self.assertIn('data-decide="approve"', tile)
-        self.assertIn('data-decide="reject"', tile)
-        self.assertIn("Bemerkung für den Programmierer", tile)
-        self.assertIn('<span class="count">2</span>', tile)
-        self.assertTrue(item.id)
-
     def test_too_many_or_the_same_question_are_dropped(self):
-        from app import reply
+        board.create_item(self.a.id, self.pa.id, "minor", "Relais schalten")
+        agents.claim_next(can_mac=False)
+        task_id = self.task().id
         with db.connect() as conn:
             ask = reply.Ask("Frage?", "text", "small")
-            self.assertIsNotNone(questions.add(conn, self.pa.id, "chef", ask))
-            self.assertIsNone(questions.add(conn, self.pa.id, "chef", ask))        # the same one is open
+            self.assertIsNotNone(questions.add(conn, self.pa.id, "tester", ask, task_id))
+            self.assertIsNone(questions.add(conn, self.pa.id, "tester", ask, task_id, blocks=True))   # the same one ...
+            self.assertEqual(questions.open_blocking(conn, task_id), 1)                              # ... now holds it
             for n in range(questions.MAX_OPEN - 1):
-                questions.add(conn, self.pa.id, "chef", reply.Ask(f"Frage {n}?", "text", "small"))
-            self.assertIsNone(questions.add(conn, self.pa.id, "chef", reply.Ask("Eine zu viel?", "text", "small")))
+                questions.add(conn, self.pa.id, "tester", reply.Ask(f"Frage {n}?", "text", "small"), task_id)
+            self.assertIsNone(questions.add(conn, self.pa.id, "tester", reply.Ask("Eine zu viel?", "text", "small"),
+                                            task_id))
         self.assertEqual(questions.open_questions(self.b.id, self.pa.id), [])   # nothing for another user
 
 

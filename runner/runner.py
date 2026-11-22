@@ -212,11 +212,14 @@ class Runner:
     def handle_hello(self) -> None:
         if self.greeted:
             return
-        found = subprocess.run(["docker", "ps", "-aq", *[f"--filter=name={p}" for p in LEFTOVERS]],
-                               capture_output=True, text=True)
-        names = [n for n in (found.stdout or "").split() if n]
-        if names:
-            subprocess.run(["docker", "rm", "-f", *names], capture_output=True)
+        try:
+            found = subprocess.run(["docker", "ps", "-aq", *[f"--filter=name={p}" for p in LEFTOVERS]],
+                                   capture_output=True, text=True)
+            names = [n for n in (found.stdout or "").split() if n]
+            if names:
+                subprocess.run(["docker", "rm", "-f", *names], capture_output=True)
+        except OSError as error:   # no docker here (tests): nothing of before to remove
+            print(f"runner: could not list old containers: {type(error).__name__}", file=sys.stderr, flush=True)
         self.api.call("POST", "/runner/hello")
         self.greeted = True
 
