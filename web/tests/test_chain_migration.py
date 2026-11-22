@@ -7,6 +7,13 @@ import unittest
 from app import db
 
 OLD = """
+CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL);
+CREATE TABLE projects (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL, position INTEGER NOT NULL, created_at INTEGER NOT NULL, page INTEGER NOT NULL DEFAULT 0,
+    description TEXT NOT NULL DEFAULT '');
+INSERT INTO users (id, email, password_hash, created_at) VALUES (1, 'a@example.com', 'x', 1);
+INSERT INTO projects (id, user_id, name, position, created_at) VALUES (1, 1, 'P', 0, 1);
 CREATE TABLE agent_tasks (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL, item_id INTEGER, title TEXT NOT NULL,
     kind TEXT NOT NULL, needs TEXT NOT NULL DEFAULT 'any', status TEXT NOT NULL, round INTEGER NOT NULL DEFAULT 1,
     manual_check INTEGER NOT NULL DEFAULT 0, note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL,
