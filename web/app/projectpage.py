@@ -1,5 +1,5 @@
 """HTML of the project page: stations on the left, kanban board and trash on the right."""
-from . import agents, aichoice, devices, i18n, managerpage, memory, questions, rolepage, status, statusnote, todos, ui
+from . import agents, aichoice, devices, i18n, managerpage, memory, questions, rolepage, status, statusnote, todos
 from .board import KINDS, Item
 from .icons import icon
 from .layout import esc, fill
