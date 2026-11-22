@@ -98,7 +98,7 @@ def _now(lang: str, role: str, runs: list[agents.RoleRun], now: int, where=None)
             paused = where is not None and where[1] == "paused"
             lines.append(f'<p class="r-now {"paused" if paused else "running"}"><span class="r-dot" aria-hidden="true">'
                          f'</span>{esc(text)}{(" · " + esc(i18n.t(lang, "role_paused"))) if paused else ""}</p>'
-                         + _thoughts(lang, item.run))
+                         + ("" if role == "programmer" else _thoughts(lang, item.run)))   # his have their own tile
         else:
             lines.append(f'<p class="r-now queued"><span class="r-dot" aria-hidden="true"></span>'
                          f'{esc(i18n.t(lang, "role_queued", title=item.task_title))}</p>')
