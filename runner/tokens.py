@@ -145,6 +145,15 @@ class Tickets:
         if TICKET.fullmatch(ticket):
             (self.folder / ticket_name(ticket)).unlink(missing_ok=True)
 
+    def touch(self, ticket: str) -> None:
+        """A run that is still going keeps its ticket (the runner tells about it every few seconds): its age starts
+        again, so TICKET_AGE only ends tickets nobody looks after, never a long run (22.11.2026)."""
+        if TICKET.fullmatch(ticket):
+            try:
+                os.utime(self.folder / ticket_name(ticket))
+            except OSError:
+                pass
+
     def sweep(self, now: float | None = None, max_age: int = TICKET_AGE) -> None:
         """Delete tickets older than max_age (0 = all, e.g. when the runner starts and no run is going)."""
         now = time.time() if now is None else now

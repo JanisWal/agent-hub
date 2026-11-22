@@ -22,15 +22,16 @@ class Project:
     position: int
     page: int
     description: str = ""
+    review_focus: str = ""   # what the project's reviewer looks at (agents.set_review_focus)
 
 
 def _to_project(row: sqlite3.Row) -> Project:
-    return Project(row["id"], row["name"], row["position"], row["page"], row["description"])
+    return Project(row["id"], row["name"], row["position"], row["page"], row["description"], row["review_focus"])
 
 
 def _ordered(conn: sqlite3.Connection, user_id: int) -> list[sqlite3.Row]:
     return conn.execute(
-        "SELECT id, name, position, page, description FROM projects WHERE user_id = ?"
+        "SELECT id, name, position, page, description, review_focus FROM projects WHERE user_id = ?"
         " ORDER BY page, position, id",
         (user_id,),
     ).fetchall()
@@ -55,7 +56,7 @@ def get_project(user_id: int, project_id: int) -> Project | None:
     """One project, only if it belongs to the user."""
     with db.connect() as conn:
         row = conn.execute(
-            "SELECT id, name, position, page, description FROM projects WHERE id = ? AND user_id = ?",
+            "SELECT id, name, position, page, description, review_focus FROM projects WHERE id = ? AND user_id = ?",
             (project_id, user_id),
         ).fetchone()
     return _to_project(row) if row else None

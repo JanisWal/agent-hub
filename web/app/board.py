@@ -1,15 +1,13 @@
 """Kanban items of a project, stored in SQLite. Standard library only.
 
 Columns (`kind`): bug, minor (small update), major (major update).
-Status: open (agreed, shown on top), proposed (suggested by Claude, waiting for
-accept or reject), trash (discarded, can be restored or deleted for good), archived (finished by
-an agent, kept for reference, can be restored).
+Status (22.11.2026, KONZEPT-AGENTEN.md 10): open (agreed: it waits in the queue, the programmer takes it by itself,
+agents.take_next), proposed (a suggestion of the manager or a role: accept or reject), working (the programmer took
+it: it is off the board while its task is on its way), archived (finished), trash (rejected, discarded or cancelled;
+can be restored or deleted for good).
 
-Items of the manager (19.11.2026, `manager-board`): the title is a short bullet, `details` holds the context behind it
-(what exactly, why, decisions from the chat, acceptance criteria) for the programmer. `auto` = it goes to the
-programmer by itself (agents.autostart): set for what the manager put on the board from the user's request in the
-chat, items made by hand and accepted suggestions (items from before 19.11.2026 keep their start button, and so does
-one whose task the user stopped).
+The title is a short bullet, `details` holds the context behind it (what exactly, why, decisions from the chat,
+acceptance criteria) for the programmer. `needs`: "mac" when only an Apple device can build or test it.
 """
 import sqlite3
 import time
@@ -30,16 +28,16 @@ class Item:
     kind: str
     title: str
     source: str  # "user", "agent" (a role in a run) or "manager" (the manager chat); "claude" until 19.11.2026
-    status: str  # "open", "proposed", "trash" or "archived"
+    status: str  # "open", "proposed", "working", "archived" or "trash"
     position: int
     details: str = ""     # the context behind the bullet
-    auto: bool = False    # goes to the programmer by itself
+    needs: str = "any"
 
 
 def _to_item(row: sqlite3.Row) -> Item:
     return Item(
         row["id"], row["project_id"], row["kind"], row["title"],
-        row["source"], row["status"], row["position"], row["details"], bool(row["auto"]),
+        row["source"], row["status"], row["position"], row["details"], row["needs"],
     )
 
 
@@ -104,8 +102,8 @@ def create_item(user_id: int, project_id: int, kind: str, title: str, details: s
             raise ValueError("Unbekanntes Projekt")
         position = _edge_position(conn, project_id, kind, top=True)
         cur = conn.execute(   # agreed by hand: it goes to the programmer by itself (Janis, 19.11.2026)
-            "INSERT INTO board_items (project_id, kind, title, source, status, position, created_at, auto, details)"
-            " VALUES (?, ?, ?, 'user', 'open', ?, ?, 1, ?)",
+            "INSERT INTO board_items (project_id, kind, title, source, status, position, created_at, details)"
+            " VALUES (?, ?, ?, 'user', 'open', ?, ?, ?)",
             (project_id, kind, title, position, int(time.time()), (details or "").strip()[:MAX_DETAILS]),
         )
         row = conn.execute("SELECT * FROM board_items WHERE id = ?", (cur.lastrowid,)).fetchone()
@@ -132,11 +130,11 @@ def create_suggestion(user_id: int, project_id: int, kind: str, title: str, deta
 
 
 def add_from_ai(conn: sqlite3.Connection, project_id: int, kind: str, title: str, details: str = "",
-                approved: bool = False, source: str = "agent") -> int | None:
+                approved: bool = False, source: str = "agent", needs: str = "any") -> int | None:
     """An item the manager or an agent put on the board (the caller knows the project is the user's: it comes from the
-    job, never from the AI). `approved`: agreed at once and it starts by itself (`auto`), else a suggestion that waits
-    for the user. None for a bad kind or title, an unknown source, or when an open or proposed item says the same
-    already (reply.similar, Janis 21.11.2026: six bullets for one fix): then its context is added to that item."""
+    job, never from the AI). `approved`: agreed at once, it goes into the queue; else a suggestion that waits for the
+    user. None for a bad kind or title, an unknown source, or when an item on the board or being worked on says the
+    same already (reply.similar, Janis 21.11.2026: six bullets for one fix): then its context is added to that item."""
     try:
         kind, title = _clean(kind, title)
     except ValueError:
@@ -144,7 +142,7 @@ def add_from_ai(conn: sqlite3.Connection, project_id: int, kind: str, title: str
     if source not in SOURCES:
         return None
     for row in conn.execute("SELECT id, title, details FROM board_items WHERE project_id = ?"
-                            " AND status IN ('open', 'proposed')", (project_id,)):
+                            " AND status IN ('open', 'proposed', 'working')", (project_id,)):
         if reply.similar(row["title"], title):
             extra = (details or "").strip()
             if extra and extra not in row["details"]:   # what the repeat adds is kept with the item there is
@@ -154,10 +152,10 @@ def add_from_ai(conn: sqlite3.Connection, project_id: int, kind: str, title: str
     status = "open" if approved else "proposed"
     position = _edge_position(conn, project_id, kind, top=kind == "bug") if approved else 0   # a bug goes on top
     cur = conn.execute(
-        "INSERT INTO board_items (project_id, kind, title, source, status, position, created_at, details, auto)"
+        "INSERT INTO board_items (project_id, kind, title, source, status, position, created_at, details, needs)"
         " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (project_id, kind, title, source, status, position, int(time.time()), (details or "").strip()[:MAX_DETAILS],
-         int(approved)))
+         needs if needs in ("any", "mac") else "any"))
     return cur.lastrowid
 
 
@@ -166,10 +164,9 @@ def edit_from_ai(conn: sqlite3.Connection, project_id: int, item_id: int, kind: 
     """The manager corrects an item after a misunderstanding (Janis, 19.11.2026): kind, title and context, each only
     if given. Only an open or proposed item of this project (it comes from the question, never from the AI) that the
     programmer has not started; False otherwise, or for a title another item of the project has."""
-    from . import agents   # agents imports this module
     row = conn.execute("SELECT * FROM board_items WHERE id = ? AND project_id = ? AND status IN ('open', 'proposed')",
                        (item_id, project_id)).fetchone()
-    if row is None or agents._taken(conn, item_id):
+    if row is None:                                    # taken by the programmer already ("working"), or gone
         return False
     new_kind = kind if kind in KINDS else row["kind"]
     new_title = title.strip()[:MAX_TITLE] if title.strip() else row["title"]
@@ -218,8 +215,6 @@ def _move(user_id: int, item_id: int, allowed_from: tuple[str, ...], to_status: 
             "UPDATE board_items SET status = ?, position = ? WHERE id = ?",
             (to_status, position, item_id),
         )
-        if row["status"] == "proposed" and to_status == "open":   # an accepted suggestion goes to the programmer
-            conn.execute("UPDATE board_items SET auto = 1 WHERE id = ?", (item_id,))
     return True
 
 
@@ -251,7 +246,7 @@ def restore(user_id: int, item_id: int) -> bool:
         row = _owned_item(conn, user_id, item_id)
     if row is None or row["status"] not in ("trash", "archived"):
         return False
-    waits = row["status"] == "trash" and row["source"] != "user" and not row["auto"] and row["kind"] != "bug"
+    waits = row["status"] == "trash" and row["source"] != "user" and row["kind"] != "bug"
     return _move(user_id, item_id, ("trash", "archived"), "proposed" if waits else "open",
                  top=not waits)
 

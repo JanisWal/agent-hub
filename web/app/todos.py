@@ -3,8 +3,10 @@
 Decisions are not here: they wait in "waiting for you" in the Manager view.
 
 Like every data module, each function gets the `user_id` and the project must be his: foreign things are "not
-found" (None or False). `source` says who made the entry; for now only the user does, the AIs come later through
-the reply format (reply.py). Standard library only.
+found" (None or False). `source` says who made the entry: the user, or a role that needs something only the user can
+do (22.11.2026: upload files, connect a device, check by hand; <env> in a run, agents.py). An entry of a role names its
+task: a task that waits for it goes on when it is done (agents.check_todos), and the user's note goes into its next
+package. Standard library only.
 """
 import sqlite3
 import time
@@ -12,7 +14,8 @@ from dataclasses import dataclass
 
 from . import db
 
-SOURCES = ("user", "tester", "manager")
+SOURCES = ("user", "programmer", "tester", "reviewer", "manager")
+ROLE_SOURCES = ("programmer", "tester", "reviewer")
 MAX_TEXT = 500
 MAX_NOTE = 4000
 MAX_PER_PROJECT = 200
@@ -87,6 +90,43 @@ def create(user_id: int, project_id: int, text: str, source: str = "user", task_
             (project_id, text, source, task_id, int(now if now is not None else time.time())),
         )
     return cur.lastrowid
+
+
+def add_from_role(conn: sqlite3.Connection, project_id: int, role: str, text: str, task_id: int,
+                  check: bool = False, now: int | None = None) -> int | None:
+    """What a role needs from the user (the caller knows project and task are the user's: they come from the job).
+    `check`: the tester's steps to check something by hand. None when the same entry of the task is open already, the
+    text is empty or the list is full."""
+    from . import i18n, reply   # reply imports nothing of this module
+    text = " ".join((text or "").split())
+    if not text or role not in ROLE_SOURCES:
+        return None
+    if check:
+        lang = (conn.execute("SELECT u.language FROM users u JOIN projects p ON p.user_id = u.id WHERE p.id = ?",
+                             (project_id,)).fetchone() or {"language": "de"})["language"]
+        text = i18n.t(lang if lang in ("de", "en") else "de", "todo_check", text=text)
+    text = text[:MAX_TEXT]
+    for row in conn.execute("SELECT text FROM todos WHERE project_id = ? AND task_id IS ? AND done_at IS NULL",
+                            (project_id, task_id)).fetchall():
+        if reply.similar(row["text"], text):
+            return None
+    if conn.execute("SELECT COUNT(*) FROM todos WHERE project_id = ?", (project_id,)).fetchone()[0] >= MAX_PER_PROJECT:
+        return None
+    return conn.execute("INSERT INTO todos (project_id, text, source, task_id, created_at) VALUES (?, ?, ?, ?, ?)",
+                        (project_id, text, role, task_id, int(now if now is not None else time.time()))).lastrowid
+
+
+def open_for_task(conn: sqlite3.Connection, task_id: int) -> int:
+    """How many entries a task waits for."""
+    return conn.execute("SELECT COUNT(*) FROM todos WHERE task_id = ? AND done_at IS NULL", (task_id,)).fetchone()[0]
+
+
+def notes_for(conn: sqlite3.Connection, project_id: int, task_id: int) -> str:
+    """What the user did for a task (done entries with his notes), as information for its next runs; "" if nothing."""
+    rows = conn.execute("SELECT text, note FROM todos WHERE project_id = ? AND task_id = ? AND done_at IS NOT NULL"
+                        " ORDER BY done_at", (project_id, task_id)).fetchall()
+    lines = [f"- {r['text']}\n  Done by the user" + (f": {r['note']}" if r["note"] else ".") for r in rows]
+    return "<done-by-user>\n" + "\n".join(lines) + "\n</done-by-user>" if lines else ""
 
 
 def update(user_id: int, todo_id: int, text: str) -> bool:

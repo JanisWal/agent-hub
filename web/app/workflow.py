@@ -1,110 +1,130 @@
-"""The chain of the agents as a pure state machine: no database, no HTTP, easy to test.
+"""The chain of the agents as a pure state machine: no database, no HTTP (KONZEPT-AGENTEN.md 10; Janis, 22.11.2026).
 
-A task walks through stages, each stage belongs to one role:
+A task walks through stages; every stage but merging belongs to one role:
 
-    coding (programmer) -> testing (tester) -> reviewing (reviewer) -> awaiting_approval (the user)
-        -> documenting (chef, the manager) -> done
+    coding (programmer) -> [the project's tests, run by the hub] -> testing (tester) -> reviewing (reviewer)
+        -> merging (the runner brings the branch into main) -> documenting (chef, the manager) -> done
 
-The role "documenter" was dropped (Janis, 07.11.2026): the manager knows everything anyway and writes
-the documentation after an approval.
-
-A failed test or an objection of the reviewer sends the task back to coding and counts as a new
-round. After MAX_ROUNDS the task goes to the user (`escalated`). Agents never talk to each other:
-the hub passes on the reports (see agents.py). Terminal states: done, escalated (waits for the
-user's decision), cancelled.
+A failed test, a failing tester or an objection of the reviewer sends the task back to coding (`returns` + 1); after a
+return the whole chain runs again. There is no approval by the user: the reviewer's ok merges. A task can stand still
+without leaving its stage (`hold`): "question" (a role waits for an answer of the manager or the user), "todo" (a role
+waits for something only the user can do, in "For you") and "decision" (the user decides how it goes on: again, accept
+as it is, or cancel). Roles the user switched off are skipped. Ends: done, cancelled.
 """
 from dataclasses import dataclass
 
 ROLES = ("chef", "programmer", "tester", "reviewer")
-STAGES = ("coding", "testing", "reviewing", "awaiting_approval", "documenting")
-STAGE_ROLE = {"coding": "programmer", "testing": "tester", "reviewing": "reviewer",
-              "documenting": "chef"}
+STAGES = ("coding", "testing", "reviewing", "merging", "documenting")   # a task on its way
+ENDS = ("done", "cancelled")
+STAGE_ROLE = {"coding": "programmer", "testing": "tester", "reviewing": "reviewer", "documenting": "chef"}
 RESULTS = {
-    "programmer": ("done", "failed"),
-    "tester": ("pass", "fail", "not_testable", "skipped", "failed"),
-    "reviewer": ("ok", "objections", "failed"),
+    "programmer": ("done", "question", "blocked", "failed"),
+    "tester": ("pass", "fail", "not_testable", "question", "blocked", "failed"),
+    "reviewer": ("ok", "objections", "question", "blocked", "failed"),
     "chef": ("done", "failed"),
 }
-MAX_ROUNDS = 3
-STRICTNESS = ("loose", "normal", "strict")
+HOLDS = ("question", "todo", "decision")
+CHOICES = ("again", "accept", "cancel")          # the user's answers to a decision
+# Why a task waits for a decision (the hub's facts; the manager explains them in plain words, prompts.explain):
+WHY = ("returns",   # sent back MAX_RETURNS times
+       "stuck",     # the programmer was sent back and changed nothing
+       "failed",    # a run failed or stopped twice in a row
+       "nothing",   # the programmer says done but the task changed nothing
+       "asks",      # the roles asked more than MAX_ASKS questions that hold the task
+       "format",    # a role's answer had no valid result, also when asked again
+       "old")       # a task from before the rebuild (22.11.2026, db.py)
+MAX_RETURNS = 6
+MAX_ASKS = 3
 
 
 @dataclass(frozen=True)
 class Step:
-    status: str          # a stage, or "done" / "escalated"
-    round: int
-    manual_check: bool   # nobody could test it: the user has to check it by hand
+    stage: str              # a stage or an end
+    hold: str = ""          # "" or one of HOLDS
+    returns: int = 0
+    manual_check: bool = False   # somebody has to check it by hand (no tester, not testable, accepted as it is)
+    why: str = ""           # one of WHY when hold is "decision"
 
 
-def _first_enabled(stage: str, enabled: frozenset[str], manual_check: bool) -> Step:
-    """Go to `stage`, skipping stages whose role the user has switched off."""
-    index = STAGES.index(stage)
+def forward(stage: str, returns: int, manual_check: bool, enabled: frozenset[str]) -> Step:
+    """The stage after `stage` went well, skipping the stages of switched-off roles (no tester: nothing was tested)."""
+    index = STAGES.index(stage) + 1
     while index < len(STAGES):
         name = STAGES[index]
         role = STAGE_ROLE.get(name)
         if role is None or role in enabled:
-            return Step(name, 0, manual_check)   # round is filled in by the caller
+            return Step(name, "", returns, manual_check)
         if name == "testing":
-            manual_check = True                  # no tester: nothing was tested
+            manual_check = True
         index += 1
-    return Step("done", 0, manual_check)
+    return Step("done", "", returns, manual_check)
 
 
-def _again(round_: int, manual_check: bool) -> Step:
-    """Back to the programmer, or to the user when the rounds are used up."""
-    if round_ + 1 > MAX_ROUNDS:
-        return Step("escalated", round_, manual_check)
-    return Step("coding", round_ + 1, manual_check)
+def back(returns: int, manual_check: bool) -> Step:
+    """Back to the programmer; after MAX_RETURNS returns the user decides (the task still waits at coding)."""
+    if returns + 1 > MAX_RETURNS:
+        return Step("coding", "decision", returns, manual_check, "returns")
+    return Step("coding", "", returns + 1, manual_check)
 
 
-def advance(status: str, round_: int, manual_check: bool, result: str,
-            enabled: frozenset[str]) -> Step:
-    """The task is in stage `status`; its agent reported `result`. Where does it go next?
+def decision(stage: str, returns: int, manual_check: bool, why: str) -> Step:
+    if why not in WHY:
+        raise ValueError("Unbekannter Grund")
+    return Step(stage, "decision", returns, manual_check, why)
 
-    `enabled` are the roles the user has switched on (the programmer is always one of them).
-    Raises ValueError for a stage that has no agent or a result the role cannot give.
-    """
-    role = STAGE_ROLE.get(status)
+
+def after_run(stage: str, result: str, returns: int, manual_check: bool, enabled: frozenset[str], *,
+              tests: bool | None = None, changed: bool = True, stuck: bool = False) -> Step:
+    """The role of `stage` reported `result` (already a valid one, RESULTS). Where does the task go?
+
+    `tests` (programmer only): the project's tests the hub ran after him, True passed, False failed, None none.
+    `changed`: the task changed something against main. `stuck`: the programmer was sent back and committed nothing.
+    A failed run reaches this only when it failed twice (agents.py tries once more first)."""
+    role = STAGE_ROLE.get(stage)
     if role is None:
         raise ValueError("Stufe hat keinen Agenten")
     if result not in RESULTS[role]:
         raise ValueError("Ergebnis passt nicht zur Rolle")
-    if result == "failed" and status != "documenting":
-        # The agent crashed or gave no usable answer (the runner reports that as "failed"):
-        # nothing can be trusted, the user decides.
-        return Step("escalated", round_, manual_check)
-    if status == "coding":
-        nxt = _first_enabled("testing", enabled, manual_check)
-    elif status == "testing":
+    if stage == "documenting":            # the change is merged already: a failed note does not undo it
+        return Step("done", "", returns, manual_check)
+    if result == "question":
+        return Step(stage, "question", returns, manual_check)
+    if result == "blocked":
+        return Step(stage, "todo", returns, manual_check)
+    if result == "failed":
+        return decision(stage, returns, manual_check, "failed")
+    if stage == "coding":
+        if stuck:
+            return decision(stage, returns, manual_check, "stuck")
+        if not changed:
+            return decision(stage, returns, manual_check, "nothing")
+        if tests is False:
+            return back(returns, manual_check)
+        return forward(stage, returns, manual_check, enabled)
+    if stage == "testing":
         if result == "fail":
-            return _again(round_, manual_check)
-        nxt = _first_enabled("reviewing", enabled, manual_check or result in ("not_testable", "skipped"))
-    elif status == "reviewing":
-        if result == "objections":
-            return _again(round_, manual_check)
-        nxt = _first_enabled("awaiting_approval", enabled, manual_check)
-    else:  # documenting: the change is merged already, a failed note does not undo it
-        return Step("done", round_, manual_check)
-    return Step(nxt.status, round_, nxt.manual_check)
+            return back(returns, manual_check)
+        return forward(stage, returns, manual_check or result == "not_testable", enabled)
+    if result == "objections":            # reviewing
+        return back(returns, manual_check)
+    return forward(stage, returns, manual_check, enabled)
 
 
-def after_approval(round_: int, manual_check: bool, enabled: frozenset[str]) -> Step:
-    """The user approved: the manager documents if it is on, else done."""
-    nxt = _first_enabled("documenting", enabled, manual_check)
-    return Step(nxt.status, round_, nxt.manual_check)
+def after_merge(ok: bool, returns: int, manual_check: bool, enabled: frozenset[str]) -> Step:
+    """The runner merged the branch into main (on to the documentation), or main had moved and conflicts (back to the
+    programmer, who gets main into his branch first)."""
+    if ok:
+        return forward("merging", returns, manual_check, enabled)
+    return back(returns, manual_check)
 
 
-def after_rejection(manual_check: bool) -> Step:
-    """The user said no (or reopened an escalated task): a fresh cycle from the programmer."""
-    return Step("coding", 1, manual_check)
-
-
-def test_may_be_skipped(strictness: str, kind: str) -> bool:
-    """The Mac is not reachable and the task needs it: may the test be left out?
-
-    loose skips tests of small updates and bugs, normal only of small updates, strict never
-    (the task waits for the Mac). Major updates are never skipped.
-    """
-    if strictness not in STRICTNESS:
-        raise ValueError("Unbekannte Strenge")
-    return {"loose": kind in ("minor", "bug"), "normal": kind == "minor", "strict": False}[strictness]
+def after_decision(choice: str, stage: str, returns: int, manual_check: bool, changed: bool) -> Step:
+    """The user's decision on a task that waits for one. again: the stage where it stands runs once more, with a fresh
+    count of returns; accept: the work as it is goes into main (to be checked by hand); cancel: it is dropped."""
+    if choice == "again":
+        return Step(stage, "", 0, manual_check)
+    if choice == "accept":
+        return Step("merging" if changed else "done", "", returns, True)
+    if choice == "cancel":
+        return Step("cancelled", "", returns, manual_check)
+    raise ValueError("Unbekannte Entscheidung")

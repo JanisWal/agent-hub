@@ -594,60 +594,55 @@ def _device_asks(lang: str, asks: list) -> str:
         for r in asks)
 
 
-def _pill(lang: str, label_key: str, css: str, **data) -> str:
-    attrs = " ".join(f'data-{k}="{esc(v)}"' for k, v in data.items())
-    return f'<button class="pill-btn {css}" type="button" {attrs}>{esc(i18n.t(lang, label_key))}</button>'
-
-
-# The buttons of a task that waits for the user, left the quieter one (Janis, 19.11.2026: decide right in the tile).
-TASK_PILLS = {
-    "awaiting_approval": (("agent_reject", "quiet", "reject"), ("agent_approve", "go", "approve")),
-    "escalated": (("agent_cancel", "quiet", "cancel"), ("agent_reject", "go", "reject")),
-}
-
-
 def _question_row(lang: str, q) -> str:
-    if q.kind == "note":   # a problem of the environment a role named (questions.add_note): read it, then "done"
-        who = i18n.t(lang, "w_env_role", role=i18n.t(lang, f"station_{q.role}"))
-        return (f'<li class="w-item w-ask w-note" data-question="{q.id}"><small class="w-who">{esc(who)}</small>'
-                f'<p class="w-text">{esc(q.text)}</p><div class="w-options">'
-                f'<button class="pill-btn quiet" type="button" data-reply="ok">{esc(i18n.t(lang, "w_env_done"))}</button>'
-                f'</div></li>')
-    who = i18n.t(lang, "w_asks_chef") if q.role == "chef" else i18n.t(lang, "w_asks_role", role=i18n.t(lang, f"station_{q.role}"))
-    options = "".join(f'<button class="pill-btn quiet" type="button" data-reply="{esc(o)}">{esc(o)}</button>'
-                      for o in q.options)   # a suggested answer: one click sends it
+    """A question the manager wrote anew for the user (or a role's, when the manager did not): the answers as buttons,
+    the one he suggests glowing first, and a free field."""
+    who = i18n.t(lang, "w_asks_role", role=i18n.t(lang, f"station_{q.role}"))
+    order = ([q.recommended] if q.recommended >= 0 else []) + [i for i in range(len(q.options)) if i != q.recommended]
+    options = "".join(
+        f'<button class="sq-btn {"go rec" if i == q.recommended else "quiet"}" type="button" data-reply="{esc(q.options[i])}">'
+        f'{esc(q.options[i])}</button>' for i in order)
+    hint = (f'<small class="w-rec">{esc(i18n.t(lang, "w_recommended"))}</small>' if q.recommended >= 0 else "")
     return (
         f'<li class="w-item w-ask" data-question="{q.id}"><small class="w-who">{esc(who)}</small>'
         f'<p class="w-text">{esc(q.text)}</p>'
-        + (f'<div class="w-options">{options}</div>' if options else "") +
+        + (f'<div class="w-options">{options}</div>{hint}' if options else "") +
         f'<div class="w-reply"><input class="w-input" type="text" maxlength="1000" autocomplete="off" '
         f'placeholder="{esc(i18n.t(lang, "w_own_answer"))}" aria-label="{esc(i18n.t(lang, "w_own_answer"))}">'
-        f'{_pill(lang, "w_send", "go", send="1")}</div></li>'
+        f'<button class="sq-btn go" type="button" data-send="1">{esc(i18n.t(lang, "w_send"))}</button></div></li>'
     )
 
 
-def _task_row(lang: str, task, report: str) -> str:
-    pills = "".join(_pill(lang, key, css, decide=decision) for key, css, decision in TASK_PILLS.get(task.status, ()))
+DECISIONS = (("cancel", "w_cancel", "stop"), ("accept", "w_accept", "quiet"), ("again", "w_again", "go"))
+
+
+def _decision_row(lang: str, task, report: str) -> str:
+    """A task that stopped (KONZEPT-AGENTEN.md 10.2): the manager's plain explanation (or the hub's reason while he has
+    none), the last report folded, a hint for the programmer, and again / accept / cancel; his advice glows."""
+    said = task.advice or i18n.t(lang, f"w_why_{task.hold_why}" if task.hold_why else "w_why_failed",
+                                 n=task.returns)
+    buttons = "".join(
+        f'<button class="sq-btn {tone}{" rec" if choice == task.advice_pick else ""}" type="button" '
+        f'data-decide="{choice}">{esc(i18n.t(lang, key))}</button>' for choice, key, tone in DECISIONS)
     return (
         f'<li class="w-item w-task" data-task="{task.id}"><div class="w-head"><span class="w-title">{esc(task.title)}</span>'
-        f'<span class="r-result {"go" if task.status == "awaiting_approval" else "stop"}">'
-        f'{esc(i18n.t(lang, f"task_{task.status}"))}</span></div>'
+        f'<span class="r-result stop">{esc(i18n.t(lang, "w_decide"))}</span></div>'
+        f'<p class="w-text">{esc(said)}</p>'
         f'<details class="w-report"><summary>{esc(i18n.t(lang, "w_report"))}</summary>'
         f'<div class="r-report">{esc(report[:MAX_REPORT_SHOWN].strip() or i18n.t(lang, "role_no_report"))}</div></details>'
         f'<div class="w-reply"><input class="w-input" type="text" maxlength="1000" autocomplete="off" '
-        f'placeholder="{esc(i18n.t(lang, "w_note"))}" aria-label="{esc(i18n.t(lang, "w_note"))}">'
-        f'<span class="w-btns">{pills}</span></div></li>'
+        f'placeholder="{esc(i18n.t(lang, "w_hint"))}" aria-label="{esc(i18n.t(lang, "w_hint"))}"></div>'
+        f'<div class="w-btns">{buttons}</div></li>'
     )
 
 
 def _waiting_tile(lang: str, autonomy: str, waiting: list[tuple[agents.Task, str]], asks: list | None = None,
                   open_questions: list | None = None) -> str:
-    """ "Waiting for you" (Janis, 16.11.2026: decisions, not work; 19.11.2026: you decide and answer right here): the
-    questions of the manager and the roles (a button per suggested answer and a free field, questions.py), the tasks
-    that wait for approval or need the user (the last report folded, a field for a remark to the programmer, the
-    decision as pills) and the manager's requests for device actions. static/waiting.js sends and swaps the tile."""
+    """ "Waiting for you" (Janis, 22.11.2026: decisions only; work for the user is in "For you"): the questions the
+    manager wrote anew for the user, the tasks that stopped and wait for his decision, and the manager's requests for
+    device actions. static/waiting.js sends and swaps the tile; nothing goes into the manager chat."""
     asks, open_questions = asks or [], open_questions or []
-    items = "".join(_question_row(lang, q) for q in open_questions) + "".join(_task_row(lang, t, r) for t, r in waiting)
+    items = "".join(_question_row(lang, q) for q in open_questions) + "".join(_decision_row(lang, t, r) for t, r in waiting)
     devices_html = _device_asks(lang, asks)
     body = ((f'<ul class="dev-asks">{devices_html}</ul>' if devices_html else "")
             + (f'<div class="r-scroll"><ol class="w-items">{items}</ol></div>' if items else "")) \
@@ -665,7 +660,7 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
            writing: bool = False) -> str:
     """`settings` is agents.settings(user_id): the manager is the role "chef". `regular_checks` are the
     project's checks (checks.list_checks). `ais`: the providers the user has connected (their models are offered).
-    `waiting`: (task, last report) of agents.waiting_tasks, the decisions of "waiting for you"."""
+    `waiting`: (task, last report) of agents.decisions, the tasks that wait for the user's decision."""
     chef = settings["roles"]["chef"]
     model = ui.model_picker(lang, "manager", chef["model"], chef.get("effort", ""),
                             label_model="chat_model", label_effort="chat_effort", providers=ais,

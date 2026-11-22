@@ -26,11 +26,13 @@ class StatusTest(unittest.TestCase):
             conn.execute("UPDATE board_items SET status = ?, created_at = ? WHERE id = ?", (state, at, made.id))
         return made.id
 
-    def task(self, state, item_id=None, created=NOW - 100 * DAY, finished=None):
+    def task(self, stage, item_id=None, created=NOW - 100 * DAY, finished=None, why="", held=None):
+        """A task in a stage; `why` makes it wait for the user's decision (since `held`)."""
         with db.connect() as conn:
             return conn.execute(
-                "INSERT INTO agent_tasks (project_id, item_id, title, kind, status, created_at, deadline, finished_at)"
-                " VALUES (?, ?, 'T', 'bug', ?, ?, ?, ?)", (self.pid, item_id, state, created, created + 7200, finished)).lastrowid
+                "INSERT INTO agent_tasks (project_id, item_id, title, kind, stage, hold, hold_why, held_since, created_at,"
+                " finished_at) VALUES (?, ?, 'T', 'bug', ?, ?, ?, ?, ?, ?)",
+                (self.pid, item_id, stage, "decision" if why else "", why, held or created, created, finished)).lastrowid
 
     def add_run(self, task_id, state, at):
         with db.connect() as conn:
@@ -47,10 +49,10 @@ class StatusTest(unittest.TestCase):
 
     def test_planned_in_progress_waiting_done_and_the_progress(self):
         self.item()                                                   # planned
-        taken = self.item()
+        taken = self.item("working")                                  # off the board while it is worked on
         self.task("coding", taken, created=NOW - 100)                 # in progress
-        waiting = self.item()
-        self.task("awaiting_approval", waiting, created=NOW - 100)    # waits for the user
+        waiting = self.item("working")
+        self.task("coding", waiting, created=NOW - 100, why="returns")   # waits for the user's decision
         self.item("archived")                                         # done
         finished = self.item("archived")
         self.task("done", finished, created=NOW - 100, finished=NOW - 50)   # one thing, not counted twice
@@ -82,25 +84,23 @@ class StatusTest(unittest.TestCase):
         self.item(at=NOW - DAY)                                       # and yesterday
         self.assertEqual(self.assess().activity, "active")
 
-    def test_an_escalated_task_or_a_failed_run_is_red(self):
-        i = self.item(at=NOW - DAY)
-        t = self.task("escalated", i, created=NOW - DAY)
+    def test_a_task_that_waits_for_a_decision_is_red(self):
+        i = self.item("working", at=NOW - DAY)
+        t = self.task("coding", i, created=NOW - DAY, why="returns")
         a = self.assess()
         self.assertEqual((a.lamp, a.waiting, a.reasons), ("red", 1, ["escalated"]))
         with db.connect() as conn:
-            conn.execute("UPDATE agent_tasks SET status = 'coding' WHERE id = ?", (t,))
-        self.add_run(t, "failed", NOW - 3600)
-        a = self.assess()
-        self.assertEqual((a.lamp, a.reasons), ("red", ["failed"]))
+            conn.execute("UPDATE agent_tasks SET hold_why = 'failed' WHERE id = ?", (t,))
+        self.assertEqual(self.assess().reasons, ["escalated", "failed"])
         with db.connect() as conn:
-            conn.execute("UPDATE agent_runs SET finished_at = ?", (NOW - 5 * DAY,))
-        self.assertNotEqual(self.assess().lamp, "red")                # an old failure no longer counts
+            conn.execute("UPDATE agent_tasks SET hold = '', hold_why = '' WHERE id = ?", (t,))
+        self.assertNotEqual(self.assess().lamp, "red")                # the user decided: it goes on
 
-    def test_a_release_waiting_for_days_is_amber(self):
-        i = self.item(at=NOW - DAY)
-        self.task("awaiting_approval", i, created=NOW - 4 * DAY)
+    def test_a_decision_waiting_for_days_says_so(self):
+        i = self.item("working", at=NOW - DAY)
+        self.task("merging", i, created=NOW - 4 * DAY, why="old", held=NOW - 4 * DAY)
         a = self.assess()
-        self.assertEqual((a.lamp, a.reasons), ("yellow", ["release_old"]))
+        self.assertEqual((a.lamp, a.reasons), ("red", ["escalated", "release_old"]))
 
     def test_busy_when_much_happened_in_the_week(self):
         for _ in range(status.BUSY_EVENTS):

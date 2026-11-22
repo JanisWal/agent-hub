@@ -1,71 +1,67 @@
-"""The chain of the agents (workflow.py): every transition, without a database."""
+"""The chain as a pure state machine (workflow.py, KONZEPT-AGENTEN.md 10)."""
 import unittest
 
-from app import workflow as w
+from app import workflow
+from app.workflow import Step
 
-ALL = frozenset(w.ROLES)
+ALL = frozenset(workflow.ROLES)
 
 
-class AdvanceTest(unittest.TestCase):
-    def test_happy_path(self):
-        step = w.advance("coding", 1, False, "done", ALL)
-        self.assertEqual(step, w.Step("testing", 1, False))
-        step = w.advance("testing", 1, False, "pass", ALL)
-        self.assertEqual(step, w.Step("reviewing", 1, False))
-        step = w.advance("reviewing", 1, False, "ok", ALL)
-        self.assertEqual(step, w.Step("awaiting_approval", 1, False))
-        self.assertEqual(w.after_approval(1, False, ALL), w.Step("documenting", 1, False))
-        self.assertEqual(w.advance("documenting", 1, False, "done", ALL).status, "done")
+class WorkflowTest(unittest.TestCase):
+    def test_the_good_way_ends_merged_and_documented(self):
+        step = workflow.after_run("coding", "done", 0, False, ALL, tests=True)
+        self.assertEqual(step, Step("testing", "", 0, False))
+        step = workflow.after_run("testing", "pass", 0, False, ALL)
+        self.assertEqual(step.stage, "reviewing")
+        step = workflow.after_run("reviewing", "ok", 0, False, ALL)
+        self.assertEqual(step.stage, "merging")                       # no approval: the reviewer's ok merges
+        self.assertEqual(workflow.after_merge(True, 0, False, ALL).stage, "documenting")
+        self.assertEqual(workflow.after_run("documenting", "done", 0, False, ALL).stage, "done")
+        self.assertEqual(workflow.after_run("documenting", "failed", 0, False, ALL).stage, "done")   # merged already
 
-    def test_failed_test_and_objection_go_back_as_a_new_round(self):
-        self.assertEqual(w.advance("testing", 1, False, "fail", ALL), w.Step("coding", 2, False))
-        self.assertEqual(w.advance("reviewing", 2, False, "objections", ALL), w.Step("coding", 3, False))
+    def test_every_flaw_goes_back_to_the_programmer_and_counts(self):
+        self.assertEqual(workflow.after_run("coding", "done", 2, False, ALL, tests=False), Step("coding", "", 3, False))
+        self.assertEqual(workflow.after_run("testing", "fail", 0, False, ALL), Step("coding", "", 1, False))
+        self.assertEqual(workflow.after_run("reviewing", "objections", 1, False, ALL), Step("coding", "", 2, False))
+        self.assertEqual(workflow.after_merge(False, 1, False, ALL), Step("coding", "", 2, False))
 
-    def test_after_three_rounds_the_task_goes_to_the_user(self):
-        self.assertEqual(w.advance("testing", 3, False, "fail", ALL).status, "escalated")
-        self.assertEqual(w.advance("reviewing", 3, False, "objections", ALL).status, "escalated")
+    def test_too_many_returns_wait_for_the_users_decision(self):
+        step = workflow.after_run("testing", "fail", workflow.MAX_RETURNS, False, ALL)
+        self.assertEqual(step, Step("coding", "decision", workflow.MAX_RETURNS, False, "returns"))
 
-    def test_a_failed_agent_goes_to_the_user(self):
-        for stage in ("coding", "testing", "reviewing"):
-            self.assertEqual(w.advance(stage, 1, False, "failed", ALL).status, "escalated", stage)
-        self.assertEqual(w.advance("documenting", 1, False, "failed", ALL).status, "done")
+    def test_questions_and_work_for_the_user_hold_the_stage(self):
+        self.assertEqual(workflow.after_run("testing", "question", 1, False, ALL), Step("testing", "question", 1, False))
+        self.assertEqual(workflow.after_run("reviewing", "blocked", 0, True, ALL), Step("reviewing", "todo", 0, True))
 
-    def test_not_testable_continues_but_marks_a_manual_check(self):
-        for result in ("not_testable", "skipped"):
-            step = w.advance("testing", 1, False, result, ALL)
-            self.assertEqual((step.status, step.manual_check), ("reviewing", True))
-        # and the mark is never lost on the way
-        self.assertTrue(w.advance("reviewing", 1, True, "ok", ALL).manual_check)
+    def test_failed_stuck_and_unchanged_need_a_decision(self):
+        self.assertEqual(workflow.after_run("coding", "failed", 0, False, ALL).why, "failed")
+        self.assertEqual(workflow.after_run("coding", "done", 1, False, ALL, stuck=True).why, "stuck")
+        self.assertEqual(workflow.after_run("coding", "done", 0, False, ALL, changed=False).why, "nothing")
+        with self.assertRaises(ValueError):
+            workflow.decision("coding", 0, False, "bored")
 
     def test_switched_off_roles_are_skipped(self):
-        no_tester = ALL - {"tester"}
-        step = w.advance("coding", 1, False, "done", no_tester)
-        self.assertEqual((step.status, step.manual_check), ("reviewing", True))  # nothing was tested
-        no_review = ALL - {"reviewer"}
-        self.assertEqual(w.advance("testing", 1, False, "pass", no_review).status, "awaiting_approval")
-        self.assertEqual(w.after_approval(1, False, ALL - {"chef"}).status, "done")
-        bare = frozenset({"programmer"})
-        self.assertEqual(w.advance("coding", 1, False, "done", bare).status, "awaiting_approval")
+        no_tester = frozenset({"programmer", "reviewer", "chef"})
+        self.assertEqual(workflow.after_run("coding", "done", 0, False, no_tester), Step("reviewing", "", 0, True))
+        alone = frozenset({"programmer"})
+        self.assertEqual(workflow.after_run("coding", "done", 0, False, alone).stage, "merging")
+        self.assertEqual(workflow.after_merge(True, 0, False, alone).stage, "done")   # no manager: no documentation
 
-    def test_rejection_starts_a_fresh_cycle(self):
-        self.assertEqual(w.after_rejection(True), w.Step("coding", 1, True))
+    def test_not_testable_must_be_checked_by_hand(self):
+        self.assertEqual(workflow.after_run("testing", "not_testable", 0, False, ALL), Step("reviewing", "", 0, True))
 
-    def test_bad_input(self):
-        with self.assertRaises(ValueError):
-            w.advance("awaiting_approval", 1, False, "ok", ALL)   # the user's own stage
-        with self.assertRaises(ValueError):
-            w.advance("coding", 1, False, "pass", ALL)            # a tester result for the programmer
-        with self.assertRaises(ValueError):
-            w.advance("done", 1, False, "done", ALL)
+    def test_bad_input_is_refused(self):
+        for call in (lambda: workflow.after_run("merging", "done", 0, False, ALL),
+                     lambda: workflow.after_run("coding", "pass", 0, False, ALL),
+                     lambda: workflow.after_decision("approve", "coding", 0, False, True)):
+            with self.assertRaises(ValueError):
+                call()
 
-    def test_skipping_a_test_without_the_mac(self):
-        self.assertFalse(any(w.test_may_be_skipped("strict", k) for k in ("bug", "minor", "major")))
-        self.assertTrue(w.test_may_be_skipped("normal", "minor"))
-        self.assertFalse(w.test_may_be_skipped("normal", "bug"))
-        self.assertTrue(w.test_may_be_skipped("loose", "bug"))
-        self.assertFalse(w.test_may_be_skipped("loose", "major"))
-        with self.assertRaises(ValueError):
-            w.test_may_be_skipped("wild", "bug")
+    def test_the_users_decision(self):
+        self.assertEqual(workflow.after_decision("again", "testing", 4, False, True), Step("testing", "", 0, False))
+        self.assertEqual(workflow.after_decision("accept", "coding", 4, False, True), Step("merging", "", 4, True))
+        self.assertEqual(workflow.after_decision("accept", "coding", 0, False, False).stage, "done")   # nothing to merge
+        self.assertEqual(workflow.after_decision("cancel", "reviewing", 1, False, True).stage, "cancelled")
 
 
 if __name__ == "__main__":

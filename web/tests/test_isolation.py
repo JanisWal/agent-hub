@@ -113,28 +113,24 @@ class IsolationTest(unittest.TestCase):
         from app import agents, claude_link
         claude_link.begin(self.a.id)
         claude_link.complete(self.a.id, True)
-        task = agents.start_task(self.a.id, self.project.id, self.open.id)
-        with self.assertRaises(ValueError):
-            agents.start_task(self.b.id, self.project.id, self.open.id)       # A's item, A's project
-        with self.assertRaises(ValueError):
-            agents.start_task(self.b.id, self.mine.id, self.open.id)          # own project, A's item
+        job = agents.claim_next(can_mac=True)                                 # the programmer takes A's bug
+        task = agents.list_tasks(self.a.id, self.project.id)[0]
+        self.assertEqual((job.user_id, job.task_id, task.item_id), (self.a.id, task.id, self.open.id))
         self.assertIsNone(agents.get_task(self.b.id, task.id))
         self.assertEqual(agents.list_tasks(self.b.id, self.project.id), [])
         self.assertEqual(agents.task_runs(self.b.id, task.id), [])
-        self.assertIsNone(agents.pick_next(self.b.id, self.project.id))
-        for decision in ("approve", "reject", "cancel"):
-            self.assertFalse(agents.decide(self.b.id, task.id, decision))
+        self.assertIsNone(agents.current_task(self.b.id, self.project.id))
+        self.assertIsNone(agents.where(self.b.id, self.project.id))
+        self.assertFalse(agents.cancel(self.b.id, task.id))
         self.assertEqual(agents.usage(self.b.id)["runs"], 0)
         self.assertEqual(agents.role_runs(self.b.id, self.project.id, "programmer"), [])      # role views (15.11.2026)
-        self.assertEqual(agents.waiting_tasks(self.b.id, self.project.id), [])
+        self.assertEqual(agents.decisions(self.b.id, self.project.id), [])
         self.assertEqual(len(agents.role_runs(self.a.id, self.project.id, "programmer")), 1)
-        # B is not connected: B's own task would wait, A's connection is never a stand-in
-        mine = agents.start_task(self.b.id, self.mine.id, self.mine_item.id)
-        job = agents.claim_next(can_mac=True)
-        self.assertEqual((job.user_id, job.task_id), (self.a.id, task.id))
-        self.assertTrue(agents.finish_run(job.run_id, "done"))
+        # B is not connected: B's item stays on his board, A's connection is never a stand-in
+        self.assertTrue(agents.finish_run(job.run_id, "done", change=("a | 1 +", "+a"), committed=True))
         self.assertEqual(agents.claim_next(can_mac=True).task_id, task.id)    # the tester of A, not B's task
-        self.assertEqual(agents.get_task(self.b.id, mine.id).status, "coding")
+        self.assertEqual(agents.list_tasks(self.b.id, self.mine.id), [])
+        self.assertEqual(agents.alive(job.run_id), "stop")                    # A's finished run, nothing for anyone
         self.assertEqual(claude_link.status(self.b.id), "none")
         self.assertFalse(claude_link.disconnect(self.b.id))
         self.assertTrue(claude_link.is_connected(self.a.id))
@@ -280,16 +276,23 @@ class IsolationTest(unittest.TestCase):
         self.assertEqual(autofolders.state(self.a.id, self.project.id).status, "done")   # A's plan is still there
 
     def test_b_cannot_answer_a_question_or_decide_a_task_of_a(self):
-        from app import questions, reply
+        from app import claude_link, questions, reply
         from app.routes import manager as manager_routes
+        claude_link.begin(self.a.id)
+        claude_link.complete(self.a.id, True)
+        agents.claim_next(can_mac=True)
+        task = agents.list_tasks(self.a.id, self.project.id)[0]
         with db.connect() as conn:
-            qid = questions.add(conn, self.project.id, "chef", reply.Ask("Secret question of A?", "text", "small"))
+            qid = questions.add(conn, self.project.id, "programmer", reply.Ask("Secret question of A?", "text", "small"),
+                                task.id)
+            questions.to_user(conn, qid)
+            conn.execute("UPDATE agent_tasks SET hold = 'decision', hold_why = 'failed' WHERE id = ?", (task.id,))
         self.assertEqual(questions.open_questions(self.b.id, self.project.id), [])
-        self.assertIsNone(questions.answer(self.b.id, qid, "planted"))
+        self.assertFalse(agents.answer_question(self.b.id, qid, "planted"))
         self.assertEqual(manager_routes.answer_question(qid, "planted", user=self.b).status_code, 404)
-        task = agents.start_task(self.a.id, self.project.id, self.open.id)
         self.assertEqual(manager_routes.decide_task(task.id, "cancel", "", user=self.b).status_code, 404)
-        self.assertEqual(agents.get_task(self.a.id, task.id).status, "coding")
+        self.assertEqual(manager_routes.cancel_task(task.id, user=self.b).status_code, 404)
+        self.assertEqual(agents.get_task(self.a.id, task.id).stage, "coding")
         self.assertEqual([q.text for q in questions.open_questions(self.a.id, self.project.id)], ["Secret question of A?"])
 
     def test_b_cannot_see_use_or_move_the_folders_of_a(self):
@@ -575,16 +578,18 @@ class IsolationTest(unittest.TestCase):
         self.assertNotIn("Werkstatt-KI", ui.settings_bar(self.b))
         self.assertEqual(ai_link.status(self.a.id, "custom-1"), "connected")
 
-    def test_b_can_not_start_or_decide_tasks_of_a(self):
+    def test_b_can_not_accept_reject_or_change_the_review_focus_of_a(self):
         from app import agents
         from app.routes import board as board_routes
-        item = board.list_items(self.a.id, self.project.id)[0]
-        for action in ("agent-start", "agent-approve", "agent-reject", "agent-cancel"):
-            self.assertEqual(board_routes.item_action(item.id, action, user=self.b).status_code, 404)
-        with self.assertRaises(ValueError):
-            agents.start_item(self.b.id, item.id)
+        from app.routes import roles as role_routes
+        for action in ("accept", "reject"):
+            self.assertEqual(board_routes.item_action(self.proposed.id, action, user=self.b).status_code, 404)
+        with self.assertRaises(HTTPException):                                # no start by hand any more
+            board_routes.item_action(self.proposed.id, "agent-start", user=self.a)
+        self.assertEqual(role_routes.review_focus(self.project.id, "planted", user=self.b).status_code, 404)
+        self.assertIsNone(agents.review_focus(self.b.id, self.project.id))
+        self.assertEqual(agents.review_focus(self.a.id, self.project.id), "")
         self.assertEqual(agents.list_tasks(self.a.id, self.project.id), [])
-        self.assertIsNone(agents.item_task(self.b.id, item.id))
 
     def test_deleting_an_account_leaves_the_others_alone(self):
         owner = users.create_user("owner@example.com", "Own3r!pass", role="owner")

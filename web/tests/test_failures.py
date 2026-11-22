@@ -109,8 +109,7 @@ class ChatTest(Base):
 
 class RunTest(Base):
     def start(self):
-        item = board.create_item(self.a.id, self.pa.id, "minor", "Addieren")
-        agents.start_item(self.a.id, item.id)
+        board.create_item(self.a.id, self.pa.id, "minor", "Addieren")
         return agents.claim_next(can_mac=False)
 
     def test_a_run_goes_on_with_the_next_ai_and_never_round_in_circles(self):
@@ -120,11 +119,11 @@ class RunTest(Base):
         again = agents.claim_next(can_mac=False)
         self.assertEqual((again.run_id, again.provider), (run.run_id, "chatgpt"))
         self.assertTrue(agents.finish_run(again.run_id, "failed", REAL["limit"][4]))   # ChatGPT is used up too
-        self.assertIsNone(agents.claim_next(can_mac=False))                  # no third try: the run failed
+        self.assertIsNone(agents.claim_next(can_mac=False))                  # no third try: it waits for a rested AI
         with db.connect() as conn:
             row = conn.execute("SELECT status, tried FROM agent_runs WHERE id = ?", (run.run_id,)).fetchone()
-        self.assertEqual(row["tried"], "claude")
-        self.assertNotEqual(row["status"], "queued")
+        self.assertEqual((row["status"], row["tried"]), ("queued", ""))     # the task does not fail for the AI
+        self.assertEqual(agents.list_tasks(self.a.id, self.pa.id)[0].hold, "")
 
     def test_a_failure_of_the_work_is_no_reason_to_switch(self):
         run = self.start()

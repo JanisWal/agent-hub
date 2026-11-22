@@ -80,7 +80,8 @@ class VibeCommandTest(unittest.TestCase):
         self.assertTrue(text.startswith("Not logged in"))
         self.assertFalse(launcher.parse_vibe("")[0])
         self.assertEqual(launcher.result_of("All good\nRESULT: pass"), ("pass", "All good"))
-        self.assertEqual(launcher.result_of("no marker")[0], "failed")
+        self.assertEqual(launcher.result_of("no marker")[0], "none")             # the hub asks once more for it
+        self.assertEqual(launcher.result_of("RESULT: done", failed=True)[0], "failed")
 
     def test_the_entry_script(self):
         config = vibe_entry.config("mistral-small-2603", "off")
@@ -138,7 +139,7 @@ class WorkspaceTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_a_task_from_its_folder_to_main(self):
-        tree = self.work.prepare(7, 1, "agent/task-7")
+        tree = self.work.prepare(7, 1, "agent/task-7")[0]
         self.assertFalse((tree / ".git").exists())                            # the run never sees git
         (tree / "relay.py").write_text("ON = True\n")
         self.assertTrue(self.work.commit(7, "agent/task-7", "Task 7: programmer"))
@@ -152,7 +153,7 @@ class WorkspaceTest(unittest.TestCase):
         self.assertFalse(tree.exists() or self.work.gitdir(7).exists())
 
     def test_caches_of_running_the_code_are_not_committed(self):
-        tree = self.work.prepare(9, 1, "agent/task-9")
+        tree = self.work.prepare(9, 1, "agent/task-9")[0]
         (tree / "__pycache__").mkdir()
         (tree / "__pycache__" / "a.cpython-313.pyc").write_bytes(b"x")
         (tree / "a.py").write_text("A = 1\n")
@@ -166,7 +167,7 @@ class WorkspaceTest(unittest.TestCase):
         import zipfile
         self.work.ensure_repo(1)
         self.assertTrue(self.work.archive(1, "main").startswith(b"PK"))           # an empty project: an empty ZIP
-        tree = self.work.prepare(11, 1, "agent/task-11")
+        tree = self.work.prepare(11, 1, "agent/task-11")[0]
         (tree / "calc.js").write_text("export const add = (a, b) => a + b;\n")
         self.work.commit(11, "agent/task-11", "Task 11")
         names = zipfile.ZipFile(io.BytesIO(self.work.archive(1, "agent/task-11"))).namelist()
@@ -186,7 +187,7 @@ class WorkspaceTest(unittest.TestCase):
         git("add", "-A", "-f", cwd=seed)
         git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "old", cwd=seed)
         git("push", "-q", "-f", str(repo), "main", cwd=seed)
-        tree = self.work.prepare(10, 1, "agent/task-10")
+        tree = self.work.prepare(10, 1, "agent/task-10")[0]
         (tree / "b.py").write_text("B = 1\n")
         self.work.commit(10, "agent/task-10", "Task 10")
         names = git(f"--git-dir={repo}", "ls-tree", "-r", "--name-only", "agent/task-10")
@@ -196,7 +197,7 @@ class WorkspaceTest(unittest.TestCase):
         self.assertTrue((tree / "__pycache__" / "old.pyc").exists())        # the file itself stays in the folder
 
     def test_hooks_and_settings_in_the_folder_do_nothing(self):
-        tree = self.work.prepare(8, 1, "agent/task-8")
+        tree = self.work.prepare(8, 1, "agent/task-8")[0]
         (tree / ".git").mkdir()                                               # a run plants a fake git folder
         (tree / ".git" / "config").write_text("[core]\n\tfsmonitor = touch /tmp/pwned-by-run\n")
         (tree / "a.txt").write_text("a")
@@ -205,7 +206,7 @@ class WorkspaceTest(unittest.TestCase):
         self.assertNotIn(".git", git(f"--git-dir={self.work.repo(1)}", "ls-tree", "-r", "--name-only", "agent/task-8"))
 
     def test_main_moved_on_and_a_conflict(self):
-        one, two = self.work.prepare(1, 1, "agent/task-1"), self.work.prepare(2, 1, "agent/task-2")
+        one, two = self.work.prepare(1, 1, "agent/task-1")[0], self.work.prepare(2, 1, "agent/task-2")[0]
         (one / "a.txt").write_text("one\n")
         (two / "b.txt").write_text("two\n")
         self.work.commit(1, "agent/task-1", "1")
@@ -215,7 +216,7 @@ class WorkspaceTest(unittest.TestCase):
         names = git(f"--git-dir={self.work.repo(1)}", "ls-tree", "--name-only", "main")
         self.assertIn("a.txt", names)
         self.assertIn("b.txt", names)
-        three, four = self.work.prepare(3, 1, "agent/task-3"), self.work.prepare(4, 1, "agent/task-4")
+        three, four = self.work.prepare(3, 1, "agent/task-3")[0], self.work.prepare(4, 1, "agent/task-4")[0]
         (three / "a.txt").write_text("three\n")
         (four / "a.txt").write_text("four\n")
         self.work.commit(3, "agent/task-3", "3")
@@ -226,8 +227,47 @@ class WorkspaceTest(unittest.TestCase):
         self.assertEqual(git(f"--git-dir={self.work.repo(1)}", "rev-parse", "main"), before)
 
 
+    def test_main_comes_into_the_branch_and_a_conflict_waits_for_the_programmer(self):
+        one = self.work.prepare(1, 1, "agent/task-1")[0]
+        (one / "a.txt").write_text("base\n")
+        self.work.commit(1, "agent/task-1", "1")
+        self.work.merge(1, 1, "agent/task-1")
+        two = self.work.prepare(2, 1, "agent/task-2")[0]                      # from main with a.txt
+        three = self.work.prepare(3, 1, "agent/task-3")[0]
+        (two / "a.txt").write_text("two\n")
+        (three / "a.txt").write_text("three\n")
+        (three / "c.txt").write_text("c\n")
+        self.work.commit(2, "agent/task-2", "2")
+        self.work.commit(3, "agent/task-3", "3")
+        self.assertTrue(self.work.merge(2, 1, "agent/task-2"))               # main moved on
+        tree, conflicts = self.work.prepare(3, 1, "agent/task-3", sync=True)
+        self.assertEqual(conflicts, ["a.txt"])                               # left in the files for the programmer
+        self.assertIn("<<<<<<<", (tree / "a.txt").read_text())
+        self.assertEqual(self.work.markers(3, conflicts), ["a.txt"])
+        self.assertEqual(self.work.prepare(3, 1, "agent/task-3", sync=True)[1], ["a.txt"])   # still open: the same
+        (tree / "a.txt").write_text("two and three\n")                       # the programmer resolved it
+        self.assertEqual(self.work.markers(3, conflicts), [])
+        self.assertTrue(self.work.commit(3, "agent/task-3", "resolved"))     # concludes the merge
+        self.assertEqual(self.work.conflicts(3), [])
+        self.assertTrue(self.work.merge(3, 1, "agent/task-3"))               # now a fast-forward
+        names = git(f"--git-dir={self.work.repo(1)}", "ls-tree", "--name-only", "main")
+        self.assertIn("c.txt", names)
+        self.assertEqual(self.work.markers(3, ["../../etc/passwd", "missing.txt"]), [])   # only files in the folder
+
+    def test_a_branch_behind_main_without_conflicts_is_merged_quietly(self):
+        one = self.work.prepare(1, 1, "agent/task-1")[0]
+        two = self.work.prepare(2, 1, "agent/task-2")[0]
+        (one / "a.txt").write_text("a\n")
+        (two / "b.txt").write_text("b\n")
+        self.work.commit(1, "agent/task-1", "1")
+        self.work.commit(2, "agent/task-2", "2")
+        self.work.merge(1, 1, "agent/task-1")
+        tree, conflicts = self.work.prepare(2, 1, "agent/task-2", sync=True)
+        self.assertEqual(conflicts, [])
+        self.assertTrue((tree / "a.txt").exists())                           # main's work is in the branch now
+
     def test_the_change_against_main_and_back_to_the_commit(self):
-        tree = self.work.prepare(11, 1, "agent/task-11")
+        tree = self.work.prepare(11, 1, "agent/task-11")[0]
         (tree / "calc.js").write_text("export const add = (a, b) => a + b;\n")
         self.work.commit(11, "agent/task-11", "11")
         stat, patch = self.work.diff(11)
@@ -243,6 +283,11 @@ class WorkspaceTest(unittest.TestCase):
         self.assertEqual((tree / "calc.js").read_text(), "export const add = (a, b) => a + b;\n")
         self.assertFalse((tree / "out.log").exists() or (tree / "hub-test.sh").exists())
         self.assertTrue((tree / "node_modules").exists())                    # ignored: kept for the next round
+
+
+def answer(text, tokens_in, tokens_out):
+    """What run_agent gives back for a finished run of an AI with a JSON summary (Vibe, the hub's loop)."""
+    return json.dumps({"ok": True, "text": text, "tokens_in": tokens_in, "tokens_out": tokens_out}), 0, ""
 
 
 class FakeKeys:
@@ -266,6 +311,9 @@ class FakeTickets:
 
     def revoke(self, ticket):
         self.revoked.append(ticket)
+
+    def touch(self, ticket):
+        pass
 
 
 class FakeHub:
@@ -302,8 +350,9 @@ class RunTest(unittest.TestCase):
 
     def job(self, role="programmer"):
         return {"run_id": 3, "user_id": 5, "project_id": 1, "task_id": 7, "role": role, "model": "mistral-small-2603",
-                "branch": "agent/task-7", "round": 1, "net": "together", "effort": "none", "provider": "mistral",
-                "prompt": "The package"}
+                "branch": "agent/task-7", "net": "together", "effort": "none", "provider": "mistral",
+                "prompt": "The package", "purpose": "work", "sync": role == "programmer",
+                "conflict_note": "<conflicts>{files}</conflicts>"}
 
     def test_a_run_sees_the_users_files_read_only_and_they_are_gone_afterwards(self):
         source = Path(self.tmp.name) / "storage" / "1"
@@ -315,12 +364,11 @@ class RunTest(unittest.TestCase):
         r = self.runner(hub)
         r.views = view.Views(self.work.base, source.parent)
 
-        def fake_run(command, prompt):
+        def fake_run(command, prompt, watch):
             mount = next(part for part in command if "dst=/files" in part)
             folder = Path(mount.split("src=")[1].split(",")[0])
             seen.append((mount, (folder / "Schaltplan.pdf").read_bytes()))
-            return types.SimpleNamespace(stdout=json.dumps({"ok": True, "text": "Read it.\nRESULT: done",
-                                                            "tokens_in": 5, "tokens_out": 2}), returncode=0)
+            return answer("Read it.\nRESULT: done", 5, 2)
         r.run_agent = fake_run
         if os.geteuid() != 0:
             self.skipTest("needs root (the folder is handed to the run user)")
@@ -333,11 +381,10 @@ class RunTest(unittest.TestCase):
     def test_a_programmer_run_of_mistral_is_committed_and_reported(self):
         hub, seen = FakeHub(job=self.job()), []
 
-        def fake_run(command, prompt):
+        def fake_run(command, prompt, watch):
             seen.append((command, prompt))
             (self.work.tree(7) / "relay.py").write_text("ON = True\n")       # what the agent wrote
-            return types.SimpleNamespace(stdout=json.dumps({"ok": True, "text": "Built it.\nRESULT: done",
-                                                            "tokens_in": 50, "tokens_out": 20}), returncode=0)
+            return answer("Built it.\nRESULT: done", 50, 20)
         r = self.runner(hub)
         r.run_agent = fake_run
         if os.geteuid() != 0:
@@ -348,17 +395,17 @@ class RunTest(unittest.TestCase):
         self.assertIn("HUB_JOB=run", command)
         self.assertIn(f"type=bind,src={self.work.tree(7)},dst=/work", command)
         finish = hub.posted("/runner/runs/3/finish")[0]
-        self.assertEqual((finish["result"], finish["report"], finish["tokens_in"]), ("done", "Built it.", 50))
+        self.assertEqual((finish["result"], finish["report"], finish["tokens_in"], finish["committed"]),
+                         ("done", "Built it.", 50, "1"))
         self.assertIn("relay.py", git(f"--git-dir={self.work.repo(1)}", "ls-tree", "--name-only", "agent/task-7"))
 
     def test_the_hub_runs_the_projects_tests_after_the_programmer(self):
         hub, tests = FakeHub(job=self.job()), []
 
-        def fake_run(command, prompt):
+        def fake_run(command, prompt, watch):
             (self.work.tree(7) / "calc.py").write_text("ADD = 1\n")
             (self.work.tree(7) / "hub-test.sh").write_text("python3 -m unittest\n")
-            return types.SimpleNamespace(stdout=json.dumps({"ok": True, "text": "Built.\n\n**RESULT: done**\nThanks",
-                                                            "tokens_in": 5, "tokens_out": 2}), returncode=0)
+            return answer("Built.\n\n**RESULT: done**\nThanks", 5, 2)
         r = self.runner(hub)
         r.run_agent = fake_run
         r.run_tests = lambda command: tests.append(command) or types.SimpleNamespace(
@@ -379,10 +426,9 @@ class RunTest(unittest.TestCase):
         job = {**self.job("reviewer"), "mode": "brief"}
         hub, seen = FakeHub(job=job), []
 
-        def fake_run(command, prompt):
+        def fake_run(command, prompt, watch):
             seen.append(command)
-            return types.SimpleNamespace(stdout=json.dumps({"ok": True, "text": "Sauber.\nRESULT: ok",
-                                                            "tokens_in": 4, "tokens_out": 2}), returncode=0)
+            return answer("Sauber.\nRESULT: ok", 4, 2)
         r = self.runner(hub)
         r.run_agent = fake_run
         r.handle_runs()
@@ -394,6 +440,32 @@ class RunTest(unittest.TestCase):
         finish = hub.posted("/runner/runs/3/finish")[0]
         self.assertEqual((finish["result"], finish["report"]), ("ok", "Sauber."))
         self.assertNotIn("diff", finish)
+
+    def test_a_stopped_run_keeps_its_work_and_says_why(self):
+        hub = FakeHub(job=self.job())
+
+        def fake_run(command, prompt, watch):
+            (self.work.tree(7) / "half.py").write_text("HALF = 1\n")         # done so far
+            return "", -9, "silence"
+        r = self.runner(hub)
+        r.run_agent = fake_run
+        if os.geteuid() != 0:
+            self.skipTest("needs root (the folder is handed to the run user)")
+        r.handle_runs()
+        finish = hub.posted("/runner/runs/3/finish")[0]
+        self.assertEqual(finish["result"], "stopped")
+        self.assertIn("15 minutes", finish["report"])
+        self.assertIn("half.py", git(f"--git-dir={self.work.repo(1)}", "ls-tree", "--name-only", "agent/task-7"))
+        self.assertNotIn("tests_exit", finish)
+
+    def test_a_cancelled_run_reports_nothing(self):
+        hub = FakeHub(job=self.job("reviewer"))
+        r = self.runner(hub)
+        r.run_agent = lambda command, prompt, watch: ("", -9, "stop")
+        if os.geteuid() != 0:
+            self.skipTest("needs root (the folder is handed to the run user)")
+        r.handle_runs()
+        self.assertEqual(hub.posted("/runner/runs/3/finish"), [])
 
     def test_a_brief_run_of_claude_is_a_chat_container_with_the_runs_name(self):
         cmd = launcher.build_chat_command(chat_id=3, user_id=5, model="sonnet", ticket=TICKET, mode="brief",
@@ -410,7 +482,7 @@ class RunTest(unittest.TestCase):
         self.assertEqual(len(hub.posted("/runner/keys/5/mistral/expired")), 1)
 
     def test_merges_and_cleanups(self):
-        tree = self.work.prepare(7, 1, "agent/task-7")
+        tree = self.work.prepare(7, 1, "agent/task-7")[0]
         (tree / "x.txt").write_text("x")
         self.work.commit(7, "agent/task-7", "7")
         hub = FakeHub(merges=[{"task_id": 7, "project_id": 1, "user_id": 5, "branch": "agent/task-7"}], cleanups=[7])
@@ -421,8 +493,8 @@ class RunTest(unittest.TestCase):
         self.assertFalse(tree.exists())
 
     def test_the_folders_of_a_deleted_project_go_and_are_reported(self):
-        tree = self.work.prepare(7, 1, "agent/task-7")
-        other = self.work.prepare(8, 2, "agent/task-8")
+        tree = self.work.prepare(7, 1, "agent/task-7")[0]
+        other = self.work.prepare(8, 2, "agent/task-8")[0]
         hub = FakeHub(wipes=[{"kind": "task", "ref": 7}, {"kind": "project", "ref": 1}, {"kind": "disk", "ref": 1},
                              {"kind": "project", "ref": 0}])
         self.runner(hub).handle_cleanups()

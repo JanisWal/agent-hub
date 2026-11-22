@@ -20,14 +20,18 @@ CHOICES = {
     "run_memory_mb": (480, 768, 1024, 2048, 4096, 8192),   # memory of one AI run's container (runner/launcher.py)
     "run_cpus": (1, 2, 4, 8),                        # processor cores of one run
     "run_pids": (256, 512, 1024, 4096),              # processes and threads of one run (a browser needs many)
-    "run_minutes": (20, 40, 60, 120),                # time of one agent run; a task and its tests get more with it
+    # No fixed time for work that moves on (Janis, 22.11.2026: a big task gets the time it needs): a run ends when its
+    # AI wrote nothing for this long, or after the longest time, which is only a net against a run that never ends.
+    "run_silence_minutes": (10, 15, 30, 60),
+    "run_max_hours": (1, 2, 4, 8, 12),
+    "test_minutes": (5, 10, 20, 40),                 # the project's own tests (hub-test.sh, no AI)
     "chat_minutes": (3, 5, 10, 20),                  # time of one chat answer
     "view_mb": (200, 500, 1000, 5000),               # the user's files copied for one job (runner/view.py)
     "agent_browser": (0, 1),                         # the agents' test browser (runner/hub_browser.js)
 }
 AI_REST, EXPORT_MB = CHOICES["ai_rest"], CHOICES["export_mb"]
 DEFAULTS = {"upload_parallel": 6, "upload_request_mb": 32, "ai_parallel": 1, "ai_rest": 30, "export_mb": 25,
-            "run_memory_mb": 480, "run_cpus": 2, "run_pids": 512, "run_minutes": 20, "chat_minutes": 3, "view_mb": 200,
+            "run_memory_mb": 480, "run_cpus": 2, "run_pids": 512, "run_silence_minutes": 15, "run_max_hours": 4, "test_minutes": 10, "chat_minutes": 3, "view_mb": 200,
             "agent_browser": 1}
 
 
@@ -65,26 +69,18 @@ def export_mb() -> int:
     return get("export_mb")
 
 
-def run_seconds() -> int:
-    """How long one agent run may take; the runner stops it a little earlier (run_limits)."""
-    return get("run_minutes") * 60
-
-
 def chat_seconds() -> int:
     return get("chat_minutes") * 60
 
 
-def task_seconds() -> int:
-    """A task's time limit: two hours, more when one run may take longer (six runs of the longest kind)."""
-    return max(2 * 3600, 6 * run_seconds())
-
-
 def run_limits() -> dict:
-    """What every job tells the runner about the container it starts (checked there again, runner/launcher.py). The
-    runner stops a job a little before the hub gives it up."""
+    """What every job tells the runner about the container it starts (checked there again, runner/launcher.py): an
+    agent run ends after `silence_seconds` without output or after `max_seconds` of work (a paused run's time does
+    not count); a chat answer after `chat_seconds`; the project's tests after `test_seconds`."""
     return {"memory_mb": get("run_memory_mb"), "cpus": get("run_cpus"), "pids": get("run_pids"),
-            "run_seconds": run_seconds() - 100, "chat_seconds": chat_seconds() + 20,
-            "test_seconds": max(300, run_seconds() // 4), "view_mb": get("view_mb"), "browser": get("agent_browser")}
+            "silence_seconds": get("run_silence_minutes") * 60, "max_seconds": get("run_max_hours") * 3600,
+            "chat_seconds": chat_seconds() + 20, "test_seconds": get("test_minutes") * 60,
+            "view_mb": get("view_mb"), "browser": get("agent_browser")}
 
 
 def set_choice(key: str, value: int, choices: tuple) -> None:

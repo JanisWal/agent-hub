@@ -9,7 +9,7 @@ import time
 
 from fastapi import APIRouter, Depends, Form
 
-from .. import agents, chat, db, i18n, questions, users
+from .. import agents, users
 from ..deps import api_user, fail, ok
 
 router = APIRouter()
@@ -49,32 +49,23 @@ def status_tile(project_id: int, user: users.User = Depends(api_user)):
                                            statusnote.writing(user.id, project_id)))
 
 
-# "Waiting for you" (Janis, 19.11.2026): the user answers questions and decides about tasks right in the tile.
+# "Waiting for you" (Janis, 19.11.2026; 22.11.2026: only decisions): the user answers the questions the manager wrote
+# anew for him and decides about tasks that stopped, right in the tile. Nothing of it goes into the manager chat.
 @router.post("/questions/{question_id}/answer")
 def answer_question(question_id: int, answer: str = Form(""), user: users.User = Depends(api_user)):
-    """The answer to a question of the manager or a role (questions.answer). A question of the manager chat goes on
-    at once as the user's next chat message, so the manager works on; while another question of his runs, it waits
-    and comes with the next one. A question of a run comes with the next run of its task."""
-    found = questions.answer(user.id, question_id, answer)
-    if found is None:
-        return fail(404)
-    sent = False
-    if found.task_id is None:
-        text = i18n.t(user.language, "w_answer_prompt", question=found.text[:600], answer=found.answer)
-        try:
-            chat.send(user.id, found.project_id, text[:chat.MAX_PROMPT])
-            sent = True
-        except ValueError:      # a question still runs, or no AI: the answer waits for the next question
-            pass
-        if sent:
-            with db.connect() as conn:
-                questions.mark_delivered(conn, found.id)
-    return ok(sent=sent)
+    """The answer goes to the role that asked; a task that waited for it goes on (agents.answer_question)."""
+    return ok() if agents.answer_question(user.id, question_id, answer) else fail(404)
 
 
 @router.post("/tasks/{task_id}/decide")
-def decide_task(task_id: int, decision: str = Form(""), note: str = Form(""), user: users.User = Depends(api_user)):
-    """Approve, another round (with the user's remark for the programmer) or cancel, from "waiting for you"."""
-    if decision not in ("approve", "reject", "cancel"):
+def decide_task(task_id: int, choice: str = Form(""), hint: str = Form(""), user: users.User = Depends(api_user)):
+    """again (with an optional hint for the programmer), accept or cancel a task that waits for the user."""
+    if choice not in ("again", "accept", "cancel"):
         return fail(400)
-    return ok() if agents.decide(user.id, task_id, decision, note) else fail(404)
+    return ok() if agents.decide(user.id, task_id, choice, hint) else fail(404)
+
+
+@router.post("/tasks/{task_id}/cancel")
+def cancel_task(task_id: int, user: users.User = Depends(api_user)):
+    """Stop the task that is on its way (from the roles' tabs); its item goes into the trash."""
+    return ok() if agents.cancel(user.id, task_id) else fail(404)

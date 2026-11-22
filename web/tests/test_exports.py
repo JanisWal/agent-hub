@@ -53,8 +53,9 @@ class ExportTest(unittest.TestCase):
     def test_a_tasks_branch(self):
         claude_link.begin(self.a.id)
         claude_link.complete(self.a.id, True)
-        item = board.create_item(self.a.id, self.pa.id, "minor", "Addieren")
-        task = agents.start_item(self.a.id, item.id)
+        board.create_item(self.a.id, self.pa.id, "minor", "Addieren")
+        agents.claim_next(can_mac=False)                                    # the programmer takes it
+        task = agents.list_tasks(self.a.id, self.pa.id)[0]
         export_id = routes.export_request(self.pa.id, task=str(task.id), user=self.a)["id"]
         self.assertEqual(exports.pending()[0]["ref"], f"agent/task-{task.id}")
         html = rolepage._code_tile("de", (task, ""))

@@ -1,12 +1,13 @@
-"""From the manager chat to the programmer (Janis, 19.11.2026): the manager splits a wish into short bullets with the
-context behind them, they go on the board and start by themselves one after the other; what the manager or an agent
-adds on its own waits for the user's yes (a bug excepted)."""
+"""From the manager chat to the programmer (Janis, 19.11.2026; 22.11.2026): the manager splits a wish into short bullets
+with the context behind them, they go on the board and the programmer takes them one after the other (they leave the
+board then); what the manager or an agent adds on its own waits for the user's yes (a bug excepted)."""
 import os
 import tempfile
 import unittest
 
 from app import agents, board, chat, claude_link, db, projectpage, projects, reply, statusnote, users
 
+CHANGE = ("plan.py | 3 +++", "+PLAN = {}\n")
 WISH = (
     'Gern, ich habe es aufgeteilt.\n'
     '<task kind="major" title="Heizung per Zeitplan" from="user">Ein Zeitplan je Wochentag, gespeichert in plan.json.\n'
@@ -57,11 +58,10 @@ class ManagerBoardTest(unittest.TestCase):
         items = self.items()
         self.assertEqual(len(items), 4)                             # the same bullet twice comes once
         plan = items["Heizung per Zeitplan"]
-        self.assertEqual((plan.status, plan.source, plan.auto), ("open", "manager", True))   # asked for: no confirmation
+        self.assertEqual((plan.status, plan.source), ("open", "manager"))           # asked for: no confirmation
         self.assertIn("plan.json", plan.details)
-        idea = items["Dunkler Modus für die Anzeige"]
-        self.assertEqual((idea.status, idea.auto), ("proposed", False))                # his own idea waits
-        self.assertEqual((items["Relais klickt doppelt"].status, items["Relais klickt doppelt"].auto), ("open", True))
+        self.assertEqual(items["Dunkler Modus für die Anzeige"].status, "proposed")   # his own idea waits
+        self.assertEqual(items["Relais klickt doppelt"].status, "open")
         self.assertEqual(self.items(self.b, self.pb), {})                              # only the question's project
 
     def test_a_credential_the_server_can_not_read_is_its_own_kind_of_failure(self):
@@ -74,58 +74,40 @@ class ManagerBoardTest(unittest.TestCase):
         self.assertEqual((job.role, job.title), ("programmer", "Relais klickt doppelt"))   # a bug goes first
         self.assertIn("Context (from the manager and the user):\nBeim Einschalten zweimal.", job.prompt)
         self.assertIn("<task kind=", job.prompt)                                        # it may name what it notices
+        self.assertEqual(self.items()["Relais klickt doppelt"].status, "working")       # off the board now
         self.assertIsNone(agents.claim_next(can_mac=False))                            # one task per project at a time
-        self.assertEqual(len(agents.tasks_by_item(self.a.id, self.pa.id)), 1)
-        # it went through to the user's approval: the project's next item waits until the task is out of the way
         for role, result in (("programmer", "done"), ("tester", "pass"), ("reviewer", "ok")):
             if job is None:
                 job = agents.claim_next(can_mac=False)
             self.assertEqual(job.role, role)
-            self.assertTrue(agents.finish_run(job.run_id, result, f"Bericht {role}"))
+            self.assertTrue(agents.finish_run(job.run_id, result, f"Bericht {role}", change=CHANGE, committed=True))
             job = None
-        self.assertIsNone(agents.claim_next(can_mac=False))                            # waits for the user
-        task = agents.item_task(self.a.id, self.items()["Relais klickt doppelt"].id)
-        self.assertTrue(agents.decide(self.a.id, task.id, "cancel"))                     # stopped by the user ...
+        self.assertIsNone(agents.claim_next(can_mac=False))                            # the runner merges first
+        task = agents.list_tasks(self.a.id, self.pa.id)[0]
+        self.assertTrue(agents.cancel(self.a.id, task.id))                             # stopped by the user ...
+        self.assertEqual(self.items()["Relais klickt doppelt"].status, "trash")         # ... into the trash
         job = agents.claim_next(can_mac=False)
-        self.assertEqual(job.title, "Temperatur in der Anzeige runden")                # ... the next one comes
-        self.assertFalse(self.items()["Relais klickt doppelt"].auto)                    # and the stopped one never again
-
-    def test_an_approval_a_day_later_still_gets_the_managers_documentation(self):
-        agents.configure(self.a.id, autonomy="all")   # it waits for the approval (else it merges by itself)
-        item = board.create_item(self.a.id, self.pa.id, "minor", "Anzeige bauen")
-        start = 1_000_000
-        task = agents.start_item(self.a.id, item.id, now=start)
-        for result in ("done", "pass", "ok"):
-            job = agents.claim_next(can_mac=False, now=start + 60)
-            agents.finish_run(job.run_id, result, "Bericht", now=start + 60)
-        later = start + 86400                                                   # the user approves the next day
-        self.assertTrue(agents.decide(self.a.id, task.id, "approve", now=later))
-        with db.connect() as conn:
-            conn.execute("UPDATE agent_tasks SET merged = 1 WHERE id = ?", (task.id,))   # the runner merged
-        job = agents.claim_next(can_mac=False, now=later + 60)
-        self.assertEqual((job.role, agents.get_task(self.a.id, task.id).status), ("chef", "documenting"))
+        self.assertEqual(job.title, "Heizung per Zeitplan")         # the pieces in the order the manager made them
 
     def test_what_a_run_notices_goes_on_the_board(self):
-        item = board.create_item(self.a.id, self.pa.id, "minor", "Anzeige bauen")
-        agents.start_item(self.a.id, item.id)
+        board.create_item(self.a.id, self.pa.id, "minor", "Anzeige bauen")
         job = agents.claim_next(can_mac=False)
         report = ("Gebaut.\n<task kind=\"major\" title=\"Helligkeit einstellbar\">Ein Regler wäre gut.</task>\n"
                   "<task kind=\"minor\" title=\"Schrift etwas größer\">gehört zur Aufgabe</task>\n"
                   "<task kind=\"bug\" title=\"Absturz bei leerem Plan\">plan.json leer: KeyError.</task>\nRESULT: done")
-        self.assertTrue(agents.finish_run(job.run_id, "done", report))
+        self.assertTrue(agents.finish_run(job.run_id, "done", report, change=CHANGE, committed=True))
         items = self.items()
         self.assertEqual((items["Helligkeit einstellbar"].status, items["Helligkeit einstellbar"].source), ("proposed", "agent"))
-        self.assertEqual((items["Absturz bei leerem Plan"].status, items["Absturz bei leerem Plan"].auto), ("open", True))
+        self.assertEqual(items["Absturz bei leerem Plan"].status, "open")
         self.assertNotIn("Schrift etwas größer", items)                          # part of the task: done in it
-        stored = agents.task_runs(self.a.id, agents.item_task(self.a.id, item.id).id)[0].report
+        stored = agents.task_runs(self.a.id, agents.list_tasks(self.a.id, self.pa.id)[0].id)[0].report
         self.assertNotIn("<task", stored)
-        # the user says yes to the suggestion: it goes to the programmer by itself
-        self.assertTrue(board.accept(self.a.id, items["Helligkeit einstellbar"].id))
-        self.assertTrue(self.items()["Helligkeit einstellbar"].auto)
+        self.assertTrue(board.accept(self.a.id, items["Helligkeit einstellbar"].id))   # yes: it goes into the queue
+        self.assertEqual(self.items()["Helligkeit einstellbar"].status, "open")
 
     def test_an_item_made_by_hand_starts_by_itself_too(self):
         hand = board.create_item(self.a.id, self.pa.id, "minor", "Von Hand")      # agreed by hand (Janis, 19.11.2026)
-        self.assertTrue(hand.auto)
+        self.assertEqual(hand.status, "open")
         self.assertEqual(agents.claim_next(can_mac=False).title, "Von Hand")
 
     def test_the_manager_corrects_an_item_the_programmer_has_not_started(self):
@@ -145,7 +127,7 @@ class ManagerBoardTest(unittest.TestCase):
         # once the programmer has it, it stays as it is, and the user reads why; nothing of another project changes
         started = agents.claim_next(can_mac=False)
         self.assertEqual(started.title, "Relais klickt doppelt")
-        self.assertTrue(agents.finish_run(started.run_id, "done", "Gebaut."))   # with the tester now; the slot is free
+        self.assertTrue(agents.finish_run(started.run_id, "done", "Gebaut.", change=CHANGE, committed=True))
         bug = self.items()["Relais klickt doppelt"]
         mine = board.create_item(self.b.id, self.pb.id, "bug", "Of B")
         chat.send(self.a.id, self.pa.id, "Doch anders")
@@ -161,14 +143,14 @@ class ManagerBoardTest(unittest.TestCase):
             idea = board.add_from_ai(conn, self.pa.id, "minor", "Helligkeit einstellbar", "Ein Regler.", False, "agent")
         self.assertEqual(board_routes.item_action(idea, "accept", user=self.b).status_code, 404)   # not B's
         self.assertEqual(board_routes.item_action(idea, "accept", user=self.a), {"ok": True})
-        task = agents.item_task(self.a.id, idea)
-        self.assertEqual(task.status, "coding")                              # no second step "give to the agents"
+        task = agents.list_tasks(self.a.id, self.pa.id)[0]
+        self.assertEqual((task.item_id, task.stage), (idea, "coding"))     # no second step "give to the agents"
 
     def test_an_item_by_hand_carries_its_context_and_can_be_changed(self):
         from app.routes import board as board_routes
         board_routes.create_item(self.pa.id, "minor", "Anzeige dimmen", user=self.a, details="Nachts auf 30 %.")
         item = self.items()["Anzeige dimmen"]
-        self.assertEqual((item.details, item.auto, item.source), ("Nachts auf 30 %.", True, "user"))
+        self.assertEqual((item.details, item.status, item.source), ("Nachts auf 30 %.", "open", "user"))
         board_routes.rename_item(item.id, "Anzeige nachts dimmen", user=self.a, details="Zwischen 22 und 6 Uhr.")
         self.assertEqual(self.items()["Anzeige nachts dimmen"].details, "Zwischen 22 und 6 Uhr.")
         board_routes.rename_item(item.id, "Anzeige dimmen", user=self.a, details=None)   # no field: the context stays
@@ -180,7 +162,7 @@ class ManagerBoardTest(unittest.TestCase):
         self.ask(WISH)
         claude_link.disconnect(self.a.id)
         with db.connect() as conn:
-            self.assertEqual(agents.autostart(conn, 0), 0)
+            self.assertEqual(agents.take_next(conn, 0), 0)
         with db.connect() as conn:                     # an AI can never name another project: it comes from the job
             self.assertIsNone(board.add_from_ai(conn, self.pa.id, "nowhere", "X"))
             self.assertIsNone(board.add_from_ai(conn, self.pa.id, "bug", "Heizung per Zeitplan"))   # there already
@@ -196,7 +178,7 @@ class ManagerBoardTest(unittest.TestCase):
         self.assertIn("Beim Einschalten zweimal.", view)                        # the context from the board
         for part in ("Verlauf", "Vorschau", "Code", "Änderungen", "Läufe", "Verbrauch"):
             self.assertIn(f"<h2>{part}</h2>", view)
-        self.assertEqual(view.count('class="p-badge"'), 3)                       # the three placeholders (code is real)
+        self.assertEqual(view.count('class="p-badge"'), 2)                       # preview and diff are placeholders yet
         self.assertIn("disabled", view)
         tester = page[page.index('id="view-tester"'):page.index('id="view-reviewer"')]
         self.assertNotIn("p-badge", tester)

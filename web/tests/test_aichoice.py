@@ -43,7 +43,8 @@ class Base(unittest.TestCase):
     def stage(self, result, report=""):
         job = agents.claim_next(can_mac=True)
         self.assertIsNotNone(job)
-        self.assertTrue(agents.finish_run(job.run_id, result, report))
+        change = {"change": ("relay.py | 1 +", "+ON"), "committed": True} if job.role == "programmer" else {}
+        self.assertTrue(agents.finish_run(job.run_id, result, report, **change))
         return job
 
 
@@ -104,16 +105,16 @@ class StandardTest(Base):
         self.assertNotIn('value="sonnet"', page)
         self.assertIn('data-ai="Mistral"', page)
 
-    def test_old_choices_still_count_for_their_ai(self):
-        with db.connect() as conn:                                            # a setting from before 15.11.2026
-            conn.execute("INSERT INTO agent_settings (user_id, key, value) VALUES (?, 'model.chef', 'opus'),"
-                         " (?, 'effort.chef', 'max')", (self.a.id, self.a.id))
+    def test_choices_are_kept_per_ai(self):
         self.claude(self.a)
+        agents.configure(self.a.id, "chef", model="opus", effort="max")
         chef = agents.settings(self.a.id)["roles"]["chef"]
         self.assertEqual((chef["model"], chef["effort"]), ("opus", "max"))
         self.mistral(self.a)
         aichoice.set_default(self.a.id, "mistral")
         self.assertEqual(agents.settings(self.a.id)["roles"]["chef"]["model"], "mistral-small-2603")
+        aichoice.set_default(self.a.id, "claude")
+        self.assertEqual(agents.settings(self.a.id)["roles"]["chef"]["model"], "opus")   # found again
 
 
 class FallbackTest(Base):
@@ -156,14 +157,13 @@ class AgentRunTest(Base):
         self.claude(self.a)
         self.mistral(self.a)
         memory.ensure_skeleton(self.a.id, self.pa.id, "de")
-        agents.start_item(self.a.id, self.item.id)
         job = agents.claim_next(can_mac=True)
         self.assertEqual((job.role, job.provider), ("programmer", "claude"))
         for part in ("You are the programmer", "<rules>", 'name="RULES.md"', "# Design", "Title: Fix the relay",
-                     "Allowed results: done, failed", "RESULT: <value>", "hub-test.sh"):
+                     "Allowed results: done, question, blocked, failed", "RESULT: <value>", "hub-test.sh"):
             self.assertIn(part, job.prompt)
         self.assertNotIn('name="MEMORY.md"', job.prompt)                     # the programmer needs the rules only
-        agents.finish_run(job.run_id, "done", "built it")
+        agents.finish_run(job.run_id, "done", "built it", change=("a | 1 +", "+a"), committed=True)
         job = agents.claim_next(can_mac=True)
         self.assertEqual(job.role, "tester")
         self.assertNotIn("skipped", job.prompt)                               # the hub's own result
@@ -175,40 +175,35 @@ class AgentRunTest(Base):
     def test_a_run_of_a_lost_ai_goes_to_the_next(self):
         self.mistral(self.a)
         self.claude(self.a)
-        agents.start_item(self.a.id, self.item.id)
         claude_link.mark_expired(self.a.id)
         job = agents.claim_next(can_mac=True)
         self.assertEqual((job.provider, job.model), ("mistral", "mistral-small-2603"))
 
-    def test_approval_merge_and_the_managers_notes(self):
-        agents.configure(self.a.id, autonomy="all")   # it waits for the approval (else it merges by itself)
+    def test_merge_and_the_managers_notes_without_approval(self):
         self.mistral(self.a)
-        task = agents.start_item(self.a.id, self.item.id)
         self.stage("done", "built")
         self.stage("pass")
         self.stage("ok")
-        self.assertTrue(agents.decide(self.a.id, task.id, "approve"))
+        task = agents.list_tasks(self.a.id, self.pa.id)[0]
         self.assertIsNone(agents.claim_next(can_mac=True))                    # waits for the merge
         self.assertTrue(agents.merge_done(task.id, True))
         job = agents.claim_next(can_mac=True)
-        self.assertEqual(job.role, "chef")
-        self.assertIn("approved this task and the hub merged it", job.prompt)
+        self.assertEqual((job.role, job.purpose), ("chef", "doc"))
+        self.assertIn("the reviewer agreed and the hub merged it", job.prompt)
         agents.finish_run(job.run_id, "done", 'Noted.<memory file="ARCHIVE.md">- Verworfen: 24 V. Grund: Sicherheit</memory>')
-        self.assertEqual(agents.get_task(self.a.id, task.id).status, "done")
+        self.assertEqual(agents.get_task(self.a.id, task.id).stage, "done")
         archive = next(f for f in files.list_files(self.a.id, self.pa.id) if f.name == "ARCHIVE.md")
         self.assertIn("24 V", files.read_text(self.a.id, archive.id))
         self.assertEqual(agents.finished_tasks(), [task.id])                  # its folder can go
 
-    def test_a_merge_conflict_goes_to_the_user(self):
+    def test_a_merge_conflict_goes_back_to_the_programmer(self):
         self.mistral(self.a)
-        task = agents.start_item(self.a.id, self.item.id)
         self.stage("done")
         self.stage("pass")
         self.stage("ok")
-        agents.decide(self.a.id, task.id, "approve")
+        task = agents.list_tasks(self.a.id, self.pa.id)[0]
         self.assertTrue(agents.merge_done(task.id, False))
-        self.assertEqual(agents.get_task(self.a.id, task.id).status, "escalated")
-        self.assertTrue(agents.decide(self.a.id, task.id, "reject"))          # another round, merged again later
+        self.assertEqual(agents.get_task(self.a.id, task.id).stage, "coding")
         self.assertEqual(agents.pending_merges(), [])
 
 
@@ -223,7 +218,6 @@ class ParallelTest(Base):
     def test_one_at_a_time_by_default_more_when_the_owner_says_so(self):
         from app import serversettings
         self.assertEqual(serversettings.ai_parallel(), 1)
-        agents.start_item(self.a.id, self.item.id)
         self.assertIsNotNone(agents.claim_next(can_mac=True))                 # an agent run takes the slot
         chat.send(self.b.id, self.pb.id, "Hello", now=10**10)
         self.assertIsNone(chat.claim_next(now=10**10))                        # the question waits ...
@@ -264,45 +258,31 @@ class BoardTest(Base):
     def html(self):
         return projectpage.render(self.a, self.pa, board.list_items(self.a.id, self.pa.id))
 
-    def test_from_the_card_to_the_approval(self):
-        agents.configure(self.a.id, autonomy="all")   # it waits for the approval (else it merges by itself)
+    def test_the_item_leaves_the_board_and_the_line_says_where_it_is(self):
         self.mistral(self.a)
+        self.assertIn('data-id="%d"' % self.item.id, self.html())             # waits on the board
+        self.assertNotIn('data-action="agent-start"', self.html())          # no start by hand
+        job = agents.claim_next(can_mac=True)
         page = self.html()
-        self.assertIn(i18n.t("de", "task_queued"), page)                     # made by hand: it starts by itself
-        self.assertNotIn('data-action="agent-start"', page)
-        with db.connect() as conn:                                           # an item from before 19.11.2026
-            conn.execute("UPDATE board_items SET auto = 0 WHERE id = ?", (self.item.id,))
-        page = self.html()
-        self.assertIn('data-action="agent-start"', page)
-        self.assertEqual(board_routes.item_action(self.item.id, "agent-start", user=self.b).status_code, 404)
-        self.assertEqual(board_routes.item_action(self.item.id, "agent-start", user=self.a), {"ok": True})
-        page = self.html()
-        self.assertIn(i18n.t("de", "task_coding"), page)
-        self.assertIn('data-action="agent-cancel"', page)
-        self.assertNotIn('data-action="agent-start"', page)
-        self.stage("done", "built the relay switch")
-        self.stage("pass")
-        self.stage("ok", "clean")
-        page = self.html()
-        self.assertIn(i18n.t("de", "task_awaiting_approval"), page)
-        self.assertIn('data-action="agent-approve"', page)
-        self.assertIn('data-action="agent-reject"', page)
-        self.assertIn("clean", page)                                          # the last report behind the "i"
-        self.assertEqual(board_routes.item_action(self.item.id, "agent-approve", user=self.b).status_code, 404)
-        self.assertEqual(board_routes.item_action(self.item.id, "agent-approve", user=self.a), {"ok": True})
+        board_part = page[page.index('id="board"'):page.index('id="board"') + 4000]
+        self.assertNotIn('data-id="%d"' % self.item.id, board_part)          # taken: off the board
+        self.assertIn("Programmierer arbeitet an „Fix the relay“", page)
+        agents.finish_run(job.run_id, "done", "built the relay switch", change=("relay.py | 1 +", "+ON"), committed=True)
+        self.assertIsNotNone(agents.claim_next(can_mac=True))
+        self.assertIn("Tester arbeitet an „Fix the relay“", self.html())
 
-    def test_no_ai_says_so_on_the_card(self):
+    def test_no_ai_says_so_above_the_board(self):
         self.mistral(self.a)
-        agents.start_item(self.a.id, self.item.id)
+        agents.claim_next(can_mac=True)
         ai_link.disconnect(self.a.id, "mistral")
-        self.assertIn(i18n.t("de", "task_no_ai"), self.html())
+        self.assertIn("„Fix the relay“ wartet: keine KI verknüpft", self.html())
 
     def test_every_new_text_in_both_languages(self):
         for key in ("chat_err_none", "chat_fail_limit", "chat_fallback", "ai_default_short", "ai_default_hint",
                     "sys_ai", "sys_ai_unlimited", "sys_ai_info",
-                    "agent_start", "agent_approve", "agent_reject", "agent_cancel", "agent_report", "task_coding",
-                    "task_testing", "task_reviewing", "task_awaiting_approval", "task_documenting", "task_done",
-                    "task_escalated", "task_cancelled", "task_no_ai"):
+                    "bs_working", "bs_queued", "bs_paused", "bs_no_ai", "bs_mac", "bs_merging", "bs_question",
+                    "bs_todo", "bs_decision", "w_again", "w_accept", "w_cancel", "w_decide", "w_hint", "task_cancel",
+                    *(f"w_why_{why}" for why in agents.workflow.WHY)):
             self.assertIn(key, i18n.STRINGS["de"])
             self.assertIn(key, i18n.STRINGS["en"])
 

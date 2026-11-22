@@ -16,7 +16,7 @@
       before[card.dataset.id] = card.getBoundingClientRect();
       if (card.querySelector(".card-title.open")) open[card.dataset.id] = true;
     });
-    return AgentHub.swap(["board", "vault"]).then(function () {
+    return AgentHub.swap(["board", "board-state", "vault"]).then(function () {
       setView(currentView, false);
       refreshCounts();
       cards().forEach(function (card) {
@@ -229,22 +229,26 @@
     }
   });
 
-  // While a role works on an item, or one waits in the queue, the board looks again every few seconds and swaps in
-  // what changed (Janis, 19.11.2026: "I do not see that he works"); not while dragging, typing or the tab is hidden.
+  // While a task is on its way (the line above the board) or items wait in the queue, the board looks again every few
+  // seconds and swaps in what changed (Janis, 19.11.2026: "I do not see that he works"; 22.11.2026: an item leaves the
+  // board when the programmer takes it); not while dragging, typing or the tab is hidden.
   var lastFetched = null;   // the board as the server sent it last (the page's own copy is changed by core.js)
   var LOOK = 4000;
   function look() {
     var busy = document.hidden || document.querySelector("dialog[open]") || document.documentElement.classList.contains("dragging-active")
-      || !document.querySelector("#board [data-live]") || board.hidden;
+      || !(document.querySelector("#board-state [data-live]") || document.querySelector("#board .card:not(.proposed)"))
+      || board.hidden;
     if (busy) return;
     fetch(location.pathname, { credentials: "same-origin" }).then(function (response) {
       return response.ok ? response.text() : null;
     }).then(function (html) {
       if (!html) return;
-      var next = new DOMParser().parseFromString(html, "text/html").getElementById("board");
+      var page = new DOMParser().parseFromString(html, "text/html");
+      var next = page.getElementById("board"), state = page.getElementById("board-state");
       if (!next) return;
-      var changed = lastFetched !== null && next.innerHTML !== lastFetched;
-      lastFetched = next.innerHTML;
+      var seen = next.innerHTML + (state ? state.outerHTML : "");
+      var changed = lastFetched !== null && seen !== lastFetched;
+      lastFetched = seen;
       if (changed) reload();
     }).catch(function () {});
   }

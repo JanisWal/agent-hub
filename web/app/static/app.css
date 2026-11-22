@@ -27,6 +27,7 @@
   --orb-c-opacity: 0.45;
   --radius-button: 16px;
   --radius-card: 28px;
+  --radius-square: 8px;   /* square buttons with soft corners (.sq-btn, Janis 22.11.2026) */
   --space: 8px;
   --line: 34px;   /* the line on which the round buttons of the top bar and the brand are centred, on every page */
 }
@@ -260,6 +261,19 @@ input::placeholder { color: var(--muted); opacity: 0.6; }
 .pill-btn.quiet { color: var(--muted); border-color: transparent; background: none; box-shadow: none; }
 .pill-btn.quiet:hover { color: var(--text); background: color-mix(in srgb, var(--glass) 70%, transparent); }
 @media (pointer: coarse) { .pill-btn { min-height: 38px; padding: 0 16px; } }
+/* Square buttons with soft corners (Janis, 22.11.2026: accept green and glowing, reject red and glowing): accept and
+   reject of a suggestion, the answers and decisions of "waiting for you", cancelling a task. Like every small button
+   they never lift: brighter on hover, they give way when pressed. `.rec`: what the manager suggests glows. */
+.sq-btn { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 0 14px; border-radius: var(--radius-square); font: inherit; font-size: 0.82rem; font-weight: 650; letter-spacing: 0.01em; color: var(--text); border: 1px solid var(--glass-border); background: color-mix(in srgb, var(--glass) 70%, transparent); box-shadow: inset 0 1px 0 var(--highlight); cursor: pointer; transition: filter 0.15s, transform 0.12s; }
+.sq-btn:hover { filter: brightness(1.08); }
+.sq-btn:active { transform: scale(0.97); }
+.sq-btn.go { color: var(--on-go); border-color: color-mix(in srgb, var(--go) 70%, transparent); background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0) 55%), var(--go); box-shadow: 0 0 14px color-mix(in srgb, var(--go) 45%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.4); }
+.sq-btn.stop { color: var(--on-danger); border-color: color-mix(in srgb, var(--danger) 70%, transparent); background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 55%), var(--danger); box-shadow: 0 0 14px color-mix(in srgb, var(--danger) 40%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.35); }
+.sq-btn.quiet { color: var(--text); }
+.sq-btn.rec { outline: 2px solid color-mix(in srgb, var(--accent) 80%, transparent); outline-offset: 2px; }
+.sq-btn:disabled { opacity: 0.5; cursor: default; filter: none; transform: none; }
+@media (pointer: coarse) { .sq-btn { min-height: 38px; padding: 0 16px; } }
+@media (prefers-reduced-motion: reduce) { .sq-btn { transition: none; } .sq-btn:active { transform: none; } }
 /* Keep the browser's autofill from painting its own yellow/blue background. */
 input:-webkit-autofill,
 input:-webkit-autofill:focus {
@@ -743,7 +757,7 @@ a.primary { display: flex; align-items: center; justify-content: center; text-de
    that are clicked or dragged), so a click or a drag never paints a selection over them. Codes copy with one click. */
 button, a.primary, .link, label, .setting-label, .status, .service-tools, .segment, .select-menu, .select-option,
 .drawer-handle, .info-dot, h1, h2, h3, .link-head, .sys-name, .tile, .card, .file-row, .device-row, .file-tab, .station,
-.m-split, .chat-who, svg { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.m-split, .chat-who, svg, .sq-btn, .board-state { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-select: text; }
 .muted { margin: 0 0 calc(var(--space) * 2); color: var(--muted); overflow-wrap: anywhere; }
 .actions { display: flex; gap: calc(var(--space) * 1.5); margin-top: calc(var(--space) * 2); }

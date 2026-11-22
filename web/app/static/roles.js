@@ -10,6 +10,7 @@
   function parts(view) {
     if (view === "me") return ["me-list", "me-count", "me-badge"];
     var ids = ["role-" + view + "-now", "role-" + view + "-usage", "role-" + view + "-count"];
+    if (view === "programmer") ids.push("role-programmer-task", "role-programmer-trail");
     var runs = document.getElementById("role-" + view + "-runs");
     if (runs && !runs.querySelector("details[open]")) ids.push("role-" + view + "-runs");
     return ids;
@@ -19,6 +20,37 @@
     if (view === "me") return true;
     var now = document.getElementById("role-" + view + "-now");
     return !!(now && now.querySelector(".r-now:not(.idle)"));
+  }
+
+  // Cancel the task on its way (rolepage._cancel): its item goes into the trash; the view and the board swap.
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-cancel-task]");
+    if (!button) return;
+    button.disabled = true;
+    fetch("/tasks/" + button.dataset.cancelTask + "/cancel", { method: "POST", credentials: "same-origin" })
+      .then(function () { return AgentHub.swap(parts(document.body.dataset.openView || "programmer").concat(["board", "board-state"])); })
+      .catch(function () { AgentHub.reload(); });
+  });
+
+  // What the reviewer looks at (rolepage._focus_tile): saved a moment after typing stops, and when the field is left.
+  var focusField = document.getElementById("review-focus"), focusTimer = null;
+  function saveFocus() {
+    if (focusTimer) { clearTimeout(focusTimer); focusTimer = null; }
+    var project = document.querySelector(".project");
+    if (!focusField || !project) return;
+    var body = new FormData();
+    body.append("text", focusField.value);
+    var state = document.getElementById("review-focus-state");
+    fetch("/projects/" + project.dataset.id + "/review-focus", { method: "POST", body: body, credentials: "same-origin" })
+      .then(function (r) { if (r.ok && state) { state.textContent = state.dataset.saved; } })
+      .catch(function () {});
+  }
+  if (focusField) {
+    focusField.addEventListener("input", function () {
+      if (focusTimer) clearTimeout(focusTimer);
+      focusTimer = setTimeout(saveFocus, 800);
+    });
+    focusField.addEventListener("change", saveFocus);
   }
 
   // The AI of a role (rolepage._ai_pills): a click chooses it; the page comes again quietly, because the model

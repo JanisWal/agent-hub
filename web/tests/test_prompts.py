@@ -29,15 +29,13 @@ class PromptTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def through_programmer(self):
-        item = board.create_item(self.a.id, self.pa.id, "minor", "Addieren")
-        task = agents.start_item(self.a.id, item.id)
+        board.create_item(self.a.id, self.pa.id, "minor", "Addieren")
         job = agents.claim_next(can_mac=False)
-        agents.finish_run(job.run_id, "done", "Gebaut.", change=DIFF)
-        return task, job
+        agents.finish_run(job.run_id, "done", "Gebaut.", change=DIFF, committed=True)
+        return agents.list_tasks(self.a.id, self.pa.id)[0], job
 
     def test_the_programmer_gets_the_rules_and_the_task_not_the_memory(self):
-        item = board.create_item(self.a.id, self.pa.id, "minor", "Addieren")
-        agents.start_item(self.a.id, item.id)
+        board.create_item(self.a.id, self.pa.id, "minor", "Addieren")
         job = agents.claim_next(can_mac=False)
         self.assertEqual(job.mode, "")
         self.assertIn("runde Knöpfe", job.prompt)
@@ -59,10 +57,9 @@ class PromptTest(unittest.TestCase):
         self.assertIn('<report role="tester">\nPasst.', reviewer.prompt)
 
     def test_a_change_too_big_for_the_package_gives_the_reviewer_his_tools(self):
-        item = board.create_item(self.a.id, self.pa.id, "minor", "Viel")
-        agents.start_item(self.a.id, item.id)
+        board.create_item(self.a.id, self.pa.id, "minor", "Viel")
         job = agents.claim_next(can_mac=False)
-        agents.finish_run(job.run_id, "done", "Gebaut.", change=("big", "+x\n" * 30000))
+        agents.finish_run(job.run_id, "done", "Gebaut.", change=("big", "+x\n" * 30000), committed=True)
         agents.finish_run(agents.claim_next(can_mac=False).run_id, "pass", "ok")
         reviewer = agents.claim_next(can_mac=False)
         self.assertEqual(reviewer.mode, "")
@@ -72,8 +69,7 @@ class PromptTest(unittest.TestCase):
         task, _ = self.through_programmer()
         agents.finish_run(agents.claim_next(can_mac=False).run_id, "pass", "ok")
         agents.finish_run(agents.claim_next(can_mac=False).run_id, "ok", "ok")
-        agents.decide(self.a.id, task.id, "approve")
-        agents.merge_done(task.id, True)
+        agents.merge_done(task.id, True)                                    # no approval: merged after the ok
         chef = agents.claim_next(can_mac=False)
         self.assertEqual((chef.role, chef.mode), ("chef", "brief"))
         self.assertIn("Geheimer Zwischenstand", chef.prompt)                # MEMORY.md and ROADMAP.md to update
