@@ -53,6 +53,8 @@ class PromptTest(unittest.TestCase):
         reviewer = agents.claim_next(can_mac=False)
         self.assertEqual((reviewer.role, reviewer.mode, reviewer.files), ("reviewer", "brief", []))
         self.assertIn(prompts.BRIEF, reviewer.prompt)
+        self.assertNotIn("hub-browser", reviewer.prompt)                   # no tools, no browser
+        self.assertIn("hub-browser", tester.prompt)                         # the tester looks himself
         self.assertIn("runde Knöpfe", reviewer.prompt)
         self.assertIn('<report role="tester">\nPasst.', reviewer.prompt)
 
@@ -64,6 +66,7 @@ class PromptTest(unittest.TestCase):
         reviewer = agents.claim_next(can_mac=False)
         self.assertEqual(reviewer.mode, "")
         self.assertIn("read the rest in /work", reviewer.prompt)
+        self.assertIn("hub-browser", reviewer.prompt)                       # with his tools he may look too
 
     def test_the_documentation_is_brief_and_puts_nothing_on_the_board(self):
         task, _ = self.through_programmer()
