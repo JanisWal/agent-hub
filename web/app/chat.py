@@ -14,7 +14,7 @@ import time
 from dataclasses import dataclass, field
 
 from . import (agents, ai_link, aichoice, autofolders, board, catalog, credentials, db, devices, failures, files, i18n,
-               memory, models, prompts, questions, reply, serversettings, statusnote, toolcheck)
+               memory, models, prompts, reply, serversettings, statusnote, toolcheck)
 
 # The manager is the role "chef": model and effort level are settings of the user (agents.py, list in catalog.py).
 # What the manager is told (rules, memory, project) is built in prompts.py, the same for every AI.
@@ -225,6 +225,14 @@ def claim_next(now: int | None = None) -> ChatJob | None:
     return None
 
 
+def requeue_running(now: int | None = None) -> int:
+    """Runner: it started again and has no container of before; the answers it was writing are asked again."""
+    now = int(now if now is not None else time.time())
+    with db.connect() as conn:
+        return conn.execute("UPDATE chat_messages SET status = 'queued', started_at = NULL, thoughts = '', created_at = ?"
+                            " WHERE status = 'running'", (now,)).rowcount
+
+
 def add_thoughts(chat_id: int, text: str) -> bool:
     """Runner: more of what the AI thinks while it answers (Janis, 18.11.2026: show the thoughts in the chat). Added to
     a question that is running, up to MAX_THOUGHTS characters; False if it is not running any more. The thoughts are
@@ -298,11 +306,13 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
     asks = []
     tasks: list = []
     edits: list = []
-    open_asks: list = []
     if parsed is not None:
         text, asks = reply.device_asks(parsed.text)
         signals = reply.parse(text)
-        text, tasks, edits, open_asks = signals.text, signals.tasks, signals.edits, signals.asks
+        text, tasks, edits = signals.text, signals.tasks, signals.edits
+        # The manager asks in the chat itself (22.11.2026): a question he marked anyway stays in his answer as text
+        for ask in signals.asks:
+            text += "\n\n" + ask.text + "".join(f"\n- {option}" for option in ask.options)
         if parsed.memory:
             saved = memory.save_memory(row["user_id"], row["project_id"], parsed.memory)
         for name, body in (parsed.files or {}).items():   # the other memory files it wrote (memory folder)
@@ -324,14 +334,12 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
             )
             for name, action, reason in asks:   # they wait for the user's yes in "waiting for you" (devices.py)
                 devices.request_action(conn, row["user_id"], row["project_id"], name, action, reason)
-            for ask in open_asks:   # they wait for the user's answer in "waiting for you" (questions.py)
-                questions.add(conn, row["project_id"], "chef", ask)
             for task in tasks:   # on the board of the question's project; the user's request goes to the programmer
                 # what the user asked for starts at once, also when the manager read on the web for it (Janis,
                 # 22.11.2026: an injected instruction would hardly reach the programmer clearly); its own ideas wait
                 approved = task.origin == "user" or task.kind == "bug"
                 board.add_from_ai(conn, row["project_id"], task.kind, task.title, task.body, approved=approved,
-                                  source="manager")
+                                  source="manager", needs=task.needs)
             late = [e for e in edits if not board.edit_from_ai(conn, row["project_id"], e.item_id, e.kind, e.title, e.body)]
             notes = [("chat_edit_late", len(late))] if late else []
             if notes:   # the programmer was faster, or items wait because the web was read: the user reads why

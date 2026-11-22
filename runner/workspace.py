@@ -8,7 +8,9 @@ Layout under HUB_WORK_DIR (outside data/, same path inside and outside the runne
 Safety: a run can change anything in its folder, but it never sees .git. Git's own settings and hooks live in the
 git dir, which only the runner can reach, so nothing a run writes can make the runner execute code when it commits
 (core.hooksPath is switched off as well). The runner commits after each run and pushes the task's branch to the
-project; after the user's approval it merges the branch into main (`merge`).
+project. Before every run of the programmer it brings the project's main into the branch (`prepare(sync=True)`): a
+conflict stays in the files with its markers for the programmer to resolve (22.11.2026: before, a branch never caught
+up with main and every new round hit the same conflict). After the reviewer's ok it merges the branch into main.
 """
 import re
 import shutil
@@ -56,8 +58,10 @@ class Workspace:
             self._git("update-ref", "refs/heads/main", commit, git_dir=repo)
         return repo
 
-    def prepare(self, task_id: int, project_id: int, branch: str) -> Path:
-        """The task's folder on its branch (made from main the first time; kept between the rounds)."""
+    def prepare(self, task_id: int, project_id: int, branch: str, sync: bool = False) -> tuple[Path, list[str]]:
+        """The task's folder on its branch (made from main the first time; kept between the rounds) and the files that
+        have conflicts. `sync`: bring the project's main into the branch first (a merge commit; on a conflict the
+        merge stays open with its markers in the files, the next commit concludes it)."""
         repo, git_dir, tree = self.ensure_repo(project_id), self.gitdir(task_id), self.tree(task_id)
         if not (git_dir / "HEAD").is_file():
             git_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -70,11 +74,45 @@ class Workspace:
                                check=False).returncode == 0
             self._git("checkout", "-q", "-B", branch, f"origin/{branch}" if remote else "origin/main",
                       git_dir=git_dir, work=tree)
+            return tree, []
         tree.mkdir(parents=True, exist_ok=True)
-        return tree
+        if not sync:
+            return tree, []
+        if not (git_dir / "MERGE_HEAD").is_file():   # a merge of before is still open: its conflicts stand
+            self._git("fetch", "-q", "origin", git_dir=git_dir)
+            behind = self._git("merge-base", "--is-ancestor", "refs/remotes/origin/main", "HEAD", git_dir=git_dir,
+                               check=False).returncode != 0
+            if behind:
+                self._git("merge", "-q", "--no-edit", "-m", "Bring main into the task", "origin/main",
+                          git_dir=git_dir, work=tree, check=False)
+        return tree, self.conflicts(task_id)
+
+    def conflicts(self, task_id: int) -> list[str]:
+        """The files of an open merge that still conflict (git's own list)."""
+        git_dir, tree = self.gitdir(task_id), self.tree(task_id)
+        if not (git_dir / "MERGE_HEAD").is_file():
+            return []
+        listed = self._git("diff", "--name-only", "--diff-filter=U", "-z", git_dir=git_dir, work=tree, check=False)
+        return [name for name in listed.stdout.split("\0") if name][:50]
+
+    def markers(self, task_id: int, names: list[str]) -> list[str]:
+        """Of these files, the ones that still have conflict markers (a line starting with <<<<<<< or >>>>>>>)."""
+        tree, left = self.tree(task_id).resolve(), []
+        for name in names:
+            path = (tree / name).resolve()
+            if tree not in path.parents or not path.is_file() or path.is_symlink():
+                continue
+            try:
+                lines = path.read_text(errors="replace").splitlines()
+            except OSError:
+                continue
+            if any(line.startswith(("<<<<<<< ", ">>>>>>> ")) or line in ("<<<<<<<", ">>>>>>>") for line in lines):
+                left.append(name)
+        return left
 
     def commit(self, task_id: int, branch: str, message: str) -> bool:
-        """Commit what the run changed and push the branch to the project. False if nothing changed."""
+        """Commit what the run changed and push the branch to the project. False if nothing changed. An open merge of
+        main is always committed (resolving it was the run's work)."""
         git_dir, tree = self.gitdir(task_id), self.tree(task_id)
         (git_dir / "info").mkdir(exist_ok=True)              # outside the folder: a run can not change it
         exclude = git_dir / "info" / "exclude"
@@ -85,7 +123,9 @@ class Workspace:
                             work=tree).stdout.split("\0")
         if any(tracked):
             self._git("rm", "-q", "-r", "--cached", "--", *[t for t in tracked if t], git_dir=git_dir, work=tree)
-        if self._git("diff", "--cached", "--quiet", git_dir=git_dir, work=tree, check=False).returncode == 0:
+        merging = (git_dir / "MERGE_HEAD").is_file()   # an open merge is concluded by this commit, changed or not
+        if not merging and self._git("diff", "--cached", "--quiet", git_dir=git_dir, work=tree,
+                                     check=False).returncode == 0:
             return False
         self._git("commit", "-q", "-m", message, git_dir=git_dir, work=tree)
         self._git("push", "-q", "origin", f"HEAD:refs/heads/{branch}", git_dir=git_dir)

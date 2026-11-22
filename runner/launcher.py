@@ -205,8 +205,11 @@ def build_command(*, run_id: int, user_id: int, model: str, work_dir: str, ticke
         # Agents may use the internet (Janis, 08.11.2026): public hosts only, never the home network; per role switch.
         *_claude_env(ticket, api), *_proxy_env(RUN_PROXY[net]),
         image,
-        # Inside the isolated container the agent may use its tools freely; the prompt comes via stdin.
-        "claude", "-p", *model_args, "--output-format", "json", "--dangerously-skip-permissions", *_hub_mcp(hub_tools),
+        # Inside the isolated container the agent may use its tools freely; the prompt comes via stdin. stream-json:
+        # one line per event, so the runner sees that the run moves on (no fixed time limit, 22.11.2026) and can show
+        # its thoughts; the summaries are only displayed.
+        "claude", "-p", *model_args, "--output-format", "stream-json", "--verbose", "--include-partial-messages",
+        "--thinking-display", "summarized", "--dangerously-skip-permissions", *_hub_mcp(hub_tools),
     ]
 
 
@@ -215,7 +218,9 @@ TEST_SECONDS = 300   # the project's tests (hub-test.sh) at most, until the hub 
 # The container of a job as the owner set it (web/app/serversettings.run_limits, 21.11.2026), checked here again: a
 # value out of its range or of the wrong type falls back to the one the Pi has always used.
 LIMITS = {"memory_mb": (480, 256, 65536), "cpus": (2, 1, 64), "pids": (256, 64, 65536),
-          "run_seconds": (1100, 60, 86400), "chat_seconds": (200, 60, 86400), "test_seconds": (TEST_SECONDS, 60, 86400),
+          # an agent run ends after this long without output, or after the longest time of work (22.11.2026)
+          "silence_seconds": (900, 60, 86400), "max_seconds": (14400, 600, 172800),
+          "chat_seconds": (200, 60, 86400), "test_seconds": (TEST_SECONDS, 60, 86400),
           "view_mb": (200, 50, 100000), "browser": (1, 0, 1)}
 
 
@@ -632,8 +637,8 @@ def parse_vibe(stdout: str) -> tuple[bool, str, int, int, bool]:
 
 def result_of(text: str, failed: bool = False) -> tuple[str, str]:
     """(result, report) from an agent's answer, the same for every AI: a line `RESULT: <value>` among its last
-    RESULT_LOOK lines (markdown around it does not count). No marker or a failed run is "failed". Whether the value
-    fits the role, the hub decides (web/app/workflow.py RESULTS; a value that does not fit is "failed" there)."""
+    RESULT_LOOK lines (markdown around it does not count). A failed run is "failed"; an answer without the line is
+    "none" (the hub asks the same AI once more for it). Whether the value fits the role, the hub decides."""
     lines = text.rstrip().splitlines()
     match, at = None, None
     filled = [i for i, line in enumerate(lines) if line.strip()][-RESULT_LOOK:]
@@ -643,6 +648,8 @@ def result_of(text: str, failed: bool = False) -> tuple[str, str]:
             at = i
             break
     report = "\n".join(lines[:at] + lines[at + 1:] if match else lines).strip()[:MAX_REPORT]
-    if failed or match is None:
+    if failed:
         return "failed", report or "The agent gave no valid result."
+    if match is None:
+        return "none", report
     return match.group(1), report

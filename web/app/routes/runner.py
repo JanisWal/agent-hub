@@ -50,36 +50,39 @@ def claim(can_mac: str = Form("0")):
 @router.post("/runs/{run_id}/finish")
 def finish(run_id: int, result: str = Form(""), report: str = Form(""), tokens_in: int = Form(0),
            tokens_out: int = Form(0), seconds: int = Form(0), diff_stat: str | None = Form(None),
-           diff: str | None = Form(None), tests_exit: int = Form(-1), tests: str = Form("")):
-    try:
-        done = agents.finish_run(run_id, result, report, tokens_in, tokens_out, seconds,
-                                 change=None if diff is None else (diff_stat or "", diff),
-                                 tests=(tests_exit, tests) if tests_exit >= 0 else None)
-    except ValueError:
-        return fail(400)   # a result that does not fit the role
-    return ok() if done else fail(409)   # the run is over already, or the task has moved on
+           diff: str | None = Form(None), tests_exit: int = Form(-1), tests: str = Form(""),
+           committed: str = Form(""), markers: str = Form("")):
+    """The end of a run (agents.finish_run). `committed`: "1"/"0" after a run that commits, "" otherwise; `markers`:
+    files that still have conflict markers, one per line."""
+    done = agents.finish_run(run_id, result[:20], report, tokens_in, tokens_out, seconds,
+                             change=None if diff is None else (diff_stat or "", diff),
+                             tests=(tests_exit, tests) if tests_exit >= 0 else None,
+                             committed=None if committed == "" else committed == "1",
+                             markers=[m for m in markers.split("\n") if m.strip()][:50])
+    return ok() if done else fail(409)   # the run is over already
+
+
+@router.post("/runs/{run_id}/alive")
+def run_alive(run_id: int, thoughts: str = Form("")):
+    """A run is still going: what its AI wrote meanwhile; the answer says run, pause or stop (agents.alive)."""
+    return ok(state=agents.alive(run_id, thoughts[:20000]))
+
+
+@router.post("/hello")
+def hello():
+    """The runner (re)started and has no container of before: its runs and chat answers are queued again."""
+    return ok(runs=agents.requeue_running(), chats=chat.requeue_running())
 
 
 @router.get("/merges")
 def merges():
-    """Approved tasks whose branch the runner merges into the project's main (agents.pending_merges)."""
+    """Tasks whose branch the runner merges into the project's main (agents.pending_merges)."""
     return ok(merges=agents.pending_merges())
 
 
 @router.post("/merges/{task_id}/done")
 def merge_done(task_id: int, success: str = Form("0")):
     return ok() if agents.merge_done(task_id, success == "1") else fail(409)
-
-
-@router.get("/stops")
-def stops():
-    """Runs to stop at once (agents.set_paused: the user's emergency switch)."""
-    return ok(runs=agents.pending_stops())
-
-
-@router.post("/stops/{run_id}/done")
-def stop_done(run_id: int):
-    return ok() if agents.stop_done(run_id) else fail(409)
 
 
 @router.get("/exports")

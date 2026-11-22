@@ -8,6 +8,10 @@ the text the user reads. Memory and read markers stay in memory.py; this module 
     <status level="green|yellow|red" title="A few words">One or two sentences</status>   (title optional)
     <task-edit id="12" kind="minor" title="...">New context</task-edit>   (19.11.2026; kind, title, context optional)
     <move id="12" to="Backgrounds/Dark"/>   (a plan to structure the files, autofolders.py; to="" = the top)
+    <option recommended>...</option>        (inside <ask>: the answer the manager suggests, 22.11.2026)
+    <task ... needs="mac">                  (a piece only an Apple device can build or test)
+    <decide>The answer for the role</decide>                     (the manager decided a role's question himself)
+    <stuck recommend="again|accept|cancel">Plain explanation</stuck>   (the manager on a task that waits for a decision)
 
 `parse` is a pure function: it knows no user, no project and no database. Whoever stores the result (a later module)
 must save it under the project of the question and nowhere else. Anything that does not fit (unknown value, empty text,
@@ -33,6 +37,10 @@ ASK_SIZES = ("small", "large")
 TASK_KINDS = ("bug", "minor", "major")
 LEVELS = ("green", "yellow", "red")
 LARGE_QUESTION = 300   # a question this long opens large even if the AI said small (KONZEPT 9.4)
+MAX_DECIDE = 1000
+MAX_STUCK = 1500
+PICKS = ("again", "accept", "cancel")
+NEEDS = ("any", "mac")
 
 _ASK = re.compile(r"<ask(\s[^<>]*)?>(.*?)</ask>", re.DOTALL)
 _ENV = re.compile(r"<env>(.*?)</env>", re.DOTALL)
@@ -50,7 +58,9 @@ _MOVE = re.compile(r"<move(\s[^<>]*?)/?>(?:\s*</move>)?")
 MAX_MOVES = 500
 MAX_TARGET = 600
 MAX_DEVICE_ASKS = 3
-_OPTION = re.compile(r"<option>(.*?)</option>", re.DOTALL)
+_OPTION = re.compile(r"<option(\s+recommended(?:=\"[^\"<>]*\")?)?\s*>(.*?)</option>", re.DOTALL)
+_DECIDE = re.compile(r"<decide>(.*?)</decide>", re.DOTALL)
+_STUCK = re.compile(r"<stuck(\s[^<>]*)?>(.*?)</stuck>", re.DOTALL)
 _ATTR = re.compile(r"([a-z]+)=\"([^\"<>]*)\"")
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
@@ -61,6 +71,7 @@ class Ask:
     kind: str                # "choice" (buttons plus a free field) or "text" (free field only)
     size: str                # "small" (answered in the tile) or "large" (opens big)
     options: list[str] = field(default_factory=list)
+    recommended: int = -1    # the option marked as the suggestion (-1: none)
 
 
 @dataclass
@@ -69,6 +80,7 @@ class Task:
     title: str
     body: str
     origin: str = "idea"     # "user": the user asked for it in the chat; "idea": the AI's own suggestion (the default)
+    needs: str = "any"       # "mac": only an Apple device can build or test it
 
 
 @dataclass
@@ -93,7 +105,9 @@ class Signals:
     tasks: list[Task] = field(default_factory=list)
     status: Status | None = None   # the last valid one
     edits: list[Edit] = field(default_factory=list)   # changes to items the programmer has not started
-    envs: list[str] = field(default_factory=list)     # problems of the environment a role names (<env>)
+    envs: list[str] = field(default_factory=list)     # what only the user can provide or do (<env>)
+    decide: str = ""                                   # the manager's own answer to a role's question
+    stuck: tuple[str, str] | None = None               # (recommended way, explanation) of a decision
 
 
 def _attrs(raw: str | None) -> dict:
@@ -112,20 +126,23 @@ def _block(value: str, limit: int) -> str:
 
 def _ask(raw: str | None, inner: str) -> Ask | None:
     attrs = _attrs(raw)
-    options = [o for o in (_line(o, MAX_OPTION) for o in _OPTION.findall(inner)) if o]
+    found = [(bool(mark), _line(o, MAX_OPTION)) for mark, o in _OPTION.findall(inner)]
+    found = [(mark, o) for mark, o in found if o]
     text = _block(_OPTION.sub("", inner), MAX_QUESTION)
     if not text:
         return None
-    options = list(dict.fromkeys(options))[:MAX_OPTIONS]
+    options = list(dict.fromkeys(o for _, o in found))[:MAX_OPTIONS]
+    marked = next((o for mark, o in found if mark), None)
+    recommended = options.index(marked) if marked in options else -1
     kind = attrs.get("kind") if attrs.get("kind") in ASK_KINDS else ("choice" if options else "text")
     if kind == "choice" and not options:
         kind = "text"            # buttons without answers make no sense; the free field remains
     if kind == "text":
-        options = []
+        options, recommended = [], -1
     size = attrs.get("size") if attrs.get("size") in ASK_SIZES else "small"
     if len(text) > LARGE_QUESTION or len(options) > 3:
         size = "large"
-    return Ask(text, kind, size, options)
+    return Ask(text, kind, size, options, recommended)
 
 
 def parse(answer: str) -> Signals:
@@ -136,7 +153,8 @@ def parse(answer: str) -> Signals:
         attrs = _attrs(raw)
         title, body = _line(attrs.get("title", ""), MAX_TITLE), _block(inner, MAX_BODY)
         if attrs.get("kind") in TASK_KINDS and title and len(tasks) < MAX_TASKS:
-            tasks.append(Task(attrs["kind"], title, body, "user" if attrs.get("from") == "user" else "idea"))
+            tasks.append(Task(attrs["kind"], title, body, "user" if attrs.get("from") == "user" else "idea",
+                              attrs.get("needs") if attrs.get("needs") in NEEDS else "any"))
     status = None
     for raw, inner in _STATUS.findall(answer):
         attrs = _attrs(raw)
@@ -150,8 +168,15 @@ def parse(answer: str) -> Signals:
             kind = attrs.get("kind", "") if attrs.get("kind") in TASK_KINDS else ""
             edits.append(Edit(int(attrs["id"]), kind, _line(attrs.get("title", ""), MAX_TITLE), _block(inner, MAX_BODY)))
     envs = list(dict.fromkeys(e for e in (_line(x, MAX_ENV) for x in _ENV.findall(answer)) if e))[:MAX_ENVS]
-    text = _ENV.sub("", _EDIT.sub("", _STATUS.sub("", _TASK.sub("", _ASK.sub("", answer))))).strip()
-    return Signals(text, asks, tasks, status, edits, envs)
+    decided = next((d for d in (_block(x, MAX_DECIDE) for x in _DECIDE.findall(answer)) if d), "")
+    stuck = None
+    for raw, inner in _STUCK.findall(answer):
+        pick, said = _attrs(raw).get("recommend", ""), _block(inner, MAX_STUCK)
+        if said and stuck is None:
+            stuck = (pick if pick in PICKS else "", said)
+    text = _ENV.sub("", _EDIT.sub("", _STATUS.sub("", _TASK.sub("", _ASK.sub("", answer)))))
+    text = _STUCK.sub("", _DECIDE.sub("", text)).strip()
+    return Signals(text, asks, tasks, status, edits, envs, decided, stuck)
 
 
 def _words(text: str) -> set[str]:

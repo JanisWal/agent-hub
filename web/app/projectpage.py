@@ -24,6 +24,7 @@ PROJECT = """<div class="project" data-id="%PID%">
         %ARCHIVE%
       </div>
     </section>
+    %BOARD_STATE%
     <div class="board" id="board">
       %COLUMNS%
     </div>
@@ -62,17 +63,9 @@ def _action_button(lang: str, action: str, label_key: str, icon_name: str, css: 
     )
 
 
-# What a card says about its task (Janis, 15.11.2026): the stage, and the buttons of the user's decision.
-# Since 19.11.2026 as text pills like accept and reject (Janis): the quieter one left, the stronger one right.
-TASK_BUTTONS = {
-    "awaiting_approval": (("agent-reject", "agent_reject", "quiet"), ("agent-approve", "agent_approve", "go")),
-    "escalated": (("agent-cancel", "agent_cancel", "quiet"), ("agent-reject", "agent_reject", "go")),
-}
-
-
-def _pill(lang: str, action: str, label_key: str, css: str) -> str:
-    """A small glass pill with text (Janis, 19.11.2026: accept and reject of a suggestion)."""
-    return f'<button class="pill-btn {css}" type="button" data-action="{action}">{esc(i18n.t(lang, label_key))}</button>'
+def _choice(lang: str, action: str, label_key: str, tone: str) -> str:
+    """Accept or reject of a suggestion (Janis, 22.11.2026): square buttons with soft corners, green and red glowing."""
+    return f'<button class="sq-btn {tone}" type="button" data-action="{action}">{esc(i18n.t(lang, label_key))}</button>'
 
 
 def _title(item: Item, lang: str, extra: str = "") -> str:
@@ -90,43 +83,37 @@ def _title(item: Item, lang: str, extra: str = "") -> str:
 DOTS = '<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span>'
 
 
-def _task_card(item: Item, lang: str, task, report: str, waiting: str | None) -> str:
-    """A card whose item is with the agents: its stage under the title (with moving dots while a role works on it,
-    Janis 19.11.2026: you should see that it works), the last report behind an "i", and the user's buttons (approve
-    or another round; a task that needs him: another round or cancel; else cancel). `data-live`: the board looks
-    again every few seconds while such a card is on it (board.js)."""
-    key = "task_no_ai" if waiting == "no_ai" else f"task_{task.status}"
-    state = esc(i18n.t(lang, key)) + (DOTS if waiting == "running" else "")
-    tip = ui.info_dot(i18n.t(lang, "agent_report"), report[:600]) if report else ""
-    live = ' data-live="1"' if task.status in agents.ACTIVE and task.status != "awaiting_approval" else ""
-    title = _title(item, lang, f'<small class="card-task" data-status="{esc(task.status)}"{live}>{state}{tip}</small>')
-    pair = TASK_BUTTONS.get(task.status)
-    if pair:
-        pills = "".join(_pill(lang, action, key, css) for action, key, css in pair)
-        return f'<article class="card with-task proposed-like" data-id="{item.id}">{title}<div class="card-choice">{pills}</div></article>'
-    stop = _action_button(lang, "agent-cancel", "agent_cancel", "cross", "quiet no")
-    return f'<article class="card with-task" data-id="{item.id}">{title}<div class="card-actions">{stop}</div></article>'
-
-
-def _card(item: Item, lang: str, tasks: dict | None = None) -> str:
-    entry = (tasks or {}).get(item.id)
-    if entry is not None and item.status == "open" and entry[0].status in agents.OPEN_STATUSES:
-        return _task_card(item, lang, *entry)
+def _card(item: Item, lang: str) -> str:
+    """An item waiting in the queue (it leaves the board when the programmer takes it) or a suggestion."""
     if item.status == "proposed":
-        # Text pills (Janis, 19.11.2026, instead of the red and green circles): accepting starts it at once.
-        pills = _pill(lang, "reject", "reject", "quiet") + _pill(lang, "accept", "accept", "go")
+        choice = _choice(lang, "reject", "reject", "stop") + _choice(lang, "accept", "accept", "go")
         return (f'<article class="card proposed" data-id="{item.id}">{_title(item, lang)}'
-                f'<div class="card-choice">{pills}</div></article>')
+                f'<div class="card-choice">{choice}</div></article>')
+    mac = (f'<small class="card-task">{esc(i18n.t(lang, "card_needs_mac"))}</small>' if item.needs == "mac" else "")
     discard = _action_button(lang, "discard", "discard", "trash", "quiet")
-    queued = item.auto and tasks is not None   # it goes to the programmer by itself as soon as there is room
-    extra = f'<small class="card-task" data-live="1">{esc(i18n.t(lang, "task_queued"))}</small>' if queued else ""
-    start = (_action_button(lang, "agent-start", "agent_start", "play", "quiet start")
-             if tasks is not None and not item.auto else "")   # only an item from before or one the user stopped
     origin = f" from-{item.source}" if item.source != "user" else ""
-    return f'<article class="card{origin}" data-id="{item.id}">{_title(item, lang, extra)}{start}{discard}</article>'
+    return f'<article class="card{origin}" data-id="{item.id}">{_title(item, lang, mac)}{discard}</article>'
 
 
-def _column(kind: str, items: list[Item], lang: str, tasks: dict | None = None) -> str:
+# What the line above the board says about the task on its way (agents.where; Janis, 22.11.2026: the item left the
+# board, the line says where it is). `data-live`: board.js looks again every few seconds while it is there.
+STATE_ROLE = {"coding": "station_programmer", "testing": "station_tester", "reviewing": "station_reviewer",
+              "documenting": "station_manager"}
+
+
+def board_state(lang: str, where) -> str:
+    if where is None:
+        return '<div id="board-state"></div>'   # a wrapper: AgentHub.swap only swaps what is inside
+    task, state = where
+    role = i18n.t(lang, STATE_ROLE.get(task.stage, "station_programmer"))
+    text = i18n.t(lang, f"bs_{state}", role=role, title=task.title)
+    dots = DOTS if state in ("working", "merging") else ""
+    tone = " wait" if state in ("question", "todo", "decision") else ""
+    return (f'<div id="board-state"><p class="board-state{tone}" data-live="1"><span class="bs-text">{esc(text)}</span>'
+            f'{dots}</p></div>')
+
+
+def _column(kind: str, items: list[Item], lang: str) -> str:
     agreed = [i for i in items if i.kind == kind and i.status == "open"]
     proposed = [i for i in items if i.kind == kind and i.status == "proposed"]   # in the same list, below (19.11.2026)
     add = esc(i18n.t(lang, "add_item"))
@@ -136,7 +123,7 @@ def _column(kind: str, items: list[Item], lang: str, tasks: dict | None = None) 
         f'<span class="count">{len(agreed) + len(proposed)}</span>'
         f'<button class="icon-button add" type="button" data-kind="{kind}" aria-label="{add}" title="{add}">'
         f'{icon("plus")}</button></header>'
-        f'<div class="cards open-list" data-kind="{kind}">{"".join(_card(i, lang, tasks) for i in agreed + proposed)}</div>'
+        f'<div class="cards open-list" data-kind="{kind}">{"".join(_card(i, lang) for i in agreed + proposed)}</div>'
         f"</section>"
     )
 
@@ -253,27 +240,22 @@ def drawer_buttons(lang: str) -> str:
     return board + manager("archive", "chat_archive", "inbox") + manager("trash", "trash", "trash")
 
 
-def _tasks(user: User, project: Project) -> dict:
-    """item id -> (task, last report, waiting reason) for the cards of the board."""
-    return {item_id: (task, agents.last_report(user.id, task.id), agents.waiting_reason(user.id, task))
-            for item_id, task in agents.tasks_by_item(user.id, project.id).items()}   # waiting: no_ai, running
-
-
 def render(user: User, project: Project, items: list[Item], regular_checks: list | None = None,
            stored_files: list | None = None, trashed_files: list | None = None) -> str:
     """Project page body with the kanban board and the Manager view (with the regular checks)."""
     lang = user.language
     trashed = [i for i in items if i.status == "trash"]
     archived = [i for i in items if i.status == "archived"]
-    live = [i for i in items if i.status not in ("trash", "archived")]
-    tasks = _tasks(user, project)
+    live = [i for i in items if i.status in ("open", "proposed")]
     settings, ais = agents.settings(user.id), (aichoice.default(user.id),)
     current = agents.current_task(user.id, project.id)
+    where = agents.where(user.id, project.id)
     ranked = tuple(aichoice.ranked(user.id)) or ais   # the AIs a role can be given, as in the drawer
     roles = "".join(rolepage.render_role(lang, role, settings, agents.role_runs(user.id, project.id, role),
-                                         agents.usage(user.id, project.id, role), ranked, current=current)
+                                         agents.usage(user.id, project.id, role), ranked, current=current,
+                                         where=where, focus=project.review_focus)
                     for role in rolepage.ROLES)
-    waiting = [(t, agents.last_report(user.id, t.id)) for t in agents.waiting_tasks(user.id, project.id)]
+    waiting = [(t, agents.last_report(user.id, t.id)) for t in agents.decisions(user.id, project.id)]
     entries = todos.list_todos(user.id, project.id)
     return fill(
         PROJECT,
@@ -293,5 +275,6 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
         MANAGER_DIALOGS=managerpage.dialogs(lang) + "\n" + rolepage.dialogs(lang),
         TRASH=_trash(trashed, lang),
         ARCHIVE=_archive(archived, lang),
-        COLUMNS="\n      ".join(_column(kind, live, lang, tasks) for kind in KINDS),
+        COLUMNS="\n      ".join(_column(kind, live, lang) for kind in KINDS),
+        BOARD_STATE=board_state(lang, where),
     )

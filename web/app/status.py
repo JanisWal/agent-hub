@@ -18,8 +18,7 @@ from . import checks, db
 DAY = 86400
 RECENT = 2 * DAY          # work this recently is "active"
 STALL = 7 * DAY           # open work with nothing for so long is "stalled"
-APPROVAL_WAIT = 3 * DAY   # a release that waits so long is a problem
-FAILED_WITHIN = 3 * DAY   # a failed run this recently counts
+APPROVAL_WAIT = 3 * DAY   # a decision that waits so long is a problem
 BUSY_EVENTS = 6           # events in a week from which the project is "busy"
 RUNNING = ("coding", "testing", "reviewing", "documenting")
 LAMPS = ("none", "green", "rest", "yellow", "red")   # rest = orange: nothing to do, nothing stuck (Janis, 17.11.2026)
@@ -56,29 +55,24 @@ def assess(user_id: int, project_id: int, now: int | None = None) -> Assessment 
     with db.connect() as conn:
         if conn.execute("SELECT 1 FROM projects WHERE id = ? AND user_id = ?", (project_id, user_id)).fetchone() is None:
             return None
-        taken = _one(conn, "SELECT COUNT(DISTINCT t.item_id) FROM agent_tasks t JOIN board_items b ON b.id = t.item_id"
-                     " WHERE t.project_id = ? AND b.status = 'open'"
-                     " AND t.status IN ('coding','testing','reviewing','awaiting_approval','documenting','escalated')",
-                     project_id)
         open_items = _one(conn, "SELECT COUNT(*) FROM board_items WHERE project_id = ? AND status = 'open'", project_id)
-        in_progress = _one(conn, "SELECT COUNT(*) FROM agent_tasks WHERE project_id = ? AND status IN"
-                           " ('coding','testing','reviewing','documenting')", project_id)
-        waiting = _one(conn, "SELECT COUNT(*) FROM agent_tasks WHERE project_id = ? AND status IN"
-                       " ('awaiting_approval','escalated')", project_id)
+        in_progress = _one(conn, "SELECT COUNT(*) FROM agent_tasks WHERE project_id = ? AND hold = '' AND stage IN"
+                           " ('coding','testing','reviewing','merging','documenting')", project_id)
+        waiting = _one(conn, "SELECT COUNT(*) FROM agent_tasks WHERE project_id = ? AND hold != '' AND stage IN"
+                       " ('coding','testing','reviewing','merging','documenting')", project_id)
         done = _one(conn, "SELECT COUNT(*) FROM board_items WHERE project_id = ? AND status = 'archived'", project_id) \
-            + _one(conn, "SELECT COUNT(*) FROM agent_tasks t WHERE t.project_id = ? AND t.status = 'done' AND"
+            + _one(conn, "SELECT COUNT(*) FROM agent_tasks t WHERE t.project_id = ? AND t.stage = 'done' AND"
                    " (t.item_id IS NULL OR NOT EXISTS (SELECT 1 FROM board_items b WHERE b.id = t.item_id"
                    " AND b.status = 'archived'))", project_id)
         proposals = _one(conn, "SELECT COUNT(*) FROM board_items WHERE project_id = ? AND status = 'proposed'", project_id)
         todos_open = _one(conn, "SELECT COUNT(*) FROM todos WHERE project_id = ? AND done_at IS NULL", project_id)
-        escalated = _one(conn, "SELECT COUNT(*) FROM agent_tasks WHERE project_id = ? AND status = 'escalated'", project_id)
-        # waiting since the last run of the task ended (that is when it came to the user), not since it was made
-        old_release = _one(conn, "SELECT COUNT(*) FROM agent_tasks t WHERE t.project_id = ? AND t.status = 'awaiting_approval'"
-                           " AND COALESCE((SELECT MAX(r.finished_at) FROM agent_runs r WHERE r.task_id = t.id), t.created_at) < ?",
-                           project_id, now - APPROVAL_WAIT)
-        failed = _one(conn, "SELECT COUNT(*) FROM agent_runs r JOIN agent_tasks t ON t.id = r.task_id WHERE t.project_id = ?"
-                      " AND r.status = 'failed' AND r.finished_at > ? AND t.status IN"
-                      " ('coding','testing','reviewing','documenting','awaiting_approval')", project_id, now - FAILED_WITHIN)
+        # a task that waits for the user's decision (KONZEPT-AGENTEN.md 10.2); one that waits long is a problem
+        escalated = _one(conn, "SELECT COUNT(*) FROM agent_tasks WHERE project_id = ? AND hold = 'decision' AND stage IN"
+                         " ('coding','testing','reviewing','merging','documenting')", project_id)
+        old_release = _one(conn, "SELECT COUNT(*) FROM agent_tasks WHERE project_id = ? AND hold = 'decision'"
+                           " AND held_since < ?", project_id, now - APPROVAL_WAIT)
+        failed = _one(conn, "SELECT COUNT(*) FROM agent_tasks WHERE project_id = ? AND hold = 'decision'"
+                      " AND hold_why IN ('failed', 'format')", project_id)
         running_now = _one(conn, "SELECT COUNT(*) FROM agent_runs r JOIN agent_tasks t ON t.id = r.task_id"
                            " WHERE t.project_id = ? AND r.status IN ('queued','running')", project_id)
         week = now - 7 * DAY
@@ -102,7 +96,7 @@ def assess(user_id: int, project_id: int, now: int | None = None) -> Assessment 
     last = max(newest) if newest else None
     events = sum(s[1] or 0 for s in stamps)
 
-    planned = max(0, open_items - taken)
+    planned = open_items
     unfinished = planned + in_progress + waiting
     total = unfinished + done
     progress = round(100 * done / total) if total else 0

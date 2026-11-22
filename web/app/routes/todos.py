@@ -1,8 +1,9 @@
 """The "For you" list of the project page: add, change, mark as done with a note, open again, delete.
-All are sent with fetch (static/todos.js); afterwards only the list is swapped. Foreign or bad things are 404."""
+All are sent with fetch (static/todos.js); afterwards only the list is swapped. Foreign or bad things are 404. Done or
+deleted, an entry a role asked for lets its waiting task go on (agents.check_todos)."""
 from fastapi import APIRouter, Depends, Form
 
-from .. import todos, users
+from .. import agents, todos, users
 from ..deps import api_user, fail, ok
 
 router = APIRouter()
@@ -21,7 +22,10 @@ def edit_todo(todo_id: int, text: str = Form(""), user: users.User = Depends(api
 
 @router.post("/todos/{todo_id}/done")
 def finish_todo(todo_id: int, note: str = Form(""), user: users.User = Depends(api_user)):
-    return ok() if todos.finish(user.id, todo_id, note) else fail(404)
+    if not todos.finish(user.id, todo_id, note):
+        return fail(404)
+    agents.check_todos(user.id)
+    return ok()
 
 
 @router.post("/todos/{todo_id}/reopen")
@@ -31,4 +35,7 @@ def reopen_todo(todo_id: int, user: users.User = Depends(api_user)):
 
 @router.post("/todos/{todo_id}/delete")
 def delete_todo(todo_id: int, user: users.User = Depends(api_user)):
-    return ok() if todos.delete(user.id, todo_id) else fail(404)
+    if not todos.delete(user.id, todo_id):
+        return fail(404)
+    agents.check_todos(user.id)
+    return ok()

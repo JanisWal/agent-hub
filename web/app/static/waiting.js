@@ -1,6 +1,6 @@
-// "Waiting for you" (Janis, 19.11.2026): answer a question of the manager or a role (a suggested answer with one
-// click, or your own text) and decide about a task (approve, another round with a remark, cancel) right in the tile.
-// After it was sent only the tile swaps (and the board, the chat); an answer to the manager goes on as a chat message.
+// "Waiting for you" (Janis, 22.11.2026: decisions only): answer a question the manager wrote anew for you (a suggested
+// answer with one click, or your own text) and decide about a task that stopped (go on with a hint, take it as it is,
+// cancel) right in the tile. After it was sent only the tile and the board swap; nothing goes into the manager chat.
 (function () {
   var tile = document.getElementById("waiting");
   if (!tile) return;
@@ -16,9 +16,8 @@
         if (!response.ok || !data.ok) throw new Error(data.message || tile.dataset.errNet || "");
         return data;
       });
-    }).then(function (data) {
-      if (data.sent) document.dispatchEvent(new CustomEvent("hub:chat-changed"));
-      var parts = ["waiting"].concat(document.getElementById("board") ? ["board"] : []);
+    }).then(function () {
+      var parts = ["waiting"].concat(document.getElementById("board") ? ["board", "board-state"] : []);
       return AgentHub.swap(parts).catch(function () { AgentHub.reload(); });
     }, function (problem) { item.classList.remove("sending"); say(problem.message); });
   }
@@ -35,7 +34,7 @@
     var decide = event.target.closest("[data-decide]");
     if (decide) {
       send(item, "/tasks/" + item.dataset.task + "/decide",
-           { decision: decide.dataset.decide, note: item.querySelector(".w-input").value });
+           { choice: decide.dataset.decide, hint: item.querySelector(".w-input").value });
     }
   });
   document.addEventListener("keydown", function (event) {   // Enter in an answer field sends it

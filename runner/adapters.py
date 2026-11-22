@@ -57,15 +57,7 @@ class Claude:
         return launcher.claude_tools(line)
 
 
-    def parse_run(self, stdout: str):
-        """(ok, text, tokens_in, tokens_out, login_problem) of an agent run of Claude Code."""
-        try:
-            data = json.loads(stdout)
-            tokens_in, tokens_out = launcher.claude_tokens(data)
-            text, failed = str(data.get("result", "")), bool(data.get("is_error"))
-            return not failed, text, tokens_in, tokens_out, failed and launcher.parse_chat_output(stdout)[4]
-        except (ValueError, AttributeError, TypeError):
-            return False, "No readable answer from Claude Code.", 0, 0, False
+    parse_run = parse_chat   # agent runs stream like the chat since 22.11.2026 (launcher.build_command)
 
 
 class Mistral:

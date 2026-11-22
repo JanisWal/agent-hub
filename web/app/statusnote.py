@@ -111,13 +111,14 @@ def digest(conn: sqlite3.Connection, user_id: int, project_id: int, now: int, da
     if a.reasons:
         parts.append("Hub signals: " + ", ".join(a.reasons))
     tasks = conn.execute(
-        "SELECT title, status, round FROM agent_tasks WHERE project_id = ? AND status NOT IN ('done', 'cancelled')"
+        "SELECT title, stage, hold, returns FROM agent_tasks WHERE project_id = ? AND stage NOT IN ('done', 'cancelled')"
         " ORDER BY id DESC LIMIT 5", (project_id,)).fetchall()
     if tasks:
-        parts.append("Agent tasks:\n" + "\n".join(f"- [{t['status']}] {_clip(t['title'], 90)} (round {t['round']})"
-                                                  for t in tasks))
+        parts.append("Agent tasks:\n" + "\n".join(
+            f"- [{t['stage']}{', waits for ' + t['hold'] if t['hold'] else ''}] {_clip(t['title'], 90)}"
+            f" (sent back {t['returns']} times)" for t in tasks))
     finished = conn.execute(
-        "SELECT title, finished_at FROM agent_tasks WHERE project_id = ? AND status = 'done'"
+        "SELECT title, finished_at FROM agent_tasks WHERE project_id = ? AND stage = 'done'"
         " ORDER BY finished_at DESC LIMIT 2", (project_id,)).fetchall()
     if finished:
         parts.append("Last finished: " + "; ".join(f"{_clip(t['title'], 80)} {day(t['finished_at'])}".strip()
@@ -206,7 +207,7 @@ def _urgent_since(conn: sqlite3.Connection, project_id: int, since: int) -> bool
     """Did something happen since `since` that the user should read about soon?"""
     return conn.execute(
         "SELECT 1 FROM agent_runs r JOIN agent_tasks t ON t.id = r.task_id WHERE t.project_id = ? AND r.finished_at > ?"
-        " AND (r.status = 'failed' OR t.status IN ('awaiting_approval', 'escalated', 'done')) LIMIT 1",
+        " AND (t.hold != '' OR t.stage = 'done') LIMIT 1",
         (project_id, since)).fetchone() is not None
 
 
@@ -236,7 +237,7 @@ def _waiting(conn: sqlite3.Connection, project_id: int) -> bool:
 def active(conn: sqlite3.Connection, project_id: int, now: int) -> bool:
     """Is the project worked on right now: a task of it on its way, or its manager chat used just now?"""
     marks = ",".join("?" * len(workflow.STAGES))
-    if conn.execute(f"SELECT 1 FROM agent_tasks WHERE project_id = ? AND status IN ({marks})",
+    if conn.execute(f"SELECT 1 FROM agent_tasks WHERE project_id = ? AND stage IN ({marks})",
                     (project_id, *workflow.STAGES)).fetchone():
         return True
     return conn.execute("SELECT 1 FROM chat_messages WHERE project_id = ? AND kind = 'chat' AND created_at > ?",

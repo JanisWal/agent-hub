@@ -116,7 +116,8 @@ def _size(mb: int) -> str:
 LIMIT_ROWS = (
     ("sys_run", (("run_memory_mb", "sys_run_memory", "size"), ("run_cpus", "sys_run_cpus", ""))),
     ("sys_run_more", (("run_pids", "sys_run_pids", ""), ("view_mb", "sys_run_files", "size"))),
-    ("sys_times", (("run_minutes", "sys_time_run", "min"), ("chat_minutes", "sys_time_chat", "min"))),
+    ("sys_times", (("run_silence_minutes", "sys_time_silence", "min"), ("run_max_hours", "sys_time_max", "h"))),
+    ("sys_times_more", (("test_minutes", "sys_time_tests", "min"), ("chat_minutes", "sys_time_chat", "min"))),
     ("sys_tools", (("agent_browser", "sys_browser", "onoff"), ("export_mb", "sys_export", "size"))),
     ("sys_rest", (("ai_rest", "sys_rest_short", "min0"),)),
 )
@@ -124,7 +125,7 @@ LIMIT_ROWS = (
 
 def _limit_rows(lang: str) -> str:
     t = lambda key, **kw: i18n.t(lang, key, **kw)   # noqa: E731
-    texts = {"size": _size, "min": lambda v: f"{v} min", "": str,
+    texts = {"size": _size, "min": lambda v: f"{v} min", "h": lambda v: f"{v} h", "": str,
              "onoff": lambda v: t("sys_on") if v else t("sys_off"),
              "min0": lambda v: f"{v} min" if v else t("sys_rest_never")}
     rows = []

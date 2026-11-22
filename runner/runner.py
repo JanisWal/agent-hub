@@ -1,6 +1,12 @@
 """The runner: asks the hub what to do and does it. Standard library only (urllib).
 
-Now: sign-ins of Claude (link and code between the hub and `claude setup-token`; the token is kept encrypted,
+Agent runs (22.11.2026, KONZEPT-AGENTEN.md 10): no fixed time limit for work that moves on. Every run streams its
+output; a Watch tells the hub every few seconds that it is going (with its new thoughts), keeps its ticket alive,
+follows the hub's answer (run, pause, stop: `docker pause` freezes a run of a user who paused his agents, nothing is
+ended) and ends a run only after a standstill (no output for a while) or the longest time of work. When the runner
+starts it removes the containers of before and says hello: the hub queues their runs and chat answers again.
+
+Also: sign-ins of Claude (link and code between the hub and `claude setup-token`; the token is kept encrypted,
 tokens.py), API keys of other AIs (Mistral: checked with the provider and kept encrypted, tokens.ProviderKeys), the
 manager chat and the agent runs (one container per question or run, Claude Code or Mistral Vibe, always with a
 ticket instead of the credential: adapters.py), the work folders of the tasks and merging approved work
@@ -38,6 +44,10 @@ POWER_TIMEOUT = 240             # seconds a manual backup may take (the nightly 
 UNREADABLE = "Server: the saved credential can not be read (HUB_TOKEN_KEY)."
 LATER = "Server: the AI's sign-in service could not be reached to renew the sign-in; nothing was deleted."
 DEVICE_LOGIN_SECONDS = launcher.LOGIN_SECONDS + 60   # a ChatGPT sign-in waits this long for the user at most
+ALIVE_EVERY = 10        # seconds between two signs of life of a run to the hub (agents.DEAD_SECONDS is much more)
+STOPPED = {"silence": "Ended: the AI wrote nothing for {minutes} minutes.",
+           "limit": "Ended: the run reached the longest time of a run ({minutes} minutes of work)."}
+LEFTOVERS = ("agent-run-", "agent-test-", "agent-chat-")   # containers of jobs; after a restart none of them is ours
 
 
 class Api:
@@ -99,10 +109,74 @@ class Thoughts:
                 pass
 
 
+class Watch:
+    """The runner's eye on one agent run (22.11.2026): `line` for every line of its output, `tick` about once a
+    second while it runs. Tells the hub every ALIVE_EVERY seconds that the run is going (with the new thoughts) and
+    keeps its ticket; follows the hub's answer: "pause" freezes the container (`docker pause`), "run" lets it go on,
+    "stop" ends it. Ends it itself after `silence_seconds` without output or `max_seconds` of work; paused time counts
+    for neither. `reason`: "" while it may go on, else silence, limit or stop."""
+
+    def __init__(self, runner, run_id: int, ticket: str, adapter, name: str, limits: dict, clock=time.monotonic):
+        self.runner, self.run_id, self.ticket, self.adapter, self.name = runner, int(run_id), ticket, adapter, name
+        self.silence, self.longest = limits["silence_seconds"], limits["max_seconds"]
+        self.clock = clock
+        now = clock()
+        self.last_output = self.last_tick = now
+        self.last_alive = now - ALIVE_EVERY   # tell the hub at the first tick
+        self.worked = 0.0
+        self.paused = False
+        self.reason = ""
+        self.waiting = ""
+        self.lock = threading.Lock()
+
+    def line(self, line: str) -> None:
+        with self.lock:
+            self.last_output = self.clock()
+            self.waiting += self.adapter.thought(line)
+
+    def _docker(self, *args: str) -> bool:
+        return self.runner.docker([*args, self.name]) == 0
+
+    def tick(self) -> bool:
+        now = self.clock()
+        if not self.paused:
+            self.worked += now - self.last_tick
+        self.last_tick = now
+        if now - self.last_alive >= ALIVE_EVERY:
+            self.last_alive = now
+            with self.lock:
+                text, self.waiting = self.waiting, ""
+            self.runner.tickets.touch(self.ticket)
+            try:
+                state = self.runner.api.call("POST", f"/runner/runs/{self.run_id}/alive", thoughts=text).get("state")
+            except (OSError, ValueError):
+                state = None                       # the hub restarts: go on, it hears from us again in a moment
+            if state == "stop":
+                self.reason = "stop"
+                return False
+            if state == "pause" and not self.paused and self._docker("pause"):
+                self.paused = True
+            elif state == "run" and self.paused and self._docker("unpause"):
+                self.paused = False
+                with self.lock:
+                    self.last_output = now         # the standstill starts again after a pause
+        if self.paused:
+            return True
+        with self.lock:
+            quiet = now - self.last_output
+        if quiet > self.silence:
+            self.reason = "silence"
+            return False
+        if self.worked > self.longest:
+            self.reason = "limit"
+            return False
+        return True
+
+
 class Runner:
     def __init__(self, api, claude_base: str, vault=None, tickets=None, start_session=None,
                  clock=time.time, run_chat=None, run_power=None, keys=None, verifiers=None, work=None,
-                 run_agent=None, background: bool = True, views=None):
+                 run_agent=None, background: bool = True, views=None, docker=None):
         self.api = api
         self.claude_base = Path(claude_base)
         self.vault = vault or tokens.Vault(claude_base, os.environ.get("HUB_TOKEN_KEY"))
@@ -127,6 +201,24 @@ class Runner:
         self.background = background
         self.workers: list[threading.Thread] = []
         self.sessions: dict[int, login.LoginSession] = {}
+        self.docker = docker or self._docker      # a docker command (pause, unpause, rm -f) -> exit code
+        self.greeted = False                      # the hub heard that this runner started (handle_hello)
+
+    @staticmethod
+    def _docker(args: list[str]) -> int:
+        return subprocess.run(["docker", *args], capture_output=True).returncode
+
+    # --- a fresh start: the containers of the jobs of before are gone, the hub queues those jobs again
+    def handle_hello(self) -> None:
+        if self.greeted:
+            return
+        found = subprocess.run(["docker", "ps", "-aq", *[f"--filter=name={p}" for p in LEFTOVERS]],
+                               capture_output=True, text=True)
+        names = [n for n in (found.stdout or "").split() if n]
+        if names:
+            subprocess.run(["docker", "rm", "-f", *names], capture_output=True)
+        self.api.call("POST", "/runner/hello")
+        self.greeted = True
 
     def _docker_session(self, user_id: int) -> login.LoginSession:
         command = launcher.build_login_command(user_id=user_id)
@@ -447,9 +539,37 @@ class Runner:
             self._local.limits = launcher.checked(job.get("limits"))
         return getattr(self._local, "limits", None) or launcher.checked(None)
 
-    def _run_agent(self, command: list[str], prompt: str):
-        return subprocess.run(command, input=prompt, capture_output=True, text=True,
-                              timeout=self._limits()["run_seconds"])
+    def _run_agent(self, command: list[str], prompt: str, watch: Watch) -> tuple[str, int, str]:
+        """Run an agent's container, its output line by line to `watch`, until it ends or the watch ends it:
+        (output, exit code, why it was ended or ""). The prompt is written from a thread (a full pipe never blocks)."""
+        proc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                text=True)
+        lines: list[str] = []
+
+        def feed():
+            try:
+                proc.stdin.write(prompt)
+                proc.stdin.close()
+            except OSError:
+                pass
+
+        def read():
+            for line in proc.stdout:
+                lines.append(line)
+                watch.line(line)
+
+        threading.Thread(target=feed, daemon=True).start()
+        reader = threading.Thread(target=read, daemon=True)
+        reader.start()
+        while proc.poll() is None:
+            time.sleep(1)
+            if not watch.tick():
+                self.docker(["rm", "-f", watch.name])
+                proc.kill()
+                break
+        proc.wait()
+        reader.join(timeout=10)
+        return "".join(lines), proc.returncode or 0, watch.reason
 
     TEST_OUTPUT = 6000   # characters of the end of the tests' output that go to the hub
 
@@ -488,12 +608,18 @@ class Runner:
         self._report(f"/runner/runs/{run_id}/finish", result=result, report=report,
                      tokens_in=tokens_in, tokens_out=tokens_out, seconds=seconds, **extra)
 
+    def _stopped(self, reason: str) -> str:
+        limits = self._limits()
+        seconds = limits["silence_seconds"] if reason == "silence" else limits["max_seconds"]
+        return STOPPED[reason].format(minutes=seconds // 60)
+
     def do_run(self, job: dict) -> None:
         run_id, user_id, task_id = int(job["run_id"]), int(job["user_id"]), int(job["task_id"])
         role, provider = job["role"], job.get("provider") or "claude"
         adapter = adapters.ADAPTERS.get(provider)
         if adapter is None:
             return self._finish_run(run_id, "failed", "This AI is not available on the server.")
+        limits = self._limits(job)
         way = job.get("credential") or "plan"
         secret, problem = self._secret(adapter, user_id, way, job)
         if secret is None:
@@ -501,11 +627,14 @@ class Runner:
         if job.get("mode") == "brief":
             return self._brief_run(job, adapter, secret)
         try:
-            folder = self.work.prepare(task_id, int(job["project_id"]), job["branch"])
+            folder, conflicts = self.work.prepare(task_id, int(job["project_id"]), job["branch"], sync=job.get("sync") is True)
             launcher.prepare_folder(str(folder), user_id, recursive=True)
         except (OSError, ValueError, subprocess.SubprocessError) as error:
             print(f"runner: work folder of task {task_id}: {type(error).__name__}", file=sys.stderr, flush=True)
             return self._finish_run(run_id, "failed", "The work folder could not be prepared.")
+        prompt = job["prompt"]
+        if conflicts and job.get("conflict_note"):   # the text comes from the hub (prompts.CONFLICTS); only the names here
+            prompt += "\n\n" + str(job["conflict_note"]).replace("{files}", "\n".join(conflicts))
         files_dir, _, root = self._view(f"run-{run_id}", job)
         ticket = self.tickets.issue(secret, provider, **self._route(adapter, job))
         secret = None
@@ -515,54 +644,65 @@ class Runner:
                                           net=job.get("net", "together"), effort=job.get("effort") or "",
                                           work_dir=str(folder), files_dir=files_dir,
                                           images=job.get("images") is True, route=job.get("route"),
-                                          hub_tools=job.get("hub_tools") or [], credential=job.get("credential") or "plan")
-            command = launcher.apply_limits(command, self._limits(job))
-            done = self.run_agent(command, job["prompt"])
-            ok, text, tokens_in, tokens_out, login_problem = adapter.parse_run(done.stdout)
-        except subprocess.TimeoutExpired:
-            subprocess.run(["docker", "rm", "-f", f"agent-run-{run_id}"], capture_output=True)
-            ok, text, tokens_in, tokens_out, login_problem = False, "Timeout: the run took too long.", 0, 0, False
+                                          hub_tools=job.get("hub_tools") or [], credential=way)
+            command = launcher.apply_limits(command, limits)
+            watch = Watch(self, run_id, ticket, adapter, f"agent-run-{run_id}", limits)
+            output, code, stopped = self.run_agent(command, prompt, watch)
+            ok, text, tokens_in, tokens_out, login_problem = adapter.parse_run(output)
         finally:
             self.tickets.revoke(ticket)
             self._release(root)
+        if stopped == "stop":
+            return                                   # the hub gave the run up (its task was cancelled)
         if login_problem:
-            self._expired(user_id, provider, job.get("credential") or "plan", job)
+            self._expired(user_id, provider, way, job)
         self._plan_check(user_id, provider, ok, text)
-        result, report = launcher.result_of(text, failed=not ok)
+        if stopped:
+            result, report = "stopped", self._stopped(stopped)
+        else:
+            result, report = launcher.result_of(text, failed=not ok)
         extra = {}
         if role in ("programmer", "tester"):   # the runner commits from outside: the run never sees .git
             try:
-                self.work.commit(task_id, job["branch"], f"Task {task_id}, round {job.get('round', 1)}: {role} (run {run_id})")
+                committed = self.work.commit(task_id, job["branch"], f"Task {task_id}: {role} (run {run_id})")
+                extra["committed"] = "1" if committed else "0"
                 extra["diff_stat"], extra["diff"] = self.work.diff(task_id)
             except (OSError, subprocess.SubprocessError) as error:
                 print(f"runner: commit of task {task_id} failed: {type(error).__name__}", file=sys.stderr, flush=True)
                 report = (report + "\n\n(The hub could not save the changes.)").strip()
                 result = "failed"
-        if role == "programmer" and result == "done":   # the project's own tests, run by the hub, not by an AI
+        if role == "programmer" and conflicts and result != "failed":
+            left = self.work.markers(task_id, conflicts)
+            if left:
+                extra["markers"] = "\n".join(left)
+        if role == "programmer" and result in ("done", "none") and "markers" not in extra:
             extra["tests_exit"], extra["tests"] = self._tests(run_id, user_id, task_id, folder, job.get("net", "apart"))
         self._finish_run(run_id, result, report, tokens_in, tokens_out, int(self.clock() - started), **extra)
 
     def _brief_run(self, job: dict, adapter, secret: str) -> None:
-        """A run that needs no tools (the reviewer of a small change, the manager's documentation): one answer, no
-        work folder, no files, nothing to commit."""
+        """A run that needs no tools (the reviewer of a small change, the manager's short jobs): one answer, no work
+        folder, no files, nothing to commit; watched like every run."""
         run_id, user_id = int(job["run_id"]), int(job["user_id"])
+        limits = self._limits(job)
+        way = job.get("credential") or "plan"
         ticket = self.tickets.issue(secret, adapter.provider, **self._route(adapter, job))
         started = self.clock()
         try:
             command = adapter.brief_command(run_id=run_id, user_id=user_id, model=job["model"], ticket=ticket,
-                                            effort=job.get("effort") or "", route=job.get("route"),
-                                            credential=job.get("credential") or "plan")
-            command = launcher.apply_limits(command, self._limits(job))
-            done = self.run_agent(command, job["prompt"])
-            ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(done.stdout)
-        except subprocess.TimeoutExpired:
-            subprocess.run(["docker", "rm", "-f", f"agent-run-{run_id}"], capture_output=True)
-            ok, text, tokens_in, tokens_out, login_problem = False, "Timeout: the run took too long.", 0, 0, False
+                                            effort=job.get("effort") or "", route=job.get("route"), credential=way)
+            command = launcher.apply_limits(command, limits)
+            watch = Watch(self, run_id, ticket, adapter, f"agent-run-{run_id}", limits)
+            output, code, stopped = self.run_agent(command, job["prompt"], watch)
+            ok, text, tokens_in, tokens_out, login_problem = adapter.parse_chat(output)
         finally:
             self.tickets.revoke(ticket)
+        if stopped == "stop":
+            return
         if login_problem:
-            self._expired(user_id, adapter.provider, job.get("credential") or "plan", job)
-        result, report = launcher.result_of(text, failed=not ok)
+            self._expired(user_id, adapter.provider, way, job)
+        result, report = ("stopped", self._stopped(stopped)) if stopped else launcher.result_of(text, failed=not ok)
+        if job.get("purpose") in ("decide", "explain", "doc") and result == "none":
+            result = "done"                          # the manager's jobs are read for their markers, not a RESULT line
         self._finish_run(run_id, result, report, tokens_in, tokens_out, int(self.clock() - started))
 
     # --- ChatGPT sign-in with a one-time code (runner/codex.py): one container per sign-in, in a thread of its own
@@ -650,7 +790,7 @@ class Runner:
         try:
             command = launcher.build_codex_command(name=f"agent-chat-{900000000 + user_id}", user_id=user_id, model="",
                                                    effort="", auth=adapter._auth(ticket, user_id), job="models")
-            done = self.run_agent(command, "")
+            done = subprocess.run(command, input="", capture_output=True, text=True, timeout=180)
         finally:
             self.tickets.revoke(ticket)
         line = (done.stdout or "").strip().splitlines()[-1:] or ["{}"]
@@ -682,14 +822,6 @@ class Runner:
             if limit and len(data) > limit:
                 data = b""                                  # too big: the hub says so (serversettings.export_mb)
             self.api.send(f"/runner/exports/{export_id}", data)
-
-    # --- the user's emergency switch (web/app/agents.set_paused): his running containers go at once
-    def handle_stops(self) -> None:
-        for run_id in self.api.call("GET", "/runner/stops").get("runs", []):
-            run_id = int(run_id)
-            for name in (f"agent-run-{run_id}", f"agent-test-{run_id}"):
-                subprocess.run(["docker", "rm", "-f", name], capture_output=True)
-            self.api.call("POST", f"/runner/stops/{run_id}/done")
 
     def handle_cleanups(self) -> None:
         """Folders of finished tasks, and everything of deleted projects (their code and their tasks' folders): the
@@ -753,6 +885,7 @@ class Runner:
             print("runner: waking timed out", file=sys.stderr, flush=True)
 
     def step(self) -> None:
+        self.handle_hello()
         self.handle_power()
         self.handle_wake()
         self.handle_wipes()
@@ -763,7 +896,6 @@ class Runner:
         self.handle_device_logins()
         self.handle_model_checks()
         self.handle_merges()
-        self.handle_stops()
         self.handle_cleanups()
         self.handle_exports()
         if self.busy():

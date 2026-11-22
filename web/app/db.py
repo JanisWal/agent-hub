@@ -67,6 +67,8 @@ CREATE TABLE IF NOT EXISTS agent_settings (
     value   TEXT NOT NULL,
     PRIMARY KEY (user_id, key)
 );
+-- A board item on its way through the chain (agents.py, workflow.py; rebuilt 22.11.2026, KONZEPT-AGENTEN.md 10). Its
+-- index on (project_id, stage) is made in _prepare, after an old database was converted.
 CREATE TABLE IF NOT EXISTS agent_tasks (
     id            INTEGER PRIMARY KEY,
     project_id    INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -74,15 +76,11 @@ CREATE TABLE IF NOT EXISTS agent_tasks (
     title         TEXT NOT NULL,
     kind          TEXT NOT NULL,
     needs         TEXT NOT NULL DEFAULT 'any',
-    status        TEXT NOT NULL,
-    round         INTEGER NOT NULL DEFAULT 1,
+    stage         TEXT NOT NULL,
     manual_check  INTEGER NOT NULL DEFAULT 0,
-    note          TEXT NOT NULL DEFAULT '',
     created_at    INTEGER NOT NULL,
-    deadline      INTEGER NOT NULL,
     finished_at   INTEGER
 );
-CREATE INDEX IF NOT EXISTS agent_tasks_by_project ON agent_tasks (project_id, status);
 CREATE TABLE IF NOT EXISTS agent_runs (
     id          INTEGER PRIMARY KEY,
     task_id     INTEGER NOT NULL REFERENCES agent_tasks(id) ON DELETE CASCADE,
@@ -296,11 +294,6 @@ CREATE TABLE IF NOT EXISTS ai_models (
     tried_at   INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, provider)
 );
--- Runs the runner must stop at once (agents.set_paused, 21.11.2026: the user's emergency switch); a row goes when done.
-CREATE TABLE IF NOT EXISTS run_stops (
-    run_id     INTEGER PRIMARY KEY,
-    created_at INTEGER NOT NULL
-);
 -- The project's code as a ZIP to download (exports.py, 21.11.2026): the request; the file lies in exports/<id>.zip.
 CREATE TABLE IF NOT EXISTS code_exports (
     id         INTEGER PRIMARY KEY,
@@ -348,9 +341,11 @@ NEW_COLUMNS = {
     },
     # The context behind a short board item and whether it starts on its own (Janis, 19.11.2026, manager-board):
     # items the manager put on the board from the chat, and accepted suggestions, go to the programmer by themselves.
-    "board_items": {"details": "TEXT NOT NULL DEFAULT ''", "auto": "INTEGER NOT NULL DEFAULT 0"},
+    # `needs`: "mac" for a piece only an Apple device can build or test (22.11.2026, the manager's <task needs>).
+    "board_items": {"details": "TEXT NOT NULL DEFAULT ''", "needs": "TEXT NOT NULL DEFAULT 'any'"},
     "projects": {"page": "INTEGER NOT NULL DEFAULT 0", "description": "TEXT NOT NULL DEFAULT ''",
-                 "memory_seeded": "INTEGER NOT NULL DEFAULT 0"},   # the fixed memory files were made (memory.py)
+                 "memory_seeded": "INTEGER NOT NULL DEFAULT 0",    # the fixed memory files were made (memory.py)
+                 "review_focus": "TEXT NOT NULL DEFAULT ''"},      # what the reviewer looks at (reviewer's tab)
     "chat_messages": {"mode": "TEXT NOT NULL DEFAULT 'web'", "model": "TEXT NOT NULL DEFAULT 'haiku'",
                       "credential": "TEXT NOT NULL DEFAULT 'plan'",   # plan or api key of the user (credentials.py)
                       "extra": "TEXT NOT NULL DEFAULT ''",          # contents of files the manager asked for (memory.py)
@@ -369,17 +364,36 @@ NEW_COLUMNS = {
     "agent_runs": {"effort": "TEXT NOT NULL DEFAULT ''",     # effort level of the run's model (catalog.py)
                    "credential": "TEXT NOT NULL DEFAULT 'plan'",   # plan or api key of the user (credentials.py)
                    "tried": "TEXT NOT NULL DEFAULT ''",            # AIs that failed this run already (agents.py)
-                   "provider": "TEXT NOT NULL DEFAULT 'claude'"},   # which AI does the run (aichoice.py)
-    "agent_tasks": {"merged": "INTEGER NOT NULL DEFAULT 0",    # the runner merged the approved branch (agents.py)
-                    "diff_stat": "TEXT NOT NULL DEFAULT ''",   # what the task changed against main: files and lines
+                   "provider": "TEXT NOT NULL DEFAULT 'claude'",   # which AI does the run (aichoice.py)
+                   # what the run is for (22.11.2026): work (its stage), result (ask again for a missing RESULT line),
+                   # decide (the manager answers a role's question), explain (the manager explains a decision), doc
+                   "purpose": "TEXT NOT NULL DEFAULT 'work'",
+                   "ref": "INTEGER",                               # result: the run asked again; decide: the question
+                   "alive_at": "INTEGER",                          # the runner's last sign of life of this run
+                   "thoughts": "TEXT NOT NULL DEFAULT ''"},        # what the AI wrote meanwhile (only shown)
+    "agent_tasks": {"diff_stat": "TEXT NOT NULL DEFAULT ''",   # what the task changed against main: files and lines
                     "diff": "TEXT NOT NULL DEFAULT ''",        # ... and the change itself (runner/workspace.py, cut)
                     "tests": "TEXT NOT NULL DEFAULT ''",       # end of the output of the project's tests (hub-test.sh)
-                    "tests_exit": "INTEGER"},                  # their exit code; NULL = the project has no tests
+                    "tests_exit": "INTEGER",                   # their exit code; NULL = the project has no tests
+                    "hold": "TEXT NOT NULL DEFAULT ''",        # '', question, todo, decision (workflow.HOLDS)
+                    "hold_why": "TEXT NOT NULL DEFAULT ''",    # why it waits for a decision (workflow.WHY)
+                    "held_since": "INTEGER",
+                    "advice": "TEXT NOT NULL DEFAULT ''",      # the manager's plain explanation of a decision
+                    "advice_pick": "TEXT NOT NULL DEFAULT ''", # ... and the way he recommends (workflow.CHOICES)
+                    "returns": "INTEGER NOT NULL DEFAULT 0",   # how often it went back to the programmer
+                    "asks": "INTEGER NOT NULL DEFAULT 0",      # questions of the roles that held it
+                    "retried": "INTEGER NOT NULL DEFAULT 0",   # the stage ran once more after a failed or stopped run
+                    "resume": "TEXT NOT NULL DEFAULT ''",      # what the next run of the stage is told (stopped, markers)
+                    "hint": "TEXT NOT NULL DEFAULT ''"},       # the user's hint for the programmer ("again")
     "files": {"parts": "TEXT NOT NULL DEFAULT ''",           # one flag per chunk of an unfinished upload (files.py)
               "trashed_at": "INTEGER",                       # when it went into the trash (files.py, TRASH_DAYS)
               "parent_id": "INTEGER",                        # the folder it lies in; NULL = top of its area (18.11.2026)
               "is_folder": "INTEGER NOT NULL DEFAULT 0"},    # the row is a folder (no file on disk)
     "checks": {"days": "TEXT NOT NULL DEFAULT '1111111'"},   # weekdays of a daily check, Monday first (checks.py)
+    # Questions of the roles (22.11.2026): first to the manager (via 'manager'), who answers or writes them anew for
+    # the user (via 'user'); `blocks`: the task waits for the answer; `recommended`: the option he suggests (-1 none).
+    "questions": {"via": "TEXT NOT NULL DEFAULT 'user'", "blocks": "INTEGER NOT NULL DEFAULT 0",
+                  "recommended": "INTEGER NOT NULL DEFAULT -1", "answered_by": "TEXT NOT NULL DEFAULT ''"},
     "power_requests": {"result": "TEXT"},                    # how a manual backup ended: 'ok' or 'failed' (power.py)
     "claude_connections": {"expires_at": "INTEGER"},         # when the user's Claude token runs out (claude_link.py)
     # The broker's side of a device (devices.py, 17.11.2026): login, the trusted host key and address, the system it
@@ -451,6 +465,9 @@ def _prepare(conn: sqlite3.Connection) -> None:
     if "pass_enc" not in before["devices"]:
         # Once (17.11.2026): a password used to sit in key_enc (auth 'password'); key and password are kept apart now.
         conn.execute("UPDATE devices SET pass_enc = key_enc, key_enc = '', auth = 'key' WHERE auth = 'password' AND key_enc != ''")
+    if "status" in _columns(conn, "agent_tasks"):
+        _convert_chain(conn)
+    conn.execute("CREATE INDEX IF NOT EXISTS agent_tasks_by_stage ON agent_tasks (project_id, stage)")
     if conn.execute("SELECT 1 FROM server_settings WHERE key = 'done.memory_names'").fetchone() is None:
         # Once (20.11.2026, KONZEPT-AGENTEN.md 9.10): the fixed memory files have English names in every project, so
         # the packages name one file (RULES.md) instead of two. Only at the top of Memory, only where the English
@@ -466,6 +483,67 @@ def _prepare(conn: sqlite3.Connection) -> None:
     # Safety net: the database itself refuses a second owner (it does not say who the owner is).
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_one_owner ON users (role) WHERE role = 'owner'")
     conn.commit()
+
+
+def _convert_chain(conn: sqlite3.Connection) -> None:
+    """Once (22.11.2026, the chain rebuilt, KONZEPT-AGENTEN.md 10): tasks have a stage and a hold instead of a status, a
+    round, a note, a deadline and a merge flag; there is no approval any more and no chat question in "waiting for you".
+    Unfinished old tasks (escalated, waiting for approval) wait for the user's decision; board items that are with a
+    task leave the board ("working"); open items that did not start by themselves become suggestions; problems of the
+    environment the roles named become entries in "For you"; old settings keys are rewritten. Remove once no backup from
+    before can be restored (after 27.12.2026)."""
+    import json
+    import time
+    from . import catalog   # read with this connection: catalog.provider() would open another one inside _prepare
+    now = int(time.time())
+
+    def provider_of(model: str) -> str | None:
+        for pid in catalog.PROVIDERS:
+            row = conn.execute("SELECT value FROM server_settings WHERE key = ?", (f"ai_catalog.{pid}",)).fetchone()
+            try:
+                listed = catalog.parse(pid, json.loads(row[0]) if row else catalog.SEED[pid])
+            except ValueError:
+                listed = catalog.parse(pid, catalog.SEED[pid])
+            if listed.model(model) is not None:
+                return pid
+        return None
+    conn.execute("DROP INDEX IF EXISTS agent_tasks_by_project")
+    conn.execute("ALTER TABLE agent_tasks RENAME COLUMN status TO stage")
+    conn.execute("UPDATE agent_tasks SET stage = 'merging', hold = 'decision', hold_why = 'old', held_since = ?"
+                 " WHERE stage = 'awaiting_approval'", (now,))
+    conn.execute("UPDATE agent_tasks SET stage = 'coding', hold = 'decision', hold_why = 'old', held_since = ?"
+                 " WHERE stage = 'escalated'", (now,))
+    conn.execute("UPDATE agent_tasks SET stage = 'merging' WHERE stage = 'documenting' AND merged = 0")
+    for column in ("round", "note", "deadline", "merged"):
+        conn.execute(f"ALTER TABLE agent_tasks DROP COLUMN {column}")
+    conn.execute("UPDATE agent_runs SET status = 'cancelled' WHERE status IN ('queued', 'running')")
+    conn.execute("UPDATE agent_runs SET purpose = 'doc' WHERE role = 'chef'")
+    conn.execute("UPDATE board_items SET status = 'working' WHERE status = 'open' AND id IN (SELECT item_id FROM"
+                 " agent_tasks WHERE item_id IS NOT NULL AND stage NOT IN ('done', 'cancelled'))")
+    if "auto" in _columns(conn, "board_items"):
+        conn.execute("UPDATE board_items SET status = 'proposed' WHERE status = 'open' AND auto = 0")
+        conn.execute("ALTER TABLE board_items DROP COLUMN auto")
+    for row in conn.execute("SELECT id, project_id, role, text, created_at FROM questions WHERE kind = 'note'"
+                            " AND status = 'open'").fetchall():
+        source = row["role"] if row["role"] in ("programmer", "tester", "reviewer") else "manager"
+        conn.execute("INSERT INTO todos (project_id, text, source, created_at) VALUES (?, ?, ?, ?)",
+                     (row["project_id"], row["text"][:500], source, row["created_at"]))
+    conn.execute("UPDATE questions SET status = 'delivered' WHERE kind = 'note' AND status = 'open'")
+    conn.execute("UPDATE questions SET status = 'dropped' WHERE task_id IS NULL AND status IN ('open', 'answered')")
+    conn.execute("DROP TABLE IF EXISTS run_stops")
+    conn.execute("DELETE FROM agent_settings WHERE key = 'strictness'")
+    for row in conn.execute("SELECT user_id, key, value FROM agent_settings WHERE (key LIKE 'model.%' OR key LIKE"
+                            " 'effort.%') AND length(key) - length(replace(key, '.', '')) = 1").fetchall():
+        kind, role = row["key"].split(".")
+        model_row = conn.execute("SELECT value FROM agent_settings WHERE user_id = ? AND key = ?",
+                                 (row["user_id"], f"model.{role}")).fetchone()
+        provider = provider_of(model_row["value"]) if model_row and model_row["value"] else None
+        if provider:
+            conn.execute("INSERT OR IGNORE INTO agent_settings (user_id, key, value) VALUES (?, ?, ?)",
+                         (row["user_id"], f"{kind}.{role}.{provider}", row["value"]))
+    conn.execute("DELETE FROM agent_settings WHERE (key LIKE 'model.%' OR key LIKE 'effort.%')"
+                 " AND length(key) - length(replace(key, '.', '')) = 1")
+    conn.execute("DELETE FROM server_settings WHERE key = 'run_minutes'")
 
 
 def fresh_id(conn: sqlite3.Connection, table: str, waiting: str) -> int:

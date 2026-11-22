@@ -19,6 +19,8 @@ ROLES = ("programmer", "tester", "reviewer")
 VIEWS = ROLES + ("me",)
 LIVE = ("queued", "running")          # runs shown under "Right now"; roles.js refreshes faster while there are any
 MAX_REPORT_SHOWN = 8000               # characters of a report shown in a run row
+MAX_THOUGHTS_SHOWN = 4000             # the newest characters of a run's thoughts shown
+STAGE_OF = {"programmer": "coding", "tester": "testing", "reviewer": "reviewing"}
 
 
 def _duration(lang: str, seconds: int) -> str:
@@ -70,22 +72,50 @@ def _run_row(lang: str, item: agents.RoleRun, now: int) -> str:
     return f'<li><details class="r-run">{head}{body}</details></li>'
 
 
-def _now(lang: str, runs: list[agents.RoleRun], now: int, current=None) -> str:
-    live = [r for r in runs if r.run.status in LIVE]
-    if not live and current is not None:   # nothing runs, but a task is on its way: where it stands (22.11.2026)
-        task = current[0]
-        return (f'<p class="r-now idle"><span class="r-dot" aria-hidden="true"></span>'
-                f'{esc(i18n.t(lang, "task_" + task.status))}: {esc(task.title)}</p>')
-    if not live:
-        return f'<p class="muted">{esc(i18n.t(lang, "role_idle"))}</p>'
+def _cancel(lang: str, task) -> str:
+    label = esc(i18n.t(lang, "task_cancel"))
+    return f'<button class="sq-btn stop r-cancel" type="button" data-cancel-task="{task.id}">{label}</button>'
+
+
+def _thoughts(lang: str, run) -> str:
+    """What the AI of a run wrote meanwhile (only shown, never context), the newest part."""
+    text = (run.thoughts or "").strip()
+    if not text:
+        return ""
+    return f'<pre class="r-thoughts">{esc(text[-MAX_THOUGHTS_SHOWN:])}</pre>'
+
+
+def _now(lang: str, role: str, runs: list[agents.RoleRun], now: int, where=None) -> str:
+    """What the role does in this project now: its running run (with its thoughts) or the one that waits, else where the
+    project's task stands when it is with this role (waiting for an answer, for the user, for a decision), else where
+    it is (it wanders programmer -> tester -> reviewer, Janis 22.11.2026) or nothing."""
+    live = [r for r in runs if r.run.status in LIVE and r.run.purpose in ("work", "result")]
+    mine = where is not None and where[0].stage == STAGE_OF.get(role)
     lines = []
-    for item in reversed(live):     # oldest first: the one that started first
+    for item in reversed(live):     # oldest first
         if item.run.status == "running":
             text = i18n.t(lang, "role_running", title=item.task_title, time=_duration(lang, now - (item.started_at or now)))
+            paused = where is not None and where[1] == "paused"
+            lines.append(f'<p class="r-now {"paused" if paused else "running"}"><span class="r-dot" aria-hidden="true">'
+                         f'</span>{esc(text)}{(" · " + esc(i18n.t(lang, "role_paused"))) if paused else ""}</p>'
+                         + _thoughts(lang, item.run))
         else:
-            text = i18n.t(lang, "role_queued", title=item.task_title)
-        lines.append(f'<p class="r-now {item.run.status}"><span class="r-dot" aria-hidden="true"></span>{esc(text)}</p>')
+            lines.append(f'<p class="r-now queued"><span class="r-dot" aria-hidden="true"></span>'
+                         f'{esc(i18n.t(lang, "role_queued", title=item.task_title))}</p>')
+    if not lines and where is not None:
+        task, state = where
+        role_name = i18n.t(lang, f"station_{workflow_role(task.stage)}")
+        lines.append(f'<p class="r-now idle"><span class="r-dot" aria-hidden="true"></span>'
+                     f'{esc(i18n.t(lang, "bs_" + state, role=role_name, title=task.title))}</p>')
+    if not lines:
+        return f'<p class="muted">{esc(i18n.t(lang, "role_idle"))}</p>'
+    if mine:
+        lines.append(f'<div class="r-actions">{_cancel(lang, where[0])}</div>')
     return "".join(lines)
+
+
+def workflow_role(stage: str) -> str:
+    return {"coding": "programmer", "testing": "tester", "reviewing": "reviewer"}.get(stage, "manager")
 
 
 def _usage(lang: str, usage: dict) -> str:
@@ -155,23 +185,51 @@ def _code_tile(lang: str, current) -> str:
             f'data-failed="{t("p_export_failed")}"></p></section>')
 
 
-def _task_tile(lang: str, current) -> str:
-    """The task the programmer works on and the context behind it, read only (list item 3f: tasks are given to the
-    manager, who puts them on the board; here you only follow them)."""
+def _task_tile(lang: str, current, where=None) -> str:
+    """The task on its way and the context behind it, read only (tasks are given to the manager, who puts them on the
+    board; here you follow them), with where it stands and "cancel"."""
     head = f'<header><h2>{esc(i18n.t(lang, "p_task"))}</h2>{ui.info_dot(i18n.t(lang, "p_task"), i18n.t(lang, "p_task_hint"))}</header>'
     if current is None:
-        return f'<section class="mtile glass p-task">{head}<p class="muted">{esc(i18n.t(lang, "p_task_none"))}</p></section>'
+        return (f'<section class="mtile glass p-task" id="role-programmer-task">{head}'
+                f'<p class="muted">{esc(i18n.t(lang, "p_task_none"))}</p></section>')
     task, details = current
-    facts = " · ".join((i18n.t(lang, f"task_{task.status}"), i18n.t(lang, "p_round", n=task.round)))
-    note = (f'<p class="p-note"><strong>{esc(i18n.t(lang, "p_note"))}:</strong> {esc(task.note)}</p>' if task.note else "")
+    state = where[1] if where is not None and where[0].id == task.id else "queued"
+    facts = [i18n.t(lang, "bs_" + state, role=i18n.t(lang, f"station_{workflow_role(task.stage)}"), title=task.title)]
+    if task.returns:
+        facts.append(i18n.t(lang, "p_returns", n=task.returns))
+    hint = (f'<p class="p-note"><strong>{esc(i18n.t(lang, "p_hint"))}:</strong> {esc(task.hint)}</p>' if task.hint else "")
     context = (f'<div class="p-context">{esc(details)}</div>' if details
                else f'<p class="muted">{esc(i18n.t(lang, "p_context_none"))}</p>')
-    return (f'<section class="mtile glass p-task">{head}<p class="p-title">{esc(task.title)}</p>'
-            f'<small class="p-facts">{esc(facts)}</small>{note}{context}</section>')
+    return (f'<section class="mtile glass p-task" id="role-programmer-task">{head}<p class="p-title">{esc(task.title)}</p>'
+            f'<small class="p-facts">{esc(" · ".join(facts))}</small>{hint}{context}'
+            f'<div class="r-actions">{_cancel(lang, task)}</div></section>')
+
+
+def _trail(lang: str, runs: list[agents.RoleRun]) -> str:
+    """The programmer's thoughts and steps (list item 3b, Janis 16.11.2026): of his running run, else of his last one."""
+    title = i18n.t(lang, "p_trail")
+    run = next((r.run for r in runs if r.run.status == "running" and r.run.purpose == "work"), None) \
+        or next((r.run for r in runs if r.run.purpose == "work" and r.run.thoughts), None)
+    body = (_thoughts(lang, run) if run is not None else "") \
+        or f'<p class="muted">{esc(i18n.t(lang, "p_trail_empty"))}</p>'
+    return (f'<section class="mtile glass m-grow p-trail-tile"><header><h2>{esc(title)}</h2>'
+            f'{ui.info_dot(title, i18n.t(lang, "p_trail_hint"))}</header>'
+            f'<div class="r-scroll" id="role-programmer-trail">{body}</div></section>')
+
+
+def _focus_tile(lang: str, focus: str) -> str:
+    """What the reviewer looks at in this project (Janis, 22.11.2026), saved as it is typed (roles.js)."""
+    title = i18n.t(lang, "r_focus")
+    return (f'<section class="mtile glass r-focus"><header><h2>{esc(title)}</h2>'
+            f'{ui.info_dot(title, i18n.t(lang, "r_focus_hint"))}</header>'
+            f'<textarea class="field-text" id="review-focus" rows="3" maxlength="{agents.MAX_FOCUS}" '
+            f'placeholder="{esc(i18n.t(lang, "r_focus_placeholder"))}" aria-label="{esc(title)}">{esc(focus)}</textarea>'
+            f'<p class="muted r-focus-state" id="review-focus-state" role="status" data-saved="{esc(i18n.t(lang, "r_focus_saved"))}">'
+            f'</p></section>')
 
 
 def _programmer(lang: str, settings: dict, runs: list[agents.RoleRun], usage: dict, ais: tuple[str, ...], now: int,
-                current) -> str:
+                current, where=None) -> str:
     """The programmer's tab as the documentation wants it (PROJEKT.md 11a, list items 3a, 3b, 3c, 3f and 4; Janis
     19.11.2026: every part in, what does not work yet as a placeholder): left what he does now with his settings and
     the task with its context, then the usage; in the middle the trail of his thoughts and steps and the preview; right
@@ -185,11 +243,6 @@ def _programmer(lang: str, settings: dict, runs: list[agents.RoleRun], usage: di
     runs_html = (f'<ol class="r-runs">{listed}</ol>' if listed
                  else f'<p class="muted">{esc(i18n.t(lang, "role_runs_empty"))}</p>')
     others = _ai_pills(lang, "programmer", mine["provider"], ais)
-    trail = ('<ol class="p-trail"><li class="thinking">' + esc(i18n.t(lang, "p_sample_think")) + '</li>'
-             '<li class="tool"><code>python3 -m unittest</code></li>'
-             '<li class="tool"><code>primes.py</code> · ' + esc(i18n.t(lang, "p_sample_edit")) + '</li>'
-             '<li class="thinking">' + esc(i18n.t(lang, "p_sample_check")) + '</li></ol>'
-             + f'<div class="p-row">{_soon_button(lang, "p_show_thoughts")}</div>')
     diff = ('<p class="p-stat"><span class="add">+12</span> <span class="del">−3</span> · '
             + esc(i18n.t(lang, "p_sample_files")) + '</p><pre class="p-diff"><span class="del">-    print(*primes)</span>\n'
             '<span class="add">+    print(", ".join(map(str, primes)))</span></pre>'
@@ -201,13 +254,13 @@ def _programmer(lang: str, settings: dict, runs: list[agents.RoleRun], usage: di
         f'<div class="mcol">'
         f'<section class="mtile glass r-head"><header><h2>{esc(i18n.t(lang, "role_now"))}</h2>'
         f'{ui.info_dot(name, i18n.t(lang, "role_hint_programmer"))}{tools}</header>'
-        f'<div id="role-programmer-now">{_now(lang, runs, now, current)}</div>'
+        f'<div id="role-programmer-now">{_now(lang, "programmer", runs, now, where)}</div>'
         f'<div class="p-ais" data-hscroll><small>{esc(i18n.t(lang, "p_other_ais"))}</small>{others}</div></section>'
-        f'{_task_tile(lang, current)}'
+        f'{_task_tile(lang, current, where)}'
         f'<section class="mtile glass"><header><h2>{esc(i18n.t(lang, "role_usage"))}</h2></header>'
         f'<div id="role-programmer-usage">{_usage(lang, usage)}</div></section>'
         f'</div><div class="mcol">'
-        f'{_soon(lang, "p_trail", "p_trail_hint", trail, "m-grow")}'
+        f'{_trail(lang, runs)}'
         f'{_soon(lang, "p_preview", "p_preview_hint", preview)}'
         f'</div><div class="mcol">'
         f'{_code_tile(lang, current)}'
@@ -220,12 +273,13 @@ def _programmer(lang: str, settings: dict, runs: list[agents.RoleRun], usage: di
 
 
 def render_role(lang: str, role: str, settings: dict, runs: list[agents.RoleRun], usage: dict,
-                ais: tuple[str, ...] = (catalog.DEFAULT_PROVIDER,), now: int | None = None, current=None) -> str:
+                ais: tuple[str, ...] = (catalog.DEFAULT_PROVIDER,), now: int | None = None, current=None, where=None,
+                focus: str = "") -> str:
     """One role's view. `settings` is agents.settings(user_id); `runs` agents.role_runs(...) for this project;
-    `current` agents.current_task(...) for the programmer's tab."""
+    `current` agents.current_task(...), `where` agents.where(...) for this project; `focus` the reviewer's focus."""
     now = int(now if now is not None else time.time())
     if role == "programmer":
-        return _programmer(lang, settings, runs, usage, ais, now, current)
+        return _programmer(lang, settings, runs, usage, ais, now, current, where)
     mine = settings["roles"][role]
     picker = ui.model_picker(lang, f"role-{role}", mine["model"], mine.get("effort", ""), providers=(mine["provider"],),
                              allowed=settings.get("models"), names=settings.get("model_names"))
@@ -241,7 +295,8 @@ def render_role(lang: str, role: str, settings: dict, runs: list[agents.RoleRun]
         f'<div class="mcol">'
         f'<section class="mtile glass r-head"><header><h2>{esc(i18n.t(lang, "role_now"))}</h2>'
         f'{ui.info_dot(name, i18n.t(lang, f"role_hint_{role}"))}{tools}</header>'
-        f'<div id="role-{role}-now">{_now(lang, runs, now)}</div></section>'
+        f'<div id="role-{role}-now">{_now(lang, role, runs, now, where)}</div></section>'
+        f'{_focus_tile(lang, focus) if role == "reviewer" else ""}'
         f'<section class="mtile glass"><header><h2>{esc(i18n.t(lang, "role_usage"))}</h2></header>'
         f'<div id="role-{role}-usage">{_usage(lang, usage)}</div></section>'
         f'</div><div class="mcol">'

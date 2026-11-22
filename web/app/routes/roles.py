@@ -25,3 +25,9 @@ def role_settings(role: str, enabled: str = Form(""), model: str = Form(""), net
     mine = agents.settings(user.id)["roles"][role]
     return ok(enabled="1" if mine["enabled"] else "0", model=mine["model"], effort=mine["effort"], net=mine["net"],
               provider=mine["provider"])
+
+
+@router.post("/projects/{project_id}/review-focus")
+def review_focus(project_id: int, text: str = Form(""), user: users.User = Depends(api_user)):
+    """What the reviewer of this project looks at (Janis, 22.11.2026), saved as it is typed; "" = the default."""
+    return ok() if agents.set_review_focus(user.id, project_id, text) else fail(404)
