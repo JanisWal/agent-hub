@@ -272,13 +272,38 @@
 
   // "More AIs": the arrow in the Claude block of the drawer opens or closes the list of the other services.
   // On the document, so it still works after the rows were swapped (ailink.js, "use as standard").
+  // It glides (Janis, 22.11.2026: the tiles jumped apart and together): the first AI's block grows to its tools and
+  // usage, the list grows out of nothing, both with the spring and interruptible; closed, the list is hidden again.
+  var aiSprings = [];
+  function glideHeight(el, from, to, done) {
+    var finish = function () { el.style.height = ""; el.style.overflow = ""; if (done) done(); };
+    if (!window.Motion || Motion.reduced() || Math.abs(from - to) < 1) { finish(); return; }
+    el.style.overflow = "hidden";
+    el.style.height = from + "px";
+    var s = Motion.spring(from, Motion.MOVE, function (v) {
+      el.style.height = Math.max(0, v) + "px";
+      if (!s.active && v === to) finish();
+    }, 0.5);
+    aiSprings.push(s);
+    s.to(to);
+  }
   document.addEventListener("click", function (event) {
     var aiToggle = event.target.closest("#ai-toggle");
     var aiMore = document.getElementById("ai-more");
     if (!aiToggle || !aiMore) return;
-    var open = aiMore.hidden;
-    aiMore.hidden = !open;
+    var first = aiToggle.closest(".service") || aiToggle.parentElement;
+    var open = aiToggle.getAttribute("aria-expanded") !== "true";
+    aiSprings.forEach(function (s) { s.stop(); });   // a click during the glide turns it around from where it is
+    aiSprings = [];
+    var fromFirst = first.getBoundingClientRect().height;
+    var fromMore = aiMore.hidden ? 0 : aiMore.getBoundingClientRect().height;
+    [first, aiMore].forEach(function (el) { el.style.height = ""; el.style.overflow = ""; });
+    aiMore.hidden = false;
     aiToggle.setAttribute("aria-expanded", String(open));
+    var toFirst = first.getBoundingClientRect().height;
+    var toMore = open ? aiMore.getBoundingClientRect().height : 0;
+    glideHeight(first, fromFirst, toFirst);
+    glideHeight(aiMore, fromMore, toMore, open ? null : function () { aiMore.hidden = true; });
   });
 
   // Settings drawer: slides out of the top right corner, the handle rides along.
