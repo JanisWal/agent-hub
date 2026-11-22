@@ -37,6 +37,19 @@ class SimilarTest(unittest.TestCase):
         self.assertIn("never plan a separate polish", prompts.BOARD)
         self.assertIn("env", prompts.ALLOWED[("programmer", "run")])
 
+    def test_missing_files_and_looks_are_never_work_for_the_user(self):
+        # Janis 22.11.2026: the roles waited for a CSV nobody had and left browser checks to the user.
+        self.assertIn("make a small sample of your own", prompts.RUN_FILES)
+        self.assertIn("A missing file, a look in a browser", prompts.ENV_RULE)
+        self.assertIn("never leave them to the user", prompts.BROWSER)
+        self.assertIn("--press Tab", prompts.BROWSER)
+        self.assertIn("never work for the user", prompts.ROLES["reviewer"])
+        self.assertNotIn("<env>", prompts.ROLES["tester"] + prompts.ROLES["reviewer"])
+        self.assertIn("is no precondition", prompts.BOARD)
+        self.assertIn("make a small sample", prompts.DECIDE)
+        self.assertIn("never recommend that the user check looks", prompts.EXPLAIN)
+        self.assertNotIn("checks it by hand", prompts.EXPLAIN)
+
 
 class LoopTest(unittest.TestCase):
     def setUp(self):
