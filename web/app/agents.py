@@ -211,15 +211,19 @@ def role_provider_in(conn: sqlite3.Connection, user_id: int, role: str, chosen_o
 
 def settings(user_id: int) -> dict:
     """{"autonomy", "provider", "roles": {role: {"model", "effort", "net", "provider", "chosen"}},
-    "models", "model_names"}, defaults filled in. "models": per AI the model ids his account offers (None = not known
+    "models", "model_names"}, defaults filled in. A role's "provider" is the AI that answers now (aichoice.acting_in):
+    while the chosen one's quota rests, "resting" names it and "rest_left" says for how many more seconds. "models": per AI the model ids his account offers (None = not known
     yet), for the drop-downs."""
     with db.connect() as conn:
         roles = {}
         for r in workflow.ROLES:
             mine = role_provider_in(conn, user_id, r)
-            model, effort = _choice(conn, user_id, r, mine)
+            acting = aichoice.acting_in(conn, user_id, mine)   # while its quota rests, the AI standing in for it
+            model, effort = _choice(conn, user_id, r, acting)
             roles[r] = {"model": model, "effort": effort, "net": net_in(conn, user_id, r),
-                        "provider": mine, "chosen": role_provider_in(conn, user_id, r, chosen_only=True) or ""}
+                        "provider": acting, "chosen": role_provider_in(conn, user_id, r, chosen_only=True) or "",
+                        "resting": mine if acting != mine else "",
+                        "rest_left": aichoice.rest_left(conn, user_id, mine) if acting != mine else 0}
         return {"autonomy": autonomy_in(conn, user_id), "provider": aichoice.default_in(conn, user_id), "roles": roles,
                 "models": {p: models.allowed(conn, user_id, p) for p in catalog.PROVIDERS},
                 "model_names": {f"own-{r['slot']}": r["label"] for r in ai_link.custom_rows(conn, user_id)}}
