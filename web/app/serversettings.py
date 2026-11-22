@@ -17,7 +17,9 @@ REQUEST_MB = (16, 32, 64, 90, 190, 490)   # largest request in MB
 CHOICES = {
     "ai_rest": (0, 15, 30, 60, 120, 300),            # minutes a used-up AI goes to the end of the order (aichoice.rest)
     "export_mb": (10, 25, 50, 100, 250, 500),        # the largest ZIP of a project's code (exports.py)
-    "run_memory_mb": (480, 768, 1024, 2048, 4096, 8192),   # memory of one AI run's container (runner/launcher.py)
+    # memory of one AI run's container (runner/launcher.py); 384 since 22.11.2026: on a 1 GB server 480 left web and
+    # runner too little, and the memory card stalled the whole server (PROJEKT.md 11)
+    "run_memory_mb": (384, 480, 768, 1024, 2048, 4096, 8192),
     "run_cpus": (1, 2, 4, 8),                        # processor cores of one run
     "run_pids": (256, 512, 1024, 4096),              # processes and threads of one run (a browser needs many)
     # No fixed time for work that moves on (Janis, 22.11.2026: a big task gets the time it needs): a run ends when its

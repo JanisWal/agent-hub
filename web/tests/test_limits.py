@@ -50,6 +50,8 @@ class LimitsTest(unittest.TestCase):
         limits = serversettings.run_limits()
         self.assertEqual((limits["memory_mb"], limits["cpus"], limits["silence_seconds"], limits["max_seconds"]),
                          (2048, 4, 1800, 8 * 3600))
+        self.assertEqual(post({"run_memory_mb": "384"}, self.owner), {"ok": True})   # the smaller step for a 1 GB server
+        self.assertEqual(serversettings.run_limits()["memory_mb"], 384)
 
     def test_every_job_carries_them(self):
         serversettings.set_choice("run_memory_mb", 1024, serversettings.CHOICES["run_memory_mb"])
