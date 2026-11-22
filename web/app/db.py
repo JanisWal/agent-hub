@@ -322,6 +322,29 @@ CREATE TABLE IF NOT EXISTS tool_health (
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (provider, tool)
 );
+-- The usage ledger (usage.py, 22.11.2026): one row per call of an AI, from the numbers its program reported; never
+-- deleted with the chat history, gone with the account, without a project when the project goes.
+CREATE TABLE IF NOT EXISTS ai_usage (
+    id          INTEGER PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    project_id  INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+    provider    TEXT NOT NULL,
+    model       TEXT NOT NULL DEFAULT '',
+    credential  TEXT NOT NULL DEFAULT 'plan',
+    kind        TEXT NOT NULL,
+    role        TEXT NOT NULL DEFAULT '',
+    purpose     TEXT NOT NULL DEFAULT '',
+    ref         INTEGER,
+    tokens_in   INTEGER NOT NULL DEFAULT 0,
+    tokens_out  INTEGER NOT NULL DEFAULT 0,
+    cache_read  INTEGER NOT NULL DEFAULT 0,
+    cache_write INTEGER NOT NULL DEFAULT 0,
+    seconds     INTEGER NOT NULL DEFAULT 0,
+    partial     INTEGER NOT NULL DEFAULT 0,
+    created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS ai_usage_by_user ON ai_usage (user_id, created_at);
+CREATE INDEX IF NOT EXISTS ai_usage_by_project ON ai_usage (project_id, role);
 CREATE TABLE IF NOT EXISTS server_settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -468,6 +491,22 @@ def _prepare(conn: sqlite3.Connection) -> None:
     if "status" in _columns(conn, "agent_tasks"):
         _convert_chain(conn)
     conn.execute("CREATE INDEX IF NOT EXISTS agent_tasks_by_stage ON agent_tasks (project_id, stage)")
+    if conn.execute("SELECT 1 FROM server_settings WHERE key = 'done.usage_ledger'").fetchone() is None:
+        # Once (22.11.2026, usage.py): the numbers kept so far go into the ledger, so nothing of before is missing
+        # (the cache part is not known for them: 0). Remove once no backup from before can be restored (after 27.12.2026).
+        conn.execute(
+            "INSERT INTO ai_usage (user_id, project_id, provider, model, credential, kind, role, purpose, ref, tokens_in,"
+            " tokens_out, seconds, created_at) SELECT p.user_id, t.project_id, r.provider, r.model, r.credential, 'run',"
+            " r.role, r.purpose, r.id, r.tokens_in, r.tokens_out, r.seconds, COALESCE(r.finished_at, r.created_at)"
+            " FROM agent_runs r JOIN agent_tasks t ON t.id = r.task_id JOIN projects p ON p.id = t.project_id"
+            " WHERE r.tokens_in + r.tokens_out > 0")
+        conn.execute(
+            "INSERT INTO ai_usage (user_id, project_id, provider, model, credential, kind, role, ref, tokens_in,"
+            " tokens_out, created_at) SELECT m.user_id, m.project_id, m.provider, m.model, m.credential,"
+            " CASE m.kind WHEN 'status' THEN 'status' WHEN 'chat' THEN 'chat' ELSE 'folders' END, 'chef', m.id,"
+            " m.tokens_in, m.tokens_out, m.created_at FROM chat_messages m JOIN users u ON u.id = m.user_id"
+            " WHERE m.tokens_in + m.tokens_out > 0 AND m.status IN ('done', 'failed')")
+        conn.execute("INSERT INTO server_settings (key, value) VALUES ('done.usage_ledger', '1')")
     if conn.execute("SELECT 1 FROM server_settings WHERE key = 'done.roles_on'").fetchone() is None:
         # Once (22.11.2026, Janis): tester, reviewer and manager are always on; the old on/off settings go. Remove once
         # no backup from before can be restored (after 27.12.2026).

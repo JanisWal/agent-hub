@@ -51,14 +51,17 @@ def claim(can_mac: str = Form("0")):
 def finish(run_id: int, result: str = Form(""), report: str = Form(""), tokens_in: int = Form(0),
            tokens_out: int = Form(0), seconds: int = Form(0), diff_stat: str | None = Form(None),
            diff: str | None = Form(None), tests_exit: int = Form(-1), tests: str = Form(""),
-           committed: str = Form(""), markers: str = Form("")):
+           committed: str = Form(""), markers: str = Form(""), cache_read: int = Form(0), cache_write: int = Form(0),
+           partial: str = Form("")):
     """The end of a run (agents.finish_run). `committed`: "1"/"0" after a run that commits, "" otherwise; `markers`:
-    files that still have conflict markers, one per line."""
+    files that still have conflict markers, one per line; `cache_read`/`cache_write`: the cache part of the input;
+    `partial`: "1" when the runner ended the run and counted what it saw in the stream."""
     done = agents.finish_run(run_id, result[:20], report, tokens_in, tokens_out, seconds,
                              change=None if diff is None else (diff_stat or "", diff),
                              tests=(tests_exit, tests) if tests_exit >= 0 else None,
                              committed=None if committed == "" else committed == "1",
-                             markers=[m for m in markers.split("\n") if m.strip()][:50])
+                             markers=[m for m in markers.split("\n") if m.strip()][:50],
+                             cache=(cache_read, cache_write), partial=partial == "1")
     return ok() if done else fail(409)   # the run is over already
 
 
@@ -133,11 +136,13 @@ def chat_thoughts(chat_id: int, text: str = Form("")):
 @router.post("/chat/{chat_id}/finish")
 def chat_finish(chat_id: int, success: str = Form("0"), answer: str = Form(""), tokens_in: int = Form(0),
                 tokens_out: int = Form(0), tools_asked: str = Form(""),
-                tools_seen: str | None = Form(None)):
+                tools_seen: str | None = Form(None), cache_read: int = Form(0), cache_write: int = Form(0),
+                partial: str = Form("")):
     """`tools_seen`: the tools the AI's program named at its start (comma separated), missing = it named none we
     could read (toolcheck.py)."""
     tools = (_names(tools_asked), _names(tools_seen)) if isinstance(tools_seen, str) and tools_asked else None
-    return ok() if chat.finish(chat_id, success == "1", answer, tokens_in, tokens_out, tools) else fail(409)
+    return ok() if chat.finish(chat_id, success == "1", answer, tokens_in, tokens_out, tools,
+                               (cache_read, cache_write), partial == "1") else fail(409)
 
 
 def _names(text: str) -> list[str]:

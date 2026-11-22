@@ -14,7 +14,7 @@ import time
 from dataclasses import dataclass, field
 
 from . import (agents, ai_link, aichoice, autofolders, board, catalog, credentials, db, devices, failures, files, i18n,
-               memory, models, prompts, reply, serversettings, statusnote, toolcheck)
+               memory, models, prompts, reply, serversettings, statusnote, toolcheck, usage)
 
 # The manager is the role "chef": model and effort level are settings of the user (agents.py, list in catalog.py).
 # What the manager is told (rules, memory, project) is built in prompts.py, the same for every AI.
@@ -225,6 +225,9 @@ def claim_next(now: int | None = None) -> ChatJob | None:
     return None
 
 
+USAGE_KIND = {"chat": "chat", "status": "status"}   # anything else is a plan for the folders (autofolders.KIND)
+
+
 def requeue_running(now: int | None = None) -> int:
     """Runner: it started again and has no container of before; the answers it was writing are asked again."""
     now = int(now if now is not None else time.time())
@@ -246,18 +249,25 @@ def add_thoughts(chat_id: int, text: str) -> bool:
 
 
 def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: int = 0,
-           tools: tuple[list, list | None] | None = None) -> bool:
+           tools: tuple[list, list | None] | None = None, cache: tuple[int, int] = (0, 0), partial: bool = False) -> bool:
     """Runner: the answer (or the reason for failure). False if the question is not running any more.
 
     A good answer is read for two things (memory.py). A new memory file inside <memory> is saved as the project's
     MEMORY.md and cut out of the answer. If the manager asks for files with <read>, the question is put back in
     the queue with their contents (at most READ_ROUNDS times, the tokens of every round are added up) and the
-    user only sees the final answer. The user and the project come from the question, never from the runner."""
+    user only sees the final answer. The user and the project come from the question, never from the runner. Every
+    call goes into the usage ledger (usage.py) with what it used, `cache` (read, written) included; `partial`: the
+    answer ran out of time and the runner counted what it saw."""
     tokens_in, tokens_out = max(0, int(tokens_in)), max(0, int(tokens_out))
     with db.connect() as conn:
         row = conn.execute("SELECT * FROM chat_messages WHERE id = ? AND status = 'running'", (chat_id,)).fetchone()
         if row is None:
             return False
+        usage.record(conn, user_id=row["user_id"], project_id=row["project_id"], provider=row["provider"],
+                     model=row["model"], credential=row["credential"], kind=USAGE_KIND.get(row["kind"], "folders"),
+                     role="chef", ref=chat_id, tokens_in=tokens_in, tokens_out=tokens_out, cache_read=cache[0],
+                     cache_write=cache[1], partial=partial,
+                     seconds=int(time.time()) - (row["started_at"] or int(time.time())))
     if tools is not None:   # the tools the program named at its start (toolcheck.py)
         toolcheck.record(row["provider"], tools[0], tools[1])
     with db.connect() as conn:

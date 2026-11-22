@@ -81,9 +81,11 @@ class RunnerApiTest(unittest.TestCase):
         self.assertIn("{files}", job["conflict_note"])                  # the runner adds only the names
         self.assertIsNone(runner.claim(can_mac="1")["job"])             # one run at a time
         self.assertEqual(runner.run_alive(job["run_id"], "denkt nach")["state"], "run")
-        plain = dict(diff_stat=None, diff=None, tests_exit=-1, tests="", committed="", markers="")
-        self.assertEqual(runner.finish(job["run_id"], "done", "ok", 5, 6, 7, "a.py | 1 +", "+x", 0, "ok", "1", ""),
+        plain = dict(diff_stat=None, diff=None, tests_exit=-1, tests="", committed="", markers="", cache_read=0,
+                     cache_write=0, partial="")
+        self.assertEqual(runner.finish(job["run_id"], "done", "ok", 5, 6, 7, "a.py | 1 +", "+x", 0, "ok", "1", "", 4, 0, ""),
                          {"ok": True})
+        self.assertEqual(agents.usage(self.a.id)["cache_read"], 4)          # into the usage ledger, cache part apart
         self.assertEqual(runner.finish(job["run_id"], "done", "", 0, 0, 0, **plain).status_code, 409)   # only once
         self.assertEqual(runner.run_alive(job["run_id"], "")["state"], "stop")
         nxt = runner.claim()["job"]

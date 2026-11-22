@@ -458,14 +458,15 @@ class RunTest(unittest.TestCase):
         self.assertIn("half.py", git(f"--git-dir={self.work.repo(1)}", "ls-tree", "--name-only", "agent/task-7"))
         self.assertNotIn("tests_exit", finish)
 
-    def test_a_cancelled_run_reports_nothing(self):
+    def test_a_cancelled_run_reports_only_what_it_used(self):
         hub = FakeHub(job=self.job("reviewer"))
         r = self.runner(hub)
         r.run_agent = lambda command, prompt, watch: ("", -9, "stop")
         if os.geteuid() != 0:
             self.skipTest("needs root (the folder is handed to the run user)")
         r.handle_runs()
-        self.assertEqual(hub.posted("/runner/runs/3/finish"), [])
+        [finish] = hub.posted("/runner/runs/3/finish")                         # the hub counts it, nothing else
+        self.assertEqual((finish["result"], finish["tokens_in"]), ("stopped", 0))
 
     def test_a_brief_run_of_claude_is_a_chat_container_with_the_runs_name(self):
         cmd = launcher.build_chat_command(chat_id=3, user_id=5, model="sonnet", ticket=TICKET, mode="brief",

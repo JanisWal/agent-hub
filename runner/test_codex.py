@@ -103,9 +103,10 @@ class CodexTest(unittest.TestCase):
             self.assertIn(part, config)
         self.assertIn('sandbox_mode = "read-only"', codex_entry.config("m", "", "chat-brief"))
         events = [{"type": "item.completed", "item": {"type": "agent_message", "text": "Fertig"}},
-                  {"type": "turn.completed", "usage": {"input_tokens": 30, "output_tokens": 5}}]
+                  {"type": "turn.completed", "usage": {"input_tokens": 30, "cached_input_tokens": 20, "output_tokens": 5}}]
         self.assertEqual(codex_entry.summary(events, 0, ""),
-                         {"ok": True, "text": "Fertig", "tokens_in": 30, "tokens_out": 5, "outcome": "finished", "error": ""})
+                         {"ok": True, "text": "Fertig", "tokens_in": 30, "tokens_out": 5, "cache_read": 20,
+                          "outcome": "finished", "error": ""})
         plan = codex_entry.summary([{"type": "error", "message": "unexpected status 403 Forbidden"}], 1, "")
         self.assertEqual(plan["outcome"], "plan")
         ok, text, _, _, login = launcher.parse_vibe(json.dumps(plan))
