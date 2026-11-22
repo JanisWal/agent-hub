@@ -89,7 +89,7 @@ class UsageTest(unittest.TestCase):
         with db.connect() as conn:
             usage.record(conn, user_id=self.a.id, project_id=self.pa.id, provider="claude", model="sonnet",
                          credential="plan", kind="chat", tokens_in=12000, tokens_out=345)
-        self.assertIn("Verbrauch: heute 12.3k · 7 Tage 12.3k Token", ui.settings_bar(self.a))
+        self.assertIn("Verbrauch: heute 12,3 Tsd. · 7 Tage 12,3 Tsd. Token", ui.settings_bar(self.a))
         self.assertNotIn("Verbrauch:", ui.settings_bar(self.b))
 
     def test_it_goes_with_the_account_and_stays_without_its_project(self):

@@ -450,6 +450,8 @@ STRINGS = {
         "dur_seconds": "{n} s",
         "dur_minutes": "{n} Min.",
         "dur_hours": "{n} Std.",
+        "num_thousand": "{n} Tsd.",
+        "num_million": "{n} Mio.",
         "ago": "vor {time}",
         "just_now": "gerade eben",
         "me_title": "Deine Arbeiten",
@@ -1347,6 +1349,8 @@ STRINGS = {
         "dur_seconds": "{n} s",
         "dur_minutes": "{n} min",
         "dur_hours": "{n} h",
+        "num_thousand": "{n}k",
+        "num_million": "{n}M",
         "ago": "{time} ago",
         "just_now": "just now",
         "me_title": "Your jobs",
@@ -1798,6 +1802,21 @@ STRINGS = {
         "confirm_empty_trash": "Empty the trash for good? This cannot be undone.",
     },
 }
+
+
+def decimal(lang: str, value: float, digits: int = 1) -> str:
+    """A number with `digits` decimals as the user reads it: 1,4 in German, 1.4 in English."""
+    text = f"{value:.{digits}f}"
+    return text.replace(".", ",") if lang == "de" else text
+
+
+def count(lang: str, n: int) -> str:
+    """A large count short: 950, 12,3 Tsd., 24,5 Mio. (12.3k and 24.5M in English); tokens in the tabs and the drawer."""
+    if n >= 1_000_000:
+        return t(lang, "num_million", n=decimal(lang, n / 1e6))
+    if n >= 1000:
+        return t(lang, "num_thousand", n=decimal(lang, n / 1000))
+    return str(n)
 
 
 def from_header(accept_language: str | None) -> str:

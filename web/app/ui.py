@@ -565,7 +565,7 @@ def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | Non
         as_default = several and kind(name) != kind(top)
         line = (api or {}).get(name, "")
         spent = (used or {}).get(name)
-        shown = line + (f'<span class="service-usage">{esc(i18n.t(lang, "ai_usage_line", today=_tokens(spent["today"]), week=_tokens(spent["week"])))}</span>'
+        shown = line + (f'<span class="service-usage">{esc(i18n.t(lang, "ai_usage_line", today=i18n.count(lang, spent["today"]), week=i18n.count(lang, spent["week"])))}</span>'
                         if spent and spent["week"] else "")
         if name == "claude":
             return _claude_row(lang, claude_state, first, as_default, shown, bool(line))
@@ -588,11 +588,6 @@ def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | Non
     more = f'<div class="ai-more" id="ai-more" hidden>\n        {others}\n      </div>'
     services = f'<div class="ai-services" id="ai-services">{row(top, True)}\n      {more}</div>'   # swapped as one
     return "\n      ".join([services, pause, clear])
-
-
-def _tokens(n: int) -> str:
-    """12345 -> "12.3k", 2.5 million -> "2.5M" (the same short form as the roles' tabs)."""
-    return f"{n / 1e6:.1f}M" if n >= 1_000_000 else f"{n / 1000:.1f}k" if n >= 1000 else str(n)
 
 
 def _admin_button(user: User) -> str:

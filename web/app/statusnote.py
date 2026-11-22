@@ -12,7 +12,7 @@ whose facts changed since the last round (`fingerprint`, a hash of the digest wi
 worked on (`active`: a task of it is on its way, or its manager chat was used in the last ACTIVE_WINDOW seconds) every
 ACTIVE_GAP (Janis, 22.11.2026: write, check whether work goes on, wait two minutes, write ...); otherwise at most every
 MIN_GAP, after an important event (a task waits for the user, escalated or finished, a run failed) already after
-URGENT_GAP, and at most DAILY_MAX such quiet rounds per user and day. The user's "write it again" has no limit
+URGENT_GAP and whatever the cap, and at most DAILY_MAX such quiet rounds per user and day. The user's "write it again" has no limit
 (`request`). A round needs no free AI slot: it is small and runs beside the agent runs (chat.claim_next). A project
 with nothing in it gets no round. A round is a chat job of the kind 'status' (chat.py): the user's standard
 AI, its cheapest model (catalog.light), no tools, one turn, no files (mode 'brief', runner/launcher.py). So a quiet
@@ -34,7 +34,7 @@ SCAN_EVERY = 60           # seconds between two looks for projects that need a r
 ACTIVE_GAP = 120          # a project being worked on gets a new round this often (Janis, 22.11.2026)
 ACTIVE_WINDOW = 600       # its manager chat used this recently counts as being worked on
 MIN_GAP = 6 * 3600        # a project gets a new round at most this often (3 h until 20.11.2026: tokens)
-URGENT_GAP = 20 * 60      # ... or this often after an important event
+URGENT_GAP = ACTIVE_GAP   # ... or this soon after an important event, without the daily cap (20 min until 22.11.2026)
 FAILED_GAP = 6 * 3600     # after a round that brought nothing, wait this long
 DAILY_MAX = 6             # rounds per user and day (12 until 20.11.2026)
 PER_SCAN = 3              # rounds queued per look
@@ -274,6 +274,7 @@ def scan(conn: sqlite3.Connection, now: int | None = None, force: bool = False) 
                             (pid,)).fetchone()
         mark = fingerprint(conn, uid, pid, now)
         busy = active(conn, pid, now)
+        urgent = False
         if last is not None:
             if last["fingerprint"] == mark:
                 continue                                   # nothing new to say
@@ -283,10 +284,13 @@ def scan(conn: sqlite3.Connection, now: int | None = None, force: bool = False) 
             elif busy:
                 wait = ACTIVE_GAP
             else:
-                wait = URGENT_GAP if _urgent_since(conn, pid, last["created_at"]) else MIN_GAP
+                urgent = _urgent_since(conn, pid, last["created_at"])
+                wait = URGENT_GAP if urgent else MIN_GAP
             if gap < wait:
                 continue
-        if not busy and _rounds_today(conn, uid, now) >= DAILY_MAX:
+        # The round after work ended (a task finished or waits) always comes, also when the busy rounds of the day
+        # used up the cap (22.11.2026: "the test is still running" stood for hours after the task was done).
+        if not busy and not urgent and _rounds_today(conn, uid, now) >= DAILY_MAX:
             continue
         if _queue(conn, uid, pid, now):
             queued += 1

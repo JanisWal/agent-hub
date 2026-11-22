@@ -29,17 +29,13 @@ def _duration(lang: str, seconds: int) -> str:
         return i18n.t(lang, "dur_seconds", n=seconds)
     if seconds < 90 * 60:
         return i18n.t(lang, "dur_minutes", n=round(seconds / 60))
-    return i18n.t(lang, "dur_hours", n=round(seconds / 3600, 1))
+    return i18n.t(lang, "dur_hours", n=i18n.decimal(lang, seconds / 3600))
 
 
 def _ago(lang: str, then: int | None, now: int) -> str:
     if not then:
         return ""
     return i18n.t(lang, "just_now") if now - then < 60 else i18n.t(lang, "ago", time=_duration(lang, now - then))
-
-
-def _tokens(n: int) -> str:
-    return f"{n / 1000:.1f}k" if n >= 1000 else str(n)
 
 
 def _result(lang: str, item: agents.RoleRun) -> tuple[str, str]:
@@ -59,7 +55,8 @@ def _run_row(lang: str, item: agents.RoleRun, now: int) -> str:
     if run.seconds:
         facts.append(_duration(lang, run.seconds))
     if run.tokens_in or run.tokens_out:
-        facts.append(i18n.t(lang, "role_tokens", tin=_tokens(run.tokens_in), tout=_tokens(run.tokens_out)))
+        facts.append(i18n.t(lang, "role_tokens", tin=i18n.count(lang, run.tokens_in),
+                            tout=i18n.count(lang, run.tokens_out)))
     found = catalog.find(run.model)
     model = "" if found and found[0].id == "custom" else (found[1].name if found else run.model)   # own AI: its name says it
     facts.append(" ".join(x for x in (ui.ai_name(lang, item.provider) if item.provider else "", model) if x))
@@ -121,10 +118,10 @@ def workflow_role(stage: str) -> str:
 def _usage(lang: str, usage: dict) -> str:
     if not usage.get("runs"):
         return f'<p class="muted">{esc(i18n.t(lang, "role_usage_none"))}</p>'
-    line = i18n.t(lang, "role_usage_line", runs=usage["runs"], tin=_tokens(usage["tokens_in"]),
-                  tout=_tokens(usage["tokens_out"]), time=_duration(lang, usage["seconds"]))
+    line = i18n.t(lang, "role_usage_line", runs=usage["runs"], tin=i18n.count(lang, usage["tokens_in"]),
+                  tout=i18n.count(lang, usage["tokens_out"]), time=_duration(lang, usage["seconds"]))
     if usage.get("cache_read"):   # the part of the input read from the AI's cache (it weighs less on the quota)
-        line += " · " + i18n.t(lang, "role_usage_cache", n=_tokens(usage["cache_read"]))
+        line += " · " + i18n.t(lang, "role_usage_cache", n=i18n.count(lang, usage["cache_read"]))
     return f"<p>{esc(line)}</p>"
 
 

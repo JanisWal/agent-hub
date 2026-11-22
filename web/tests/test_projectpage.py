@@ -443,7 +443,7 @@ class RoleViewsTest(unittest.TestCase):
         self.assertIn("Fertig", prog)
         self.assertIn("Bestanden", tester)
         self.assertIn("Läufe: 1", prog)
-        self.assertIn("1.2k", prog)
+        self.assertIn("1,2 Tsd.", prog)
         reviewer = page[page.index('id="view-reviewer"'):page.index('id="view-me"')]
         self.assertIn("Prüfer", page)
         self.assertIn('class="r-now queued"', reviewer)                       # the reviewer's run waits
