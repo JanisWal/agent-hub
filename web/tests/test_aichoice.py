@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 
 from app import (agents, ai_link, aichoice, board, catalog, chat, claude_link, db, files, i18n, managerpage, memory,
-                 projectpage, projects, rolepage, ui, users)
+                 projectpage, projects, rolepage, statusnote, ui, users)
 from app.routes import ai as ai_routes
 from app.routes import board as board_routes
 from app.routes import chat as chat_routes
@@ -233,6 +233,7 @@ class ParallelTest(Base):
 
     def setUp(self):
         super().setUp()
+        statusnote._LAST_SCAN["at"] = 2 ** 40   # no status round in between (it ran only when another test set this)
         self.claude(self.a)
         self.claude(self.b)
 
