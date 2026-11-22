@@ -254,7 +254,8 @@ class ChatOutputTest(unittest.TestCase):
             self.assertIn(flag, cmd)
         self.assertEqual(cmd[cmd.index("--thinking-display") + 1], "summarized")
         run = L.build_command(run_id=1, user_id=2, model="haiku", work_dir="/opt/agent-hub/work/1", ticket=TICKET)
-        self.assertEqual(run[run.index("--output-format") + 1], "json")      # agent runs keep the one JSON object
+        self.assertEqual(run[run.index("--output-format") + 1], "stream-json")   # agent runs stream too (22.11.2026):
+        self.assertIn("--include-partial-messages", run)                          # the runner sees that they move on
 
     def test_the_result_line_of_a_stream(self):
         lines = [{"type": "system", "subtype": "init"},
@@ -321,16 +322,17 @@ class ChatOutputTest(unittest.TestCase):
         result = self.result("tester", answer("All good.\nChecked 3 things.\nRESULT: pass"))
         self.assertEqual(result, ("pass", "All good.\nChecked 3 things.", 15, 3))
 
-    def test_everything_unclear_is_failed(self):
+    def test_everything_unclear_is_failed_and_a_missing_line_is_none(self):
         cases = [
             ("programmer", "not json at all"),
-            ("programmer", answer("Done, but no marker")),
             ("programmer", answer("x\nRESULT: done", is_error=True)),
             ("programmer", answer("")),
             ("reviewer", json.dumps(["list"])),
         ]
         for role, out in cases:
             self.assertEqual(self.result(role, out)[0], "failed", (role, out))
+        # an answer without the line: the hub asks the same AI once more for it
+        self.assertEqual(self.result("programmer", answer("Done, but no marker"))[0], "none")
         # whether a value fits the role, the hub decides (agents.finish_run): the runner passes it on as it is
         self.assertEqual(self.result("programmer", answer("x\nRESULT: pass"))[0], "pass")
 
@@ -339,8 +341,8 @@ class ChatOutputTest(unittest.TestCase):
         self.assertEqual((result, report), ("done", "Built.\nand then more text"))   # a word after it is fine
         self.assertEqual(self.result("programmer", answer("RESULT: done.\n"))[0], "done")
         far = "RESULT: done\n" + "\n".join(f"line {n}" for n in range(L.RESULT_LOOK))
-        self.assertEqual(self.result("programmer", answer(far))[0], "failed")     # not near the end: no guess
-        self.assertEqual(self.result("programmer", answer("The RESULT: done line follows"))[0], "failed")
+        self.assertEqual(self.result("programmer", answer(far))[0], "none")       # not near the end: no guess
+        self.assertEqual(self.result("programmer", answer("The RESULT: done line follows"))[0], "none")
 
     def test_report_is_capped(self):
         self.assertEqual(len(self.result("chef", answer("x" * 150000 + "\nRESULT: done"))[1]), L.MAX_REPORT)
