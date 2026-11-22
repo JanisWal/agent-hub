@@ -501,6 +501,14 @@ def _disconnect_text(lang: str, provider: str, user_id: int, plain: str) -> str:
     return esc(i18n.t(lang, "both_disconnect_text" if has_key else plain))
 
 
+def _paused(user_id: int) -> bool:
+    """Are the user's agents paused (agents.set_paused)? Read here directly: ui does not import agents."""
+    with db.connect() as conn:
+        row = conn.execute("SELECT value FROM agent_settings WHERE user_id = ? AND key = 'agents.paused'",
+                           (user_id,)).fetchone()
+    return bool(row and row["value"] not in ("", "0"))
+
+
 def _custom_rows(user_id: int) -> list[dict]:
     with db.connect() as conn:
         return ai_link.custom_rows(conn, user_id)
@@ -523,7 +531,7 @@ def _key_dialogs(lang: str, user_id: int) -> str:
 
 def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | None = None,
                   connected: tuple[str, ...] = (), api: dict | None = None,
-                  custom: list[dict] | None = None) -> str:
+                  custom: list[dict] | None = None, paused: bool = False) -> str:
     """The AIs and the chat history button (Janis, 15.11.2026). On top the standard AI with the arrow; below, folded
     (Janis, 11.11.2026: the list grows with every AI), the others. The order arranges itself (Janis, 21.11.2026):
     `connected` comes ranked (aichoice.ranked: the standard, the one before it, the other connected ones), then the AIs
@@ -567,9 +575,15 @@ def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | Non
     others = "\n        ".join(rest)
     clear = (f'<button class="clear-btn" type="button" id="chat-clear-open">'
              f'{esc(i18n.t(lang, "chat_clear"))}</button>')
+    # The emergency switch (Janis, 22.11.2026), like "delete chat history" above it: red while the agents may work,
+    # green "go on" while they are paused (static/aipause.js swaps text and colour without a reload).
+    pause = (f'<button class="clear-btn pause-btn{" paused" if paused else ""}" type="button" id="ai-pause" '
+             f'aria-pressed="{"true" if paused else "false"}" data-pause="{esc(i18n.t(lang, "ai_pause"))}" '
+             f'data-resume="{esc(i18n.t(lang, "ai_resume"))}" data-tip="{esc(i18n.t(lang, "ai_pause_tip"))}">'
+             f'{esc(i18n.t(lang, "ai_resume" if paused else "ai_pause"))}</button>')
     more = f'<div class="ai-more" id="ai-more" hidden>\n        {others}\n      </div>'
     services = f'<div class="ai-services" id="ai-services">{row(top, True)}\n      {more}</div>'   # swapped as one
-    return "\n      ".join([services, clear])
+    return "\n      ".join([services, pause, clear])
 
 
 def _admin_button(user: User) -> str:
@@ -591,7 +605,7 @@ def settings_bar(user: User, extras: str = "") -> str:
         ARROW=icon("arrow_left", "drawer-arrow"),
         SERVICES=_service_rows(lang, claude_link.status(user.id), {p: ai_link.status(user.id, p) for p in ai_link.PROVIDERS},
                                tuple(aichoice.ranked(user.id)), _api_lines(lang, user.id),
-                               _custom_rows(user.id)),
+                               _custom_rows(user.id), _paused(user.id)),
         ADMIN=_admin_button(user),
         CLAUDE_DIALOG=fill(CLAUDE_DIALOG, lang, API=api_panel(lang, "claude", user.id),
                            DISCONNECT=_disconnect_text(lang, "claude", user.id, "claude_disconnect_text")),
@@ -616,5 +630,5 @@ def logged_in_page(
     return page(
         title, body, user.language,
         top_right=settings_bar(user, drawer_extras), top_center=top_center, top_left=top_left,
-        scripts=("claude.js", "ailink.js", "aiapi.js", *scripts), styles=styles, body_class=body_class,
+        scripts=("claude.js", "ailink.js", "aiapi.js", "aipause.js", *scripts), styles=styles, body_class=body_class,
     )

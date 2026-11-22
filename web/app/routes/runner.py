@@ -71,6 +71,17 @@ def merge_done(task_id: int, success: str = Form("0")):
     return ok() if agents.merge_done(task_id, success == "1") else fail(409)
 
 
+@router.get("/stops")
+def stops():
+    """Runs to stop at once (agents.set_paused: the user's emergency switch)."""
+    return ok(runs=agents.pending_stops())
+
+
+@router.post("/stops/{run_id}/done")
+def stop_done(run_id: int):
+    return ok() if agents.stop_done(run_id) else fail(409)
+
+
 @router.get("/exports")
 def export_requests():
     """Requests for a ZIP of a project's code (exports.py); old ones and their files go on the way."""
@@ -118,12 +129,12 @@ def chat_thoughts(chat_id: int, text: str = Form("")):
 
 @router.post("/chat/{chat_id}/finish")
 def chat_finish(chat_id: int, success: str = Form("0"), answer: str = Form(""), tokens_in: int = Form(0),
-                tokens_out: int = Form(0), outside: str = Form("0"), tools_asked: str = Form(""),
+                tokens_out: int = Form(0), tools_asked: str = Form(""),
                 tools_seen: str | None = Form(None)):
     """`tools_seen`: the tools the AI's program named at its start (comma separated), missing = it named none we
     could read (toolcheck.py)."""
     tools = (_names(tools_asked), _names(tools_seen)) if isinstance(tools_seen, str) and tools_asked else None
-    return ok() if chat.finish(chat_id, success == "1", answer, tokens_in, tokens_out, outside == "1", tools) else fail(409)
+    return ok() if chat.finish(chat_id, success == "1", answer, tokens_in, tokens_out, tools) else fail(409)
 
 
 def _names(text: str) -> list[str]:

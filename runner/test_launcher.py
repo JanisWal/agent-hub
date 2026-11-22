@@ -312,19 +312,6 @@ class ChatOutputTest(unittest.TestCase):
         for text in ("The login page fails: log in shows an OAuth error", "authenticate the user first"):
             self.assertFalse(L.parse_chat_output(json.dumps({"is_error": True, "result": text}))[4], text)
 
-    def test_outside_tools_in_the_stream(self):
-        call = {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "WebFetch", "input": {}}]}}
-        self.assertTrue(L.claude_outside(json.dumps(call)))
-        call["message"]["content"][0]["name"] = "Read"
-        self.assertFalse(L.claude_outside(json.dumps(call)))
-        self.assertFalse(L.claude_outside(json.dumps({"type": "result", "result": "WebFetch tool_use"})))
-        self.assertTrue(L.vibe_outside('{"outside": true}'))
-        self.assertFalse(L.vibe_outside('{"thought": "outside"}'))
-
-
-class OutputTest(unittest.TestCase):
-    """An agent run: adapters.Claude.parse_run reads Claude Code's JSON, result_of the answer's last line."""
-
     def result(self, role, out):
         from runner import adapters
         ok, text, tokens_in, tokens_out, _ = adapters.Claude().parse_run(out)
@@ -356,7 +343,7 @@ class OutputTest(unittest.TestCase):
         self.assertEqual(self.result("programmer", answer("The RESULT: done line follows"))[0], "failed")
 
     def test_report_is_capped(self):
-        self.assertEqual(len(self.result("chef", answer("x" * 50000 + "\nRESULT: done"))[1]), L.MAX_REPORT)
+        self.assertEqual(len(self.result("chef", answer("x" * 150000 + "\nRESULT: done"))[1]), L.MAX_REPORT)
 
 
 class ConsistencyTest(unittest.TestCase):

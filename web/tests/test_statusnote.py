@@ -89,13 +89,10 @@ class StatusNoteTest(unittest.TestCase):
         self.assertEqual(self.scan(NOW + 4 * 3600), 0)           # FAILED_GAP not over
         self.assertEqual(self.scan(NOW + 7 * 3600), 1)
 
-    def test_the_users_question_goes_first_and_the_daily_cap(self):
+    def test_the_daily_cap_holds_only_for_quiet_projects(self):
         board.create_item(self.a.id, self.pa.id, "bug", "X")
         self.connect(self.a)
-        chat.send(self.a.id, self.pa.id, "A question", now=NOW)
-        self.assertEqual(self.scan(), 0)
         with db.connect() as conn:
-            conn.execute("DELETE FROM chat_messages")
             for i in range(statusnote.DAILY_MAX):
                 conn.execute("INSERT INTO project_status (project_id, source, fingerprint, created_at) VALUES (?, 'ai', ?, ?)",
                              (self.pa.id, f"x{i}", NOW - 20 * 3600))
@@ -107,7 +104,13 @@ class StatusNoteTest(unittest.TestCase):
         self.assertEqual(statusnote.request(self.a.id, self.pa.id, NOW), "none")      # no AI
         self.connect(self.a)
         self.assertEqual(statusnote.request(self.a.id, self.pa.id, NOW), "queued")
-        self.assertEqual(statusnote.request(self.a.id, self.pa.id, NOW), "wait")
+        self.assertEqual(statusnote.request(self.a.id, self.pa.id, NOW), "wait")        # that one comes
+        with db.connect() as conn:                                                     # it came; at once again
+            conn.execute("DELETE FROM chat_messages WHERE kind = 'status'")
+            for i in range(statusnote.DAILY_MAX + 3):
+                conn.execute("INSERT INTO project_status (project_id, level, title, text, source, fingerprint, created_at)"
+                             " VALUES (?, 'green', 'T', 'x', 'ai', ?, ?)", (self.pa.id, f"x{i}", NOW - 30))
+        self.assertEqual(statusnote.request(self.a.id, self.pa.id, NOW), "queued")      # no limit for the user
         self.assertIsNone(statusnote.latest(self.b.id, self.pa.id))                    # foreign note is None
 
     def test_the_lamp_never_below_what_the_hub_knows(self):
@@ -120,7 +123,7 @@ class StatusNoteTest(unittest.TestCase):
     def test_the_tile_shows_the_written_status_in_bold(self):
         board.create_item(self.a.id, self.pa.id, "bug", "X")
         a = status.assess(self.a.id, self.pa.id, NOW)
-        html = managerpage._status_tile("de", a, NOW, statusnote.Note("green", "Heizung läuft", "Alles <gut>.", NOW - 60))
+        html = managerpage.status_tile("de", a, NOW, statusnote.Note("green", "Heizung läuft", "Alles <gut>.", NOW - 60))
         self.assertIn("<strong>Heizung läuft</strong>", html)
         self.assertIn("Alles &lt;gut&gt;.", html)
         self.assertIn('id="status-again"', html)

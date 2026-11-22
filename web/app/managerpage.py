@@ -85,23 +85,24 @@ def _when(lang: str, moment: int | None, now: int) -> str:
     return i18n.t(lang, "status_ago_days", n=seconds // 86400)
 
 
-def _status_tile(lang: str, a: statusmod.Assessment | None, now: int, note: statusnote.Note | None = None) -> str:
+def status_tile(lang: str, a: statusmod.Assessment | None, now: int, note: statusnote.Note | None = None,
+                writing: bool = False) -> str:
     """The state of the project: the written status of the AI (statusnote.py) as headline and one or two sentences,
     else the counted wording (status.py); the lamp (the AI's level, never below what the hub counted), the progress,
-    the numbers and what explains an amber or red lamp. The round arrow asks for a new written status."""
+    the numbers and what explains an amber or red lamp. The round arrow asks for a new written status; while one is on
+    its way (`writing`, also an automatic round) it turns and can not be pressed (Janis, 22.11.2026)."""
     lamp = statusnote.lamp(a.lamp if a else "none", note)
     again = esc(i18n.t(lang, "status_again"))
     head = (f'<header><h2>{esc(i18n.t(lang, "manager_status"))}</h2>'
             f'{ui.info_dot(i18n.t(lang, "manager_status"), i18n.t(lang, "status_hint"))}'
-            f'<button class="icon-button card-btn status-again" type="button" id="status-again" aria-label="{again}" '
-            f'data-tip="{again}" data-wait="{esc(i18n.t(lang, "status_again_wait"))}" '
-            f'data-none="{esc(i18n.t(lang, "status_again_none"))}" data-queued="{esc(i18n.t(lang, "status_again_queued"))}" data-note="{note.created_at if note else 0}">{icon("refresh")}</button>'
+            f'<button class="icon-button card-btn status-again{" spinning" if writing else ""}" type="button" '
+            f'id="status-again" aria-label="{again}" data-tip="{again}"{" disabled" if writing else ""} '
+            f'data-note="{note.created_at if note else 0}">{icon("refresh")}</button>'
             f'<span class="m-lamp lamp-{lamp}" role="img" aria-label="{esc(i18n.t(lang, "status_lamp_" + lamp))}" '
             f'data-tip="{esc(i18n.t(lang, "status_lamp_" + lamp))}"></span></header>')
-    say = '<p class="muted status-say" id="status-say" role="status" aria-live="polite"></p>'
     if a is None or (a.total == 0 and a.last_activity is None and note is None):
         return (f'<section class="mtile glass m-status" id="status">{head}'
-                f'<p class="muted">{esc(i18n.t(lang, "status_empty"))}</p>{say}</section>')
+                f'<p class="muted">{esc(i18n.t(lang, "status_empty"))}</p></section>')
     facts = "".join(
         f'<div><dt>{esc(i18n.t(lang, key))}</dt><dd>{value}</dd></div>'
         for key, value in (("status_planned", a.planned), ("status_in_progress", a.in_progress),
@@ -126,7 +127,7 @@ def _status_tile(lang: str, a: statusmod.Assessment | None, now: int, note: stat
         f'<dl class="status-facts">{facts}</dl>'
         + (f'<ul class="status-reasons">{reasons}</ul>' if reasons else "")
         + (f'<p class="muted status-extra">{esc(" · ".join(extra))}</p>' if extra else "")
-        + say + written + '</section>'
+        + written + '</section>'
     )
 
 
@@ -322,7 +323,7 @@ FILE_DIALOGS = """<dialog class="dialog" id="file-dialog" data-title-link="%t.fi
     <button class="primary" type="button" data-same="keep" autofocus>%t.files_same_keep%</button>
   </div>
 </dialog>
-<dialog class="dialog viewer reader" id="file-reader">
+<dialog class="dialog viewer reader" id="file-reader" tabindex="-1" autofocus>
   <div class="viewer-head">
     <h2 id="file-reader-title"></h2>
     <button class="icon-button card-btn" type="button" id="file-reader-edit" aria-label="%t.files_edit_text%" title="%t.files_edit_text%">%PENCIL%</button>
@@ -337,7 +338,7 @@ FILE_DIALOGS = """<dialog class="dialog" id="file-dialog" data-title-link="%t.fi
     <button class="primary" type="button" id="file-reader-save">%t.save%</button>
   </div>
 </dialog>
-<dialog class="dialog viewer" id="file-viewer">
+<dialog class="dialog viewer" id="file-viewer" tabindex="-1" autofocus>
   <div class="viewer-head">
     <h2 id="file-viewer-title"></h2>
     <button class="icon-button card-btn" type="button" id="file-viewer-download" aria-label="%t.files_download%" title="%t.files_download%">%DOWNLOAD%</button>
@@ -660,7 +661,8 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
            stored_files: list | None = None, files_confirm: bool = True, trashed_files: list | None = None,
            ais: tuple[str, ...] = ("claude",), waiting: list | None = None, versions: list | None = None,
            assessment: statusmod.Assessment | None = None, device_list: list | None = None,
-           note: statusnote.Note | None = None, asks: list | None = None, open_questions: list | None = None) -> str:
+           note: statusnote.Note | None = None, asks: list | None = None, open_questions: list | None = None,
+           writing: bool = False) -> str:
     """`settings` is agents.settings(user_id): the manager is the role "chef". `regular_checks` are the
     project's checks (checks.list_checks). `ais`: the providers the user has connected (their models are offered).
     `waiting`: (task, last report) of agents.waiting_tasks, the decisions of "waiting for you"."""
@@ -672,7 +674,7 @@ def render(lang: str, settings: dict, regular_checks: list | None = None, now: i
     return fill(
         MANAGER,
         lang,
-        STATUS=_status_tile(lang, assessment, int(now if now is not None else time.time()), note),
+        STATUS=status_tile(lang, assessment, int(now if now is not None else time.time()), note, writing),
         DEVICES=devicepage.tile(lang, device_list or []),
         CHECKS=_checks_tile(lang, regular_checks or [], int(now if now is not None else time.time())),
         FILES=_files_tile(lang, stored_files or [], files_confirm),

@@ -5,8 +5,7 @@ MISTRAL_API_KEY. This script writes Vibe's settings into the home folder in memo
 package from stdin and prints ONE line of JSON for the runner, the same shape for every job, as its last line:
     {"ok": bool, "text": str, "tokens_in": int, "tokens_out": int, "outcome": str, "error": str}
 Before it, while Vibe runs, one line {"thought": str} per finished block of reasoning of the model (shown in the chat,
-18.11.2026; Vibe's `--output streaming` prints one line per entry) and once {"outside": true} when it used a web or
-shell tool (launcher.vibe_outside).
+18.11.2026; Vibe's `--output streaming` prints one line per entry).
 
 Vibe's API address is the egress gateway (the only way to Mistral; it puts the real key in). Its other addresses
 (managed settings, sessions, console) point to the gateway as well, which refuses them: nothing goes to Mistral but
@@ -107,21 +106,6 @@ def thought(line: str, seen: set) -> str:
     return entry["text"].strip()
 
 
-OUTSIDE = ("web_fetch", "web_search", "bash")   # tools whose results come from outside (launcher.vibe_outside)
-
-
-def outside(line: str) -> bool:
-    """True when a line of `--output streaming` is a tool call of OUTSIDE (not a message: its text may name a tool)."""
-    try:
-        entry = json.loads(line)
-    except ValueError:
-        return False
-    if not isinstance(entry, dict) or entry.get("type") in ("message", "reasoning"):
-        return False
-    text = json.dumps(entry)
-    return any(f'"{name}"' in text for name in OUTSIDE)
-
-
 def summary(stdout: str, export: dict, code: int) -> dict:
     """The answer text (the last message of the assistant), tokens and how the run ended."""
     text = ""
@@ -165,7 +149,7 @@ def main() -> int:
     for tool in OFF_ALWAYS + OFF_JOB[job]:
         command += ["--disabled-tools", tool]
     env = dict(os.environ, VIBE_HOME=str(vibe_home))
-    lines, seen, went_out = [], set(), False
+    lines, seen = [], set()
     with open(HOME / "stderr.txt", "w+") as errors:   # a file, so a full pipe never stops Vibe
         proc = subprocess.Popen(command, stdin=sys.stdin, stdout=subprocess.PIPE, stderr=errors, text=True, env=env)
         for line in proc.stdout:
@@ -173,9 +157,6 @@ def main() -> int:
             said = thought(line, seen)
             if said:
                 print(json.dumps({"thought": said}), flush=True)
-            if not went_out and outside(line):
-                went_out = True
-                print(json.dumps({"outside": True}), flush=True)
         code = proc.wait()
         errors.seek(0)
         stderr = errors.read()

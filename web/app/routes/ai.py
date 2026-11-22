@@ -6,7 +6,7 @@ any request. The key is handed to the runner once and never stored here (ai_link
 from fastapi import APIRouter, Depends, Form
 from fastapi.responses import JSONResponse
 
-from .. import ai_link, aichoice, credentials, db, users
+from .. import agents, ai_link, aichoice, credentials, db, users
 from ..deps import api_user, fail, ok
 
 router = APIRouter(prefix="/ai")
@@ -56,6 +56,14 @@ def api_remove(provider: str, user: users.User = Depends(api_user)):
         return fail(404)
     ai_link.disconnect(user.id, credentials.API_FOR[provider])
     return ok()
+
+
+@router.post("/pause")
+def pause(on: str = Form("1"), user: users.User = Depends(api_user)):
+    """The emergency switch of the drawer: pause the user's agent runs ("1") or let them go on ("0")."""
+    if on not in ("0", "1"):
+        return fail(400)
+    return ok(paused=agents.set_paused(user.id, on == "1"))
 
 
 def _provider(provider: str) -> str | None:

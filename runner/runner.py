@@ -80,11 +80,9 @@ class Thoughts:
     def __init__(self, api, chat_id: int, adapter, clock=time.time):
         self.api, self.chat_id, self.adapter, self.clock = api, int(chat_id), adapter, clock
         self.waiting, self.sent = "", clock()
-        self.outside = False   # the AI read something from outside (web): its new board items wait for the user
         self.tools = None      # the tools the program named at its start (toolcheck.py); None: it named none we read
 
     def line(self, line: str) -> None:
-        self.outside = self.outside or self.adapter.outside(line)
         if self.tools is None and hasattr(self.adapter, "tools_seen"):
             self.tools = self.adapter.tools_seen(line)
         self.waiting += self.adapter.thought(line)
@@ -440,7 +438,7 @@ class Runner:
         if thoughts.tools is not None:   # what the program named, with what we asked of it (toolcheck.py)
             extra = {"tools_asked": ",".join(launcher.asked_tools(command)), "tools_seen": ",".join(thoughts.tools)}
         self._report(f"/runner/chat/{chat_id}/finish", success="1" if ok else "0", answer=text,
-                     tokens_in=tokens_in, tokens_out=tokens_out, outside="1" if thoughts.outside else "0", **extra)
+                     tokens_in=tokens_in, tokens_out=tokens_out, **extra)
 
     # --- agent runs (web/app/agents.py, runtask.py): one container per run in the task's work folder
     def _limits(self, job: dict | None = None) -> dict:
@@ -685,6 +683,14 @@ class Runner:
                 data = b""                                  # too big: the hub says so (serversettings.export_mb)
             self.api.send(f"/runner/exports/{export_id}", data)
 
+    # --- the user's emergency switch (web/app/agents.set_paused): his running containers go at once
+    def handle_stops(self) -> None:
+        for run_id in self.api.call("GET", "/runner/stops").get("runs", []):
+            run_id = int(run_id)
+            for name in (f"agent-run-{run_id}", f"agent-test-{run_id}"):
+                subprocess.run(["docker", "rm", "-f", name], capture_output=True)
+            self.api.call("POST", f"/runner/stops/{run_id}/done")
+
     def handle_cleanups(self) -> None:
         """Folders of finished tasks, and everything of deleted projects (their code and their tasks' folders): the
         hub forgets a deleted project only when its folders are really gone."""
@@ -757,6 +763,7 @@ class Runner:
         self.handle_device_logins()
         self.handle_model_checks()
         self.handle_merges()
+        self.handle_stops()
         self.handle_cleanups()
         self.handle_exports()
         if self.busy():

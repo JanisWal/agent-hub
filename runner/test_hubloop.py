@@ -70,13 +70,6 @@ class LoopTest(unittest.TestCase):
         self.assertIn("<tool name=", self.sent[1]["messages"][0]["content"])
         self.assertIn('<tool-result name="read_file">\nRelais 12 V', self.sent[2]["messages"][-1]["content"])
 
-    def test_the_web_or_a_shell_with_internet_is_reported(self):
-        call = {"id": "c", "function": {"name": "run", "arguments": '{"command": "echo hi"}'}}
-        result, lines = self.run_loop([reply(calls=[call]), reply("ok")], job="chat-all")
-        self.assertIn({"outside": True}, lines)
-        _, lines = self.run_loop([reply(calls=[call]), reply("ok")], job="chat-apart")
-        self.assertNotIn({"outside": True}, lines)                          # apart: the shell has no internet
-
     def test_limits_refusals_and_a_brief_job(self):
         call = {"id": "c", "function": {"name": "list_files", "arguments": json.dumps({"path": str(self.work)})}}
         result, _ = self.run_loop([reply(calls=[call])] * 2, turns=2)

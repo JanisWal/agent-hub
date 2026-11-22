@@ -5,8 +5,8 @@ The launcher passes only checked values (model, level, kind of job, time limit) 
 (runner/codex.run_auth: the ticket in a JWT-shaped wrapper, no usable refresh token). This script writes it and Codex's
 settings into the home folder in memory and runs `codex exec --json` with the package from stdin. Every request of Codex
 goes to the egress gateway (port 3133): the model calls through `chatgpt_base_url`, sign-in and refresh through
-CODEX_AUTHAPI_BASE_URL (the gateway refuses those). Output like runner/vibe_entry.py: {"thought": ...} and once
-{"outside": true} while it runs, then ONE last line {"ok", "text", "tokens_in", "tokens_out", "outcome", "error"}.
+CODEX_AUTHAPI_BASE_URL (the gateway refuses those). Output like runner/vibe_entry.py: {"thought": ...} while it
+runs, then ONE last line {"ok", "text", "tokens_in", "tokens_out", "outcome", "error"}.
 Job "models": `codex debug models` (the account's model list as Codex asks for it), printed as {"models": [...]}.
 """
 import json
@@ -22,8 +22,6 @@ JOBS = ("chat-all", "chat-apart", "chat-brief", "run", "run-brief", "models")
 LEVELS = ("low", "medium", "high", "xhigh", "max", "none", "minimal")
 FEATURES_OFF = ("plugins", "apps", "remote_plugin", "plugin_discovery_prefetch", "browser_use", "browser_use_external",
                 "in_app_browser", "computer_use", "in_app_updates", "daemon_auto_start")
-OUTSIDE = {"chat-all": ("web_search", "command_execution"), "chat-apart": ("web_search",),
-           "run": ("web_search", "command_execution")}
 
 
 def config(model: str, effort: str, job: str, api: bool = False) -> str:
@@ -134,9 +132,6 @@ def main() -> int:
                 item = event.get("item") if isinstance(event.get("item"), dict) else {}
                 if event.get("type") == "item.completed" and item.get("type") == "reasoning" and item.get("text"):
                     say({"thought": str(item["text"]).strip()})
-                if not went_out and item.get("type") in OUTSIDE.get(job, ()):
-                    went_out = True
-                    say({"outside": True})
             code = proc.wait(timeout=int(seconds))
         except subprocess.TimeoutExpired:
             proc.kill()

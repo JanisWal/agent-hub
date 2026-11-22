@@ -14,13 +14,14 @@ router = APIRouter()
 
 @router.post("/roles/{role}/settings")
 def role_settings(role: str, enabled: str = Form(""), model: str = Form(""), net: str = Form(""),
-                  effort: str = Form(""), user: users.User = Depends(api_user)):
+                  effort: str = Form(""), provider: str = Form("-"), user: users.User = Depends(api_user)):
     if role not in rolepage.ROLES or enabled not in ("", "0", "1"):
         return fail(400)
     try:
         agents.configure(user.id, role, enabled=None if enabled == "" else enabled == "1", model=model or None,
-                         net=net or None, effort=effort or None)
+                         net=net or None, effort=effort or None, provider=None if provider == "-" else provider)
     except ValueError:
         return fail(400)
     mine = agents.settings(user.id)["roles"][role]
-    return ok(enabled="1" if mine["enabled"] else "0", model=mine["model"], effort=mine["effort"], net=mine["net"])
+    return ok(enabled="1" if mine["enabled"] else "0", model=mine["model"], effort=mine["effort"], net=mine["net"],
+              provider=mine["provider"])

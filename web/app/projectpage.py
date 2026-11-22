@@ -6,7 +6,7 @@ from .layout import esc, fill
 from .projects import MAX_DESCRIPTION, MAX_NAME, Project
 from .users import User
 
-SCRIPTS = ("motion.js", "segment.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "picker.js", "manager.js", "splitter.js", "checks.js", "status.js", "devices.js", "devwin.js", "devsetup.js", "upload.js", "tiffthumb.js", "files.js", "filetidy.js", "mvault.js", "roles.js", "todos.js", "waiting.js", "export.js")
+SCRIPTS = ("motion.js", "segment.js", "sortable.js", "board.js", "stations.js", "titlemenu.js", "chat.js", "picker.js", "manager.js", "splitter.js", "checks.js", "status.js", "devices.js", "devwin.js", "devsetup.js", "upload.js", "tiffthumb.js", "files.js", "filetidy.js", "mvault.js", "roles.js", "todos.js", "waiting.js", "export.js", "hscroll.js")
 STYLES = ("project.css",)
 
 COLUMN_LABEL = {"bug": "col_bug", "minor": "col_minor", "major": "col_major"}
@@ -204,9 +204,8 @@ def back_html(lang: str) -> str:
 
 
 TITLE_MENU = """<div class="title-wrap">
-  <h1 class="project-title" title="%NAME%">%NAME%</h1>
-  <button class="icon-button title-edit" id="title-edit" type="button" aria-haspopup="true" aria-expanded="false"
-          aria-controls="title-menu" aria-label="%t.edit_project%" title="%t.edit_project%">%PENCIL%</button>
+  <h1 class="project-title"><button class="title-button" id="title-edit" type="button" aria-haspopup="true"
+          aria-expanded="false" aria-controls="title-menu" data-tip="%t.edit_project%">%NAME%</button></h1>
   <form class="title-menu glass" id="title-menu" method="post" action="/projects/%PID%/settings" novalidate hidden
         data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
     <label>%t.project_name%<input name="name" required maxlength="%MAX_NAME%" autocomplete="off" value="%NAME%"></label>
@@ -231,7 +230,6 @@ def title_html(project: Project, lang: str = "de") -> str:
         DESCRIPTION=esc(project.description),
         MAX_NAME=str(MAX_NAME),
         MAX_DESCRIPTION=str(MAX_DESCRIPTION),
-        PENCIL=icon("pencil"),
     )
 
 
@@ -271,8 +269,9 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
     tasks = _tasks(user, project)
     settings, ais = agents.settings(user.id), (aichoice.default(user.id),)
     current = agents.current_task(user.id, project.id)
+    ranked = tuple(aichoice.ranked(user.id)) or ais   # the AIs a role can be given, as in the drawer
     roles = "".join(rolepage.render_role(lang, role, settings, agents.role_runs(user.id, project.id, role),
-                                         agents.usage(user.id, project.id, role), ais, current=current)
+                                         agents.usage(user.id, project.id, role), ranked, current=current)
                     for role in rolepage.ROLES)
     waiting = [(t, agents.last_report(user.id, t.id)) for t in agents.waiting_tasks(user.id, project.id)]
     entries = todos.list_todos(user.id, project.id)
@@ -287,6 +286,7 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
                                     assessment=status.assess(user.id, project.id),
                                     device_list=devices.list_devices(user.id, project.id),
                                     note=statusnote.latest(user.id, project.id),
+                                    writing=statusnote.writing(user.id, project.id),
                                     asks=devices.open_requests(user.id, project.id),
                                     open_questions=questions.open_questions(user.id, project.id)),
         ROLES=roles + rolepage.render_me(lang, entries),

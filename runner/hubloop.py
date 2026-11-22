@@ -13,7 +13,7 @@ and sends the results back, until the model answers without a tool call, or the 
 
 Environment (checked values only, launcher.build_hubloop_command): HUB_GATEWAY, HUB_KEY (the ticket), HUB_MODEL (the
 model name at the user's AI), HUB_JOB (chat-all, chat-apart, chat-brief, run, run-brief), HUB_TURNS, HUB_SECONDS,
-HUB_IMAGES. Output like runner/vibe_entry.py: lines {"thought": ...} and once {"outside": true} while it runs, then ONE
+HUB_IMAGES. Output like runner/vibe_entry.py: lines {"thought": ...} while it runs, then ONE
 last line {"ok", "text", "tokens_in", "tokens_out", "outcome", "error"}.
 """
 import json
@@ -35,7 +35,6 @@ JOB_TOOLS = {
     "run": ("look", "list_files", "read_file", "grep", "write_file", "edit_file", "run", "fetch"),
     "run-brief": (),
 }
-OUTSIDE = {"chat-all": ("fetch", "run"), "chat-apart": (), "chat-brief": (), "run": ("fetch", "run"), "run-brief": ()}
 MAX_RESULT = 30000            # characters of one tool result that go back to the model
 REQUEST_SECONDS = 240
 _TEXT_TOOL = re.compile(r"<tool\s+name=\"([a-z_]{1,20})\">(.*?)</tool>", re.S)
@@ -131,9 +130,6 @@ def loop(prompt: str, model: str, job: str, turns: int, seconds: int, clock=time
             for item in calls:
                 function = item.get("function") or {}
                 name = function.get("name", "")
-                if name in OUTSIDE.get(job, ()) and not went_out:
-                    went_out = True
-                    say({"outside": True})
                 messages.append({"role": "tool", "tool_call_id": item.get("id", ""),
                                  "content": use_tool(name, function.get("arguments") or "{}", enabled)})
             continue
@@ -141,9 +137,6 @@ def loop(prompt: str, model: str, job: str, turns: int, seconds: int, clock=time
         if found:
             results = []
             for name, args in found[:5]:
-                if name in OUTSIDE.get(job, ()) and not went_out:
-                    went_out = True
-                    say({"outside": True})
                 results.append(f'<tool-result name="{name}">\n{use_tool(name, args.strip(), enabled)}\n</tool-result>')
             messages += [{"role": "assistant", "content": text}, {"role": "user", "content": "\n\n".join(results)}]
             continue

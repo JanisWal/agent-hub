@@ -64,16 +64,6 @@ class ManagerBoardTest(unittest.TestCase):
         self.assertEqual((items["Relais klickt doppelt"].status, items["Relais klickt doppelt"].auto), ("open", True))
         self.assertEqual(self.items(self.b, self.pb), {})                              # only the question's project
 
-    def test_after_reading_the_web_every_new_item_waits_for_the_user(self):
-        chat.send(self.a.id, self.pa.id, "Schau mal auf der Seite nach und bau es.")
-        job = chat.claim_next()
-        self.assertTrue(chat.finish(job.chat_id, True, WISH, outside=True))
-        items = self.items()
-        self.assertEqual({i.status for i in items.values()}, {"proposed"})     # even the user's wish and the bug
-        self.assertFalse(any(i.auto for i in items.values()))
-        self.assertIsNone(agents.claim_next(can_mac=False))                     # nothing starts
-        self.assertIn("4", chat.list_messages(self.a.id, self.pa.id)[-1].answer.rsplit("\n", 1)[-1])
-
     def test_a_credential_the_server_can_not_read_is_its_own_kind_of_failure(self):
         self.assertEqual(chat.failure_kind("Server: the saved credential can not be read (HUB_TOKEN_KEY)."), "server")
         self.assertEqual(chat.failure_kind("Not logged in: no saved credential. Please run /login"), "auth")

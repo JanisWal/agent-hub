@@ -7,9 +7,7 @@ an adapter only knows its program. Both programs run in a throwaway container wi
 Interface: `secret(runner, user_id)` (the credential the ticket stands for, or None), `route(job)` (what the ticket must
 know besides: the address of the user's own AI; {} for the others), `chat_command(...)`, `brief_command(...)`,
 `run_command(...)`, `parse(stdout) -> (ok, text, tokens_in, tokens_out, login_problem)`, `thought(line)`: the
-thought text in one line of a chat's output while it runs ("" if the line has none; shown in the chat) and
-`outside(line)`: True when the line shows the AI reading from outside (a web search or page, a shell with internet), so
-the hub lets the board items of that answer wait for the user (anything read there could carry instructions). `images` says whether the
+thought text in one line of a chat's output while it runs ("" if the line has none; shown in the chat). `images` says whether the
 model sees pictures (catalog of the hub); Claude Code looks at images and PDFs with its own Read tool, Vibe through the
 tool `look` of hub_tools.py.
 """
@@ -58,8 +56,6 @@ class Claude:
     def tools_seen(self, line: str):
         return launcher.claude_tools(line)
 
-    def outside(self, line: str) -> bool:
-        return launcher.claude_outside(line)
 
     def parse_run(self, stdout: str):
         """(ok, text, tokens_in, tokens_out, login_problem) of an agent run of Claude Code."""
@@ -106,8 +102,6 @@ class Mistral:
     def thought(self, line: str) -> str:
         return launcher.vibe_thought(line)
 
-    def outside(self, line: str) -> bool:
-        return launcher.vibe_outside(line)
 
 
 class Custom:
@@ -151,8 +145,6 @@ class Custom:
     def thought(self, line: str) -> str:
         return launcher.vibe_thought(line)
 
-    def outside(self, line: str) -> bool:
-        return launcher.vibe_outside(line)
 
 
 class Codex:
@@ -220,8 +212,6 @@ class Codex:
     def thought(self, line: str) -> str:
         return launcher.vibe_thought(line)
 
-    def outside(self, line: str) -> bool:
-        return launcher.vibe_outside(line)
 
 
 ADAPTERS = {"claude": Claude(), "mistral": Mistral(), "custom": Custom(), "chatgpt": Codex()}

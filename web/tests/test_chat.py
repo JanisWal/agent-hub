@@ -189,10 +189,10 @@ class ChatQueueTest(Base):
             chat.claim_next()
             chat.finish(m.id, True, f"a{i}")
         with db.connect() as conn:
-            mine = conn.execute("SELECT COUNT(*) FROM chat_messages WHERE user_id = ?", (self.a.id,)).fetchone()[0]
+            mine = conn.execute("SELECT COUNT(*) FROM chat_messages WHERE user_id = ? AND kind = 'chat'", (self.a.id,)).fetchone()[0]
             oldest = conn.execute("SELECT MIN(prompt) FROM chat_messages WHERE user_id = ? AND prompt = 'q0'",
                                   (self.a.id,)).fetchone()[0]
-            theirs = conn.execute("SELECT COUNT(*) FROM chat_messages WHERE user_id = ?", (self.b.id,)).fetchone()[0]
+            theirs = conn.execute("SELECT COUNT(*) FROM chat_messages WHERE user_id = ? AND kind = 'chat'", (self.b.id,)).fetchone()[0]
         self.assertEqual((mine, oldest, theirs), (chat.MAX_STORED, None, 1))   # the oldest are gone, B is untouched
     def test_modes(self):
         self.connect(self.a)

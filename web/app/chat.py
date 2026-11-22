@@ -179,10 +179,14 @@ def claim_next(now: int | None = None) -> ChatJob | None:
     now = int(now if now is not None else time.time())
     with db.connect() as conn:
         _drop_stale(conn, now)
-        if not agents.slot_free(conn):
-            return None   # as many AI containers at once as the owner allows (agent runs included)
-        statusnote.scan(conn, now)   # the written status of projects that changed (statusnote.py), at most every few minutes
-        for row in conn.execute("SELECT * FROM chat_messages WHERE status = 'queued' ORDER BY id").fetchall():
+        statusnote.scan(conn, now)   # the written status of projects that changed (statusnote.py), every minute or so
+        # As many AI containers at once as the owner allows (agent runs included); a status round is small and runs
+        # beside them anyway (Janis, 22.11.2026: the status must not wait for a run of twenty minutes).
+        free = agents.slot_free(conn)
+        kinds = "" if free else " AND kind = 'status'"
+        # a question of the user before a status round (it waits for the next poll, seconds)
+        for row in conn.execute(f"SELECT * FROM chat_messages WHERE status = 'queued'{kinds}"
+                                " ORDER BY kind = 'status', id").fetchall():
             gone = not aichoice.connected_in(conn, row["user_id"], row["provider"])
             if gone or aichoice.resting(conn, row["user_id"], row["provider"]):   # resting: its quota ran out
                 other = _next_ai(conn, row, row["provider"])
@@ -233,11 +237,9 @@ def add_thoughts(chat_id: int, text: str) -> bool:
     return cur.rowcount == 1
 
 
-def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: int = 0, outside: bool = False,
+def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: int = 0,
            tools: tuple[list, list | None] | None = None) -> bool:
-    """Runner: the answer (or the reason for failure). False if the question is not running any more. `outside`: the
-    AI read from the web (or ran a shell with internet) for it, so its new board items wait for the user's yes:
-    something it read there could have asked for them (Janis, 20.11.2026).
+    """Runner: the answer (or the reason for failure). False if the question is not running any more.
 
     A good answer is read for two things (memory.py). A new memory file inside <memory> is saved as the project's
     MEMORY.md and cut out of the answer. If the manager asks for files with <read>, the question is put back in
@@ -324,14 +326,14 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
                 devices.request_action(conn, row["user_id"], row["project_id"], name, action, reason)
             for ask in open_asks:   # they wait for the user's answer in "waiting for you" (questions.py)
                 questions.add(conn, row["project_id"], "chef", ask)
-            held = 0
             for task in tasks:   # on the board of the question's project; the user's request goes to the programmer
-                approved = not outside and (task.origin == "user" or task.kind == "bug")
-                if board.add_from_ai(conn, row["project_id"], task.kind, task.title, task.body, approved=approved,
-                                     source="manager") and not approved and outside:
-                    held += 1
+                # what the user asked for starts at once, also when the manager read on the web for it (Janis,
+                # 22.11.2026: an injected instruction would hardly reach the programmer clearly); its own ideas wait
+                approved = task.origin == "user" or task.kind == "bug"
+                board.add_from_ai(conn, row["project_id"], task.kind, task.title, task.body, approved=approved,
+                                  source="manager")
             late = [e for e in edits if not board.edit_from_ai(conn, row["project_id"], e.item_id, e.kind, e.title, e.body)]
-            notes = ([("chat_edit_late", len(late))] if late else []) + ([("chat_outside_held", held)] if held else [])
+            notes = [("chat_edit_late", len(late))] if late else []
             if notes:   # the programmer was faster, or items wait because the web was read: the user reads why
                 lang = (conn.execute("SELECT language FROM users WHERE id = ?", (row["user_id"],)).fetchone() or {"language": "de"})["language"]
                 lang = lang if lang in ("de", "en") else "de"
