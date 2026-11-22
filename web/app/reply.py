@@ -79,7 +79,9 @@ class Task:
     kind: str                # "bug", "minor" or "major"
     title: str
     body: str
-    origin: str = "idea"     # "user": the user asked for it in the chat; "idea": the AI's own suggestion (the default)
+    # "user": the user asked for it in the chat (the default); "idea": the AI's own suggestion, only when marked so.
+    # 22.11.2026: Claude left `from` out on a clear wish, and three pieces waited for a yes the user never meant to give.
+    origin: str = "user"
     needs: str = "any"       # "mac": only an Apple device can build or test it
 
 
@@ -153,7 +155,7 @@ def parse(answer: str) -> Signals:
         attrs = _attrs(raw)
         title, body = _line(attrs.get("title", ""), MAX_TITLE), _block(inner, MAX_BODY)
         if attrs.get("kind") in TASK_KINDS and title and len(tasks) < MAX_TASKS:
-            tasks.append(Task(attrs["kind"], title, body, "user" if attrs.get("from") == "user" else "idea",
+            tasks.append(Task(attrs["kind"], title, body, "idea" if attrs.get("from", "").strip().lower() == "idea" else "user",
                               attrs.get("needs") if attrs.get("needs") in NEEDS else "any"))
     status = None
     for raw, inner in _STATUS.findall(answer):

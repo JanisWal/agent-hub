@@ -49,7 +49,7 @@ class ManagerBoardTest(unittest.TestCase):
         self.assertIn('from="user"', prompt)
         self.assertIn("small pieces", prompt)
         found = reply.parse(WISH).tasks
-        self.assertEqual([t.origin for t in found], ["user", "user", "idea", "idea", "user"])   # no `from` = an idea
+        self.assertEqual([t.origin for t in found], ["user", "user", "idea", "user", "user"])   # no `from`: the user's
 
     def test_the_chat_puts_short_bullets_with_context_on_the_board(self):
         message = self.ask(WISH)

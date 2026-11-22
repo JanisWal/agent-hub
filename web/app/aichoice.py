@@ -44,6 +44,24 @@ def resting(conn: sqlite3.Connection, user_id: int, provider: str, now: int | No
     return row is not None and int(row["value"] or 0) > int(now if now is not None else time.time())
 
 
+def rest_left(conn: sqlite3.Connection, user_id: int, provider: str, now: int | None = None) -> int:
+    """Seconds until a resting AI is asked first again (0: it is not resting)."""
+    row = conn.execute("SELECT value FROM agent_settings WHERE user_id = ? AND key = ?",
+                       (user_id, REST + provider)).fetchone()
+    return max(0, int(row["value"] or 0) - int(now if now is not None else time.time())) if row else 0
+
+
+def acting_in(conn: sqlite3.Connection, user_id: int, provider: str, now: int | None = None) -> str:
+    """The AI that answers for `provider` now (Janis, 22.11.2026: "ChatGPT is my current AI for a while"): itself, or
+    while its quota rests the first other AI of the user that is connected and not resting (order_in). The pickers and
+    the role pills show this one, so the next question goes straight to it; when the rest is over it is `provider`
+    again. Itself, too, when no other AI can."""
+    if not resting(conn, user_id, provider, now):
+        return provider
+    return next((p for p in order_in(conn, user_id) if p != provider and connected_in(conn, user_id, p)
+                 and not resting(conn, user_id, p, now)), provider)
+
+
 def rest(conn: sqlite3.Connection, user_id: int, provider: str, now: int | None = None) -> None:
     """The AI said its quota is used up: for serversettings.ai_rest minutes the user's other AIs go first, so new
     questions and runs do not fail at it again and again (Janis, 21.11.2026). It is still asked when no other can."""

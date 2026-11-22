@@ -28,6 +28,7 @@ provider already has), so a saved choice ("model.chef" = "mistral-small-2603") t
 """
 import json
 import re
+import time
 from dataclasses import dataclass
 
 from . import db
@@ -197,18 +198,32 @@ def _key(provider_id: str) -> str:
     return f"ai_catalog.{provider_id}"
 
 
+# A page asked for the catalog some 400 times (every model picker, every run row): reading and checking the stored list
+# each time took 1.3 of 1.5 seconds of the project page (22.11.2026, measured). So a parsed list is kept for
+# CACHE_SECONDS, per database; `store` drops it at once, another process sees a new list after at most that long.
+CACHE_SECONDS = 30
+_CACHE: dict[tuple[str, str], tuple[float, "Provider"]] = {}
+
+
 def provider(provider_id: str = DEFAULT_PROVIDER) -> Provider:
     """The models of a provider: the stored list, or SEED while none is stored (or the stored one is broken)."""
     if provider_id not in PROVIDERS:
         raise ValueError("provider")
+    key, now = (db.DB_PATH, provider_id), time.monotonic()
+    hit = _CACHE.get(key)
+    if hit is not None and now - hit[0] < CACHE_SECONDS:
+        return hit[1]
     with db.connect() as conn:
         row = conn.execute("SELECT value FROM server_settings WHERE key = ?", (_key(provider_id),)).fetchone()
+    found = None
     if row is not None:
         try:
-            return parse(provider_id, json.loads(row[0]))
+            found = parse(provider_id, json.loads(row[0]))
         except ValueError:
             pass
-    return parse(provider_id, SEED[provider_id])
+    found = found or parse(provider_id, SEED[provider_id])
+    _CACHE[key] = (now, found)
+    return found
 
 
 def store(provider_id: str, data: dict) -> Provider:
@@ -222,6 +237,7 @@ def store(provider_id: str, data: dict) -> Provider:
         conn.execute("INSERT INTO server_settings (key, value) VALUES (?, ?)"
                      " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                      (_key(provider_id), json.dumps(data, ensure_ascii=False)))
+    _CACHE.pop((db.DB_PATH, provider_id), None)
     return checked
 
 

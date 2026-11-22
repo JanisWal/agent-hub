@@ -29,17 +29,13 @@ def _duration(lang: str, seconds: int) -> str:
         return i18n.t(lang, "dur_seconds", n=seconds)
     if seconds < 90 * 60:
         return i18n.t(lang, "dur_minutes", n=round(seconds / 60))
-    return i18n.t(lang, "dur_hours", n=round(seconds / 3600, 1))
+    return i18n.t(lang, "dur_hours", n=i18n.decimal(lang, seconds / 3600))
 
 
 def _ago(lang: str, then: int | None, now: int) -> str:
     if not then:
         return ""
     return i18n.t(lang, "just_now") if now - then < 60 else i18n.t(lang, "ago", time=_duration(lang, now - then))
-
-
-def _tokens(n: int) -> str:
-    return f"{n / 1000:.1f}k" if n >= 1000 else str(n)
 
 
 def _result(lang: str, item: agents.RoleRun) -> tuple[str, str]:
@@ -59,7 +55,8 @@ def _run_row(lang: str, item: agents.RoleRun, now: int) -> str:
     if run.seconds:
         facts.append(_duration(lang, run.seconds))
     if run.tokens_in or run.tokens_out:
-        facts.append(i18n.t(lang, "role_tokens", tin=_tokens(run.tokens_in), tout=_tokens(run.tokens_out)))
+        facts.append(i18n.t(lang, "role_tokens", tin=i18n.count(lang, run.tokens_in),
+                            tout=i18n.count(lang, run.tokens_out)))
     found = catalog.find(run.model)
     model = "" if found and found[0].id == "custom" else (found[1].name if found else run.model)   # own AI: its name says it
     facts.append(" ".join(x for x in (ui.ai_name(lang, item.provider) if item.provider else "", model) if x))
@@ -121,10 +118,10 @@ def workflow_role(stage: str) -> str:
 def _usage(lang: str, usage: dict) -> str:
     if not usage.get("runs"):
         return f'<p class="muted">{esc(i18n.t(lang, "role_usage_none"))}</p>'
-    line = i18n.t(lang, "role_usage_line", runs=usage["runs"], tin=_tokens(usage["tokens_in"]),
-                  tout=_tokens(usage["tokens_out"]), time=_duration(lang, usage["seconds"]))
+    line = i18n.t(lang, "role_usage_line", runs=usage["runs"], tin=i18n.count(lang, usage["tokens_in"]),
+                  tout=i18n.count(lang, usage["tokens_out"]), time=_duration(lang, usage["seconds"]))
     if usage.get("cache_read"):   # the part of the input read from the AI's cache (it weighs less on the quota)
-        line += " · " + i18n.t(lang, "role_usage_cache", n=_tokens(usage["cache_read"]))
+        line += " · " + i18n.t(lang, "role_usage_cache", n=i18n.count(lang, usage["cache_read"]))
     return f"<p>{esc(line)}</p>"
 
 
@@ -150,14 +147,20 @@ def _soon_button(lang: str, key: str) -> str:
     return f'<button class="pill-btn quiet" type="button" disabled data-tip="{esc(i18n.t(lang, "coming_soon"))}">{label}</button>'
 
 
-def _ai_pills(lang: str, role: str, active: str, ais: tuple[str, ...]) -> str:
+def _ai_pills(lang: str, role: str, active: str, ais: tuple[str, ...], resting: str = "", rest_left: int = 0) -> str:
     """The AIs of the role (Janis, 22.11.2026): the connected ones first, in their rank (aichoice.ranked, as in the
     drawer), as buttons that choose the role's AI; the one it uses is marked. Then the ones not connected, dashed and
-    not clickable. One line that scrolls sideways (wheel, the side wheel of a mouse, or dragging: static/hscroll.js)."""
+    not clickable. One line that scrolls sideways (wheel, the side wheel of a mouse, or dragging: static/hscroll.js).
+    `resting`: the chosen AI while its quota rests (another one stands in and is marked); it says when it is tried again."""
     connected = [p for p in ais if p in catalog.PROVIDERS]
+    def tip(p: str) -> str:
+        if p != resting:
+            return ""
+        return f' data-tip="{esc(i18n.t(lang, "ai_resting_tip", n=max(1, round(rest_left / 60))))}"'
     pills = "".join(
-        f'<button class="p-ai{" on" if p == active else ""}" type="button" data-role-ai="{p}" data-role="{role}" '
-        f'aria-pressed="{"true" if p == active else "false"}">{esc(ui.ai_name(lang, p))}</button>' for p in connected)
+        f'<button class="p-ai{" on" if p == active else ""}{" resting" if p == resting else ""}" type="button" '
+        f'data-role-ai="{p}" data-role="{role}" aria-pressed="{"true" if p == active else "false"}"{tip(p)}>'
+        f'{esc(ui.ai_name(lang, p))}</button>' for p in connected)
     rest = "".join(f'<span class="p-ai off">{esc(ui.ai_name(lang, p))}</span>'
                    for p in catalog.PROVIDERS if p not in connected)
     return pills + rest + f'<span class="p-ai off">{esc(i18n.t(lang, "p_more_ais"))}</span>'
@@ -238,7 +241,7 @@ def _programmer(lang: str, settings: dict, runs: list[agents.RoleRun], usage: di
     listed = "".join(_run_row(lang, r, now) for r in runs)
     runs_html = (f'<ol class="r-runs">{listed}</ol>' if listed
                  else f'<p class="muted">{esc(i18n.t(lang, "role_runs_empty"))}</p>')
-    others = _ai_pills(lang, "programmer", mine["provider"], ais)
+    others = _ai_pills(lang, "programmer", mine["provider"], ais, mine.get("resting", ""), mine.get("rest_left", 0))
     diff = ('<p class="p-stat"><span class="add">+12</span> <span class="del">−3</span> · '
             + esc(i18n.t(lang, "p_sample_files")) + '</p><pre class="p-diff"><span class="del">-    print(*primes)</span>\n'
             '<span class="add">+    print(", ".join(map(str, primes)))</span></pre>'

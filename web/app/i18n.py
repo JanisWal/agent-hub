@@ -354,6 +354,7 @@ STRINGS = {
         "p_context_none": "Kein Kontext hinterlegt.",
         "p_other_ais": "KIs",
         "p_more_ais": "weitere folgen",
+        "ai_resting_tip": "Kontingent aufgebraucht. Bis dahin übernimmt die markierte KI; in {n} Min. wird es wieder versucht.",
         "p_trail": "Verlauf",
         "p_trail_hint": "Was der Programmierer denkt und tut, live während er arbeitet. Nur zum Mitlesen.",
         "p_preview": "Vorschau",
@@ -450,6 +451,8 @@ STRINGS = {
         "dur_seconds": "{n} s",
         "dur_minutes": "{n} Min.",
         "dur_hours": "{n} Std.",
+        "num_thousand": "{n} Tsd.",
+        "num_million": "{n} Mio.",
         "ago": "vor {time}",
         "just_now": "gerade eben",
         "me_title": "Deine Arbeiten",
@@ -495,7 +498,7 @@ STRINGS = {
         "status_progress": "{n} % umgesetzt",
         "status_planned": "Geplant",
         "status_in_progress": "In Arbeit",
-        "status_waiting": "Wartet auf dich",
+        "status_waiting": "Wartet",
         "status_done": "Umgesetzt",
         "status_proposals": "{n} Vorschläge offen",
         "status_todos": "{n} Aufgaben für dich",
@@ -1251,6 +1254,7 @@ STRINGS = {
         "p_context_none": "No context given.",
         "p_other_ais": "AIs",
         "p_more_ais": "more to come",
+        "ai_resting_tip": "Quota used up. The marked AI takes over until then; it is tried again in {n} min.",
         "p_trail": "Trail",
         "p_trail_hint": "What the programmer thinks and does, live while he works. Only to read along.",
         "p_preview": "Preview",
@@ -1347,6 +1351,8 @@ STRINGS = {
         "dur_seconds": "{n} s",
         "dur_minutes": "{n} min",
         "dur_hours": "{n} h",
+        "num_thousand": "{n}k",
+        "num_million": "{n}M",
         "ago": "{time} ago",
         "just_now": "just now",
         "me_title": "Your jobs",
@@ -1392,7 +1398,7 @@ STRINGS = {
         "status_progress": "{n} % done",
         "status_planned": "Planned",
         "status_in_progress": "In progress",
-        "status_waiting": "Waiting for you",
+        "status_waiting": "Waiting",
         "status_done": "Done",
         "status_proposals": "{n} proposals open",
         "status_todos": "{n} tasks for you",
@@ -1798,6 +1804,21 @@ STRINGS = {
         "confirm_empty_trash": "Empty the trash for good? This cannot be undone.",
     },
 }
+
+
+def decimal(lang: str, value: float, digits: int = 1) -> str:
+    """A number with `digits` decimals as the user reads it: 1,4 in German, 1.4 in English."""
+    text = f"{value:.{digits}f}"
+    return text.replace(".", ",") if lang == "de" else text
+
+
+def count(lang: str, n: int) -> str:
+    """A large count short: 950, 12,3 Tsd., 24,5 Mio. (12.3k and 24.5M in English); tokens in the tabs and the drawer."""
+    if n >= 1_000_000:
+        return t(lang, "num_million", n=decimal(lang, n / 1e6))
+    if n >= 1000:
+        return t(lang, "num_thousand", n=decimal(lang, n / 1000))
+    return str(n)
 
 
 def from_header(accept_language: str | None) -> str:

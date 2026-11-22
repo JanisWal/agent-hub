@@ -98,6 +98,27 @@ class StatusNoteTest(unittest.TestCase):
                              (self.pa.id, f"x{i}", NOW - 20 * 3600))
         self.assertEqual(self.scan(), 0)
 
+    def test_the_round_after_a_task_ended_comes_soon_whatever_the_cap(self):
+        # 22.11.2026: busy rounds of another project used up the cap, "the test is still running" stood for hours.
+        board.create_item(self.a.id, self.pa.id, "bug", "X")
+        self.connect(self.a)
+        with db.connect() as conn:
+            for i in range(statusnote.DAILY_MAX):
+                conn.execute("INSERT INTO project_status (project_id, source, fingerprint, created_at) VALUES (?, 'ai', ?, ?)",
+                             (self.pa.id, f"x{i}", NOW - 60))
+            task = conn.execute("INSERT INTO agent_tasks (project_id, title, kind, stage, created_at, finished_at)"
+                                " VALUES (?, 'T', 'bug', 'done', ?, ?)", (self.pa.id, NOW - 900, NOW - 30)).lastrowid
+            conn.execute("INSERT INTO agent_runs (task_id, role, model, status, created_at, finished_at)"
+                         " VALUES (?, 'programmer', 'm', 'done', ?, ?)", (task, NOW - 900, NOW - 30))
+        self.assertEqual(self.scan(NOW), 0)                                          # the gap first
+        self.assertEqual(self.scan(NOW + statusnote.ACTIVE_GAP), 1)                 # then once, over the cap
+        with db.connect() as conn:
+            conn.execute("DELETE FROM chat_messages WHERE kind = 'status'")
+            conn.execute("INSERT INTO project_status (project_id, source, fingerprint, created_at) VALUES (?, 'ai', 'y', ?)",
+                         (self.pa.id, NOW + statusnote.ACTIVE_GAP))
+        board.create_item(self.a.id, self.pa.id, "bug", "Y")
+        self.assertEqual(self.scan(NOW + 3600), 0)                                   # quiet again: the cap holds
+
     def test_request_by_the_user(self):
         board.create_item(self.a.id, self.pa.id, "bug", "X")
         self.assertEqual(statusnote.request(self.a.id, self.pb.id, NOW), "missing")   # foreign

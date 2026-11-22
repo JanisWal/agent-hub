@@ -2,11 +2,12 @@
 every AI (package, reviewer on another AI, merge before the manager documents) and the board's buttons for tasks."""
 import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
 from app import (agents, ai_link, aichoice, board, catalog, chat, claude_link, db, files, i18n, managerpage, memory,
-                 projectpage, projects, ui, users)
+                 projectpage, projects, rolepage, statusnote, ui, users)
 from app.routes import ai as ai_routes
 from app.routes import board as board_routes
 from app.routes import chat as chat_routes
@@ -142,6 +143,26 @@ class FallbackTest(Base):
         message = chat.list_messages(self.a.id, self.pa.id)[-1]
         self.assertEqual((message.status, chat.failure_kind(message.answer)), ("failed", "limit"))   # no third try
 
+    def test_a_used_up_ai_hands_over_for_a_while_and_the_tabs_show_it(self):
+        # Janis, 22.11.2026: the next question tried Claude again and the programmer's pill stayed on Claude.
+        self.claude(self.a)
+        self.mistral(self.a)
+        chat.send(self.a.id, self.pa.id, "Hello")
+        chat.finish(chat.claim_next().chat_id, False, "Claude AI usage limit reached")
+        with db.connect() as conn:
+            self.assertEqual(aichoice.acting_in(conn, self.a.id, "claude"), "mistral")
+            self.assertGreater(aichoice.rest_left(conn, self.a.id, "claude"), 0)
+            self.assertEqual(aichoice.acting_in(conn, self.b.id, "claude"), "claude")   # only his
+        mine = agents.settings(self.a.id)["roles"]["programmer"]
+        self.assertEqual((mine["provider"], mine["resting"]), ("mistral", "claude"))
+        self.assertEqual(catalog.provider_of(agents.settings(self.a.id)["roles"]["chef"]["model"]), "mistral")
+        page = rolepage.render_role("de", "programmer", agents.settings(self.a.id), [], {}, ("claude", "mistral"))
+        self.assertIn('class="p-ai resting"', page)
+        self.assertIn('class="p-ai on" type="button" data-role-ai="mistral"', page)
+        later = int(time.time()) + 3 * 3600                                    # the rest is over: Claude again
+        with db.connect() as conn:
+            self.assertEqual(aichoice.acting_in(conn, self.a.id, "claude", later), "claude")
+
     def test_with_one_ai_nothing_else_is_tried(self):
         self.claude(self.a)
         self.mistral(self.b)                                                  # B's Mistral never helps A
@@ -212,6 +233,7 @@ class ParallelTest(Base):
 
     def setUp(self):
         super().setUp()
+        statusnote._LAST_SCAN["at"] = 2 ** 40   # no status round in between (it ran only when another test set this)
         self.claude(self.a)
         self.claude(self.b)
 

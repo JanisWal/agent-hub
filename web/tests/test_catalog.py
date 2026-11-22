@@ -105,6 +105,14 @@ class CatalogTest(Base):
             conn.execute("INSERT INTO server_settings (key, value) VALUES ('ai_catalog.claude', '{broken')")
         self.assertEqual(catalog.provider().default_model, "sonnet")
 
+    def test_the_parsed_list_is_kept_and_a_new_one_shows_at_once(self):
+        first = catalog.provider("claude")
+        self.assertIs(catalog.provider("claude"), first)                       # no second read and check
+        data = seed()
+        data["default_model"] = "haiku"
+        catalog.store("claude", data)
+        self.assertEqual(catalog.provider("claude").default_model, "haiku")   # store drops the kept list
+
     def test_resolve_makes_an_old_choice_valid_again(self):
         self.assertEqual(catalog.resolve("opus", "max"), ("opus", "max"))
         self.assertEqual(catalog.resolve("gone", "max"), ("sonnet", "max"))      # model left the list

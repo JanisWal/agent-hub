@@ -357,8 +357,7 @@ def _size(lang: str, size: int) -> str:
         if value < 1024 or unit == "TB":
             break
         value /= 1024
-    text = f"{value:.0f}" if unit == "B" or value >= 100 else f"{value:.1f}"
-    return (text.replace(".", ",") if lang == "de" else text) + " " + unit
+    return i18n.decimal(lang, value, 0 if unit == "B" or value >= 100 else 1) + " " + unit
 
 
 def _origin(url: str) -> str:
