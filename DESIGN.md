@@ -143,6 +143,9 @@ Regeln:
   - **Gemessen ohne Scrollen:** 1920×889, 1366×650, 1280×600, 1024×600, 960×889, 800×520, 700×600, 561×700, 640×900, 800×360, 740×340, 667×375, 844×390. Seitwärts scrollt nie etwas.
   - **Handy hochkant (≤ 560 px Breite):** **Eine Spalte**, alle Projekte untereinander (Kachelhöhe 112 px, Abstand 14 px), die Seite scrollt nach unten. Die Seiten liegen dort **nicht** nebeneinander: Das Seitenband, die Seitenanzeige und die Randpfeile entfallen, das „+“ steht immer am Ende der Liste, leere Plätze entfallen. Ziehen geht mit langem Drücken, am oberen und unteren Fensterrand scrollt die Liste automatisch mit (bis 18 px pro Schritt). Beim Verschieben über Seitengrenzen gilt dieselbe Logik wie sonst (Kacheln wandern von Seite zu Seite, Überlauf rutscht weiter).
   - **Technik:** `main` schneidet seinen Inhalt ab (`overflow: clip`), weil der unsichtbare Schattenrand sonst Scrollen auslöst; im Listenmodus wächst `main` mit der Liste (`flex: 1 0 auto`).
+- **Scrollbalken (22.11.2026, in Chrome gesehen):** Die Seite hält den Platz ihres Scrollbalkens immer frei (`html { scrollbar-gutter: stable }`), damit beim Wechsel zwischen einem Reiter, der scrollt, und einem, der nicht scrollt, nichts seitlich springt.
+- **Rollen-Tabs (22.11.2026):** Die linke Spalte des Programmierer-Tabs ist mindestens 370 px breit (`minmax(370px, 1.1fr) 1.25fr 1.1fr`), damit „Gerade“, „i“, Globus und KI-Auswahl in einer Zeile stehen; mit `1fr` fehlten bei 1470 px 20 px.
+- **Zahlen (22.11.2026):** Große Zahlen kurz und mit deutschem Komma: „24,5 Mio.“, „12,3 Tsd.“, „3,0 Std.“ (Englisch „24.5M“, „12.3k“), immer über `i18n.count` und `i18n.decimal`.
 - **Nicht geprüft am echten Gerät:** Berührung. Geprüft wurde in Chrome mit einem 390 px breiten Rahmen (Layout) und mit **selbst gesendeten Zeigerereignissen** (Berührung, Wisch, langes Drücken), nicht an einem Handy.
 
 ## 9. Formulare

@@ -90,4 +90,4 @@ Ziel, Entscheidungen, Reihenfolge, Codeaufbau, Betrieb, Tests und offene Punkte:
 1. Janis skizziert Modul und Schnittstelle, Claude prüft auf Schlankheit.
 2. Kleine Schritte, ein Modul pro Auftrag, jeweils mit Erklärung.
 3. Entwickeln am Mac im Klon des Repos vom Pi (PROJEKT.md 9); Skripte per `scp` hochladen und mit `bash` ausführen statt verschachtelter Anführungszeichen.
-4. Tests im Container (Web, Runner, Vermittler; HTTP-Test mit zwei Konten), Merge nach `main`, Push, Backup, Deploy (`docker compose up -d --build web runner egress`, Agenten-Images bei Änderungen neu), Prüfung von `/health` und der Live-Seite.
+4. Tests im Container (Web, Runner, Vermittler; HTTP-Test mit zwei Konten), Merge nach `main`, Push, Backup, Deploy (`docker compose up -d --build web runner egress`, Agenten-Images bei Änderungen neu), Prüfung von `/health` und der Live-Seite; Änderungen an der Oberfläche danach in Chrome aus Sicht eines Nutzers ansehen (Claude in Chrome mit Janis' Anmeldung, nur lesen; seit 22.11.2026).
