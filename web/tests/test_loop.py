@@ -164,9 +164,9 @@ class HoverTest(unittest.TestCase):
         import glob
         import re
         for path in glob.glob(os.path.join(os.path.dirname(__file__), "..", "app", "static", "*.css")):
-            css = open(path).read()
+            css = re.sub(r"/\*.*?\*/", "", open(path).read(), flags=re.S)
             for selectors, body in re.findall(r"([^{}]*:hover[^{}]*)\{([^}]*)\}", css):
-                if not re.search(r"translate\s*:\s*(?!none)|translate[XY]?\(", body):
+                if not re.search(r"translate\s*:(?!\s*none)|translate[XY]?\(", body):
                     continue
                 for selector in selectors.split(","):
                     base = selector.strip().split("\n")[-1].replace(":hover", "").strip()
@@ -185,7 +185,12 @@ class RoleAiTest(LoopTest):
         ai_link.complete(self.a.id, "chatgpt", True)
 
     def test_a_role_works_with_the_ai_chosen_for_it(self):
-        from app.routes import roles as role_routes
+        from app.routes import roles
+
+        class role_routes:   # the route called directly: every form field passed
+            @staticmethod
+            def role_settings(role, provider, user):
+                return roles.role_settings(role, enabled="", model="", net="", effort="", provider=provider, user=user)
         self.connect_chatgpt()
         self.assertEqual(agents.settings(self.a.id)["roles"]["programmer"]["provider"], "claude")   # the standard
         self.assertEqual(role_routes.role_settings("programmer", provider="mistral", user=self.a).status_code, 400)
@@ -243,7 +248,9 @@ class PauseTest(LoopTest):
         self.assertFalse(agents.finish_run(job.run_id, "done", "late"))            # the stopped run's word is no more
         self.assertEqual(runner_routes.stop_done(job.run_id), {"ok": True})
         chat.send(self.a.id, self.pa.id, "Hallo")                                   # the manager chat goes on
-        self.assertIsNotNone(chat.claim_next())
+        answer = chat.claim_next()
+        self.assertIsNotNone(answer)
+        chat.finish(answer.chat_id, True, "Hallo")                                  # it frees the one AI slot
         agents.set_paused(self.a.id, False, now=int(__import__("time").time()) + 600)
         with db.connect() as conn:
             later = conn.execute("SELECT deadline FROM agent_tasks WHERE id = ?", (task.id,)).fetchone()[0]

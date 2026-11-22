@@ -446,7 +446,8 @@ class RoleViewsTest(unittest.TestCase):
         reviewer = page[page.index('id="view-reviewer"'):page.index('id="view-me"')]
         self.assertIn("Prüfer", page)
         self.assertIn('class="r-now queued"', reviewer)                       # the reviewer's run waits
-        self.assertIn("Gerade nichts zu tun.", prog)
+        self.assertIn('class="r-now idle"', prog)                             # his task stands at the reviewer
+        self.assertNotIn("Gerade nichts zu tun.", prog)
         self.assertIn("roles.js", page)
         self.assertIn("Your jobs", self.html("en"))
 
@@ -492,7 +493,7 @@ class RoleViewsTest(unittest.TestCase):
         from app.routes import roles as routes
 
         def call(role, **form):
-            values = {"enabled": "", "model": "", "net": "", "effort": ""} | form
+            values = {"enabled": "", "model": "", "net": "", "effort": "", "provider": "-"} | form
             return routes.role_settings(role, user=self.user, **values)
         answer = call("tester", enabled="0", net="apart")
         self.assertEqual((answer["enabled"], answer["net"]), ("0", "apart"))

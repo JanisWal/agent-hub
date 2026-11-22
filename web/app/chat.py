@@ -184,7 +184,9 @@ def claim_next(now: int | None = None) -> ChatJob | None:
         # beside them anyway (Janis, 22.11.2026: the status must not wait for a run of twenty minutes).
         free = agents.slot_free(conn)
         kinds = "" if free else " AND kind = 'status'"
-        for row in conn.execute(f"SELECT * FROM chat_messages WHERE status = 'queued'{kinds} ORDER BY id").fetchall():
+        # a question of the user before a status round (it waits for the next poll, seconds)
+        for row in conn.execute(f"SELECT * FROM chat_messages WHERE status = 'queued'{kinds}"
+                                " ORDER BY kind = 'status', id").fetchall():
             gone = not aichoice.connected_in(conn, row["user_id"], row["provider"])
             if gone or aichoice.resting(conn, row["user_id"], row["provider"]):   # resting: its quota ran out
                 other = _next_ai(conn, row, row["provider"])
