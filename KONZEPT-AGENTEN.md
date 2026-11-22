@@ -428,3 +428,29 @@ Drei Branches übereinander, ein Deploy (Hub und Runner gehören zusammen): `cha
 - Fest bleibt nur die Zeit der Projekttests (`hub-test.sh`): sie laufen ohne KI und brauchen eine Grenze.
 
 **Pausieren friert ein, beendet nichts.** „KIs pausieren“ hält die laufenden Container an (`docker pause`, die Prozesse stehen still, Arbeitsspeicher und Dateien bleiben), startet nichts Neues und lässt den Manager-Chat frei; „KIs fortfahren“ macht weiter (`docker unpause`), ohne Neustart. Während der Pause stehen Stillstand und Höchstdauer still, das Ticket bleibt gültig. Ein angehaltener Lauf zählt nicht als belegter KI-Platz, damit der Chat geht (auf dem kleinen Server teilen sich dann beide den Speicher). Bricht eine Verbindung der KI während einer langen Pause ab, versucht ihr Programm es selbst noch einmal; scheitert der Lauf trotzdem, greift der Weg von oben (Stand committet, derselbe Schritt noch einmal). Die Tabelle `run_stops` wird zu Paus- und Weiter-Aufträgen für den Runner.
+
+### 10.9 Erste Rückmeldungen von Janis nach dem Umbau (22.11.2026, abends)
+
+- **Was gleich gut lief:** Im Manager-Chat „gib mir Vorschläge für den Taschenrechner“, dann „füge das dem Board hinzu“: die Punkte standen ohne Bestätigung auf dem Board, der Programmierer holte sie sich der Reihe nach, unter „Gerade“ wurden es weniger, der Tester meldete „bestanden“, der Prüfer „in Ordnung“. Die 11 alten Entscheidungen hat Janis durchgeklickt (danach kam keine neue), Selbstständigkeit steht bei ihm auf „Entscheidet selbst“. Der Taschenrechner ist sein Maßstab für die Kette.
+- **Folge des Durchklickens:** Die alten Taschenrechner-Aufgaben (10, 11, 15–19) liefen danach parallel im selben Projekt, weil sie von vor dem Umbau stammen (`take_next` legt neue Aufgaben nur an, wenn das Projekt frei ist; alte offene laufen weiter). Ihre Konflikte untereinander löst der Programmierer über `main` im Branch.
+- **Gebaut am selben Abend (`roles-on`):** Tester, Prüfer und Manager immer an (Schalter weg); „Gerade“ im Programmierer-Tab in einer Zeile (MacBook, 1470 × 956 geprüft); „Worauf achten“ als Markdown mit Hineinziehen einer Datei und Pfeil zum Herunterladen, nur für den Prüfer, nie in den Dateien; der Status-Pfeil dreht rund (Kreis des Symbols auf 12 | 12); die Trenner rasten an einem feinen Raster ein (Regel für alle Trenner, auch nach jedem Neuladen). Einzelheiten in PROTOKOLL.md.
+- **Frage nach den Tokens** („Wie zuverlässig? Pro KI? Geschätzt? Geht etwas unter?“) und die Antwort darauf: 10.10.
+- Janis' letzter Satz einer Sprachnachricht war abgeschnitten („Und Objektive, Rabatte und …“), vermutlich ein Fehler der Spracherkennung; nichts daraus umgesetzt.
+
+### 10.10 Verbrauch zuverlässig zählen (Janis, 22.11.2026: „dieser Wert soll zuverlässig sein“)
+
+**Befund vorher:** Geschätzt wurde nichts, die Zahlen kamen aus den Programmen der KIs (Claude Code: `usage` im Ergebnis, Eingabe = Eingabe + in den Zwischenspeicher geschrieben + daraus gelesen; Codex: Summe der Züge; Vibe: aus dem Export der Sitzung; die Schleife des Hubs: Summe der API-Antworten). Es ging aber Verbrauch unter:
+- beendete Läufe (Stillstand, Höchstdauer, Abbrechen, Runner-Neustart, abgestürzter Container) zählten 0, weil die Summe erst ganz am Ende kommt;
+- Statustexte und Ordnerpläne: ihre Zeilen in `chat_messages` werden nach dem Speichern gelöscht, samt Zahlen;
+- Chat-Antworten nach „Chatverlauf löschen“ und ab der 101. Nachricht (das Archiv hat keine Tokens);
+- eine Chat-Antwort, die in die Zeit lief, zählte 0;
+- das Lesen aus dem Zwischenspeicher zählte bei Claude voll als Eingabe (es wiegt beim Kontingent weniger);
+- je KI war nichts sichtbar (nur die Summe je Rolle im Tab).
+
+**Lösung (gebaut, `usage`):**
+- **Ein Verbrauchsbuch** `ai_usage` (`web/app/usage.py`): eine Zeile je Aufruf einer KI, geschrieben genau dort, wo der Runner ein Ende meldet (`chat.finish`, `agents.finish_run`, also auch Status, Ordnerpläne, Nachfragen, kurze Aufträge des Managers, Wiederholungen nach einem Wechsel der KI). Spalten: Nutzer, Projekt, KI, Modell, Abo oder Schlüssel, Art (`chat`, `status`, `folders`, `run`), Rolle, Zweck, Eingabe gesamt, Ausgabe, davon aus dem Zwischenspeicher gelesen und dorthin geschrieben, Sekunden, `partial` (aus einem beendeten Lauf mitgezählt), Zeitpunkt. Wird nie mit dem Chatverlauf gelöscht; geht mit dem Konto (`ON DELETE CASCADE`), bei einem gelöschten Projekt bleibt die Zeile ohne Projekt (sie gehört zum Konto).
+- **Teilverbrauch:** Der Runner zählt mit, was er im Stream sieht: bei Claude Code die `usage` jeder fertigen Antwort (`type: assistant`, je Nachricht einmal), bei Codex und der Schleife des Hubs eine Zeile `{"usage_so_far": …}`, die ihre Startskripte nach jedem Zug ausgeben. Endet ein Lauf ohne Ergebnis (oder eine Chat-Antwort durch die Zeitgrenze), meldet er diese Summe (`partial`). Vibe meldet seinen Verbrauch erst am Ende (Export der Sitzung): ein beendeter Vibe-Lauf zählt weiter 0 (bekannte Lücke).
+- **Zwischenspeicher getrennt:** `tokens_in` bleibt die ganze Eingabe; `cache_read` und `cache_write` sind der Anteil davon (heute nur Claude Code, die anderen melden 0).
+- **Rückblick einmalig:** die bisherigen Zahlen aus `agent_runs` und `chat_messages` kommen als Zeilen ins Buch (Zwischenspeicher dort unbekannt, also 0).
+- **Anzeige:** im Tab jeder Rolle der Verbrauch dieser Rolle im Projekt aus dem Buch (Läufe, Ein/Aus, davon Zwischenspeicher, Zeit); in der Schublade unter jeder verbundenen KI „Heute … · 7 Tage …“.
+- **Verworfen:** die Zahlen in `agent_runs` und `chat_messages` weiter flicken (drei Stellen mit eigenen Regeln, und gelöschte Zeilen nehmen ihre Zahlen mit).
