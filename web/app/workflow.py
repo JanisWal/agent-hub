@@ -9,7 +9,8 @@ A failed test, a failing tester or an objection of the reviewer sends the task b
 return the whole chain runs again. There is no approval by the user: the reviewer's ok merges. A task can stand still
 without leaving its stage (`hold`): "question" (a role waits for an answer of the manager or the user), "todo" (a role
 waits for something only the user can do, in "For you") and "decision" (the user decides how it goes on: again, accept
-as it is, or cancel). Roles the user switched off are skipped. Ends: done, cancelled.
+as it is, or cancel). Every role is always on (Janis, 22.11.2026: no switch for tester and reviewer). Ends: done,
+cancelled.
 """
 from dataclasses import dataclass
 
@@ -42,22 +43,14 @@ class Step:
     stage: str              # a stage or an end
     hold: str = ""          # "" or one of HOLDS
     returns: int = 0
-    manual_check: bool = False   # somebody has to check it by hand (no tester, not testable, accepted as it is)
+    manual_check: bool = False   # somebody has to check it by hand (not testable, accepted as it is)
     why: str = ""           # one of WHY when hold is "decision"
 
 
-def forward(stage: str, returns: int, manual_check: bool, enabled: frozenset[str]) -> Step:
-    """The stage after `stage` went well, skipping the stages of switched-off roles (no tester: nothing was tested)."""
+def forward(stage: str, returns: int, manual_check: bool) -> Step:
+    """The stage after `stage` went well; after documenting the task is done."""
     index = STAGES.index(stage) + 1
-    while index < len(STAGES):
-        name = STAGES[index]
-        role = STAGE_ROLE.get(name)
-        if role is None or role in enabled:
-            return Step(name, "", returns, manual_check)
-        if name == "testing":
-            manual_check = True
-        index += 1
-    return Step("done", "", returns, manual_check)
+    return Step(STAGES[index] if index < len(STAGES) else "done", "", returns, manual_check)
 
 
 def back(returns: int, manual_check: bool) -> Step:
@@ -73,7 +66,7 @@ def decision(stage: str, returns: int, manual_check: bool, why: str) -> Step:
     return Step(stage, "decision", returns, manual_check, why)
 
 
-def after_run(stage: str, result: str, returns: int, manual_check: bool, enabled: frozenset[str], *,
+def after_run(stage: str, result: str, returns: int, manual_check: bool, *,
               tests: bool | None = None, changed: bool = True, stuck: bool = False) -> Step:
     """The role of `stage` reported `result` (already a valid one, RESULTS). Where does the task go?
 
@@ -100,21 +93,21 @@ def after_run(stage: str, result: str, returns: int, manual_check: bool, enabled
             return decision(stage, returns, manual_check, "nothing")
         if tests is False:
             return back(returns, manual_check)
-        return forward(stage, returns, manual_check, enabled)
+        return forward(stage, returns, manual_check)
     if stage == "testing":
         if result == "fail":
             return back(returns, manual_check)
-        return forward(stage, returns, manual_check or result == "not_testable", enabled)
+        return forward(stage, returns, manual_check or result == "not_testable")
     if result == "objections":            # reviewing
         return back(returns, manual_check)
-    return forward(stage, returns, manual_check, enabled)
+    return forward(stage, returns, manual_check)
 
 
-def after_merge(ok: bool, returns: int, manual_check: bool, enabled: frozenset[str]) -> Step:
+def after_merge(ok: bool, returns: int, manual_check: bool) -> Step:
     """The runner merged the branch into main (on to the documentation), or main had moved and conflicts (back to the
     programmer, who gets main into his branch first)."""
     if ok:
-        return forward("merging", returns, manual_check, enabled)
+        return forward("merging", returns, manual_check)
     return back(returns, manual_check)
 
 

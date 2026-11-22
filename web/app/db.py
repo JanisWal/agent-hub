@@ -468,6 +468,11 @@ def _prepare(conn: sqlite3.Connection) -> None:
     if "status" in _columns(conn, "agent_tasks"):
         _convert_chain(conn)
     conn.execute("CREATE INDEX IF NOT EXISTS agent_tasks_by_stage ON agent_tasks (project_id, stage)")
+    if conn.execute("SELECT 1 FROM server_settings WHERE key = 'done.roles_on'").fetchone() is None:
+        # Once (22.11.2026, Janis): tester, reviewer and manager are always on; the old on/off settings go. Remove once
+        # no backup from before can be restored (after 27.12.2026).
+        conn.execute("DELETE FROM agent_settings WHERE key LIKE 'enabled.%'")
+        conn.execute("INSERT INTO server_settings (key, value) VALUES ('done.roles_on', '1')")
     if conn.execute("SELECT 1 FROM server_settings WHERE key = 'done.memory_names'").fetchone() is None:
         # Once (20.11.2026, KONZEPT-AGENTEN.md 9.10): the fixed memory files have English names in every project, so
         # the packages name one file (RULES.md) instead of two. Only at the top of Memory, only where the English

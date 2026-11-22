@@ -426,13 +426,6 @@ class ChainTest(Base):
         self.run_stage("pass", can_mac=True)
         self.assertEqual(self.run_stage("ok", can_mac=False).role, "reviewer")   # the reviewer runs on the server
 
-    def test_disabled_tester_is_skipped(self):
-        self.connect(self.a)
-        agents.configure(self.a.id, "tester", enabled=False)
-        self.assertEqual(self.run_stage("done").role, "programmer")
-        self.assertEqual(agents.claim_next(can_mac=True).role, "reviewer")
-        self.assertTrue(self.task().manual_check)
-
     def test_the_reviewer_looks_at_what_the_project_says(self):
         self.connect(self.a)
         self.assertTrue(agents.set_review_focus(self.a.id, self.project.id, "Sicherheit der Eingaben"))
@@ -442,9 +435,8 @@ class ChainTest(Base):
         self.assertIn("Sicherheit der Eingaben", agents.claim_next(can_mac=True).prompt)
 
     def test_settings_validation(self):
-        for call in (lambda: agents.configure(self.a.id, "programmer", enabled=False),
-                     lambda: agents.configure(self.a.id, "tester", model="gpt"),
-                     lambda: agents.configure(self.a.id, "janitor", enabled=True),
+        for call in (lambda: agents.configure(self.a.id, "tester", model="gpt"),
+                     lambda: agents.configure(self.a.id, "janitor", net="apart"),
                      lambda: agents.configure(self.a.id, autonomy="wild")):
             with self.assertRaises(ValueError):
                 call()

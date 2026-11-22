@@ -2,7 +2,7 @@
 version to work with; what exactly belongs there is decided later, PROJEKT.md 11a, Stufe 2).
 
 A role view has two columns. Left: "Right now" (what the role is doing in this project, with its settings in the head:
-on or off, code with internet, model and level) and its usage. Right: its runs, newest first, each with its report.
+code with internet, model and level) and its usage. Right: its runs, newest first, each with its report.
 "For you" (Janis, 16.11.2026) is the user's own work list (todos.py): what he does himself, physically or technically,
 and what he did. Decisions wait in the Manager view ("waiting for you", managerpage.py), not here.
 
@@ -124,16 +124,6 @@ def _usage(lang: str, usage: dict) -> str:
     line = i18n.t(lang, "role_usage_line", runs=usage["runs"], tin=_tokens(usage["tokens_in"]),
                   tout=_tokens(usage["tokens_out"]), time=_duration(lang, usage["seconds"]))
     return f"<p>{esc(line)}</p>"
-
-
-def _enabled_select(lang: str, role: str, enabled: bool) -> str:
-    """On or off for tester and reviewer, in our own drop-down (core.js); the programmer is always on."""
-    label = esc(i18n.t(lang, "role_switch"))
-    options = "".join(
-        f'<option value="{value}"{" selected" if (value == "1") == enabled else ""}>{esc(i18n.t(lang, key))}</option>'
-        for value, key in (("1", "role_on"), ("0", "role_off")))
-    return (f'<label class="m-select has-select"><select name="enabled" data-setting="enabled" id="role-{role}-enabled" '
-            f'aria-label="{label}">{options}</select>{icon("chevron_down")}</label>')
 
 
 def _net_pill(lang: str, role: str, current: str) -> str:
@@ -283,8 +273,7 @@ def render_role(lang: str, role: str, settings: dict, runs: list[agents.RoleRun]
     mine = settings["roles"][role]
     picker = ui.model_picker(lang, f"role-{role}", mine["model"], mine.get("effort", ""), providers=(mine["provider"],),
                              allowed=settings.get("models"), names=settings.get("model_names"))
-    switch = "" if role == "programmer" else _enabled_select(lang, role, mine["enabled"])
-    tools = f'<span class="m-chat-tools">{switch}{_net_pill(lang, role, mine["net"])}{picker}</span>'
+    tools = f'<span class="m-chat-tools">{_net_pill(lang, role, mine["net"])}{picker}</span>'
     name = i18n.t(lang, f"station_{role}")
     listed = "".join(_run_row(lang, r, now) for r in runs)
     runs_html = (f'<ol class="r-runs">{listed}</ol>' if listed
