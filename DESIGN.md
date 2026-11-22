@@ -146,6 +146,8 @@ Regeln:
 - **Scrollbalken (22.11.2026, in Chrome gesehen):** Die Seite hält den Platz ihres Scrollbalkens immer frei (`html { scrollbar-gutter: stable }`), damit beim Wechsel zwischen einem Reiter, der scrollt, und einem, der nicht scrollt, nichts seitlich springt.
 - **Rollen-Tabs (22.11.2026):** Die linke Spalte des Programmierer-Tabs ist mindestens 370 px breit (`minmax(370px, 1.1fr) 1.25fr 1.1fr`), damit „Gerade“, „i“, Globus und KI-Auswahl in einer Zeile stehen; mit `1fr` fehlten bei 1470 px 20 px.
 - **Zahlen (22.11.2026):** Große Zahlen kurz und mit deutschem Komma: „24,5 Mio.“, „12,3 Tsd.“, „3,0 Std.“ (Englisch „24.5M“, „12.3k“), immer über `i18n.count` und `i18n.decimal`.
+- **Schublade (22.11.2026):** Scrollbalken 8 px, Platz auf beiden Seiten immer frei (`scrollbar-gutter: stable both-edges`), Bahn 24 px vor oben und unten (Rundung der Schublade).
+- **Board (22.11.2026):** Vorschläge stehen oben in ihrer Spalte, darunter die vereinbarten Punkte. Die Pille einer KI, deren Kontingent ruht, ist durchgestrichen; die vertretende KI ist markiert.
 - **Nicht geprüft am echten Gerät:** Berührung. Geprüft wurde in Chrome mit einem 390 px breiten Rahmen (Layout) und mit **selbst gesendeten Zeigerereignissen** (Berührung, Wisch, langes Drücken), nicht an einem Handy.
 
 ## 9. Formulare
