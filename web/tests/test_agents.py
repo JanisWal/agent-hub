@@ -428,11 +428,25 @@ class ChainTest(Base):
 
     def test_the_reviewer_looks_at_what_the_project_says(self):
         self.connect(self.a)
-        self.assertTrue(agents.set_review_focus(self.a.id, self.project.id, "Sicherheit der Eingaben"))
+        focus = "# Prüfen\r\n\r\n\r\n\r\n- Sicherheit der Eingaben\n- keine Zugangsdaten im Code   \x07"
+        self.assertTrue(agents.set_review_focus(self.a.id, self.project.id, focus))
         self.assertFalse(agents.set_review_focus(self.b.id, self.project.id, "x"))
-        self.run_stage("done")
+        self.assertEqual(agents.review_focus(self.a.id, self.project.id),
+                         "# Prüfen\n\n- Sicherheit der Eingaben\n- keine Zugangsdaten im Code")   # Markdown kept, cleaned
+        programmer = agents.claim_next(can_mac=True)
+        self.assertNotIn("Sicherheit der Eingaben", programmer.prompt)            # only the reviewer gets it
+        agents.finish_run(programmer.run_id, "done", change=CHANGE, committed=True)
         self.run_stage("pass")
-        self.assertIn("Sicherheit der Eingaben", agents.claim_next(can_mac=True).prompt)
+        reviewer = agents.claim_next(can_mac=True)
+        self.assertIn("<review-focus>\n# Prüfen\n\n- Sicherheit der Eingaben", reviewer.prompt)
+
+    def test_the_review_focus_downloads_as_markdown(self):
+        from app.routes import roles as role_routes
+        agents.set_review_focus(self.a.id, self.project.id, "- Sicherheit")
+        answer = role_routes.review_focus_file(self.project.id, user=self.a)
+        self.assertEqual((answer.body, answer.media_type), (b"- Sicherheit\n", "text/markdown; charset=utf-8"))
+        self.assertIn("Worauf-achten.md", answer.headers["content-disposition"])
+        self.assertEqual(role_routes.review_focus_file(self.project.id, user=self.b).status_code, 404)
 
     def test_settings_validation(self):
         for call in (lambda: agents.configure(self.a.id, "tester", model="gpt"),

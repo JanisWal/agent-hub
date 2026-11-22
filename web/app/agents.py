@@ -18,6 +18,7 @@ Two sides:
 
 A run starts only with one of the user's own AIs (aichoice.py); nobody else's connection is ever used.
 """
+import re
 import sqlite3
 import time
 from dataclasses import dataclass, field
@@ -271,20 +272,28 @@ def configure(user_id: int, role: str | None = None, *, model: str | None = None
 
 
 def review_focus(user_id: int, project_id: int) -> str | None:
-    """What the reviewer of the project looks at (Janis, 22.11.2026; "" = correctness, security, structure)."""
+    """What the reviewer of the project looks at (Janis, 22.11.2026; "" = correctness, security, structure). Markdown:
+    the user types it, drops a file on the field or downloads it again; only the reviewer's package has it."""
     with db.connect() as conn:
         row = conn.execute("SELECT review_focus FROM projects WHERE id = ? AND user_id = ?",
                            (project_id, user_id)).fetchone()
     return None if row is None else row["review_focus"]
 
 
-MAX_FOCUS = 1000
+MAX_FOCUS = 6000
+_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def clean_focus(text: str) -> str:
+    """Markdown as it was written: lines kept, control characters, trailing blanks and runs of empty lines gone."""
+    lines = [line.rstrip() for line in _CONTROL.sub("", (text or "").replace("\r\n", "\n").replace("\r", "\n")).split("\n")]
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()[:MAX_FOCUS]
 
 
 def set_review_focus(user_id: int, project_id: int, text: str) -> bool:
     with db.connect() as conn:
         return conn.execute("UPDATE projects SET review_focus = ? WHERE id = ? AND user_id = ?",
-                            (" ".join((text or "").split())[:MAX_FOCUS], project_id, user_id)).rowcount == 1
+                            (clean_focus(text), project_id, user_id)).rowcount == 1
 
 
 # --- the emergency switch (Janis, 22.11.2026): "AIs pause" in the drawer freezes the user's agent runs where they are

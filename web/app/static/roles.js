@@ -51,6 +51,33 @@
       focusTimer = setTimeout(saveFocus, 800);
     });
     focusField.addEventListener("change", saveFocus);
+    // A Markdown or text file dropped on the tile takes the field's place (Janis, 22.11.2026: no file field, no plus).
+    var focusTile = document.getElementById("review-focus-tile");
+    var focusState = document.getElementById("review-focus-state");
+    var MAX_FILE = 100 * 1024;
+    function isFile(event) { return event.dataTransfer && Array.prototype.indexOf.call(event.dataTransfer.types || [], "Files") >= 0; }
+    focusTile.addEventListener("dragover", function (event) {
+      if (!isFile(event)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "copy";
+      focusTile.classList.add("dropping");
+    });
+    focusTile.addEventListener("dragleave", function (event) {
+      if (!focusTile.contains(event.relatedTarget)) focusTile.classList.remove("dropping");
+    });
+    focusTile.addEventListener("drop", function (event) {
+      if (!isFile(event)) return;
+      event.preventDefault();
+      focusTile.classList.remove("dropping");
+      var file = event.dataTransfer.files[0];
+      var textLike = file && (/^text\//.test(file.type) || /\.(md|markdown|txt)$/i.test(file.name));
+      if (!textLike || file.size > MAX_FILE) { focusState.textContent = focusState.dataset.bad; return; }
+      file.text().then(function (text) {
+        focusField.value = text.slice(0, Number(focusField.maxLength) || text.length);
+        saveFocus();
+        focusState.textContent = focusState.dataset.taken;
+      }).catch(function () { focusState.textContent = focusState.dataset.bad; });
+    });
   }
 
   // The AI of a role (rolepage._ai_pills): a click chooses it; the page comes again quietly, because the model

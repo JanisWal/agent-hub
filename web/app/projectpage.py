@@ -253,7 +253,7 @@ def render(user: User, project: Project, items: list[Item], regular_checks: list
     ranked = tuple(aichoice.ranked(user.id)) or ais   # the AIs a role can be given, as in the drawer
     roles = "".join(rolepage.render_role(lang, role, settings, agents.role_runs(user.id, project.id, role),
                                          agents.usage(user.id, project.id, role), ranked, current=current,
-                                         where=where, focus=project.review_focus)
+                                         where=where, focus=project.review_focus, project_id=project.id)
                     for role in rolepage.ROLES)
     waiting = [(t, agents.last_report(user.id, t.id)) for t in agents.decisions(user.id, project.id)]
     entries = todos.list_todos(user.id, project.id)
