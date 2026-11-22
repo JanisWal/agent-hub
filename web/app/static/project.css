@@ -920,7 +920,9 @@ body[data-open-view]:not([data-open-view="board"]) .drawer-extra[aria-controls="
 
 /* The programmer's tab (Janis, 19.11.2026; PROJEKT.md 11a, 3a 3b 3c 3f 4): three columns. Tiles that are placeholders
    yet carry "coming later" and a greyed example of their content that can not be used. */
-.manager.role-view.p-view { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1.15fr); align-items: stretch; }
+/* The left column keeps room for "Gerade", its "i", the globe and the AI picker in one row (22.11.2026, seen in
+   Chrome at 1470 px: with 1fr it was 20 px short and wrapped). */
+.manager.role-view.p-view { grid-template-columns: minmax(370px, 1.1fr) minmax(0, 1.25fr) minmax(0, 1.1fr); align-items: stretch; }
 .p-badge { margin-left: auto; padding: 2px 9px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; color: var(--muted); border: 1px dashed var(--glass-border); }
 .p-sample { opacity: 0.5; pointer-events: none; user-select: none; display: flex; flex-direction: column; gap: 8px; }
 .p-soon .p-sample .pill-btn { pointer-events: none; }
