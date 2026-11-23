@@ -119,7 +119,7 @@ class UsageTest(unittest.TestCase):
         self.assertIn('data-usage="claude"', page)                              # the button of its row
         self.assertIn('id="usage-dialog"', page)
         self.assertIn('data-usage-for="claude"', page)
-        for text in ("Heute", "Letzte 7 Tage", "Dieses Projekt", "Alle Projekte"):               # this project first, all quiet
+        for text in ("Heute", "Letzte 7 Tage", "Dieses Projekt"):                                # the three cards of a project
             self.assertIn(text, page)
         self.assertNotIn("Alle KIs zusammen", page)                             # one AI: no sum
         self.assertNotIn("Dieses Projekt", ui.settings_bar(self.a))             # not on a project page
@@ -129,7 +129,7 @@ class UsageTest(unittest.TestCase):
         page = ui.settings_bar(self.a, project_id=self.pa.id)
         self.assertIn('data-usage-for="all"', page)
         self.assertIn("Alle KIs zusammen", page)
-        self.assertIn("grober Überblick", page)                                 # the "i" says tokens differ
+        self.assertIn("grober Richtwert", page)                                 # the short "i" says tokens differ
 
     def test_the_split_by_day_role_model_and_way_and_the_projects_on_the_board(self):
         now = 1_800_000_000
@@ -174,7 +174,7 @@ class UsageTest(unittest.TestCase):
         self.assertIn('class="usage-day now"', board)                              # today's bar
         self.assertIn('data-pct="100"', board)                                     # the highest bar is full
         page = ui.settings_bar(self.a, project_id=self.pa.id)                      # a project: its own, the rest quiet
-        self.assertIn("usage-quiet", page)
+        self.assertNotIn("usage-quiet", page)                                       # no line about all projects in a project
         self.assertNotIn('data-split="project"', page)
         self.assertNotIn("usage-block big", page)
 
@@ -191,7 +191,7 @@ class UsageTest(unittest.TestCase):
         page = ui.settings_bar(self.a)
         self.assertIn('data-mode="time"', page)                                     # the switch
         self.assertIn('<span class="u-time">4 Min.</span>', page)                    # 240 seconds
-        self.assertIn("Summe der Dauer aller Aufrufe", page)                        # the "i" says how it counts
+        self.assertNotIn("info-dot", page)                                          # no "i" at the usage itself (one AI: no sum)
         self.assertIn('data-pct-t="', page)                                         # bars for the time view too
 
     def test_it_goes_with_the_account_and_stays_without_its_project(self):
