@@ -139,6 +139,15 @@ class FallbackTest(Base):
         chat.claim_next()                                                     # handed on to the next AI
         self.assertEqual(chat_routes.messages(self.pa.id, user=self.a)["messages"][-1]["ai"], "Mistral")
 
+    def test_a_model_of_another_ai_moves_the_role_to_that_ai(self):
+        self.claude(self.a)
+        self.mistral(self.a)
+        agents.configure(self.a.id, "chef", model="mistral-small-2603")        # the manager's list holds all AIs
+        mine = agents.settings(self.a.id)["roles"]["chef"]
+        self.assertEqual((mine["provider"], mine["model"]), ("mistral", "mistral-small-2603"))
+        agents.configure(self.a.id, "chef", provider="claude")                 # back by the AI: its own model returns
+        self.assertEqual(agents.settings(self.a.id)["roles"]["chef"]["provider"], "claude")
+
     def test_a_used_up_quota_tries_the_next_ai_once(self):
         self.claude(self.a)
         self.mistral(self.a)

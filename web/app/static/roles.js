@@ -78,8 +78,8 @@
     });
   }
 
-  // The AI of a role (rolepage._ai_pills): a click chooses it; the page comes again quietly, because the model
-  // picker shows the models of the role's AI and is built when the page loads.
+  // The AI of a role (rolepage._ai_pills): a click chooses it; the pills and the model picker (which shows the models
+  // of the role's AI) are swapped in at once, no reload.
   document.addEventListener("click", function (event) {
     var pill = event.target.closest("[data-role-ai]");
     if (!pill || pill.getAttribute("aria-pressed") === "true") return;
@@ -87,8 +87,9 @@
     var body = new FormData();
     body.append("provider", pill.dataset.roleAi);
     fetch("/roles/" + pill.dataset.role + "/settings", { method: "POST", body: body, credentials: "same-origin" })
-      .then(function (r) { if (!r.ok) throw new Error("ai"); window.AgentHub.reload(); })
-      .catch(function () { pill.disabled = false; });
+      .then(function (r) { if (!r.ok) throw new Error("ai"); return window.AgentHub.swap(["role-" + pill.dataset.role + "-ais"]); })
+      .then(function (fresh) { window.AgentHub.refreshPickers(fresh); })
+      .catch(function () { window.AgentHub.reload(); });
   });
 
   // The open role view follows the server through the page's one timer (core.js): quickly while its role has a run

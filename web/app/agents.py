@@ -267,6 +267,10 @@ def configure(user_id: int, role: str | None = None, *, model: str | None = None
             if model is not None and not models.permits(conn, user_id, model):
                 raise ValueError("Modell nicht im Konto")
         owner_ai = catalog.provider_of(model_for_effort)     # kept per AI: switching back finds it again
+        if model is not None:   # the manager's list holds the models of all AIs: a model of another one moves the role
+            with db.connect() as conn:
+                if owner_ai != role_provider_in(conn, user_id, role) and aichoice.connected_in(conn, user_id, owner_ai):
+                    changes.append((f"ai.role.{role}", owner_ai))
         if model is not None:
             changes.append((f"model.{role}.{owner_ai}", model))
         if effort is not None:
