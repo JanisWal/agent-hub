@@ -53,7 +53,7 @@ def project_view(project_id: int, user: users.User = Depends(page_user)):
     return ui.logged_in_page(
         user, project.name, body, scripts=projectpage.SCRIPTS, styles=projectpage.STYLES,
         top_center=projectpage.title_html(project, user.language), top_left=projectpage.back_html(user.language), drawer_extras=projectpage.drawer_buttons(user.language),
-        body_class="project-page",
+        body_class="project-page", project_id=project.id,
     )
 
 

@@ -30,6 +30,17 @@
     }).catch(function () { button.disabled = false; });
   });
 
+  // What an AI used (ui._usage_dialog): the button of its row opens the window with its block and, below, all AIs.
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-usage]");
+    var dialog = document.getElementById("usage-dialog");
+    if (!button || !dialog || typeof dialog.showModal !== "function") return;
+    dialog.querySelectorAll("[data-usage-for]").forEach(function (block) {
+      block.hidden = block.dataset.usageFor !== button.dataset.usage && block.dataset.usageFor !== "all";
+    });
+    dialog.showModal();
+  });
+
   var CHECK_FOR = 150000; // ms: the hub gives up a check after two minutes (ai_link.CHECK_SECONDS)
   var SIGN_IN_FOR = 990000; // ms: a sign-in with a one-time code may take 15 minutes (ai_link.DEVICE_SECONDS)
 
@@ -103,6 +114,9 @@
       // "Connected" of an AI with a plan and a key (ui._status): both halves as they are
       if (button.dataset.manage) show(button.dataset.plan === "connected" ? "plan-on" : "key");
       else show(button.dataset.status === "connected" ? "disconnect" : "key");
+      // A refused or expired connection can be renewed or disconnected from the same dialog (Janis, 23.11.2026)
+      var out = dialog.querySelector("[data-to-disconnect]");
+      if (out) out.hidden = !(button.dataset.status === "expired" || button.dataset.status === "noplan");
       dialog.showModal();
       var field = form.querySelector("input");
       if (!form.hidden && field) field.focus();
@@ -135,6 +149,7 @@
       var target = event.target.closest("button");
       if (!target) return;
       if (target.hasAttribute("data-finish")) { dialog.close(); window.AgentHub.reload(); }
+      else if (target.hasAttribute("data-to-disconnect")) show("disconnect");
       else if (target.hasAttribute("data-disconnect")) {   // with an API key half: the plan and the key
         var both = dialog.querySelector("[data-api]");
         post("/ai/" + provider + "/disconnect")

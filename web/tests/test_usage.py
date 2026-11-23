@@ -82,7 +82,9 @@ class UsageTest(unittest.TestCase):
         self.assertEqual(spent["claude"]["week"], 1500)
         self.assertEqual(spent["claude"]["today"], 1000 if now - 60 >= today else 0)
         self.assertEqual(spent["custom-3"]["week"], 70)                        # a further AI by its place
-        self.assertNotIn("mistral", spent)                                     # older than a week
+        self.assertEqual((spent["mistral"]["week"], spent["mistral"]["total"]), (0, 9))   # older than a week: only in all
+        self.assertEqual(spent["claude"]["total"], 1500)
+        self.assertNotIn("project", spent["claude"])                           # no project asked for
         self.assertEqual(usage.by_ai(self.b.id, now=now)["claude"]["week"], 5)   # each only his own
 
     def test_the_drawer_shows_what_an_ai_used(self):
@@ -91,6 +93,37 @@ class UsageTest(unittest.TestCase):
                          credential="plan", kind="chat", tokens_in=12000, tokens_out=345)
         self.assertIn("Verbrauch: heute 12,3 Tsd. · 7 Tage 12,3 Tsd. Token", ui.settings_bar(self.a))
         self.assertNotIn("Verbrauch:", ui.settings_bar(self.b))
+
+    def test_a_project_has_its_own_number_and_never_another_users(self):
+        other = projects.create_project(self.a.id, "Uhr")
+        theirs = projects.create_project(self.b.id, "Fremd")
+        with db.connect() as conn:
+            for user, project, tin in ((self.a, self.pa, 100), (self.a, other, 40), (self.b, theirs, 7)):
+                usage.record(conn, user_id=user.id, project_id=project.id, provider="claude", model="sonnet",
+                             credential="plan", kind="chat", tokens_in=tin, tokens_out=0)
+        spent = usage.by_ai(self.a.id, project_id=self.pa.id)["claude"]
+        self.assertEqual((spent["total"], spent["project"]), (140, 100))        # all projects of his, and this one
+        self.assertEqual(usage.by_ai(self.a.id, project_id=theirs.id)["claude"]["project"], 0)   # not his project: nothing
+
+    def test_the_usage_window_has_a_block_per_ai_and_the_sum_only_with_two(self):
+        with db.connect() as conn:
+            usage.record(conn, user_id=self.a.id, project_id=self.pa.id, provider="claude", model="sonnet",
+                         credential="plan", kind="chat", tokens_in=1000, tokens_out=0)
+        page = ui.settings_bar(self.a, project_id=self.pa.id)
+        self.assertIn('data-usage="claude"', page)                              # the button of its row
+        self.assertIn('id="usage-dialog"', page)
+        self.assertIn('data-usage-for="claude"', page)
+        for text in ("Heute", "Letzte 7 Tage", "Insgesamt", "Dieses Projekt"):
+            self.assertIn(text, page)
+        self.assertNotIn("Alle KIs zusammen", page)                             # one AI: no sum
+        self.assertNotIn("Dieses Projekt", ui.settings_bar(self.a))             # not on a project page
+        with db.connect() as conn:
+            usage.record(conn, user_id=self.a.id, project_id=self.pa.id, provider="mistral", model="m",
+                         credential="plan", kind="chat", tokens_in=500, tokens_out=0)
+        page = ui.settings_bar(self.a, project_id=self.pa.id)
+        self.assertIn('data-usage-for="all"', page)
+        self.assertIn("Alle KIs zusammen", page)
+        self.assertIn("grober Überblick", page)                                 # the "i" says tokens differ
 
     def test_it_goes_with_the_account_and_stays_without_its_project(self):
         with db.connect() as conn:
