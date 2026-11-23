@@ -1,5 +1,6 @@
 """Parts shared by several pages: the login page, the logged-in frame with its settings drawer, the model picker."""
 import json
+import time
 
 from . import catalog, i18n
 from .icons import icon
@@ -516,25 +517,81 @@ def _disconnect_text(lang: str, provider: str, user_id: int, plain: str) -> str:
     return esc(i18n.t(lang, "both_disconnect_text" if has_key else plain))
 
 
-def _usage_dialog(lang: str, used: dict, names: dict[str, str], project: bool) -> str:
-    """What each AI used (Janis, 23.11.2026): a block per AI (the button of its row shows it) with today, the last 7 days,
-    all of it and, on a project page, what that project used; below, all AIs together. Tokens are counted differently
-    by each AI (how it cuts the text, what it takes from its cache), so the sum is a rough overview: the "i" says so."""
-    keys = ("today", "week", "total") + (("project",) if project else ())
+def _model_label(provider: str, model: str, names: dict[str, str]) -> str:
+    """The name of a model as the catalog has it; a further AI's model is its place ("own-3"): the name the user gave."""
+    if model.startswith("own-"):
+        return names.get(f"custom-{model[4:]}") or model
+    found = catalog.provider(provider).model(model) if provider in catalog.PROVIDERS else None
+    return found.name if found else model
 
-    def block(key: str, title: str, numbers: dict, info: str = "") -> str:
-        rows = "".join(f'<div><dt>{esc(i18n.t(lang, "usage_" + k))}</dt><dd>{esc(i18n.count(lang, numbers.get(k, 0)))}</dd></div>'
-                       for k in keys)
-        return (f'<section class="usage-block" data-usage-for="{esc(key)}" hidden><h3>{esc(title)}{info}</h3>'
-                f'<dl class="usage-list">{rows}</dl></section>')
 
-    blocks = [block(name, names.get(name) or ai_name(lang, name), numbers) for name, numbers in used.items()]
+def _meters(lang: str, title: str, parts: list[tuple[str, int]], total: int) -> str:
+    """One split of the usage (by role, model, way, project): a row per part with its share as a bar, the biggest first.
+    The bar is filled by static/ailink.js from data-pct (so it can grow when the window opens)."""
+    parts = [(label, n) for label, n in sorted(parts, key=lambda p: -p[1]) if n > 0]
+    if not parts or not total:
+        return ""
+    rows = "".join(
+        f'<div class="usage-row"><span class="usage-label">{esc(label)}</span><span class="usage-value">'
+        f'{esc(i18n.count(lang, n))}</span><span class="usage-meter"><i data-pct="{round(100 * n / total)}"></i></span></div>'
+        for label, n in parts[:6])
+    return f'<div class="usage-split"><h4>{esc(title)}</h4>{rows}</div>'
+
+
+def _usage_block(lang: str, key: str, title: str, item: dict, project: bool, names: dict[str, str], now: int) -> str:
+    """The window of one AI. The scope of the page comes first and big: on a project page that project (today, the last 7
+    days, this project; all projects only quiet at the bottom), on any other page all projects, in more detail (bigger
+    bars, the split by project). Important things in front with bars, the rest quiet (Janis, 23.11.2026)."""
+    t = lambda k: esc(i18n.t(lang, k))   # noqa: E731
+    big = not project
+    cards = [("usage_today", item["today"]), ("usage_week", item["week"]),
+             ("usage_project", item["project"]) if project else ("usage_total", item["total"])]
+    cards_html = "".join(f'<div class="usage-card{" lead" if i == 2 else ""}"><span>{t(label)}</span>'
+                         f'<strong>{esc(i18n.count(lang, n))}</strong></div>' for i, (label, n) in enumerate(cards))
+    peak = max(item["days"]) or 1
+    day0 = now - now % 86400 - 6 * 86400
+    bars = "".join(
+        f'<div class="usage-day{" now" if i == 6 else ""}"><span class="usage-day-n">{esc(i18n.count(lang, n)) if n else ""}</span>'
+        f'<span class="usage-bar"><i data-pct="{round(100 * n / peak)}"></i></span>'
+        f'<span class="usage-day-l">{t("usage_day_" + str(time.gmtime(day0 + i * 86400).tm_wday))}</span></div>'
+        for i, n in enumerate(item["days"]))
+    scope_total = item["scope"]
+    ways = ([(i18n.t(lang, "usage_way_" + k) if k in ("plan", "api") else k, n) for k, n in item["ways"].items()]
+            if key in ("claude", "chatgpt") else [])
+    roles = [(i18n.t(lang, "station_manager" if k == "chef" else f"station_{k}") if k else i18n.t(lang, "usage_other"), n)
+             for k, n in item["roles"].items()]
+    provider = "custom" if key.startswith("custom") else key
+    models = [(_model_label(provider, k, names), n) for k, n in item["models"].items()] if provider != "custom" else []
+    splits = (_meters(lang, i18n.t(lang, "usage_by_role"), roles, scope_total)
+              + _meters(lang, i18n.t(lang, "usage_by_model"), models, scope_total)
+              + _meters(lang, i18n.t(lang, "usage_by_way"), ways if "api" in item["ways"] else [], scope_total)
+              + _meters(lang, i18n.t(lang, "usage_by_project"), [(k or i18n.t(lang, "usage_other"), n) for k, n in item["projects"].items()],
+                        scope_total))
+    quiet = (f'<p class="usage-quiet">{t("usage_all_projects")}: {esc(i18n.count(lang, item["total"]))} · '
+             f'{t("usage_week")}: {esc(i18n.count(lang, item["week_all"]))}</p>' if project else "")
+    scope = t("usage_scope_project" if project else "usage_scope_all")
+    return (f'<section class="usage-block{" big" if big else ""}" data-usage-for="{esc(key)}" hidden>'
+            f'<header class="usage-head"><h3>{esc(title)}</h3><span class="usage-scope">{scope}</span></header>'
+            f'<div class="usage-cards">{cards_html}</div><div class="usage-days" role="img" aria-label="{t("usage_by_days")}">{bars}</div>'
+            f'{splits}{quiet}</section>')
+
+
+def _usage_dialog(lang: str, used: dict, names: dict[str, str], project: bool, now: int | None = None) -> str:
+    """What each AI used (Janis, 23.11.2026): a block per AI (the button of its row opens it) and below, small, all AIs
+    together. Tokens are counted differently by each AI (how it cuts the text, what it takes from its cache), so the sum
+    is a rough overview: the "i" says so."""
+    now = int(now if now is not None else time.time())
+    blocks = [_usage_block(lang, name, names.get(name) or ai_name(lang, name), item, project, names, now)
+              for name, item in used.items()]
     if len(used) >= 2:
-        everything = {k: sum(n.get(k, 0) for n in used.values()) for k in keys}
+        keys = ("today", "week", "project" if project else "total")
+        sums = "".join(f'<div><dt>{esc(i18n.t(lang, "usage_" + k))}</dt><dd>{esc(i18n.count(lang, sum(i[k] for i in used.values())))}</dd></div>'
+                       for k in keys)
         title = i18n.t(lang, "usage_all")
-        blocks.append(block("all", title, everything, info_dot(title, i18n.t(lang, "usage_all_info"))))
-    return (f'<dialog class="dialog" id="usage-dialog"><h2>{esc(i18n.t(lang, "usage_title"))}</h2>{"".join(blocks)}'
-            f'<div class="actions"><button type="button" data-close>{esc(i18n.t(lang, "close"))}</button></div></dialog>')
+        blocks.append(f'<section class="usage-all" data-usage-for="all" hidden><h4>{esc(title)}'
+                      f'{info_dot(title, i18n.t(lang, "usage_all_info"))}</h4><dl class="usage-list">{sums}</dl></section>')
+    return (f'<dialog class="dialog wide usage-dialog" id="usage-dialog"><h2>{esc(i18n.t(lang, "usage_title"))}</h2>'
+            f'{"".join(blocks)}<div class="actions"><button type="button" data-close>{esc(i18n.t(lang, "close"))}</button></div></dialog>')
 
 
 def _paused(user_id: int) -> bool:
@@ -602,7 +659,7 @@ def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | Non
         line = (api or {}).get(name, "")
         spent = (used or {}).get(name)
         shown = line + (f'<button class="service-usage" type="button" data-usage="{esc(name)}" aria-haspopup="dialog">'
-                        f'{esc(i18n.t(lang, "ai_usage_line", today=i18n.count(lang, spent["today"]), week=i18n.count(lang, spent["week"])))}</button>'
+                        f'{esc(i18n.t(lang, "ai_usage_line", n=i18n.count(lang, spent["scope"])))}</button>'
                         if spent else "")
         if name == "claude":
             return _claude_row(lang, claude_state, first, as_default, shown, bool(line))
@@ -641,7 +698,7 @@ def settings_bar(user: User, extras: str = "", project_id: int | None = None) ->
     buttons to the left of the gear that ride along when the drawer slides out (project page). `project_id`: the project
     of the page, so the usage window can also name what that project used."""
     lang = user.language
-    custom, used = _custom_rows(user.id), usage.by_ai(user.id, project_id=project_id)
+    custom, used = _custom_rows(user.id), usage.detail(user.id, project_id=project_id)
     return fill(
         SETTINGS,
         lang,
