@@ -32,23 +32,64 @@
   });
 
   // What an AI used (ui._usage_dialog): the button of its row opens the window with its block and, below, all AIs.
-  document.addEventListener("click", function (event) {
-    var button = event.target.closest("[data-usage]");
-    var dialog = document.getElementById("usage-dialog");
-    if (!button || !dialog || typeof dialog.showModal !== "function") return;
-    dialog.querySelectorAll("[data-usage-for]").forEach(function (block) {
-      block.hidden = block.dataset.usageFor !== button.dataset.usage && block.dataset.usageFor !== "all";
-    });
-    dialog.showModal();
-    dialog.scrollTop = 0;
-    // The bars grow from nothing each time the window opens (transform only; reduced motion: the CSS has no transition)
-    var bars = Array.prototype.slice.call(dialog.querySelectorAll("[data-usage-for]:not([hidden]) i[data-pct]"));
+  // The switch at the top shows tokens or time (data-mode of the window, CSS shows one of the two numbers), the small
+  // switch above the splits shows one split at a time. The bars grow from nothing whenever what is shown changes
+  // (transform only; with reduced motion the CSS has no transition).
+  function usageWindow() { return document.getElementById("usage-dialog"); }
+
+  function paintUsage() {
+    var dialog = usageWindow();
+    if (!dialog) return;
+    var time = dialog.dataset.mode === "time";
+    var bars = Array.prototype.filter.call(dialog.querySelectorAll("i[data-pct]"), function (bar) { return bar.offsetParent !== null; });
     bars.forEach(function (bar) { bar.style.transform = ""; });
     void dialog.offsetWidth;
     bars.forEach(function (bar) {
-      var share = Math.max(0, Math.min(1, Number(bar.dataset.pct) / 100));
+      var share = Math.max(0, Math.min(1, Number(time ? bar.dataset.pctT : bar.dataset.pct) / 100));
       bar.style.transform = bar.parentNode.classList.contains("usage-bar") ? "scaleY(" + share + ")" : "scaleX(" + share + ")";
     });
+  }
+
+  // A small switch (.seg): the chosen button is aria-selected, the glass thumb lies under it (--seg-i, CSS moves it).
+  function choose(box, button) {
+    var buttons = Array.prototype.slice.call(box.querySelectorAll('[role="tab"]'));
+    buttons.forEach(function (b) { b.setAttribute("aria-selected", String(b === button)); });
+    box.style.setProperty("--seg-i", String(buttons.indexOf(button)));
+  }
+
+  document.addEventListener("click", function (event) {
+    var dialog = usageWindow();
+    var open = event.target.closest("[data-usage]");
+    if (open && dialog && typeof dialog.showModal === "function") {
+      dialog.querySelectorAll("[data-usage-for]").forEach(function (block) {
+        block.hidden = block.dataset.usageFor !== open.dataset.usage && block.dataset.usageFor !== "all";
+      });
+      dialog.querySelectorAll(".usage-tabs").forEach(function (box) {   // each block starts at its first split
+        var first = box.querySelector('[role="tab"]');
+        choose(box, first);
+        var panels = box.parentNode.querySelectorAll(".usage-split");
+        panels.forEach(function (p) { p.hidden = p.dataset.split !== first.dataset.splitTab; });
+      });
+      dialog.showModal();
+      dialog.scrollTop = 0;
+      dialog.focus({ focusVisible: false });   // not on the first "i": it would show its ring before anyone pointed at it
+      paintUsage();
+      return;
+    }
+    var mode = event.target.closest("button[data-mode]");   // the window itself has data-mode, too
+    if (mode && dialog && dialog.contains(mode)) {
+      dialog.dataset.mode = mode.dataset.mode;
+      choose(mode.closest(".seg"), mode);
+      paintUsage();
+      return;
+    }
+    var tab = event.target.closest("[data-split-tab]");
+    if (tab && dialog && dialog.contains(tab)) {
+      var box = tab.closest(".seg");
+      choose(box, tab);
+      box.parentNode.querySelectorAll(".usage-split").forEach(function (p) { p.hidden = p.dataset.split !== tab.dataset.splitTab; });
+      paintUsage();
+    }
   });
 
   var CHECK_FOR = 150000; // ms: the hub gives up a check after two minutes (ai_link.CHECK_SECONDS)

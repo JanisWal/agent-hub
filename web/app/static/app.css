@@ -640,6 +640,12 @@ button.status-open::before { transition: transform 0.25s cubic-bezier(0.3, 1.25,
    folded, stays compact. The "coming later" tiles count like the others. */
 .service { --state: var(--accent); min-height: var(--tile-h, 0); }
 .service:has(> .ai-toggle[aria-expanded="false"]) { min-height: 0; }
+.drawer-box.compact .tools-text { display: none; }   /* the open list is taller than the window: no tool lines then (the usage stays) */
+/* ... and a tile is two lines: the name, then the state with the usage at its right */
+.drawer-box.compact .service { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "label label" "line tools"; column-gap: var(--space); align-items: center; padding-block: 6px; }
+.drawer-box.compact .service .setting-label { grid-area: label; margin: 0; }
+.drawer-box.compact .service .service-line { grid-area: line; min-height: 24px; }
+.drawer-box.compact .service .service-tools { grid-area: tools; text-align: right; white-space: nowrap; font-size: 11px; }
 .service.ok { --state: var(--success); }
 .service.expired { --state: var(--error); }
 .service button.status-open:hover { transform: scale(1.06); text-shadow: 0 0 12px color-mix(in srgb, var(--state) 70%, transparent); }
@@ -934,40 +940,58 @@ button.service-usage { min-width: 0; min-height: 0; padding: 0; border: 0; backg
 button.service-usage:hover { color: var(--text); transform: scale(1.04); text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 60%, transparent); }
 button.service-usage:active { transform: scale(0.98); }
 button.service-usage:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
-.usage-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow-y: auto; }
-.usage-block[hidden], .usage-all[hidden] { display: none; }   /* display: grid below must not beat the hidden attribute */
-.usage-block { margin: calc(var(--space) * 1.5) 0; display: grid; gap: calc(var(--space) * 1.5); }
+/* The usage window (Janis, 23.11.2026): glass and glow like the rest, important things first and with bars, the rest quiet,
+   everything sized by the height of the window so nothing has to scroll (scrolling stays only as the last resort). */
+.usage-dialog { width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 24px); overflow-y: auto; padding: calc(var(--space) * 3); }
+.usage-dialog:focus { outline: none; }
+.usage-block[hidden], .usage-all[hidden], .usage-split[hidden] { display: none; }   /* display: grid below must not beat hidden */
+.usage-top { display: flex; align-items: center; justify-content: space-between; gap: calc(var(--space) * 2); }
+.usage-top h2 { display: flex; align-items: center; gap: 2px; margin: 0; }
+.usage-block { margin: calc(var(--space) * 1.5) 0 0; display: grid; gap: calc(var(--space) * 1.25); }
 .usage-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space); }
 .usage-head h3 { margin: 0; }
 .usage-scope { font-size: 0.8rem; color: var(--muted); }
-/* The important numbers first and big, each as a card; the third (this project, or all on the board) leads. */
+.u-time { display: none; }
+.usage-dialog[data-mode="time"] .u-tok { display: none; }
+.usage-dialog[data-mode="time"] .u-time { display: inline; }
+/* The important numbers first and big, each a glass card; the third (this project, or all on the board) glows. */
 .usage-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space); }
-.usage-card { display: grid; gap: 2px; padding: 10px 12px; background: var(--field); border: 1px solid var(--glass-border); border-radius: var(--radius-button); }
+.usage-card { display: grid; gap: 2px; padding: 10px 12px; border-radius: var(--radius-button); border: 1px solid var(--glass-border); background: color-mix(in srgb, var(--field) 70%, transparent); box-shadow: inset 0 1px 0 var(--highlight); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); }
 .usage-card span { font-size: 0.78rem; color: var(--muted); }
 .usage-card strong { font-size: 1.2rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.usage-card.lead { border-color: color-mix(in srgb, var(--accent) 55%, var(--glass-border)); }
-.usage-card.lead strong { color: var(--accent); }
+.usage-card.lead { border-color: color-mix(in srgb, var(--accent) 55%, var(--glass-border)); box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 24%, transparent), inset 0 1px 0 var(--highlight); }
+.usage-card.lead strong { color: var(--accent); text-shadow: 0 0 14px color-mix(in srgb, var(--accent) 45%, transparent); }
 .usage-block.big .usage-card strong { font-size: 1.4rem; }
-/* The last 7 days: a bar a day, today in the accent colour; the bars grow when the window opens (ailink.js). */
+/* The last 7 days: a bar a day in a glass track, today glowing; the bars grow when the window opens (ailink.js). */
 .usage-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; align-items: end; }
 .usage-day { display: grid; gap: 3px; justify-items: center; font-size: 0.7rem; color: var(--muted); }
 .usage-day-n { min-height: 1em; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.usage-bar { width: 100%; height: 64px; display: flex; align-items: flex-end; border-radius: 6px; background: color-mix(in srgb, var(--bg) 40%, var(--field)); overflow: hidden; }
-.usage-block.big .usage-bar { height: 110px; }
-.usage-bar > i { display: block; width: 100%; height: 100%; background: color-mix(in srgb, var(--accent) 60%, transparent); transform-origin: bottom; transform: scaleY(0); transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.usage-bar { width: 100%; height: clamp(40px, 11dvh, 92px); display: flex; align-items: flex-end; border-radius: 8px; overflow: hidden; background: color-mix(in srgb, var(--bg) 40%, var(--field)); box-shadow: inset 0 1px 3px rgba(80, 40, 10, 0.18); }
+.usage-block.big .usage-bar { height: clamp(48px, 14dvh, 120px); }
+.usage-bar > i { display: block; width: 100%; height: 100%; background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 60%), color-mix(in srgb, var(--accent) 52%, var(--glass)); transform-origin: bottom; transform: scaleY(0); transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .usage-day.now { color: var(--text); }
-.usage-day.now .usage-bar > i { background: var(--accent); }
-/* The splits (by role, model, plan or key, project): a row with its share as a thin bar; less important, so quieter. */
+.usage-day.now .usage-bar { box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 45%, transparent), inset 0 1px 3px rgba(80, 40, 10, 0.18); }
+.usage-day.now .usage-bar > i { background: linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0) 60%), var(--accent); }
+/* The small switches (tokens or time; role, model, plan or key, project): the look of the file tabs, the glass thumb lies
+   under the chosen button and moves with --seg-i (ailink.js). */
+.seg { position: relative; display: flex; padding: 3px; border-radius: 12px; border: 1px solid var(--glass-border); background: color-mix(in srgb, var(--field) 70%, transparent); box-shadow: inset 0 1px 3px rgba(80, 40, 10, 0.14); -webkit-backdrop-filter: blur(18px) saturate(1.6); backdrop-filter: blur(18px) saturate(1.6); }
+.seg-thumb { position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / var(--seg-n, 2)); border-radius: 9px; pointer-events: none; transform: translateX(calc(var(--seg-i, 0) * 100%)); transition: transform 0.45s cubic-bezier(0.3, 1.25, 0.5, 1); background: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0) 60%), color-mix(in srgb, var(--accent) 38%, var(--glass)); box-shadow: 0 6px 16px color-mix(in srgb, var(--accent) 28%, transparent), inset 0 1px 0 var(--highlight); }
+.seg > [role="tab"] { position: relative; z-index: 1; flex: 1 1 0; min-width: 0; min-height: 30px; padding: 4px 10px; border: 0; border-radius: 9px; background: none; box-shadow: none; color: var(--muted); font-size: 0.82rem; font-weight: 600; white-space: nowrap; transition: color 0.2s; }
+.seg > [role="tab"]:hover { transform: none; color: var(--text); }
+.seg > [role="tab"][aria-selected="true"] { color: var(--text); }
+.usage-mode { min-width: 150px; }
+/* The splits: a row with its share as a thin glowing bar, less important, so quieter; one split at a time. */
+.usage-panels { display: grid; }
 .usage-split { display: grid; gap: 6px; }
-.usage-split h4 { margin: 0; font-size: 0.8rem; color: var(--muted); font-weight: 600; }
 .usage-row { display: grid; grid-template-columns: 1fr auto; column-gap: var(--space); row-gap: 3px; align-items: baseline; font-size: 0.85rem; }
 .usage-value { font-variant-numeric: tabular-nums; font-weight: 600; }
-.usage-meter { grid-column: 1 / -1; height: 4px; border-radius: 2px; overflow: hidden; background: color-mix(in srgb, var(--bg) 40%, var(--field)); }
-.usage-meter > i { display: block; height: 100%; background: color-mix(in srgb, var(--accent) 70%, transparent); transform-origin: left; transform: scaleX(0); transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.usage-meter { grid-column: 1 / -1; height: 5px; border-radius: 3px; overflow: hidden; background: color-mix(in srgb, var(--bg) 40%, var(--field)); }
+.usage-meter > i { display: block; height: 100%; border-radius: 3px; background: color-mix(in srgb, var(--accent) 75%, transparent); box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 45%, transparent); transform-origin: left; transform: scaleX(0); transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .usage-quiet { margin: 0; font-size: 0.78rem; color: var(--muted); opacity: 0.85; }
-.usage-all { margin-top: calc(var(--space) * 2); padding-top: var(--space); border-top: 1px solid var(--glass-border); font-size: 0.85rem; color: var(--muted); }
+.usage-all { margin-top: calc(var(--space) * 1.5); padding-top: var(--space); border-top: 1px solid var(--glass-border); font-size: 0.85rem; color: var(--muted); }
 .usage-all h4 { margin: 0 0 var(--space); display: flex; align-items: center; gap: var(--space); font-size: 0.8rem; font-weight: 600; }
-@media (prefers-reduced-motion: reduce) { .usage-bar > i, .usage-meter > i { transition: none; } }
+.usage-dialog .actions { margin-top: calc(var(--space) * 1.5); }
+@media (prefers-reduced-motion: reduce) { .usage-bar > i, .usage-meter > i, .seg-thumb { transition: none; } }
 .usage-list { margin: 0; display: grid; gap: 6px; }
 .usage-list > div { display: flex; justify-content: space-between; gap: calc(var(--space) * 3); padding: 4px 10px; background: var(--field); border: 1px solid var(--glass-border); border-radius: var(--radius-button); }
 .usage-list dt { color: var(--muted); }

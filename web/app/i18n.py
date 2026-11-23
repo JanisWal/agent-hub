@@ -438,6 +438,13 @@ STRINGS = {
         "role_usage_none": "Noch nichts verbraucht.",
         "role_usage_line": "Läufe: {runs} · Token: {tin} hinein, {tout} heraus · Rechenzeit: {time}",
         "role_usage_cache": "davon {n} aus dem Zwischenspeicher",
+        "usage_time_info": "Die Zeit ist die Summe der Dauer aller Aufrufe der KI: Läuft mehr als ein Chat oder Lauf gleichzeitig, zählen alle, die Summe kann also größer sein als die Uhrzeit.",
+        "usage_mode_tokens": "Token",
+        "usage_mode_time": "Zeit",
+        "usage_tab_role": "Rolle",
+        "usage_tab_model": "Modell",
+        "usage_tab_way": "Abo / Schlüssel",
+        "usage_tab_project": "Projekt",
         "usage_by_days": "Letzte 7 Tage",
         "usage_by_role": "Nach Rolle",
         "usage_by_model": "Nach Modell",
@@ -1365,6 +1372,13 @@ STRINGS = {
         "role_usage_none": "Nothing used yet.",
         "role_usage_line": "Runs: {runs} · tokens: {tin} in, {tout} out · working time: {time}",
         "role_usage_cache": "{n} of them from the cache",
+        "usage_time_info": "Time is the sum of the duration of every call of the AI: when more than one chat or run goes at the same time, all count, so the sum can be more than the clock shows.",
+        "usage_mode_tokens": "Tokens",
+        "usage_mode_time": "Time",
+        "usage_tab_role": "Role",
+        "usage_tab_model": "Model",
+        "usage_tab_way": "Plan / key",
+        "usage_tab_project": "Project",
         "usage_by_days": "Last 7 days",
         "usage_by_role": "By role",
         "usage_by_model": "By model",
@@ -1864,6 +1878,16 @@ def decimal(lang: str, value: float, digits: int = 1) -> str:
     """A number with `digits` decimals as the user reads it: 1,4 in German, 1.4 in English."""
     text = f"{value:.{digits}f}"
     return text.replace(".", ",") if lang == "de" else text
+
+
+def duration(lang: str, seconds: int) -> str:
+    """A time span short: 40 s, 12 min, 1,5 h (the role tabs and the usage window)."""
+    seconds = max(0, int(seconds))
+    if seconds < 90:
+        return t(lang, "dur_seconds", n=seconds)
+    if seconds < 90 * 60:
+        return t(lang, "dur_minutes", n=round(seconds / 60))
+    return t(lang, "dur_hours", n=decimal(lang, seconds / 3600))
 
 
 def count(lang: str, n: int) -> str:

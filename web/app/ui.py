@@ -398,7 +398,7 @@ def _claude_row(lang: str, state: str, first: bool = True, as_default: bool = Fa
         f'data-expired="{esc(i18n.t(lang, "claude_expired"))}">'
         f'<span class="setting-label">{esc(ai_name(lang, "claude"))}</span>{corner}'
         f'<span class="service-line">{status}</span>'
-        f'<span class="service-tools">{esc(tools_line(lang, "claude"))}{api}</span></div>'
+        f'<span class="service-tools"><span class="tools-text">{esc(tools_line(lang, "claude"))}</span>{api}</span></div>'
     )
 
 
@@ -417,7 +417,7 @@ def _key_row(lang: str, provider: str, state: str, first: bool = False, as_defau
         f'<div class="setting service {style}" id="key-row-{provider}" data-ai="{kind}">'
         f'<span class="setting-label">{esc(name or ai_name(lang, provider))}</span>{corner}'
         f'<span class="service-line">{_status(lang, text_key, attrs, manage, plan)}</span>'
-        f'<span class="service-tools">{esc(tools_line(lang, kind))}{api}</span></div>'
+        f'<span class="service-tools"><span class="tools-text">{esc(tools_line(lang, kind))}</span>{api}</span></div>'
     )
 
 
@@ -525,72 +525,106 @@ def _model_label(provider: str, model: str, names: dict[str, str]) -> str:
     return found.name if found else model
 
 
-def _meters(lang: str, title: str, parts: list[tuple[str, int]], total: int) -> str:
-    """One split of the usage (by role, model, way, project): a row per part with its share as a bar, the biggest first.
-    The bar is filled by static/ailink.js from data-pct (so it can grow when the window opens)."""
-    parts = [(label, n) for label, n in sorted(parts, key=lambda p: -p[1]) if n > 0]
-    if not parts or not total:
+def _both(lang: str, tokens: int, seconds: int) -> str:
+    """A number of the usage window in both views: the window's switch (Tokens or Time) shows one of the two."""
+    return (f'<span class="u-tok">{esc(i18n.count(lang, tokens))}</span>'
+            f'<span class="u-time">{esc(i18n.duration(lang, seconds)) if seconds else "–"}</span>')
+
+
+def _share(n: int, total: int) -> int:
+    return round(100 * n / total) if total else 0
+
+
+def _usage_tabs(lang: str, tabs: list[tuple[str, str]]) -> str:
+    """The small switch above the splits: one split at a time keeps the window short (the glass thumb moves with CSS)."""
+    if len(tabs) < 2:
         return ""
+    buttons = "".join(f'<button type="button" role="tab" data-split-tab="{key}" aria-selected="{"true" if i == 0 else "false"}">'
+                      f'{esc(label)}</button>' for i, (key, label) in enumerate(tabs))
+    return (f'<div class="seg usage-tabs" role="tablist" style="--seg-n:{len(tabs)}"><span class="seg-thumb" aria-hidden="true">'
+            f'</span>{buttons}</div>')
+
+
+def _usage_split(lang: str, key: str, parts: list[tuple[str, int, int]], total: int, seconds: int, first: bool) -> str:
+    """One split (by role, model, way or project) as rows with their share as a bar, the biggest first; the bar of each
+    view is filled by static/ailink.js from data-pct (tokens) and data-pct-t (time)."""
     rows = "".join(
-        f'<div class="usage-row"><span class="usage-label">{esc(label)}</span><span class="usage-value">'
-        f'{esc(i18n.count(lang, n))}</span><span class="usage-meter"><i data-pct="{round(100 * n / total)}"></i></span></div>'
-        for label, n in parts[:6])
-    return f'<div class="usage-split"><h4>{esc(title)}</h4>{rows}</div>'
+        f'<div class="usage-row"><span class="usage-label">{esc(label)}</span><span class="usage-value">{_both(lang, n, secs)}'
+        f'</span><span class="usage-meter"><i data-pct="{_share(n, total)}" data-pct-t="{_share(secs, seconds)}"></i></span></div>'
+        for label, n, secs in parts[:6])
+    return f'<div class="usage-split" data-split="{key}"{"" if first else " hidden"}>{rows}</div>'
+
+
+def _parts(tokens: dict, seconds: dict, label) -> list[tuple[str, int, int]]:
+    """[(label, tokens, seconds)] of one split, the biggest in tokens first; empty parts are left out."""
+    return [(label(k), n, seconds.get(k, 0)) for k, n in sorted(tokens.items(), key=lambda p: -p[1]) if n > 0]
 
 
 def _usage_block(lang: str, key: str, title: str, item: dict, project: bool, names: dict[str, str], now: int) -> str:
     """The window of one AI. The scope of the page comes first and big: on a project page that project (today, the last 7
-    days, this project; all projects only quiet at the bottom), on any other page all projects, in more detail (bigger
-    bars, the split by project). Important things in front with bars, the rest quiet (Janis, 23.11.2026)."""
+    days, this project; all projects only quiet at the bottom), on any other page all projects, in more detail (taller
+    bars, the split by project). Important things in front with bars, the rest quiet and one at a time (Janis,
+    23.11.2026). Every number comes in two views (tokens and time), the window's switch picks one."""
     t = lambda k: esc(i18n.t(lang, k))   # noqa: E731
-    big = not project
-    cards = [("usage_today", item["today"]), ("usage_week", item["week"]),
-             ("usage_project", item["project"]) if project else ("usage_total", item["total"])]
+    spent = item["time"]
+    cards = [("usage_today", "today"), ("usage_week", "week"), ("usage_project", "project") if project else ("usage_total", "total")]
     cards_html = "".join(f'<div class="usage-card{" lead" if i == 2 else ""}"><span>{t(label)}</span>'
-                         f'<strong>{esc(i18n.count(lang, n))}</strong></div>' for i, (label, n) in enumerate(cards))
-    peak = max(item["days"]) or 1
+                         f'<strong>{_both(lang, item[k], spent[k])}</strong></div>' for i, (label, k) in enumerate(cards))
+    peak, peak_s = max(item["days"]) or 1, max(spent["days"]) or 1
     day0 = now - now % 86400 - 6 * 86400
     bars = "".join(
-        f'<div class="usage-day{" now" if i == 6 else ""}"><span class="usage-day-n">{esc(i18n.count(lang, n)) if n else ""}</span>'
-        f'<span class="usage-bar"><i data-pct="{round(100 * n / peak)}"></i></span>'
+        f'<div class="usage-day{" now" if i == 6 else ""}"><span class="usage-day-n">{_both(lang, n, spent["days"][i]) if n or spent["days"][i] else ""}</span>'
+        f'<span class="usage-bar"><i data-pct="{_share(n, peak)}" data-pct-t="{_share(spent["days"][i], peak_s)}"></i></span>'
         f'<span class="usage-day-l">{t("usage_day_" + str(time.gmtime(day0 + i * 86400).tm_wday))}</span></div>'
         for i, n in enumerate(item["days"]))
-    scope_total = item["scope"]
-    ways = ([(i18n.t(lang, "usage_way_" + k) if k in ("plan", "api") else k, n) for k, n in item["ways"].items()]
-            if key in ("claude", "chatgpt") else [])
-    roles = [(i18n.t(lang, "station_manager" if k == "chef" else f"station_{k}") if k else i18n.t(lang, "usage_other"), n)
-             for k, n in item["roles"].items()]
     provider = "custom" if key.startswith("custom") else key
-    models = [(_model_label(provider, k, names), n) for k, n in item["models"].items()] if provider != "custom" else []
-    splits = (_meters(lang, i18n.t(lang, "usage_by_role"), roles, scope_total)
-              + _meters(lang, i18n.t(lang, "usage_by_model"), models, scope_total)
-              + _meters(lang, i18n.t(lang, "usage_by_way"), ways if "api" in item["ways"] else [], scope_total)
-              + _meters(lang, i18n.t(lang, "usage_by_project"), [(k or i18n.t(lang, "usage_other"), n) for k, n in item["projects"].items()],
-                        scope_total))
-    quiet = (f'<p class="usage-quiet">{t("usage_all_projects")}: {esc(i18n.count(lang, item["total"]))} · '
-             f'{t("usage_week")}: {esc(i18n.count(lang, item["week_all"]))}</p>' if project else "")
+    splits = [
+        ("role", i18n.t(lang, "usage_tab_role"),
+         _parts(item["roles"], spent["roles"], lambda k: i18n.t(lang, "station_manager" if k == "chef" else f"station_{k}") if k
+                else i18n.t(lang, "usage_other"))),
+        ("model", i18n.t(lang, "usage_tab_model"),
+         _parts(item["models"], spent["models"], lambda k: _model_label(provider, k, names)) if provider != "custom" else []),
+        ("way", i18n.t(lang, "usage_tab_way"),
+         _parts(item["ways"], spent["ways"], lambda k: i18n.t(lang, "usage_way_" + k) if k in ("plan", "api") else k)
+         if key in ("claude", "chatgpt") and "api" in item["ways"] else []),
+        ("project", i18n.t(lang, "usage_tab_project"),
+         _parts(item["projects"], spent["projects"], lambda k: k or i18n.t(lang, "usage_other"))),
+    ]
+    splits = [(k, label, parts) for k, label, parts in splits if parts]
+    panels = "".join(_usage_split(lang, k, parts, item["scope"], spent["scope"], i == 0) for i, (k, _, parts) in enumerate(splits))
+    quiet = (f'<p class="usage-quiet">{t("usage_all_projects")}: {_both(lang, item["total"], spent["total"])} · '
+             f'{t("usage_week")}: {_both(lang, item["week_all"], spent["week_all"])}</p>' if project else "")
     scope = t("usage_scope_project" if project else "usage_scope_all")
-    return (f'<section class="usage-block{" big" if big else ""}" data-usage-for="{esc(key)}" hidden>'
+    return (f'<section class="usage-block{" big" if not project else ""}" data-usage-for="{esc(key)}" hidden>'
             f'<header class="usage-head"><h3>{esc(title)}</h3><span class="usage-scope">{scope}</span></header>'
             f'<div class="usage-cards">{cards_html}</div><div class="usage-days" role="img" aria-label="{t("usage_by_days")}">{bars}</div>'
-            f'{splits}{quiet}</section>')
+            f'{_usage_tabs(lang, [(k, label) for k, label, _ in splits])}<div class="usage-panels">{panels}</div>{quiet}</section>')
 
 
 def _usage_dialog(lang: str, used: dict, names: dict[str, str], project: bool, now: int | None = None) -> str:
     """What each AI used (Janis, 23.11.2026): a block per AI (the button of its row opens it) and below, small, all AIs
     together. Tokens are counted differently by each AI (how it cuts the text, what it takes from its cache), so the sum
-    is a rough overview: the "i" says so."""
+    is a rough overview: the "i" says so. The switch at the top shows the same in time: the sum of the time of every call,
+    so chats and runs that go at the same time all count (the "i" of the switch says so)."""
+    if not used:
+        return ""   # nothing used yet: no window
     now = int(now if now is not None else time.time())
     blocks = [_usage_block(lang, name, names.get(name) or ai_name(lang, name), item, project, names, now)
               for name, item in used.items()]
     if len(used) >= 2:
         keys = ("today", "week", "project" if project else "total")
-        sums = "".join(f'<div><dt>{esc(i18n.t(lang, "usage_" + k))}</dt><dd>{esc(i18n.count(lang, sum(i[k] for i in used.values())))}</dd></div>'
+        sums = "".join(f'<div><dt>{esc(i18n.t(lang, "usage_" + k))}</dt><dd>'
+                       f'{_both(lang, sum(i[k] for i in used.values()), sum(i["time"][k] for i in used.values()))}</dd></div>'
                        for k in keys)
         title = i18n.t(lang, "usage_all")
         blocks.append(f'<section class="usage-all" data-usage-for="all" hidden><h4>{esc(title)}'
                       f'{info_dot(title, i18n.t(lang, "usage_all_info"))}</h4><dl class="usage-list">{sums}</dl></section>')
-    return (f'<dialog class="dialog wide usage-dialog" id="usage-dialog"><h2>{esc(i18n.t(lang, "usage_title"))}</h2>'
+    mode = (f'<div class="seg usage-mode" role="tablist" style="--seg-n:2"><span class="seg-thumb" aria-hidden="true"></span>'
+            f'<button type="button" role="tab" data-mode="tokens" aria-selected="true">{esc(i18n.t(lang, "usage_mode_tokens"))}</button>'
+            f'<button type="button" role="tab" data-mode="time" aria-selected="false">{esc(i18n.t(lang, "usage_mode_time"))}</button></div>')
+    title = i18n.t(lang, "usage_title")
+    return (f'<dialog class="dialog wide usage-dialog" id="usage-dialog" data-mode="tokens" tabindex="-1">'
+            f'<div class="usage-top"><h2>{esc(title)}{info_dot(title, i18n.t(lang, "usage_time_info"))}</h2>{mode}</div>'
             f'{"".join(blocks)}<div class="actions"><button type="button" data-close>{esc(i18n.t(lang, "close"))}</button></div></dialog>')
 
 

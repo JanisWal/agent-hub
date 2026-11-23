@@ -56,7 +56,10 @@ def totals(user_id: int, project_id: int | None = None, role: str | None = None,
         return dict(conn.execute(sql, args).fetchone())
 
 
-def by_ai(user_id: int, now: int | None = None, project_id: int | None = None) -> dict[str, dict]:
+TOKENS = "tokens_in + tokens_out"   # what the usage numbers add up; "seconds" gives the time view of the window
+
+
+def by_ai(user_id: int, now: int | None = None, project_id: int | None = None, expr: str = TOKENS) -> dict[str, dict]:
     """Per AI of the user (a further AI by its place, "custom-3"): tokens in and out today, in the last 7 days, in all
     (all projects) and, when `project_id` is given, in that project (Janis, 23.11.2026). Only the user's own calls."""
     now = int(now if now is not None else time.time())
@@ -65,10 +68,10 @@ def by_ai(user_id: int, now: int | None = None, project_id: int | None = None) -
     with db.connect() as conn:
         rows = conn.execute(
             "SELECT CASE WHEN provider = 'custom' AND model LIKE 'own-%' THEN 'custom-' || substr(model, 5) ELSE provider"
-            " END AS ai, SUM(CASE WHEN created_at >= ? THEN tokens_in + tokens_out ELSE 0 END) AS today,"
-            " SUM(CASE WHEN created_at >= ? THEN tokens_in + tokens_out ELSE 0 END) AS week,"
-            " SUM(tokens_in + tokens_out) AS total,"
-            " SUM(CASE WHEN project_id = ? THEN tokens_in + tokens_out ELSE 0 END) AS project"
+            f" END AS ai, SUM(CASE WHEN created_at >= ? THEN {expr} ELSE 0 END) AS today,"
+            f" SUM(CASE WHEN created_at >= ? THEN {expr} ELSE 0 END) AS week,"
+            f" SUM({expr}) AS total,"
+            f" SUM(CASE WHEN project_id = ? THEN {expr} ELSE 0 END) AS project"
             " FROM ai_usage WHERE user_id = ? GROUP BY ai",
             (today, week, -1 if project_id is None else int(project_id), user_id)).fetchall()
     for row in rows:
@@ -84,16 +87,11 @@ def by_ai(user_id: int, now: int | None = None, project_id: int | None = None) -
 AI_SQL = ("CASE WHEN provider = 'custom' AND model LIKE 'own-%' THEN 'custom-' || substr(model, 5) ELSE provider END")
 
 
-def detail(user_id: int, now: int | None = None, project_id: int | None = None) -> dict[str, dict]:
-    """What the usage window shows (Janis, 23.11.2026), per AI of the user: the numbers of `by_ai` plus, for the scope of
-    the page, "scope" (the tokens of this project when `project_id` is given, else of all), "days" (the last 7 days,
-    the oldest first, today last), and the split of the scope by "roles", "models", "ways" (plan or API key) and, on a
-    page without a project, "projects" ({name: tokens}, the biggest first, at most five). Only the user's own calls;
-    a project that is not his has no calls of his: all zero. Nothing is estimated."""
-    now = int(now if now is not None else time.time())
+def _detail(user_id: int, now: int, project_id: int | None, expr: str) -> dict[str, dict]:
+    """The numbers of `detail` for one measure (`expr`: the SQL that adds up: tokens or seconds)."""
     today = now - now % DAY
     first = today - 6 * DAY
-    out = by_ai(user_id, now, project_id)
+    out = by_ai(user_id, now, project_id, expr)
     for item in out.values():
         item.update(scope=item["project"] if project_id is not None else item["total"], days=[0] * 7, roles={},
                     models={}, ways={}, projects={})
@@ -102,19 +100,19 @@ def detail(user_id: int, now: int | None = None, project_id: int | None = None) 
         where += " AND project_id = ?"
         args.append(int(project_id))
     with db.connect() as conn:
-        for row in conn.execute(f"SELECT {AI_SQL} AS ai, (created_at - ?) / ? AS day, SUM(tokens_in + tokens_out) AS n"
+        for row in conn.execute(f"SELECT {AI_SQL} AS ai, (created_at - ?) / ? AS day, SUM({expr}) AS n"
                                 f" FROM ai_usage WHERE {where} AND created_at >= ? GROUP BY ai, day",
                                 (first, DAY, *args, first)).fetchall():
             if row["ai"] in out and 0 <= row["day"] < 7:
                 out[row["ai"]]["days"][row["day"]] = row["n"] or 0
         for key, column in (("roles", "role"), ("models", "model"), ("ways", "credential")):
-            for row in conn.execute(f"SELECT {AI_SQL} AS ai, {column} AS k, SUM(tokens_in + tokens_out) AS n FROM ai_usage"
+            for row in conn.execute(f"SELECT {AI_SQL} AS ai, {column} AS k, SUM({expr}) AS n FROM ai_usage"
                                     f" WHERE {where} GROUP BY ai, k", args).fetchall():
                 if row["ai"] in out and row["n"]:
                     out[row["ai"]][key][row["k"] or ""] = row["n"]
         if project_id is None:
             ai_u = AI_SQL.replace("provider", "u.provider").replace("model", "u.model")   # both tables have columns of that name
-            for row in conn.execute(f"SELECT {ai_u} AS ai, COALESCE(p.name, '') AS name, SUM(u.tokens_in + u.tokens_out) AS n"
+            for row in conn.execute(f"SELECT {ai_u} AS ai, COALESCE(p.name, '') AS name, SUM(u.{expr.replace(', ', ', u.').replace(' + ', ' + u.')}) AS n"
                                     " FROM ai_usage u LEFT JOIN projects p ON p.id = u.project_id AND p.user_id = u.user_id"
                                     " WHERE u.user_id = ? GROUP BY ai, name ORDER BY n DESC", (user_id,)).fetchall():
                 if row["ai"] in out and row["n"] and len(out[row["ai"]]["projects"]) < 5:
@@ -122,4 +120,25 @@ def detail(user_id: int, now: int | None = None, project_id: int | None = None) 
     for item in out.values():   # the cards agree with the bars: today and the 7 days of the scope; the rest of all stays
         item["today_all"], item["week_all"] = item["today"], item["week"]
         item["today"], item["week"] = item["days"][6], sum(item["days"])
+    return out
+
+
+EMPTY_VIEW = {"today": 0, "week": 0, "total": 0, "project": 0, "scope": 0, "days": [0] * 7, "roles": {}, "models": {},
+              "ways": {}, "projects": {}, "today_all": 0, "week_all": 0}
+
+
+def detail(user_id: int, now: int | None = None, project_id: int | None = None) -> dict[str, dict]:
+    """What the usage window shows (Janis, 23.11.2026), per AI of the user: the numbers of `by_ai` plus, for the scope of
+    the page, "scope" (the tokens of this project when `project_id` is given, else of all), "days" (the last 7 days,
+    the oldest first, today last), and the split of the scope by "roles", "models", "ways" (plan or API key) and, on a
+    page without a project, "projects" ({name: tokens}, the biggest first, at most five). "today" and "week" are those
+    of the scope too (the sum of "days"); "today_all" and "week_all" are those of all projects. "time" holds the same
+    numbers in seconds: the sum of the time of every call, so chats and runs that go at the same time all count (it can
+    be more than the clock shows). Only the user's own calls; a project that is not his has none of his: all zero.
+    Nothing is estimated."""
+    now = int(now if now is not None else time.time())
+    out = _detail(user_id, now, project_id, TOKENS)
+    spent = _detail(user_id, now, project_id, "seconds")
+    for ai, item in out.items():
+        item["time"] = spent.get(ai) or {**EMPTY_VIEW, "days": [0] * 7}
     return out
