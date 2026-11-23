@@ -490,9 +490,13 @@ main { padding-bottom: 96px; } /* room for the toggle */
 .drawer.open .drawer-box { opacity: 1; visibility: visible; transition: opacity 0.3s 0.1s, visibility 0s; }
 .drawer-scroll { min-height: 0; padding: 20px; overflow-y: auto; overflow-x: hidden; }
 /* The drawer's own scrollbar (22.11.2026, seen in Chrome: it appeared when the AIs were opened, was cut off by the
-   round corners and pushed the tiles together). Its room is kept on both sides from the start, so nothing moves when
-   it appears; it is thin and its track stops where the corners begin. */
-.drawer-scroll { scrollbar-gutter: stable both-edges; }
+   round corners and pushed the tiles together). It is always there and takes its 8 px from the start, so nothing moves
+   when the list grows; without anything to scroll it shows nothing (no thumb, a clear track). The left padding matches
+   it. Not `scrollbar-gutter`: Safari hung when the drawer opened with it (23.11.2026). Its track stops at the corners. */
+.drawer-scroll { overflow-y: scroll; padding-left: 28px; }
+@supports not selector(::-webkit-scrollbar) {
+  .drawer-scroll { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 45%, transparent) transparent; padding-left: 20px; }
+}
 .drawer-scroll::-webkit-scrollbar { width: 8px; }
 .drawer-scroll::-webkit-scrollbar-track { margin-block: 24px; background: transparent; }
 .drawer-scroll::-webkit-scrollbar-thumb { border-radius: 4px; background: color-mix(in srgb, var(--muted) 45%, transparent); }
