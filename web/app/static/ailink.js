@@ -40,6 +40,7 @@
       block.hidden = block.dataset.usageFor !== button.dataset.usage && block.dataset.usageFor !== "all";
     });
     dialog.showModal();
+    dialog.scrollTop = 0;
     // The bars grow from nothing each time the window opens (transform only; reduced motion: the CSS has no transition)
     var bars = Array.prototype.slice.call(dialog.querySelectorAll("[data-usage-for]:not([hidden]) i[data-pct]"));
     bars.forEach(function (bar) { bar.style.transform = ""; });
