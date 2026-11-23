@@ -113,6 +113,18 @@ class CodexTest(unittest.TestCase):
         self.assertIn("(plan)", text)
         self.assertFalse(login)
 
+    def test_an_ended_plan_is_a_login_problem(self):
+        """23.11.2026: after the plan ended Codex said its token could not be refreshed; the connection stayed
+        "connected" and the next AI never took over. Both of its words count as a refused sign-in."""
+        for message in ("Your access token could not be refreshed. Please log out and sign in again.",
+                        "error sending request for url (https://auth.openai.com/oauth/token)"):
+            failed = codex_entry.summary([{"type": "error", "message": message}], 1, "")
+            ok, text, _, _, login = launcher.parse_vibe(json.dumps(failed))
+            self.assertTrue(login, message)
+            self.assertFalse(ok)
+        other = codex_entry.summary([{"type": "error", "message": "stream disconnected"}], 1, "")
+        self.assertFalse(launcher.parse_vibe(json.dumps(other))[4])             # a bad moment is not a sign-out
+
 
 class FakeKeys:
     def __init__(self, saved=None):

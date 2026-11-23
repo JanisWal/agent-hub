@@ -385,6 +385,20 @@ class WatchTest(unittest.TestCase):
         self.assertFalse(self.at(400))                                         # then nothing for over a minute
         self.assertEqual(self.watch.reason, "silence")
 
+    def test_a_memory_kill_ends_it_at_once(self):
+        """23.11.2026: the kernel killed a process of a run (384 MB), the container went on and the run stood still for
+        15 minutes. Docker's event for its container ends it with the reason."""
+        self.assertTrue(self.at(1))
+        self.r.ooms.note("agent-run-4")                                        # another run: not ours
+        self.r.ooms.note("cloudflared-cloudflared-1")                          # not a job container at all
+        self.assertTrue(self.at(2))
+        self.r.ooms.note("agent-run-9")
+        self.assertFalse(self.at(3))
+        self.assertEqual(self.watch.reason, "memory")
+        self.r.ooms.forget("agent-run-9")
+        self.assertFalse(self.r.ooms.seen("agent-run-9"))
+        self.assertIn("384 MB", self.r._stopped("memory"))
+
     def test_the_longest_time_ends_it(self):
         for second in range(10, 320, 10):
             self.watch.line("x\n")

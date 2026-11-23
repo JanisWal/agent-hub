@@ -663,6 +663,14 @@ def build_codex_login_command(*, user_id: int, folder: str, image: str = CODEX_I
     ]
 
 
+# What the AIs' programs say when the provider refused the sign-in or key. Codex, after a 401, tries to refresh the token
+# (the run has no usable refresh token, the gateway refuses), so its words are "could not be refreshed ... sign in again"
+# or a failed request to auth.openai.com/oauth/token: both come only after the provider said no (23.11.2026, ChatGPT
+# plan ended and the connection kept showing "connected").
+_CODEX_LOGIN = (r"\b401\b|unauthori[sz]ed|invalid api key|token could not be refreshed|log out and sign in again"
+                r"|auth\.openai\.com/oauth/token")
+
+
 def parse_vibe(stdout: str) -> tuple[bool, str, int, int, bool]:
     """(ok, text, tokens_in, tokens_out, login_problem) from the one JSON line of vibe_entry.py or hubloop.py (the same
     shape). A refused key (401 from the AI) is a login problem; anything unreadable is a failure, never a guess."""
@@ -673,7 +681,7 @@ def parse_vibe(stdout: str) -> tuple[bool, str, int, int, bool]:
         error = str(data.get("error") or "")
     except (ValueError, IndexError, AttributeError, TypeError):
         return False, "No readable answer from the AI's program.", 0, 0, False
-    login = bool(re.search(r"\b401\b|unauthori[sz]ed|invalid api key", error, re.I))
+    login = bool(re.search(_CODEX_LOGIN, error, re.I))
     if ok:
         return True, text.strip()[:MAX_REPORT], tokens_in, tokens_out, False
     reason = ("Not logged in: the AI refused the key (401)" if login

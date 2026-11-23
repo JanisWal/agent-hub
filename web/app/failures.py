@@ -12,7 +12,8 @@ import re
 SERVER = re.compile(r"^Server: the saved credential")
 PLAN = re.compile(r"\(plan\)")
 AUTH = re.compile(r"authenticat|not logged in|/login|oauth token has expired|invalid (x-)?api.?key|incorrect api key"
-                  r"|\b401\b|unauthori[sz]ed|token_expired|refresh token", re.I)
+                  r"|\b401\b|unauthori[sz]ed|token_expired|refresh token|token could not be refreshed"
+                  r"|log out and sign in again|auth\.openai\.com/oauth/token", re.I)
 LIMIT = re.compile(r"usage.?limit|limit reached|hit your [\w -]{0,24}limit|(5-hour|weekly|daily|monthly) limit"
                    r"|rate.?limit|\b429\b|too many requests|no credit|credit balance|out of (extra )?usage|quota"
                    r"|· ?resets|resets at \d|try again in \d", re.I)
