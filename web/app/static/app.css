@@ -640,7 +640,7 @@ button.status-open::before { transition: transform 0.25s cubic-bezier(0.3, 1.25,
    folded, stays compact. The "coming later" tiles count like the others. */
 .service { --state: var(--accent); min-height: var(--tile-h, 0); }
 .service:has(> .ai-toggle[aria-expanded="false"]) { min-height: 0; }
-.drawer-box.compact .service-tools { display: none; }   /* the open list is taller than the window: no tool lines then */
+.drawer-box.compact .tools-text { display: none; }   /* the open list is taller than the window: no tool lines then (the usage stays) */
 .service.ok { --state: var(--success); }
 .service.expired { --state: var(--error); }
 .service button.status-open:hover { transform: scale(1.06); text-shadow: 0 0 12px color-mix(in srgb, var(--state) 70%, transparent); }

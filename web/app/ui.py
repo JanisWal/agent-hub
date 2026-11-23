@@ -398,7 +398,7 @@ def _claude_row(lang: str, state: str, first: bool = True, as_default: bool = Fa
         f'data-expired="{esc(i18n.t(lang, "claude_expired"))}">'
         f'<span class="setting-label">{esc(ai_name(lang, "claude"))}</span>{corner}'
         f'<span class="service-line">{status}</span>'
-        f'<span class="service-tools">{esc(tools_line(lang, "claude"))}{api}</span></div>'
+        f'<span class="service-tools"><span class="tools-text">{esc(tools_line(lang, "claude"))}</span>{api}</span></div>'
     )
 
 
@@ -417,7 +417,7 @@ def _key_row(lang: str, provider: str, state: str, first: bool = False, as_defau
         f'<div class="setting service {style}" id="key-row-{provider}" data-ai="{kind}">'
         f'<span class="setting-label">{esc(name or ai_name(lang, provider))}</span>{corner}'
         f'<span class="service-line">{_status(lang, text_key, attrs, manage, plan)}</span>'
-        f'<span class="service-tools">{esc(tools_line(lang, kind))}{api}</span></div>'
+        f'<span class="service-tools"><span class="tools-text">{esc(tools_line(lang, kind))}</span>{api}</span></div>'
     )
 
 
