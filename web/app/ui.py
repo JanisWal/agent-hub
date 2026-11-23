@@ -606,6 +606,8 @@ def _usage_dialog(lang: str, used: dict, names: dict[str, str], project: bool, n
     together. Tokens are counted differently by each AI (how it cuts the text, what it takes from its cache), so the sum
     is a rough overview: the "i" says so. The switch at the top shows the same in time: the sum of the time of every call,
     so chats and runs that go at the same time all count (the "i" of the switch says so)."""
+    if not used:
+        return ""   # nothing used yet: no window
     now = int(now if now is not None else time.time())
     blocks = [_usage_block(lang, name, names.get(name) or ai_name(lang, name), item, project, names, now)
               for name, item in used.items()]
