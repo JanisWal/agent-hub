@@ -154,6 +154,9 @@ class UsageTest(unittest.TestCase):
         mine = usage.detail(self.a.id, now=now, project_id=self.pa.id)["claude"]   # one project: only its numbers
         self.assertEqual((mine["scope"], mine["total"], mine["project"]), (459, 499, 459))
         self.assertEqual(mine["projects"], {})                                     # the split by project is the board's
+        self.assertEqual((mine["today"], mine["week"]), (400, 450))                # the cards follow the project like the bars
+        self.assertEqual((mine["today_all"], mine["week_all"]), (440, 490))        # all projects stay for the quiet line
+        self.assertEqual((board["today"], board["week"]), (440, 490))              # the board: all of it
         self.assertNotIn("Fremd", str(usage.detail(self.a.id, now=now)))
 
     def test_the_window_names_the_roles_and_the_board_goes_into_more_detail(self):

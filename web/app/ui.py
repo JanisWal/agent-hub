@@ -568,7 +568,7 @@ def _usage_block(lang: str, key: str, title: str, item: dict, project: bool, nam
               + _meters(lang, i18n.t(lang, "usage_by_project"), [(k or i18n.t(lang, "usage_other"), n) for k, n in item["projects"].items()],
                         scope_total))
     quiet = (f'<p class="usage-quiet">{t("usage_all_projects")}: {esc(i18n.count(lang, item["total"]))} · '
-             f'{t("usage_week")}: {esc(i18n.count(lang, item["week"]))}</p>' if project else "")
+             f'{t("usage_week")}: {esc(i18n.count(lang, item["week_all"]))}</p>' if project else "")
     scope = t("usage_scope_project" if project else "usage_scope_all")
     return (f'<section class="usage-block{" big" if big else ""}" data-usage-for="{esc(key)}" hidden>'
             f'<header class="usage-head"><h3>{esc(title)}</h3><span class="usage-scope">{scope}</span></header>'

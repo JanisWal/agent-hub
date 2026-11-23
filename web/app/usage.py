@@ -119,4 +119,7 @@ def detail(user_id: int, now: int | None = None, project_id: int | None = None) 
                                     " WHERE u.user_id = ? GROUP BY ai, name ORDER BY n DESC", (user_id,)).fetchall():
                 if row["ai"] in out and row["n"] and len(out[row["ai"]]["projects"]) < 5:
                     out[row["ai"]]["projects"][row["name"]] = row["n"]
+    for item in out.values():   # the cards agree with the bars: today and the 7 days of the scope; the rest of all stays
+        item["today_all"], item["week_all"] = item["today"], item["week"]
+        item["today"], item["week"] = item["days"][6], sum(item["days"])
     return out
