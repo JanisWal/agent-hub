@@ -641,6 +641,11 @@ button.status-open::before { transition: transform 0.25s cubic-bezier(0.3, 1.25,
 .service { --state: var(--accent); min-height: var(--tile-h, 0); }
 .service:has(> .ai-toggle[aria-expanded="false"]) { min-height: 0; }
 .drawer-box.compact .tools-text { display: none; }   /* the open list is taller than the window: no tool lines then (the usage stays) */
+/* ... and a tile is two lines: the name, then the state with the usage at its right */
+.drawer-box.compact .service { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "label label" "line tools"; column-gap: var(--space); align-items: center; padding-block: 6px; }
+.drawer-box.compact .service .setting-label { grid-area: label; margin: 0; }
+.drawer-box.compact .service .service-line { grid-area: line; min-height: 24px; }
+.drawer-box.compact .service .service-tools { grid-area: tools; text-align: right; }
 .service.ok { --state: var(--success); }
 .service.expired { --state: var(--error); }
 .service button.status-open:hover { transform: scale(1.06); text-shadow: 0 0 12px color-mix(in srgb, var(--state) 70%, transparent); }
