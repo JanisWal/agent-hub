@@ -521,7 +521,7 @@ def _model_label(provider: str, model: str, names: dict[str, str]) -> str:
     """The name of a model as the catalog has it; a further AI's model is its place ("own-3"): the name the user gave."""
     if model.startswith("own-"):
         return names.get(f"custom-{model[4:]}") or model
-    found = catalog.PROVIDERS[provider].model(model) if provider in catalog.PROVIDERS else None
+    found = catalog.provider(provider).model(model) if provider in catalog.PROVIDERS else None
     return found.name if found else model
 
 
