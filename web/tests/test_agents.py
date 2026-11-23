@@ -245,6 +245,19 @@ class ChainTest(Base):
         self.assertTrue(agents.finish_run(job.run_id, "done", change=CHANGE, committed=True))   # nothing was lost
         self.assertIn("thinking", agents.task_runs(self.a.id, self.task().id)[0].thoughts)
 
+    def test_the_next_run_is_told_which_files_are_already_changed(self):
+        self.connect(self.a)
+        first = agents.claim_next(can_mac=True)
+        stat = " style.css | 29 +++\n sw.js    |  2 +-\n 2 files changed, 31 insertions(+), 0 deletions(-)\n"
+        self.assertTrue(agents.finish_run(first.run_id, "stopped", "Ended: the AI wrote nothing for 15 minutes.",
+                                          change=(stat, "diff --git a/style.css b/style.css\n")))
+        second = agents.claim_next(can_mac=True)
+        self.assertIn("style.css | 29", second.prompt)                       # what is done is named
+        self.assertIn("sw.js", second.prompt)
+        self.assertIn("do not do again what is already there", second.prompt)
+        self.assertNotIn("diff --git", second.prompt)                        # only the list, not the diff
+        self.assertNotIn("thinking", second.prompt)                          # never the AI's thoughts
+
     def test_a_stopped_or_lost_run_goes_on_once_then_the_user_decides(self):
         self.connect(self.a)
         first = agents.claim_next(can_mac=True, now=1000)
