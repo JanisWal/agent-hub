@@ -91,7 +91,13 @@ class UsageTest(unittest.TestCase):
         with db.connect() as conn:
             usage.record(conn, user_id=self.a.id, project_id=self.pa.id, provider="claude", model="sonnet",
                          credential="plan", kind="chat", tokens_in=12000, tokens_out=345)
-        self.assertIn("Verbrauch: heute 12,3 Tsd. · 7 Tage 12,3 Tsd. Token", ui.settings_bar(self.a))
+        self.assertIn("Verbrauch: 12,3 Tsd. Token", ui.settings_bar(self.a))                      # all projects on the board
+        other = projects.create_project(self.a.id, "Uhr")
+        with db.connect() as conn:
+            usage.record(conn, user_id=self.a.id, project_id=other.id, provider="claude", model="sonnet",
+                         credential="plan", kind="chat", tokens_in=5000, tokens_out=0)
+        self.assertIn("Verbrauch: 17,3 Tsd. Token", ui.settings_bar(self.a))
+        self.assertIn("Verbrauch: 12,3 Tsd. Token", ui.settings_bar(self.a, project_id=self.pa.id))   # only this project
         self.assertNotIn("Verbrauch:", ui.settings_bar(self.b))
 
     def test_a_project_has_its_own_number_and_never_another_users(self):
@@ -113,7 +119,7 @@ class UsageTest(unittest.TestCase):
         self.assertIn('data-usage="claude"', page)                              # the button of its row
         self.assertIn('id="usage-dialog"', page)
         self.assertIn('data-usage-for="claude"', page)
-        for text in ("Heute", "Letzte 7 Tage", "Insgesamt", "Dieses Projekt"):
+        for text in ("Heute", "Letzte 7 Tage", "Dieses Projekt", "Alle Projekte"):               # this project first, all quiet
             self.assertIn(text, page)
         self.assertNotIn("Alle KIs zusammen", page)                             # one AI: no sum
         self.assertNotIn("Dieses Projekt", ui.settings_bar(self.a))             # not on a project page
@@ -124,6 +130,47 @@ class UsageTest(unittest.TestCase):
         self.assertIn('data-usage-for="all"', page)
         self.assertIn("Alle KIs zusammen", page)
         self.assertIn("grober Überblick", page)                                 # the "i" says tokens differ
+
+    def test_the_split_by_day_role_model_and_way_and_the_projects_on_the_board(self):
+        now = 1_800_000_000
+        other = projects.create_project(self.a.id, "Uhr")
+        theirs = projects.create_project(self.b.id, "Fremd")
+        with db.connect() as conn:
+            for project, role, model, way, tin, at in (
+                    (self.pa, "programmer", "sonnet", "plan", 300, now - 60), (self.pa, "chef", "sonnet", "api", 100, now - 60),
+                    (self.pa, "reviewer", "opus", "plan", 50, now - 2 * 86400), (other, "programmer", "sonnet", "plan", 40, now - 60),
+                    (self.pa, "programmer", "sonnet", "plan", 9, now - 20 * 86400)):
+                usage.record(conn, user_id=self.a.id, project_id=project.id, provider="claude", model=model, credential=way,
+                             kind="run", role=role, tokens_in=tin, tokens_out=0, now=at)
+            usage.record(conn, user_id=self.b.id, project_id=theirs.id, provider="claude", model="sonnet", credential="plan",
+                         kind="run", role="tester", tokens_in=7000, tokens_out=0, now=now - 60)
+        board = usage.detail(self.a.id, now=now)["claude"]                         # no project: everything of his
+        self.assertEqual((board["scope"], board["total"], len(board["days"])), (499, 499, 7))
+        self.assertEqual(board["days"][6], 440)                                    # today last
+        self.assertEqual(board["days"][4], 50)                                     # two days before
+        self.assertEqual(board["roles"], {"programmer": 349, "chef": 100, "reviewer": 50})
+        self.assertEqual(board["ways"], {"plan": 399, "api": 100})
+        self.assertEqual(list(board["projects"]), ["Rechner", "Uhr"])              # the biggest first, only his own
+        mine = usage.detail(self.a.id, now=now, project_id=self.pa.id)["claude"]   # one project: only its numbers
+        self.assertEqual((mine["scope"], mine["total"], mine["project"]), (459, 499, 459))
+        self.assertEqual(mine["projects"], {})                                     # the split by project is the board's
+        self.assertNotIn("Fremd", str(usage.detail(self.a.id, now=now)))
+
+    def test_the_window_names_the_roles_and_the_board_goes_into_more_detail(self):
+        with db.connect() as conn:
+            for role, tin in (("programmer", 3000), ("chef", 1000)):
+                usage.record(conn, user_id=self.a.id, project_id=self.pa.id, provider="claude", model="sonnet",
+                             credential="api" if role == "chef" else "plan", kind="run", role=role, tokens_in=tin, tokens_out=0)
+        board = ui.settings_bar(self.a)
+        for text in ("Nach Rolle", "Programmierer", "Manager", "Nach Modell", "Abo oder Schlüssel", "API-Schlüssel", "Nach Projekt",
+                     "usage-block big"):
+            self.assertIn(text, board)
+        self.assertIn('class="usage-day now"', board)                              # today's bar
+        self.assertIn('data-pct="100"', board)                                     # the highest bar is full
+        page = ui.settings_bar(self.a, project_id=self.pa.id)                      # a project: its own, the rest quiet
+        self.assertIn("usage-quiet", page)
+        self.assertNotIn("Nach Projekt", page)
+        self.assertNotIn("usage-block big", page)
 
     def test_it_goes_with_the_account_and_stays_without_its_project(self):
         with db.connect() as conn:

@@ -40,6 +40,14 @@
       block.hidden = block.dataset.usageFor !== button.dataset.usage && block.dataset.usageFor !== "all";
     });
     dialog.showModal();
+    // The bars grow from nothing each time the window opens (transform only; reduced motion: the CSS has no transition)
+    var bars = Array.prototype.slice.call(dialog.querySelectorAll("[data-usage-for]:not([hidden]) i[data-pct]"));
+    bars.forEach(function (bar) { bar.style.transform = ""; });
+    void dialog.offsetWidth;
+    bars.forEach(function (bar) {
+      var share = Math.max(0, Math.min(1, Number(bar.dataset.pct) / 100));
+      bar.style.transform = bar.parentNode.classList.contains("usage-bar") ? "scaleY(" + share + ")" : "scaleX(" + share + ")";
+    });
   });
 
   var CHECK_FOR = 150000; // ms: the hub gives up a check after two minutes (ai_link.CHECK_SECONDS)
