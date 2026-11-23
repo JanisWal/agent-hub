@@ -56,17 +56,26 @@ def totals(user_id: int, project_id: int | None = None, role: str | None = None,
         return dict(conn.execute(sql, args).fetchone())
 
 
-def by_ai(user_id: int, now: int | None = None) -> dict[str, dict]:
-    """Per AI of the user (a further AI by its place, "custom-3"): tokens in and out today and in the last 7 days."""
+def by_ai(user_id: int, now: int | None = None, project_id: int | None = None) -> dict[str, dict]:
+    """Per AI of the user (a further AI by its place, "custom-3"): tokens in and out today, in the last 7 days, in all
+    (all projects) and, when `project_id` is given, in that project (Janis, 23.11.2026). Only the user's own calls."""
     now = int(now if now is not None else time.time())
-    today = now - now % DAY
+    today, week = now - now % DAY, now - 7 * DAY
     out: dict[str, dict] = {}
     with db.connect() as conn:
         rows = conn.execute(
             "SELECT CASE WHEN provider = 'custom' AND model LIKE 'own-%' THEN 'custom-' || substr(model, 5) ELSE provider"
             " END AS ai, SUM(CASE WHEN created_at >= ? THEN tokens_in + tokens_out ELSE 0 END) AS today,"
-            " SUM(tokens_in + tokens_out) AS week FROM ai_usage WHERE user_id = ? AND created_at >= ? GROUP BY ai",
-            (today, user_id, now - 7 * DAY)).fetchall()
+            " SUM(CASE WHEN created_at >= ? THEN tokens_in + tokens_out ELSE 0 END) AS week,"
+            " SUM(tokens_in + tokens_out) AS total,"
+            " SUM(CASE WHEN project_id = ? THEN tokens_in + tokens_out ELSE 0 END) AS project"
+            " FROM ai_usage WHERE user_id = ? GROUP BY ai",
+            (today, week, -1 if project_id is None else int(project_id), user_id)).fetchall()
     for row in rows:
-        out[row["ai"]] = {"today": row["today"] or 0, "week": row["week"] or 0}
+        if not row["total"]:
+            continue
+        item = {"today": row["today"] or 0, "week": row["week"] or 0, "total": row["total"] or 0}
+        if project_id is not None:
+            item["project"] = row["project"] or 0
+        out[row["ai"]] = item
     return out

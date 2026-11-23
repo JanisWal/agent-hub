@@ -24,10 +24,22 @@
         window.AgentHub.swap(["ai-services"]).then(function (fresh) {
           var more = document.getElementById("ai-more"), arrow = document.getElementById("ai-toggle");
           if (wasOpen && more && arrow) { more.hidden = false; arrow.setAttribute("aria-expanded", "true"); }
+          if (window.AgentHub.equalizeTiles) window.AgentHub.equalizeTiles();
           if (window.AgentHub.refreshPickers) window.AgentHub.refreshPickers(fresh);
         }).catch(function () { window.AgentHub.reload(); });
       }, 450);
     }).catch(function () { button.disabled = false; });
+  });
+
+  // What an AI used (ui._usage_dialog): the button of its row opens the window with its block and, below, all AIs.
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest("[data-usage]");
+    var dialog = document.getElementById("usage-dialog");
+    if (!button || !dialog || typeof dialog.showModal !== "function") return;
+    dialog.querySelectorAll("[data-usage-for]").forEach(function (block) {
+      block.hidden = block.dataset.usageFor !== button.dataset.usage && block.dataset.usageFor !== "all";
+    });
+    dialog.showModal();
   });
 
   var CHECK_FOR = 150000; // ms: the hub gives up a check after two minutes (ai_link.CHECK_SECONDS)
@@ -91,9 +103,21 @@
       if (fieldError) fieldError.hidden = true;
       var name = form.querySelector('input[name="label"]');
       if (name && button.dataset.label) name.value = button.dataset.label;
+      // A ready-made AI (ui.PRESETS): its address is filled in and the page for its key is offered
+      var address = form.querySelector('input[name="endpoint"]');
+      if (address && button.dataset.endpoint) address.value = button.dataset.endpoint;
+      var page = dialog.querySelector("[data-key-page]");
+      if (page) {
+        var known = /^https:\/\//.test(button.dataset.keyPage || "");
+        page.hidden = !known;
+        if (known) page.href = button.dataset.keyPage;
+      }
       // "Connected" of an AI with a plan and a key (ui._status): both halves as they are
       if (button.dataset.manage) show(button.dataset.plan === "connected" ? "plan-on" : "key");
       else show(button.dataset.status === "connected" ? "disconnect" : "key");
+      // A refused or expired connection can be renewed or disconnected from the same dialog (Janis, 23.11.2026)
+      var out = dialog.querySelector("[data-to-disconnect]");
+      if (out) out.hidden = !(button.dataset.status === "expired" || button.dataset.status === "noplan");
       dialog.showModal();
       var field = form.querySelector("input");
       if (!form.hidden && field) field.focus();
@@ -126,6 +150,7 @@
       var target = event.target.closest("button");
       if (!target) return;
       if (target.hasAttribute("data-finish")) { dialog.close(); window.AgentHub.reload(); }
+      else if (target.hasAttribute("data-to-disconnect")) show("disconnect");
       else if (target.hasAttribute("data-disconnect")) {   // with an API key half: the plan and the key
         var both = dialog.querySelector("[data-api]");
         post("/ai/" + provider + "/disconnect")

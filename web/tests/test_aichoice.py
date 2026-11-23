@@ -130,6 +130,21 @@ class FallbackTest(Base):
         shown = chat_routes.messages(self.pa.id, user=self.a)["messages"][-1]
         self.assertEqual((shown["via"], shown["instead"]), ("Mistral", "Claude"))
 
+    def test_the_status_is_the_one_button_of_a_row_and_a_refused_one_can_be_disconnected(self):
+        """23.11.2026: no underlined links beside the status; every state opens the dialog of its AI, which offers
+        "disconnect" next to "renew" for a refused or expired connection."""
+        self.claude(self.a)
+        self.mistral(self.a)
+        page = ui.settings_bar(self.a)
+        self.assertNotIn('class="link inline"', page)
+        self.assertIn('<button class="status status-open" type="button" id="claude-open"', page)
+        self.assertIn('<button class="status status-open" type="button" data-key-open="mistral" data-status="connected"', page)
+        self.assertIn('<button class="status status-open" type="button" data-key-open="chatgpt" data-status="none"', page)
+        self.assertGreaterEqual(page.count("data-to-disconnect"), 4)            # claude, key dialogs, device dialog
+        from app import ai_link
+        ai_link.mark_expired(self.a.id, "mistral")
+        self.assertIn('data-key-open="mistral" data-status="expired"', ui.settings_bar(self.a))
+
     def test_a_waiting_question_names_the_ai_it_is_with(self):
         self.claude(self.a)
         self.mistral(self.a)

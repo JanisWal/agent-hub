@@ -287,6 +287,24 @@
     aiSprings.push(s);
     s.to(to);
   }
+  // All AI tiles are as high as the highest one (Janis, 23.11.2026): with the list open, every tile gets the height of the
+  // highest as its minimum (--tile-h on the panel, app.css); folded, the top tile stays compact. Measured with the
+  // minimum taken away, so a tile that got smaller (shorter text, another language) shrinks the others again.
+  function equalizeTiles() {
+    var panel = document.getElementById("settings-panel"), more = document.getElementById("ai-more");
+    if (!panel) return;
+    panel.style.removeProperty("--tile-h");
+    if (!more || more.hidden) return;
+    var tallest = 0;
+    panel.querySelectorAll("#ai-services .service").forEach(function (tile) {
+      tallest = Math.max(tallest, tile.getBoundingClientRect().height);
+    });
+    if (tallest) panel.style.setProperty("--tile-h", Math.ceil(tallest) + "px");
+  }
+  window.AgentHub = window.AgentHub || {};
+  window.AgentHub.equalizeTiles = equalizeTiles;
+  window.addEventListener("resize", equalizeTiles);
+
   document.addEventListener("click", function (event) {
     var aiToggle = event.target.closest("#ai-toggle");
     var aiMore = document.getElementById("ai-more");
@@ -300,6 +318,7 @@
     [first, aiMore].forEach(function (el) { el.style.height = ""; el.style.overflow = ""; });
     aiMore.hidden = false;
     aiToggle.setAttribute("aria-expanded", String(open));
+    equalizeTiles();
     var toFirst = first.getBoundingClientRect().height;
     var toMore = open ? aiMore.getBoundingClientRect().height : 0;
     glideHeight(first, fromFirst, toFirst);

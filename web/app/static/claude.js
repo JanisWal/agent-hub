@@ -26,8 +26,7 @@
     var openButton = document.getElementById("claude-open");
     if (!row || !openButton || openButton.dataset.status === "expired") return;
     row.className = "setting service expired";
-    row.querySelector(".status").textContent = row.dataset.expired;
-    openButton.textContent = row.dataset.renew;
+    openButton.textContent = row.dataset.expired;   // the status is the button
     openButton.dataset.status = "expired";
   };
   if (!dialog || typeof dialog.showModal !== "function") return;
@@ -94,14 +93,17 @@
   document.addEventListener("click", function (event) {
     var manage = event.target.closest('[data-manage="claude"]');
     var openButton = event.target.closest("#claude-open");
+    var out = dialog.querySelector("[data-to-disconnect]");   // "disconnect" next to "renew" of an expired sign-in
     if (manage) {
       reset();
       show(manage.dataset.plan === "connected" ? "plan-on" : "start");
+      if (out) out.hidden = true;
       dialog.showModal();
     } else if (openButton) {
       reset();
       // nothing starts until the user wants the plan (the right half may be all he wants: an API key)
       show(openButton.dataset.status === "connected" ? "disconnect" : "start");
+      if (out) out.hidden = openButton.dataset.status !== "expired";
       dialog.showModal();
     }
   });
@@ -131,6 +133,7 @@
     var button = event.target.closest("button");
     if (!button) return;
     if (button.hasAttribute("data-cancel")) dialog.close();       // the close handler cancels the login
+    else if (button.hasAttribute("data-to-disconnect")) show("disconnect");
     else if (button.hasAttribute("data-finish-keep")) { finished = true; dialog.close(); }
     else if (button.hasAttribute("data-finish")) { dialog.close(); window.AgentHub.reload(); }
     else if (button.hasAttribute("data-disconnect")) {   // the drawer's "disconnect": the plan and the API key

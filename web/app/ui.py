@@ -123,10 +123,12 @@ CUSTOM_DIALOG = """<dialog class="dialog" id="key-dialog-custom" data-provider="
     <label>%t.custom_endpoint%<input type="text" name="endpoint" required maxlength="300" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…/v1"></label>
     <label>%t.custom_model%<input type="text" name="model" required maxlength="100" autocomplete="off" spellcheck="false"></label>
     <label>%t.custom_key%<input type="password" name="key" maxlength="400" autocomplete="off" spellcheck="false"></label>
+    <p class="muted"><a class="link" data-key-page target="_blank" rel="noopener noreferrer" hidden>%t.custom_get_key%</a></p>
     <div class="actions">
       <button type="button" data-close>%t.cancel%</button>
       <button class="primary" type="submit">%t.claude_confirm%</button>
     </div>
+    <button class="link" type="button" data-to-disconnect hidden>%t.claude_disconnect%</button>
   </form>
   <div data-step="check" hidden><p class="muted" role="status">%t.key_wait%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p></div>
   <div data-step="done" hidden>
@@ -164,6 +166,7 @@ DEVICE_DIALOG = """<dialog class="dialog wide" id="key-dialog-%ID%" data-provide
       <button type="button" data-close>%t.cancel%</button>
       <button class="primary" type="submit">%t.device_start%</button>
     </div>
+    <button class="link" type="button" data-to-disconnect hidden>%t.claude_disconnect%</button>
   </form>
   <div data-step="check" hidden><p class="muted" role="status">%t.device_wait_link%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p></div>
   <div data-step="device" hidden>
@@ -231,6 +234,7 @@ SETTINGS = """<div class="drawer" id="settings">
 </div>
 %CLAUDE_DIALOG%
 %KEY_DIALOGS%
+%USAGE_DIALOG%
 <template id="copy-tpl">%COPY%</template>"""
 
 # The dialog of an AI that connects with an API key (ai_link.py, static/ailink.js): paste the key, the runner checks
@@ -245,6 +249,7 @@ KEY_DIALOG = """<dialog class="dialog" id="key-dialog-%ID%" data-provider="%ID%"
       <button type="button" data-close>%t.cancel%</button>
       <button class="primary" type="submit">%t.claude_confirm%</button>
     </div>
+    <button class="link" type="button" data-to-disconnect hidden>%t.claude_disconnect%</button>
   </form>
   <div data-step="check" hidden><p class="muted" role="status">%t.key_wait%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p></div>
   <div data-step="done" hidden>
@@ -279,6 +284,7 @@ CLAUDE_DIALOG = """<dialog class="dialog wide" id="claude-dialog">
   <div data-step="start" hidden>
     <p class="muted">%t.claude_start_text%</p>
     <button class="primary" type="button" data-start>%t.device_start%</button>
+    <button class="link" type="button" data-to-disconnect hidden>%t.claude_disconnect%</button>
   </div>
   <div data-step="wait">
     <p class="muted" role="status">%t.claude_wait%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p>
@@ -368,31 +374,29 @@ def copy_button(lang: str) -> str:
             f'data-tip="{label}" data-done="{done}">{icon("copy")}{icon("check", "copy-done")}</button>')
 
 
-def _status(lang: str, text_key: str, manage: str = "", plan: str = "") -> str:
-    """The state of a row. "Connected" of an AI with a plan and a key is a button (Janis, 21.11.2026): it looks the
-    same, glows a little more under the pointer and opens the dialog with both halves as they are (claude.js,
-    ailink.js); `plan` tells the dialog whether the plan is signed in."""
+def _status(lang: str, text_key: str, attrs: str, manage: str = "", plan: str = "") -> str:
+    """The state of a row is its one button (Janis, 23.11.2026: no underlined links beside it): it glows under the
+    pointer in the colour of its state and opens the dialog of the AI, which offers what fits the state (connect,
+    renew, disconnect; claude.js, ailink.js). `attrs` say which dialog and how it starts; "connected" of an AI with a
+    plan and a key (`manage`) opens the dialog with both halves as they are, `plan` tells whether the plan is signed in."""
     text = esc(i18n.t(lang, text_key))
-    if not manage:
-        return f'<span class="status">{text}</span>'
-    return (f'<button class="status status-open" type="button" data-manage="{manage}" data-plan="{esc(plan)}" '
-            f'aria-haspopup="dialog">{text}</button>')
+    more = f' data-manage="{manage}" data-plan="{esc(plan)}"' if manage else ""
+    return f'<button class="status status-open" type="button" {attrs}{more} aria-haspopup="dialog">{text}</button>'
+
 
 
 def _claude_row(lang: str, state: str, first: bool = True, as_default: bool = False, api: str = "",
                 api_on: bool = False) -> str:
     """The Claude block: state and the link of its dialog (claude.js), or "make standard" (`as_default`)."""
     shown = _shown(state, api_on)
-    style, text_key, action_key = CLAUDE_STATES.get(shown, ("", "not_connected", "connect"))
-    action = (f'<button class="link inline" type="button" id="claude-open" data-status="{esc(shown)}">'
-              f'{esc(i18n.t(lang, action_key))}</button>')
+    style, text_key, _ = CLAUDE_STATES.get(shown, ("", "not_connected", "connect"))
     corner = _toggle(lang) if first else (_make_default(lang, "claude") if as_default and shown == "connected" else "")
-    status = _status(lang, text_key, "claude" if shown == "connected" else "", state)
+    status = _status(lang, text_key, f'id="claude-open" data-status="{esc(shown)}"', "claude" if shown == "connected" else "", state)
     return (
         f'<div class="setting service {style}" id="claude-row" data-ai="claude" '
-        f'data-expired="{esc(i18n.t(lang, "claude_expired"))}" data-renew="{esc(i18n.t(lang, "claude_renew"))}">'
+        f'data-expired="{esc(i18n.t(lang, "claude_expired"))}">'
         f'<span class="setting-label">{esc(ai_name(lang, "claude"))}</span>{corner}'
-        f'<span class="service-line">{status}{action}</span>'
+        f'<span class="service-line">{status}</span>'
         f'<span class="service-tools">{esc(tools_line(lang, "claude"))}{api}</span></div>'
     )
 
@@ -403,31 +407,42 @@ def _key_row(lang: str, provider: str, state: str, first: bool = False, as_defau
     A further AI ("custom-3") shows the name the user gave it; its tools and its standard are those of "custom"."""
     kind = "custom" if ai_link.is_custom(provider) else provider
     plan, state = state, _shown(state, api_on)
-    style, text_key, action_key = KEY_STATES.get(state, ("", "not_connected", "connect"))
+    style, text_key, _ = KEY_STATES.get(state, ("", "not_connected", "connect"))
     label = f' data-label="{esc(name)}"' if name else ""
-    action = (f'<button class="link inline" type="button" data-key-open="{provider}" data-status="{esc(state)}"{label}>'
-              f'{esc(i18n.t(lang, action_key))}</button>')
+    attrs = f'data-key-open="{provider}" data-status="{esc(state)}"{label}'
     corner = _toggle(lang) if first else (_make_default(lang, kind) if as_default and state == "connected" else "")
     manage = provider if state == "connected" and provider in API_PANEL else ""
     return (
         f'<div class="setting service {style}" id="key-row-{provider}" data-ai="{kind}">'
         f'<span class="setting-label">{esc(name or ai_name(lang, provider))}</span>{corner}'
-        f'<span class="service-line">{_status(lang, text_key, manage, plan)}{action}</span>'
+        f'<span class="service-line">{_status(lang, text_key, attrs, manage, plan)}</span>'
         f'<span class="service-tools">{esc(tools_line(lang, kind))}{api}</span></div>'
     )
 
 
 # AIs that get an adapter of their own later (Janis, 21.11.2026): their programs do more than the general way.
-SOON = ("Gemini", "GitHub Copilot")
+SOON = ("GitHub Copilot",)
+# AIs that are a ready-made entry of the "Other AI" dialog (Janis, 23.11.2026): their name, the address of their API in
+# the OpenAI format and the page where the user makes a key. No adapter of their own: they work through the hub's tool
+# loop (runner/hubloop.py) in every role. Fixed here, never from a request.
+PRESETS = {"Gemini": {"endpoint": "https://generativelanguage.googleapis.com/v1beta/openai",
+                      "page": "https://aistudio.google.com/apikey"}}
+
+
+def _preset_row(lang: str, name: str, preset: dict) -> str:
+    """The tile of a ready-made AI: it opens the dialog of the open tile with name and address filled in."""
+    attrs = (f'data-key-open="custom" data-status="none" data-label="{esc(name)}" data-endpoint="{esc(preset["endpoint"])}" '
+             f'data-key-page="{esc(preset["page"])}"')
+    return (f'<div class="setting service" id="key-row-preset-{esc(name.lower())}"><span class="setting-label">'
+            f'{esc(name)}</span><span class="service-line">{_status(lang, "custom_preset_line", attrs)}</span></div>')
 
 
 def _add_row(lang: str) -> str:
     """The open tile (Janis, 21.11.2026): always there while a place is free, to connect one more AI of any kind with
     an API in the OpenAI format."""
+    status = _status(lang, "custom_add_line", 'data-key-open="custom" data-status="none"')
     return (f'<div class="setting service" id="key-row-custom"><span class="setting-label">'
-            f'{esc(i18n.t(lang, "custom_add"))}</span><span class="service-line"><span class="status">'
-            f'{esc(i18n.t(lang, "custom_add_line"))}</span><button class="link inline" type="button" '
-            f'data-key-open="custom" data-status="none">{esc(i18n.t(lang, "connect"))}</button></span></div>')
+            f'{esc(i18n.t(lang, "custom_add"))}</span><span class="service-line">{status}</span></div>')
 
 
 def _soon_row(lang: str, name: str) -> str:
@@ -501,6 +516,27 @@ def _disconnect_text(lang: str, provider: str, user_id: int, plain: str) -> str:
     return esc(i18n.t(lang, "both_disconnect_text" if has_key else plain))
 
 
+def _usage_dialog(lang: str, used: dict, names: dict[str, str], project: bool) -> str:
+    """What each AI used (Janis, 23.11.2026): a block per AI (the button of its row shows it) with today, the last 7 days,
+    all of it and, on a project page, what that project used; below, all AIs together. Tokens are counted differently
+    by each AI (how it cuts the text, what it takes from its cache), so the sum is a rough overview: the "i" says so."""
+    keys = ("today", "week", "total") + (("project",) if project else ())
+
+    def block(key: str, title: str, numbers: dict, info: str = "") -> str:
+        rows = "".join(f'<div><dt>{esc(i18n.t(lang, "usage_" + k))}</dt><dd>{esc(i18n.count(lang, numbers.get(k, 0)))}</dd></div>'
+                       for k in keys)
+        return (f'<section class="usage-block" data-usage-for="{esc(key)}" hidden><h3>{esc(title)}{info}</h3>'
+                f'<dl class="usage-list">{rows}</dl></section>')
+
+    blocks = [block(name, names.get(name) or ai_name(lang, name), numbers) for name, numbers in used.items()]
+    if len(used) >= 2:
+        everything = {k: sum(n.get(k, 0) for n in used.values()) for k in keys}
+        title = i18n.t(lang, "usage_all")
+        blocks.append(block("all", title, everything, info_dot(title, i18n.t(lang, "usage_all_info"))))
+    return (f'<dialog class="dialog" id="usage-dialog"><h2>{esc(i18n.t(lang, "usage_title"))}</h2>{"".join(blocks)}'
+            f'<div class="actions"><button type="button" data-close>{esc(i18n.t(lang, "close"))}</button></div></dialog>')
+
+
 def _paused(user_id: int) -> bool:
     """Are the user's agents paused (agents.set_paused)? Read here directly: ui does not import agents."""
     with db.connect() as conn:
@@ -565,8 +601,9 @@ def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | Non
         as_default = several and kind(name) != kind(top)
         line = (api or {}).get(name, "")
         spent = (used or {}).get(name)
-        shown = line + (f'<span class="service-usage">{esc(i18n.t(lang, "ai_usage_line", today=i18n.count(lang, spent["today"]), week=i18n.count(lang, spent["week"])))}</span>'
-                        if spent and spent["week"] else "")
+        shown = line + (f'<button class="service-usage" type="button" data-usage="{esc(name)}" aria-haspopup="dialog">'
+                        f'{esc(i18n.t(lang, "ai_usage_line", today=i18n.count(lang, spent["today"]), week=i18n.count(lang, spent["week"])))}</button>'
+                        if spent else "")
         if name == "claude":
             return _claude_row(lang, claude_state, first, as_default, shown, bool(line))
         return _key_row(lang, name, key_states.get(name, "none"), first, as_default, shown, labels.get(name, ""),
@@ -575,6 +612,8 @@ def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | Non
     rest = [row(n, False) for n in names if n != top]
     if len(custom) < len(ai_link.SLOTS):
         rest.append(_add_row(lang))
+        taken = {i["label"].strip().lower() for i in custom}      # one that is connected has its own row
+        rest += [_preset_row(lang, n, p) for n, p in PRESETS.items() if n.lower() not in taken]
     rest += [_soon_row(lang, n) for n in SOON]
     others = "\n        ".join(rest)
     clear = (f'<button class="clear-btn" type="button" id="chat-clear-open">'
@@ -597,10 +636,12 @@ def _admin_button(user: User) -> str:
     return f'<a class="admin-btn" href="/admin">{esc(i18n.t(user.language, "admin_title"))}</a>'
 
 
-def settings_bar(user: User, extras: str = "") -> str:
+def settings_bar(user: User, extras: str = "", project_id: int | None = None) -> str:
     """Settings drawer for the top right corner of every logged-in page. `extras` (HTML) are small
-    buttons to the left of the gear that ride along when the drawer slides out (project page)."""
+    buttons to the left of the gear that ride along when the drawer slides out (project page). `project_id`: the project
+    of the page, so the usage window can also name what that project used."""
     lang = user.language
+    custom, used = _custom_rows(user.id), usage.by_ai(user.id, project_id=project_id)
     return fill(
         SETTINGS,
         lang,
@@ -609,7 +650,8 @@ def settings_bar(user: User, extras: str = "") -> str:
         ARROW=icon("arrow_left", "drawer-arrow"),
         SERVICES=_service_rows(lang, claude_link.status(user.id), {p: ai_link.status(user.id, p) for p in ai_link.PROVIDERS},
                                tuple(aichoice.ranked(user.id)), _api_lines(lang, user.id),
-                               _custom_rows(user.id), _paused(user.id), usage.by_ai(user.id)),
+                               custom, _paused(user.id), used),
+        USAGE_DIALOG=_usage_dialog(lang, used, {i["name"]: i["label"] for i in custom if i["label"]}, project_id is not None),
         ADMIN=_admin_button(user),
         CLAUDE_DIALOG=fill(CLAUDE_DIALOG, lang, API=api_panel(lang, "claude", user.id),
                            DISCONNECT=_disconnect_text(lang, "claude", user.id, "claude_disconnect_text")),
@@ -629,10 +671,11 @@ def logged_in_page(
     top_center: str = "",
     top_left: str = "",
     drawer_extras: str = "",
+    project_id: int | None = None,
 ) -> str:
     """A page with the settings drawer in the corner, in the language of the user."""
     return page(
         title, body, user.language,
-        top_right=settings_bar(user, drawer_extras), top_center=top_center, top_left=top_left,
+        top_right=settings_bar(user, drawer_extras, project_id), top_center=top_center, top_left=top_left,
         scripts=("claude.js", "ailink.js", "aiapi.js", "aipause.js", *scripts), styles=styles, body_class=body_class,
     )
