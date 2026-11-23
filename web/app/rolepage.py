@@ -254,7 +254,7 @@ def _programmer(lang: str, settings: dict, runs: list[agents.RoleRun], usage: di
         f'<section class="mtile glass r-head"><header><h2>{esc(i18n.t(lang, "role_now"))}</h2>'
         f'{ui.info_dot(name, i18n.t(lang, "role_hint_programmer"))}{tools}</header>'
         f'<div id="role-programmer-now">{_now(lang, "programmer", runs, now, where)}</div>'
-        f'<div class="p-ais" data-hscroll><small>{esc(i18n.t(lang, "p_other_ais"))}</small>{others}</div></section>'
+        f'<div class="p-ais" id="role-programmer-ais" data-hscroll><small>{esc(i18n.t(lang, "p_other_ais"))}</small>{others}</div></section>'
         f'{_task_tile(lang, current, where)}'
         f'<section class="mtile glass"><header><h2>{esc(i18n.t(lang, "role_usage"))}</h2></header>'
         f'<div id="role-programmer-usage">{_usage(lang, usage)}</div></section>'

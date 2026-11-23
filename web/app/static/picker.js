@@ -26,6 +26,23 @@
   });
 
   window.AgentHub = window.AgentHub || {};
+  // After the AI of a role (or the standard) changed: every picker takes the list, levels and value the server
+  // draws now (`fresh`: the page as AgentHub.swap returns it). The selects stay, so their listeners keep working.
+  // A picker the user has open is left alone.
+  window.AgentHub.refreshPickers = function (fresh) {
+    document.querySelectorAll(".model-picker select[id]").forEach(function (select) {
+      var next = fresh.getElementById(select.id);
+      if (!next || document.activeElement === select) return;
+      ["levels", "defaults"].forEach(function (key) {
+        if (next.dataset[key] !== undefined) select.dataset[key] = next.dataset[key];
+      });
+      if (select.innerHTML !== next.innerHTML) select.innerHTML = next.innerHTML;
+      select.value = next.value;
+      var picker = select.closest(".model-picker"), nextPicker = next.closest(".model-picker");
+      if (picker && nextPicker) picker.dataset.provider = nextPicker.dataset.provider;
+    });
+    document.querySelectorAll(".model-picker").forEach(sync);
+  };
   window.AgentHub.syncPicker = function (element) {
     var picker = element && element.closest(".model-picker");
     if (picker) sync(picker);

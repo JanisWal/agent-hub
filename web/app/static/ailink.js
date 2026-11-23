@@ -24,13 +24,7 @@
         window.AgentHub.swap(["ai-services"]).then(function (fresh) {
           var more = document.getElementById("ai-more"), arrow = document.getElementById("ai-toggle");
           if (wasOpen && more && arrow) { more.hidden = false; arrow.setAttribute("aria-expanded", "true"); }
-          document.querySelectorAll(".model-picker select[id]").forEach(function (select) {
-            var next = fresh.getElementById(select.id);
-            if (!next || next.value === select.value) return;
-            if (!Array.prototype.some.call(select.options, function (o) { return o.value === next.value; })) return;
-            select.value = next.value;
-            if (window.AgentHub.syncPicker) window.AgentHub.syncPicker(select);
-          });
+          if (window.AgentHub.refreshPickers) window.AgentHub.refreshPickers(fresh);
         }).catch(function () { window.AgentHub.reload(); });
       }, 450);
     }).catch(function () { button.disabled = false; });
