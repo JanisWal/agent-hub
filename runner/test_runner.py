@@ -397,7 +397,7 @@ class WatchTest(unittest.TestCase):
         self.assertEqual(self.watch.reason, "memory")
         self.r.ooms.forget("agent-run-9")
         self.assertFalse(self.r.ooms.seen("agent-run-9"))
-        self.assertIn("384 MB", self.r._stopped("memory"))
+        self.assertIn("480 MB", self.r._stopped("memory"))   # the default limit, no job here
 
     def test_the_longest_time_ends_it(self):
         for second in range(10, 320, 10):
