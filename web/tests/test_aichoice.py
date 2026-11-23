@@ -130,6 +130,15 @@ class FallbackTest(Base):
         shown = chat_routes.messages(self.pa.id, user=self.a)["messages"][-1]
         self.assertEqual((shown["via"], shown["instead"]), ("Mistral", "Claude"))
 
+    def test_a_waiting_question_names_the_ai_it_is_with(self):
+        self.claude(self.a)
+        self.mistral(self.a)
+        chat.send(self.a.id, self.pa.id, "Hello")
+        self.assertEqual(chat_routes.messages(self.pa.id, user=self.a)["messages"][-1]["ai"], "Claude")
+        claude_link.mark_expired(self.a.id)
+        chat.claim_next()                                                     # handed on to the next AI
+        self.assertEqual(chat_routes.messages(self.pa.id, user=self.a)["messages"][-1]["ai"], "Mistral")
+
     def test_a_used_up_quota_tries_the_next_ai_once(self):
         self.claude(self.a)
         self.mistral(self.a)
