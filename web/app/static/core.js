@@ -330,15 +330,23 @@
     var menu = document.createElement("ul");
     menu.className = "select-menu";
     menu.setAttribute("role", "listbox");
-    var items = Array.prototype.map.call(select.options, function (option) {
-      var item = document.createElement("li");
-      item.className = "select-option";
-      item.setAttribute("role", "option");
-      item.textContent = option.textContent;
-      item.dataset.value = option.value;
-      menu.appendChild(item);
-      return item;
-    });
+    var items = [];
+    // The entries follow the options; built again when a script swapped the options (the model picker after a change
+    // of the AI, picker.js sends "agenthub:options").
+    function build() {
+      menu.textContent = "";
+      items = Array.prototype.map.call(select.options, function (option) {
+        var item = document.createElement("li");
+        item.className = "select-option";
+        item.setAttribute("role", "option");
+        item.textContent = option.textContent;
+        item.dataset.value = option.value;
+        menu.appendChild(item);
+        return item;
+      });
+    }
+    build();
+    select.addEventListener("agenthub:options", build);
     select.parentNode.appendChild(menu);
     select.setAttribute("aria-haspopup", "listbox");
 

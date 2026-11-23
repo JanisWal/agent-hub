@@ -36,7 +36,10 @@
       ["levels", "defaults"].forEach(function (key) {
         if (next.dataset[key] !== undefined) select.dataset[key] = next.dataset[key];
       });
-      if (select.innerHTML !== next.innerHTML) select.innerHTML = next.innerHTML;
+      if (select.innerHTML !== next.innerHTML) {
+        select.innerHTML = next.innerHTML;
+        select.dispatchEvent(new Event("agenthub:options"));   // core.js builds its list of entries again
+      }
       select.value = next.value;
       var picker = select.closest(".model-picker"), nextPicker = next.closest(".model-picker");
       if (picker && nextPicker) picker.dataset.provider = nextPicker.dataset.provider;
