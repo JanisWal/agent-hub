@@ -1,7 +1,7 @@
 """HTML of the owner's system page."""
 from html import escape as esc
 
-from . import db, i18n, netaddresses, serversettings, users
+from . import db, i18n, netaddresses, serversettings, sysstats, users
 from .icons import icon
 from .layout import fill
 from .ui import info_dot
