@@ -163,17 +163,36 @@ class UsageTest(unittest.TestCase):
         with db.connect() as conn:
             for role, tin in (("programmer", 3000), ("chef", 1000)):
                 usage.record(conn, user_id=self.a.id, project_id=self.pa.id, provider="claude", model="sonnet",
-                             credential="api" if role == "chef" else "plan", kind="run", role=role, tokens_in=tin, tokens_out=0)
+                             credential="api" if role == "chef" else "plan", kind="run", role=role, tokens_in=tin, tokens_out=0,
+                             seconds=60)
         board = ui.settings_bar(self.a)
-        for text in ("Nach Rolle", "Programmierer", "Manager", "Nach Modell", "Abo oder Schlüssel", "API-Schlüssel", "Nach Projekt",
-                     "usage-block big"):
+        for text in ("Programmierer", "Manager", "Abo / Schlüssel", "API-Schlüssel", "usage-block big", 'data-split="role"',
+                     'data-split="model"', 'data-split="way"', 'data-split="project"', 'data-split-tab="project"'):
             self.assertIn(text, board)
+        self.assertNotIn("Nach Rolle", board)                                       # the splits sit behind a small switch
+        self.assertEqual(board.count('data-split="role"'), 1)
         self.assertIn('class="usage-day now"', board)                              # today's bar
         self.assertIn('data-pct="100"', board)                                     # the highest bar is full
         page = ui.settings_bar(self.a, project_id=self.pa.id)                      # a project: its own, the rest quiet
         self.assertIn("usage-quiet", page)
-        self.assertNotIn("Nach Projekt", page)
+        self.assertNotIn('data-split="project"', page)
         self.assertNotIn("usage-block big", page)
+
+    def test_the_window_has_a_time_view_that_adds_up_every_call(self):
+        """23.11.2026: the time is the sum of the time of every call, so chats that go at the same time all count."""
+        now = 1_800_000_000
+        with db.connect() as conn:
+            for role, secs in (("chef", 100), ("chef", 100), ("programmer", 40)):   # two chats at the same time, a run
+                usage.record(conn, user_id=self.a.id, project_id=self.pa.id, provider="claude", model="sonnet",
+                             credential="plan", kind="chat", role=role, tokens_in=10, tokens_out=0, seconds=secs, now=now - 30)
+        item = usage.detail(self.a.id, now=now)["claude"]
+        self.assertEqual((item["time"]["today"], item["time"]["total"], item["time"]["days"][6]), (240, 240, 240))
+        self.assertEqual(item["time"]["roles"], {"chef": 200, "programmer": 40})   # more than the clock shows: it adds up
+        page = ui.settings_bar(self.a)
+        self.assertIn('data-mode="time"', page)                                     # the switch
+        self.assertIn('<span class="u-time">4 Min.</span>', page)                    # 240 seconds
+        self.assertIn("Summe der Dauer aller Aufrufe", page)                        # the "i" says how it counts
+        self.assertIn('data-pct-t="', page)                                         # bars for the time view too
 
     def test_it_goes_with_the_account_and_stays_without_its_project(self):
         with db.connect() as conn:

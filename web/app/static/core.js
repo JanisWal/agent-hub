@@ -290,16 +290,28 @@
   // All AI tiles are as high as the highest one (Janis, 23.11.2026): with the list open, every tile gets the height of the
   // highest as its minimum (--tile-h on the panel, app.css); folded, the top tile stays compact. Measured with the
   // minimum taken away, so a tile that got smaller (shorter text, another language) shrinks the others again.
+  // When the open list does not fit the window, the tool lines of the tiles go (class "compact") and the tiles shrink: no
+  // scrolling where the window is big enough (Janis, 23.11.2026).
   function equalizeTiles() {
     var panel = document.getElementById("settings-panel"), more = document.getElementById("ai-more");
     if (!panel) return;
     panel.style.removeProperty("--tile-h");
+    panel.classList.remove("compact");
     if (!more || more.hidden) return;
-    var tallest = 0;
-    panel.querySelectorAll("#ai-services .service").forEach(function (tile) {
-      tallest = Math.max(tallest, tile.getBoundingClientRect().height);
-    });
-    if (tallest) panel.style.setProperty("--tile-h", Math.ceil(tallest) + "px");
+    var scroller = panel.querySelector(".drawer-scroll");
+    function measure() {
+      var tallest = 0;
+      panel.querySelectorAll("#ai-services .service").forEach(function (tile) {
+        tallest = Math.max(tallest, tile.getBoundingClientRect().height);
+      });
+      if (tallest) panel.style.setProperty("--tile-h", Math.ceil(tallest) + "px");
+    }
+    measure();
+    if (scroller && scroller.scrollHeight > scroller.clientHeight + 1) {
+      panel.classList.add("compact");
+      panel.style.removeProperty("--tile-h");
+      measure();
+    }
   }
   window.AgentHub = window.AgentHub || {};
   window.AgentHub.equalizeTiles = equalizeTiles;

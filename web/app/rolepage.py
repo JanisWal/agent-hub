@@ -24,12 +24,7 @@ STAGE_OF = {"programmer": "coding", "tester": "testing", "reviewer": "reviewing"
 
 
 def _duration(lang: str, seconds: int) -> str:
-    seconds = max(0, int(seconds))
-    if seconds < 90:
-        return i18n.t(lang, "dur_seconds", n=seconds)
-    if seconds < 90 * 60:
-        return i18n.t(lang, "dur_minutes", n=round(seconds / 60))
-    return i18n.t(lang, "dur_hours", n=i18n.decimal(lang, seconds / 3600))
+    return i18n.duration(lang, seconds)
 
 
 def _ago(lang: str, then: int | None, now: int) -> str:
