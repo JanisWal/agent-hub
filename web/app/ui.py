@@ -123,6 +123,7 @@ CUSTOM_DIALOG = """<dialog class="dialog" id="key-dialog-custom" data-provider="
     <label>%t.custom_endpoint%<input type="text" name="endpoint" required maxlength="300" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://…/v1"></label>
     <label>%t.custom_model%<input type="text" name="model" required maxlength="100" autocomplete="off" spellcheck="false"></label>
     <label>%t.custom_key%<input type="password" name="key" maxlength="400" autocomplete="off" spellcheck="false"></label>
+    <p class="muted"><a class="link" data-key-page target="_blank" rel="noopener noreferrer" hidden>%t.custom_get_key%</a></p>
     <div class="actions">
       <button type="button" data-close>%t.cancel%</button>
       <button class="primary" type="submit">%t.claude_confirm%</button>
@@ -418,7 +419,22 @@ def _key_row(lang: str, provider: str, state: str, first: bool = False, as_defau
 
 
 # AIs that get an adapter of their own later (Janis, 21.11.2026): their programs do more than the general way.
-SOON = ("Gemini", "GitHub Copilot")
+SOON = ("GitHub Copilot",)
+# AIs that are a ready-made entry of the "Other AI" dialog (Janis, 23.11.2026): their name, the address of their API in
+# the OpenAI format and the page where the user makes a key. No adapter of their own: they work through the hub's tool
+# loop (runner/hubloop.py) in every role. Fixed here, never from a request.
+PRESETS = {"Gemini": {"endpoint": "https://generativelanguage.googleapis.com/v1beta/openai",
+                      "page": "https://aistudio.google.com/apikey"}}
+
+
+def _preset_row(lang: str, name: str, preset: dict) -> str:
+    """The tile of a ready-made AI: it opens the dialog of the open tile with name and address filled in."""
+    return (f'<div class="setting service" id="key-row-preset-{esc(name.lower())}"><span class="setting-label">'
+            f'{esc(name)}</span><span class="service-line"><span class="status">'
+            f'{esc(i18n.t(lang, "custom_preset_line"))}</span><button class="link inline" type="button" '
+            f'data-key-open="custom" data-status="none" data-label="{esc(name)}" '
+            f'data-endpoint="{esc(preset["endpoint"])}" data-key-page="{esc(preset["page"])}">'
+            f'{esc(i18n.t(lang, "connect"))}</button></span></div>')
 
 
 def _add_row(lang: str) -> str:
@@ -575,6 +591,8 @@ def _service_rows(lang: str, claude_state: str, key_states: dict[str, str] | Non
     rest = [row(n, False) for n in names if n != top]
     if len(custom) < len(ai_link.SLOTS):
         rest.append(_add_row(lang))
+        taken = {i["label"].strip().lower() for i in custom}      # one that is connected has its own row
+        rest += [_preset_row(lang, n, p) for n, p in PRESETS.items() if n.lower() not in taken]
     rest += [_soon_row(lang, n) for n in SOON]
     others = "\n        ".join(rest)
     clear = (f'<button class="clear-btn" type="button" id="chat-clear-open">'

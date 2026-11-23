@@ -91,6 +91,15 @@
       if (fieldError) fieldError.hidden = true;
       var name = form.querySelector('input[name="label"]');
       if (name && button.dataset.label) name.value = button.dataset.label;
+      // A ready-made AI (ui.PRESETS): its address is filled in and the page for its key is offered
+      var address = form.querySelector('input[name="endpoint"]');
+      if (address && button.dataset.endpoint) address.value = button.dataset.endpoint;
+      var page = dialog.querySelector("[data-key-page]");
+      if (page) {
+        var known = /^https:\/\//.test(button.dataset.keyPage || "");
+        page.hidden = !known;
+        if (known) page.href = button.dataset.keyPage;
+      }
       // "Connected" of an AI with a plan and a key (ui._status): both halves as they are
       if (button.dataset.manage) show(button.dataset.plan === "connected" ? "plan-on" : "key");
       else show(button.dataset.status === "connected" ? "disconnect" : "key");

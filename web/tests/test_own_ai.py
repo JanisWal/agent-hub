@@ -193,6 +193,18 @@ class OwnAiTest(unittest.TestCase):
         self.assertIn("Other AI", page)
         self.assertIn("Tools: from the hub, no web search", page)
 
+    def test_a_ready_made_ai_is_a_tile_that_opens_the_dialog_filled_in(self):
+        page = ui.settings_bar(self.a)
+        self.assertIn('data-label="Gemini" data-endpoint="https://generativelanguage.googleapis.com/v1beta/openai"', page)
+        self.assertIn('data-key-page="https://aistudio.google.com/apikey"', page)
+        self.assertIn("data-key-page target=\"_blank\"", page)                       # the link of the dialog
+        self.assertEqual(page.count("Kommt später"), len(ui.SOON))                    # Gemini is no placeholder any more
+        self.assertNotIn("Gemini", page[page.index("Kommt später") - 300:page.index("Kommt später")])
+        self.connect(self.a, "https://generativelanguage.googleapis.com/v1beta/openai", "m", label="Gemini")
+        page = ui.settings_bar(self.a)
+        self.assertNotIn("key-row-preset-gemini", page)                               # connected: its own row now
+        self.assertIn('data-label="Gemini"', page)
+
     def test_the_model_picker_shows_the_names(self):
         self.connect(self.a, label="Büro")
         self.connect(self.a, "https://two.example/v1", "qwen", label="Qwen")
