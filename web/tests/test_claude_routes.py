@@ -73,12 +73,12 @@ class DrawerTest(unittest.TestCase):
 
     def test_each_state_has_its_style_and_text(self):
         expected = {
-            "none": ("service ", "Nicht verknüpft", "Verknüpfen"),
-            "connected": ("service ok", "Verknüpft", "Trennen"),
-            "connecting": ("service pending", "Wird verknüpft", "Fortsetzen"),
-            "expired": ("service expired", "Abgelaufen", "Erneuern"),
+            "none": ("service ", "Nicht verknüpft"),
+            "connected": ("service ok", "Verknüpft"),
+            "connecting": ("service pending", "Wird verknüpft"),
+            "expired": ("service expired", "Abgelaufen"),
         }
-        for state, (cls, status, action) in expected.items():
+        for state, (cls, status) in expected.items():
             with db.connect() as conn:
                 conn.execute("DELETE FROM claude_connections")
                 if state != "none":
@@ -87,8 +87,8 @@ class DrawerTest(unittest.TestCase):
             row, _ = self.row()
             self.assertIn(cls, row, state)
             self.assertIn(status, row, state)
-            self.assertIn(action, row, state)
-            self.assertIn(f'data-status="{state}"', row)
+            self.assertNotIn("link inline", row, state)                     # the status is the button (23.11.2026)
+            self.assertIn(f'id="claude-open" data-status="{state}"', row)
 
     def test_dialog_is_in_the_drawer_in_both_languages(self):
         for lang, title in (("de", "Claude verknüpfen"), ("en", "Connect Claude")):

@@ -394,7 +394,7 @@ def _claude_row(lang: str, state: str, first: bool = True, as_default: bool = Fa
     status = _status(lang, text_key, f'id="claude-open" data-status="{esc(shown)}"', "claude" if shown == "connected" else "", state)
     return (
         f'<div class="setting service {style}" id="claude-row" data-ai="claude" '
-        f'data-expired="{esc(i18n.t(lang, "claude_expired"))}" data-renew="{esc(i18n.t(lang, "claude_renew"))}">'
+        f'data-expired="{esc(i18n.t(lang, "claude_expired"))}">'
         f'<span class="setting-label">{esc(ai_name(lang, "claude"))}</span>{corner}'
         f'<span class="service-line">{status}</span>'
         f'<span class="service-tools">{esc(tools_line(lang, "claude"))}{api}</span></div>'
