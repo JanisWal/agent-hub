@@ -76,7 +76,7 @@
       paintUsage();
       return;
     }
-    var mode = event.target.closest("[data-mode]");
+    var mode = event.target.closest("button[data-mode]");   // the window itself has data-mode, too
     if (mode && dialog && dialog.contains(mode)) {
       dialog.dataset.mode = mode.dataset.mode;
       choose(mode.closest(".seg"), mode);
