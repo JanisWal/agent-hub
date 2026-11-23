@@ -32,6 +32,8 @@ def messages(project_id: int, user: users.User = Depends(api_user)):
          "failure": chat.failure_kind(m.answer) if m.status == "failed" else "", "mode": m.mode, "model": m.model,
          "memory": m.memory_saved, "thoughts": "" if m.status == "failed" else m.thoughts.strip(),
          # the fallback (aichoice.py): another AI of the user answered; "instead" is the one asked first
+         # the AI this message is with now (it changes at a fallback), so "… is answering" names the right one
+         "ai": _name(m.provider, user.language),
          "via": _name(m.provider, user.language) if m.tried and m.status == "done" else "",
          "instead": _name(m.tried.split(",")[0], user.language) if m.tried else ""}
         for m in chat.list_messages(user.id, project_id)

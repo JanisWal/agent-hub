@@ -151,10 +151,10 @@
     else if (text.dataset.running) text.scrollTop = text.scrollHeight;
   }
 
-  // "Claude is answering" with the AI of the chosen model (ui.model_picker puts its name on the option as data-ai).
-  function waitingText() {
-    var chosen = document.querySelector('#manager-model option:checked');
-    return box.dataset.waiting.replace("{name}", (chosen && chosen.dataset.ai) || box.dataset.ai || "");
+  // "Claude is answering" with the AI this message is with (m.ai from the server; it changes at a fallback and does
+  // not follow the picker, which may already show another AI for the next question).
+  function waitingText(m) {
+    return box.dataset.waiting.replace("{name}", m.ai || box.dataset.ai || "");
   }
 
   function render(messages) {
@@ -164,7 +164,7 @@
       log.appendChild(line("you", box.dataset.you, m.prompt));
       if (m.status === "queued" || m.status === "running") {
         open = true;
-        var waiting = line("claude wait", box.dataset.claude, waitingText());
+        var waiting = line("claude wait", box.dataset.claude, waitingText(m));
         addThoughts(waiting, m, true);
         log.appendChild(waiting);
       } else if (m.status === "failed") {
