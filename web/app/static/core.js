@@ -306,11 +306,24 @@
     glideHeight(aiMore, fromMore, toMore, open ? null : function () { aiMore.hidden = true; });
   });
 
+  // Fold the list of the other AIs at once, no glide: it is called while the drawer is still out of sight.
+  function foldAis() {
+    var more = document.getElementById("ai-more"), arrow = document.getElementById("ai-toggle");
+    if (!more || !arrow || more.hidden) return;
+    aiSprings.forEach(function (s) { s.stop(); });
+    aiSprings = [];
+    var first = arrow.closest(".service") || arrow.parentElement;
+    [first, more].forEach(function (el) { el.style.height = ""; el.style.overflow = ""; });
+    more.hidden = true;
+    arrow.setAttribute("aria-expanded", "false");
+  }
+
   // Settings drawer: slides out of the top right corner, the handle rides along.
   var drawer = document.getElementById("settings");
   var toggle = document.getElementById("settings-toggle");
   if (drawer && toggle) {
     var setOpen = function (open) {
+      if (open) foldAis();   // the list of the other AIs always starts folded (Janis, 23.11.2026)
       drawer.classList.toggle("open", open);
       toggle.setAttribute("aria-expanded", String(open));
     };
