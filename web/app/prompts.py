@@ -213,6 +213,22 @@ def tools_text(tools: dict, net: str) -> str:
     return "You have " + ", ".join(parts) + ". Use a tool only when the job needs it (that saves tokens)."
 
 
+RESUME_STAT = 700   # characters of the changed-files list in the note
+
+
+def resume_note(what: str, report: str, stat: str) -> str:
+    """What the next run of a stage is told after the one before it was ended or failed (23.11.2026: every new run read
+    everything again and did not know whether it had done a step; thoughts are never given on, so it is told what the
+    hub knows: why it ended and which files the task has changed so far, `git diff --stat` against main).
+    `what`: "was ended" or "failed". Information, not an order."""
+    note = (f"Your previous run on this task {what} ({report[:300]}). What it changed is saved in /work: look at it and "
+            "go on from there; do not do again what is already there.")
+    stat = (stat or "").strip()
+    if stat:
+        note += f"\nFiles the task has changed so far (against the main branch):\n{stat[:RESUME_STAT]}"
+    return note
+
+
 def _blind(model: str) -> str:
     return "" if catalog.sees_images(model) else " " + catalog.BLIND_NOTE
 

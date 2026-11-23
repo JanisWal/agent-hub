@@ -706,13 +706,10 @@ def _finish_work(conn: sqlite3.Connection, run: sqlite3.Row, task: sqlite3.Row, 
                      " started_at, finished_at, provider) VALUES (?, 'tester', 'work', ?, 'done', ?, ?, ?, ?, ?, '')",
                      (task["id"], HUB_MODEL, "pass" if code == 0 else "fail", f"hub-test.sh: exit {code}\n{output}"[:MAX_REPORT],
                       now, now, now))
-    if result == "stopped":
-        _again_or_decide(conn, task, user_id, "failed", f"Your previous run on this task was ended ({report[:300]}). "
-                         "What it changed is saved in /work: look at it and go on from there.", now)
-        return
-    if result == "failed":
-        _again_or_decide(conn, task, user_id, "failed", f"Your previous run on this task failed ({report[:300]}). "
-                         "What it changed is saved in /work: look at it and go on from there.", now)
+    if result in ("stopped", "failed"):               # the stage runs once more, told what is already changed
+        stat = change[0] if change is not None else task["diff_stat"]
+        _again_or_decide(conn, task, user_id, "failed",
+                         prompts.resume_note("was ended" if result == "stopped" else "failed", report, stat), now)
         return
     if result == "none":                              # ask the same AI once for the line its answer lacked
         _queue(conn, user_id, task["id"], run["role"], "result", now, ref=run["id"], provider=run["provider"])
