@@ -440,9 +440,9 @@ def _preset_row(lang: str, name: str, preset: dict) -> str:
 def _add_row(lang: str) -> str:
     """The open tile (Janis, 21.11.2026): always there while a place is free, to connect one more AI of any kind with
     an API in the OpenAI format."""
+    status = _status(lang, "custom_add_line", 'data-key-open="custom" data-status="none"')
     return (f'<div class="setting service" id="key-row-custom"><span class="setting-label">'
-            f'{esc(i18n.t(lang, "custom_add"))}</span><span class="service-line">'
-            f'{_status(lang, "custom_add_line", \'data-key-open="custom" data-status="none"\')}</span></div>')
+            f'{esc(i18n.t(lang, "custom_add"))}</span><span class="service-line">{status}</span></div>')
 
 
 def _soon_row(lang: str, name: str) -> str:
