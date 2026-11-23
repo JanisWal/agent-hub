@@ -772,7 +772,7 @@ a.primary { display: flex; align-items: center; justify-content: center; text-de
    their labels can not (buttons, links that act, field labels, states, tabs, menus, headings of the interface, cards
    that are clicked or dragged), so a click or a drag never paints a selection over them. Codes copy with one click. */
 button, a.primary, .link, label, .setting-label, .status, .service-tools, .segment, .select-menu, .select-option,
-.drawer-handle, .info-dot, h1, h2, h3, .link-head, .sys-name, .tile, .card, .file-row, .device-row, .file-tab, .station,
+.drawer-handle, .info-dot, h1, h2, h3, .link-head, .sys-name, .sys-meter, .tile, .card, .file-row, .device-row, .file-tab, .station,
 .m-split, .chat-who, svg, .sq-btn, .board-state { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 input, textarea, [contenteditable="true"] { -webkit-user-select: text; user-select: text; }
 .muted { margin: 0 0 calc(var(--space) * 2); color: var(--muted); overflow-wrap: anywhere; }

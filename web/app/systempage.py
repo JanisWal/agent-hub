@@ -1,7 +1,7 @@
 """HTML of the owner's system page."""
 from html import escape as esc
 
-from . import db, i18n, netaddresses, serversettings, users
+from . import db, i18n, netaddresses, serversettings, sysstats, users
 from .icons import icon
 from .layout import fill
 from .ui import info_dot
@@ -34,6 +34,7 @@ def _action(lang: str, key: str, attr: str, info: bool = True) -> str:
 SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
   <header class="sys-head"><h2>%t.system_title%</h2></header>
   <div class="sys-list glass">
+    %STATS%
     %BACKUP%
     <div class="sys-row sys-upload" data-url="/system/upload">
       <span class="sys-name">%t.sys_upload%</span>
@@ -105,6 +106,48 @@ ADDRESS_DIALOG = """<dialog class="dialog wide" id="addresses-dialog">
     </div>
   </form>
 </dialog>"""
+
+
+def _gb(lang: str, value: float) -> str:
+    text = f"{value:.1f}"
+    return text.replace(".", ",") if lang == "de" else text
+
+
+def _level(pct: float, warn: float, high: float) -> str:
+    return "high" if pct >= high else "warn" if pct >= warn else "ok"
+
+
+def meters(lang: str, stats: dict) -> list[dict]:
+    """The live numbers as the page shows them (Janis, 23.11.2026), texts in the user's language: [{"key", "label",
+    "pct" (how full the bar is), "text", "level" (ok / warn / high)}]. The same list draws the first view and answers
+    /system/stats, so a number is never formatted in two places. Temperature has no total: its bar is the share of 85 °C,
+    where the Raspberry Pi slows itself down; a value the machine does not tell is left out."""
+    t = lambda key, **kw: i18n.t(lang, key, **kw)   # noqa: E731
+    mem, cpu, temp, disk = stats["memory"], stats["cpu"], stats["temp_c"], stats["disk"]
+    rows = [
+        {"key": "memory", "label": t("sys_stat_memory"), "pct": mem["used_pct"], "level": _level(mem["used_pct"], 80, 92),
+         "text": t("sys_stat_free_of", free=_size(mem["free_mb"]), total=_size(mem["total_mb"]))},
+        {"key": "cpu", "label": t("sys_stat_cpu"), "pct": cpu["used_pct"], "level": _level(cpu["used_pct"], 75, 90),
+         "text": t("sys_stat_busy", pct=cpu["used_pct"], cores=cpu["cores"])},
+    ]
+    if temp is not None:
+        rows.append({"key": "temp", "label": t("sys_stat_temp"), "pct": min(100, round(100 * temp / 85)),
+                     "level": _level(temp, 70, 80), "text": f"{temp:.0f} °C"})
+    if disk is not None:
+        rows.append({"key": "disk", "label": t("sys_stat_disk"), "pct": disk["used_pct"],
+                     "level": _level(disk["used_pct"], 80, 92),
+                     "text": t("sys_stat_free_of", free=_gb(lang, disk["free_gb"]) + " GB",
+                               total=_gb(lang, disk["total_gb"]) + " GB")})
+    return rows
+
+
+def _stats(lang: str) -> str:
+    """The row of live numbers at the top of the system block (static/system.js keeps it current)."""
+    cells = "".join(
+        f'<div class="sys-meter" data-key="{m["key"]}" data-level="{m["level"]}" data-pct="{m["pct"]}">'
+        f'<span class="sys-label">{esc(m["label"])}</span><span class="sys-val">{esc(m["text"])}</span>'
+        f'<div class="sys-bar"><i></i></div></div>' for m in meters(lang, sysstats.read()))
+    return f'<div class="sys-row sys-stats" id="sys-stats" data-url="/system/stats">{cells}</div>'
 
 
 def _size(mb: int) -> str:
@@ -179,7 +222,7 @@ def render(user: User) -> str:
     ai_field = _upload_field(lang, "value", "sys_upload_parallel", serversettings.AI_PARALLEL,
                              serversettings.ai_parallel(), "", t("sys_ai_unlimited"))
     row, dialog = _addresses(user)
-    return fill(SYSTEM, lang, UPLOAD_FIELDS=fields, ADDRESSES=row, ADDRESS_DIALOG=dialog, LIMITS=_limit_rows(lang),
+    return fill(SYSTEM, lang, STATS=_stats(lang), UPLOAD_FIELDS=fields, ADDRESSES=row, ADDRESS_DIALOG=dialog, LIMITS=_limit_rows(lang),
                 UPLOAD_INFO=info_dot(t("sys_upload"), upload_info),
                 AI_FIELD=ai_field, AI_INFO=info_dot(t("sys_ai"), t("sys_ai_info")),
                 BACKUP=_action(lang, "sys_backup", "data-backup"),
