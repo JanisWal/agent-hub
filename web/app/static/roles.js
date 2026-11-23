@@ -9,7 +9,7 @@
   function parts(view) {
     if (view === "me") return ["me-list", "me-count", "me-badge"];
     var ids = ["role-" + view + "-now", "role-" + view + "-usage", "role-" + view + "-count"];
-    if (view === "programmer") ids.push("role-programmer-task", "role-programmer-trail");
+    if (view === "programmer") ids.push("role-programmer-task", "role-programmer-trail", "role-programmer-ais");
     var runs = document.getElementById("role-" + view + "-runs");
     if (runs && !runs.querySelector("details[open]")) ids.push("role-" + view + "-runs");
     return ids;
@@ -101,7 +101,8 @@
   var watch = AgentHub.live({
     every: function () { var view = openView(); return view && live(view) ? EVERY : IDLE; },
     when: function () { return !!openView(); },
-    parts: function () { return parts(openView()); },
+    // the AI pills and the model picker follow the server too (the AI of the role may change elsewhere, or by itself)
+    run: function () { return AgentHub.swap(parts(openView())).then(function (fresh) { AgentHub.refreshPickers(fresh); }); },
   });
   document.addEventListener("agenthub:view", function () { if (openView()) watch.soon(); });
 })();
