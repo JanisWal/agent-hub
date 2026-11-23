@@ -24,6 +24,7 @@
         window.AgentHub.swap(["ai-services"]).then(function (fresh) {
           var more = document.getElementById("ai-more"), arrow = document.getElementById("ai-toggle");
           if (wasOpen && more && arrow) { more.hidden = false; arrow.setAttribute("aria-expanded", "true"); }
+          if (window.AgentHub.equalizeTiles) window.AgentHub.equalizeTiles();
           if (window.AgentHub.refreshPickers) window.AgentHub.refreshPickers(fresh);
         }).catch(function () { window.AgentHub.reload(); });
       }, 450);
