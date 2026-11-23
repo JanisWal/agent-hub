@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import JSONResponse
 
-from .. import netaddresses, power, serversettings, systempage, users
+from .. import netaddresses, power, serversettings, systempage, sysstats, users
 from ..deps import api_user, error, fail, ok, reauth
 
 router = APIRouter()
@@ -27,6 +27,15 @@ def power_action(
     except PermissionError:
         return fail(403)
     return ok() if started else error(user.language, "err_power_busy", 409)
+
+
+@router.get("/system/stats")
+def stats(user: users.User = Depends(api_user)):
+    """Memory, processor, temperature and disk right now, formatted for the page (systempage.meters); the system block
+    asks every few seconds while it is visible. Owner and superadmin."""
+    if not user.is_system_admin:
+        return fail(403)
+    return ok(items=systempage.meters(user.language, sysstats.read()))
 
 
 @router.post("/system/upload")

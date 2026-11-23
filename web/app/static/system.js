@@ -6,6 +6,32 @@
   if (!root) return;
   var note = document.getElementById("sys-power-note");
 
+  // Live numbers (sysstats.py): the bars take their share from data-pct at first, then the server's figures every few
+  // seconds while the page is visible (AgentHub.live pauses when it is hidden or a dialog is open).
+  var stats = document.getElementById("sys-stats");
+  function paint(items) {
+    items.forEach(function (item) {
+      var cell = stats.querySelector('[data-key="' + item.key + '"]');
+      if (!cell) return;
+      cell.dataset.level = item.level;
+      cell.querySelector(".sys-val").textContent = item.text;
+      cell.querySelector(".sys-bar > i").style.transform = "scaleX(" + Math.max(0, Math.min(1, item.pct / 100)) + ")";
+    });
+  }
+  if (stats) {
+    paint(Array.prototype.map.call(stats.querySelectorAll(".sys-meter"), function (cell) {
+      return { key: cell.dataset.key, level: cell.dataset.level, pct: Number(cell.dataset.pct), text: cell.querySelector(".sys-val").textContent };
+    }));
+    AgentHub.live({
+      every: 3000,
+      run: function () {
+        return fetch(stats.dataset.url, { credentials: "same-origin" })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (data) { if (data && data.ok) paint(data.items); });
+      },
+    });
+  }
+
   function wire(action) {
     var dialog = document.getElementById("power-" + action + "-dialog");
     var form = dialog.querySelector("form");

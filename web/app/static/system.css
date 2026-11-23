@@ -61,3 +61,18 @@
 .addr-empty { padding: 4px 0; }
 .addr-fields { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: var(--space); }
 @media (max-width: 640px) { .addr-fields { grid-template-columns: 1fr; } }
+
+/* Live numbers (Janis, 23.11.2026): one row at the top, a cell each for memory, processor, temperature and disk. The bar
+   is the share in use; only transform and colour move (colour by data-level, set from the server's figures). */
+.sys-stats { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: calc(var(--space) * 2); padding: 12px 14px; }
+.sys-meter { display: grid; gap: 4px; min-width: 0; }
+.sys-label { font-size: 0.85rem; color: var(--muted); }
+.sys-val { font-weight: 600; font-variant-numeric: tabular-nums; }
+.sys-bar { height: 8px; border-radius: 4px; overflow: hidden; background: color-mix(in srgb, var(--bg) 40%, var(--field)); }
+.sys-bar > i {
+  display: block; height: 100%; background: var(--go); transform-origin: left; transform: scaleX(0);
+  transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1), background-color 0.3s;
+}
+.sys-meter[data-level="warn"] .sys-bar > i { background: var(--warn); }
+.sys-meter[data-level="high"] .sys-bar > i { background: var(--danger); }
+@media (prefers-reduced-motion: reduce) { .sys-bar > i { transition: none; } }
