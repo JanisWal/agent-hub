@@ -46,7 +46,9 @@ LATER = "Server: the AI's sign-in service could not be reached to renew the sign
 DEVICE_LOGIN_SECONDS = launcher.LOGIN_SECONDS + 60   # a ChatGPT sign-in waits this long for the user at most
 ALIVE_EVERY = 10        # seconds between two signs of life of a run to the hub (agents.DEAD_SECONDS is much more)
 STOPPED = {"silence": "Ended: the AI wrote nothing for {minutes} minutes.",
-           "limit": "Ended: the run reached the longest time of a run ({minutes} minutes of work)."}
+           "limit": "Ended: the run reached the longest time of a run ({minutes} minutes of work).",
+           "memory": "Ended: the run used more memory than its limit ({mb} MB); the limit can be raised in the "
+                     "administration."}
 LEFTOVERS = ("agent-run-", "agent-test-", "agent-chat-")   # containers of jobs; after a restart none of them is ours
 
 
@@ -109,6 +111,53 @@ class Thoughts:
                 pass
 
 
+class OomWatch:
+    """Which containers Docker killed a process of for lack of memory (23.11.2026): `docker events` names a container
+    when the kernel kills something in it, also when the container itself goes on (a killed test or browser, so the AI
+    waits for something that is gone and the run stands still until the silence limit). Only job containers are kept;
+    `forget` when a run ends. `stream` gives the names, one per event (a test replaces it)."""
+
+    def __init__(self, stream=None):
+        self.stream = stream or self._events
+        self.names: set[str] = set()
+        self.lock = threading.Lock()
+
+    @staticmethod
+    def _events():
+        proc = subprocess.Popen(["docker", "events", "--filter", "type=container", "--filter", "event=oom", "--format",
+                                 "{{.Actor.Attributes.name}}"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                text=True)
+        try:
+            yield from (line.strip() for line in proc.stdout)
+        finally:
+            proc.kill()
+
+    def start(self) -> None:
+        threading.Thread(target=self._loop, daemon=True).start()
+
+    def _loop(self) -> None:
+        while True:
+            try:
+                for name in self.stream():
+                    self.note(name)
+            except OSError as error:   # no docker for a moment: look again
+                print(f"runner: docker events: {type(error).__name__}", file=sys.stderr, flush=True)
+            time.sleep(5)
+
+    def note(self, name: str) -> None:
+        if name.startswith(LEFTOVERS):
+            with self.lock:
+                self.names.add(name)
+
+    def seen(self, name: str) -> bool:
+        with self.lock:
+            return name in self.names
+
+    def forget(self, name: str) -> None:
+        with self.lock:
+            self.names.discard(name)
+
+
 class Watch:
     """The runner's eye on one agent run (22.11.2026): `line` for every line of its output, `tick` about once a
     second while it runs. Tells the hub every ALIVE_EVERY seconds that the run is going (with the new thoughts) and
@@ -160,6 +209,9 @@ class Watch:
                 self.paused = False
                 with self.lock:
                     self.last_output = now         # the standstill starts again after a pause
+        if self.runner.ooms.seen(self.name):   # the kernel killed something in it: do not wait for what is gone
+            self.reason = "memory"
+            return False
         if self.paused:
             return True
         with self.lock:
@@ -176,8 +228,9 @@ class Watch:
 class Runner:
     def __init__(self, api, claude_base: str, vault=None, tickets=None, start_session=None,
                  clock=time.time, run_chat=None, run_power=None, keys=None, verifiers=None, work=None,
-                 run_agent=None, background: bool = True, views=None, docker=None):
+                 run_agent=None, background: bool = True, views=None, docker=None, ooms=None):
         self.api = api
+        self.ooms = ooms or OomWatch()   # started in main(); tests feed it by hand
         self.claude_base = Path(claude_base)
         self.vault = vault or tokens.Vault(claude_base, os.environ.get("HUB_TOKEN_KEY"))
         self.tickets = tickets or tokens.Tickets(os.environ.get("HUB_TICKETS_DIR", "/tickets"))
@@ -574,6 +627,7 @@ class Runner:
                 break
         proc.wait()
         reader.join(timeout=10)
+        self.ooms.forget(watch.name)
         return "".join(lines), proc.returncode or 0, watch.reason
 
     TEST_OUTPUT = 6000   # characters of the end of the tests' output that go to the hub
@@ -622,7 +676,7 @@ class Runner:
     def _stopped(self, reason: str) -> str:
         limits = self._limits()
         seconds = limits["silence_seconds"] if reason == "silence" else limits["max_seconds"]
-        return STOPPED[reason].format(minutes=seconds // 60)
+        return STOPPED[reason].format(minutes=seconds // 60, mb=limits["memory_mb"])
 
     def do_run(self, job: dict) -> None:
         run_id, user_id, task_id = int(job["run_id"]), int(job["user_id"]), int(job["task_id"])
@@ -929,6 +983,7 @@ def main() -> None:
     Path(work).mkdir(parents=True, exist_ok=True)
     os.chmod(work, 0o700)   # the projects' code and the tasks' folders: only root (and the run of each task)
     runner = Runner(Api(os.environ["HUB_URL"], os.environ["RUNNER_TOKEN"]), base)
+    runner.ooms.start()
     runner.views.clear()   # views of jobs that were going when the runner stopped
     runner.tickets.sweep(max_age=0)   # no run is going yet: tickets from before a restart are void
     while True:
