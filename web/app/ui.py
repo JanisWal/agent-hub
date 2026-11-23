@@ -568,8 +568,8 @@ def _usage_block(lang: str, key: str, title: str, item: dict, project: bool, nam
     t = lambda k: esc(i18n.t(lang, k))   # noqa: E731
     spent = item["time"]
     cards = [("usage_today", "today"), ("usage_week", "week"), ("usage_project", "project") if project else ("usage_total", "total")]
-    cards_html = "".join(f'<div class="usage-card{" lead" if i == 2 else ""}"><span>{t(label)}</span>'
-                         f'<strong>{_both(lang, item[k], spent[k])}</strong></div>' for i, (label, k) in enumerate(cards))
+    cards_html = "".join(f'<div class="usage-card"><span>{t(label)}</span><strong>{_both(lang, item[k], spent[k])}</strong></div>'
+                         for label, k in cards)
     peak, peak_s = max(item["days"]) or 1, max(spent["days"]) or 1
     day0 = now - now % 86400 - 6 * 86400
     bars = "".join(
@@ -592,13 +592,10 @@ def _usage_block(lang: str, key: str, title: str, item: dict, project: bool, nam
     ]
     splits = [(k, label, parts) for k, label, parts in splits if parts]
     panels = "".join(_usage_split(lang, k, parts, item["scope"], spent["scope"], i == 0) for i, (k, _, parts) in enumerate(splits))
-    quiet = (f'<p class="usage-quiet">{t("usage_all_projects")}: {_both(lang, item["total"], spent["total"])} · '
-             f'{t("usage_week")}: {_both(lang, item["week_all"], spent["week_all"])}</p>' if project else "")
-    scope = t("usage_scope_project" if project else "usage_scope_all")
     return (f'<section class="usage-block{" big" if not project else ""}" data-usage-for="{esc(key)}" hidden>'
-            f'<header class="usage-head"><h3>{esc(title)}</h3><span class="usage-scope">{scope}</span></header>'
+            f'<header class="usage-head"><h3>{esc(title)}</h3></header>'
             f'<div class="usage-cards">{cards_html}</div><div class="usage-days" role="img" aria-label="{t("usage_by_days")}">{bars}</div>'
-            f'{_usage_tabs(lang, [(k, label) for k, label, _ in splits])}<div class="usage-panels">{panels}</div>{quiet}</section>')
+            f'{_usage_tabs(lang, [(k, label) for k, label, _ in splits])}<div class="usage-panels">{panels}</div></section>')
 
 
 def _usage_dialog(lang: str, used: dict, names: dict[str, str], project: bool, now: int | None = None) -> str:
@@ -624,8 +621,8 @@ def _usage_dialog(lang: str, used: dict, names: dict[str, str], project: bool, n
             f'<button type="button" role="tab" data-mode="time" aria-selected="false">{esc(i18n.t(lang, "usage_mode_time"))}</button></div>')
     title = i18n.t(lang, "usage_title")
     return (f'<dialog class="dialog wide usage-dialog" id="usage-dialog" data-mode="tokens" tabindex="-1">'
-            f'<div class="usage-top"><h2>{esc(title)}{info_dot(title, i18n.t(lang, "usage_time_info"))}</h2>{mode}</div>'
-            f'{"".join(blocks)}<div class="actions"><button type="button" data-close>{esc(i18n.t(lang, "close"))}</button></div></dialog>')
+            f'<div class="usage-top"><h2>{esc(title)}</h2>{mode}</div>'
+            f'<div class="usage-body">{"".join(blocks)}</div><div class="actions"><button type="button" data-close>{esc(i18n.t(lang, "close"))}</button></div></dialog>')
 
 
 def _paused(user_id: int) -> bool:
