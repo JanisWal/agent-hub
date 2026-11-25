@@ -7,8 +7,9 @@ model and level of the user's manager, with his usual fallback to his next AI. N
 the project's files (number, path, kind, size) on stdin and gets no tools (mode 'brief'); with "include contents" it
 also gets the read-only /files of a chat (mode 'sort': reading tools only, no web, no code, more steps) and looks inside. It
 answers with lines <move id="12" to="Backgrounds/Dark"/> (reply.moves; to="" = the top). `save` keeps that answer as
-the plan. A job from the list alone is small and does not wait for a free AI slot (BESIDE); one with contents does.
-Both may take longer than a chat answer (serversettings.sort_seconds).
+the plan. Like a status round the job does not wait for a free AI slot, and it takes none (agents.slot_free): it starts
+beside agent runs and chat answers and holds none of them up. It may take longer than a chat answer
+(serversettings.sort_seconds).
 
 The plan is checked by the hub, never trusted: only finished rows of the user's own project, at most MAX_DEPTH
 folders, the memory files (label memory at the top) never move and no other memory file moves to the top (it would
@@ -31,10 +32,6 @@ MAX_DEPTH = 12            # folder levels of a target (runner/view.py shows no m
 MAX_ANSWER = 100000       # characters of the answer kept (reply.MAX_MOVES moves; launcher.MAX_REPORT)
 MAX_NOTE = 300            # characters of the AI's sentence shown above the tree
 MAX_NODES = 3000          # rows of the preview tree
-# SQL: a queued row of chat_messages that may start although all AI slots are taken: a plan from the list alone (one
-# answer, no tools), and only while no other chat job than a status round is being answered.
-BESIDE = (f"kind = '{KIND}' AND mode = 'brief' AND NOT EXISTS"
-          " (SELECT 1 FROM chat_messages r WHERE r.status = 'running' AND r.kind != 'status')")
 LANGUAGES = {"de": "German", "en": "English"}
 
 ROLE = (
@@ -81,7 +78,6 @@ class Plan:
     moved: int = 0
     folders: int = 0       # new folders
     nodes: list[Node] = field(default_factory=list)
-    waiting: bool = False  # queued behind other AI work (all slots are taken)
     left_out: int = 0      # rows beyond LIST_MAX that the AI does not read
 
 
@@ -267,9 +263,6 @@ def state(user_id: int, project_id: int) -> Plan | None:
         plan = Plan(job["status"], job["mode"] != "brief")
         if job["status"] == "failed":
             plan.answer = job["answer"]
-        if job["status"] == "queued":
-            plan.waiting = not agents.slot_free(conn) and conn.execute(
-                f"SELECT 1 FROM chat_messages WHERE id = ? AND {BESIDE}", (job["id"],)).fetchone() is None
         if job["status"] != "done":
             return plan
         text, moves = reply.moves(job["answer"])

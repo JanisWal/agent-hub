@@ -444,7 +444,8 @@ def _enter(conn: sqlite3.Connection, user_id: int, task_id: int, step: workflow.
 
 def slot_free(conn: sqlite3.Connection) -> bool:
     """May one more AI container start now? Counts the running agent runs (not the paused ones: they only hold their
-    memory) and chat answers of all users against the owner's setting."""
+    memory) and chat answers of all users against the owner's setting. A plan for the folders does not count: it runs
+    beside the others (autofolders.py) and, since it can take many minutes, must not hold them up."""
     limit = serversettings.ai_parallel()
     if not limit:
         return True
@@ -452,7 +453,8 @@ def slot_free(conn: sqlite3.Connection) -> bool:
         "SELECT COUNT(*) FROM agent_runs r JOIN agent_tasks t ON t.id = r.task_id JOIN projects p ON p.id = t.project_id"
         " WHERE r.status = 'running' AND NOT EXISTS (SELECT 1 FROM agent_settings s WHERE s.user_id = p.user_id"
         " AND s.key = ? AND s.value != '0')", (PAUSED,)).fetchone()[0]
-    running += conn.execute("SELECT COUNT(*) FROM chat_messages WHERE status = 'running'").fetchone()[0]
+    running += conn.execute(   # 'structure' = autofolders.KIND (that module imports this one)
+        "SELECT COUNT(*) FROM chat_messages WHERE status = 'running' AND kind != 'structure'").fetchone()[0]
     return running < limit
 
 

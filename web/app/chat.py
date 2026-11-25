@@ -187,9 +187,9 @@ def claim_next(now: int | None = None) -> ChatJob | None:
         statusnote.scan(conn, now)   # the written status of projects that changed (statusnote.py), every minute or so
         # As many AI containers at once as the owner allows (agent runs included); a status round is small and runs
         # beside them anyway (Janis, 22.11.2026: the status must not wait for a run of twenty minutes), and so does a
-        # plan for the folders from the list alone (autofolders.BESIDE).
+        # plan for the folders (Janis, 25.11.2026: the user waits in front of the dialog).
         free = agents.slot_free(conn)
-        kinds = "" if free else f" AND (kind = 'status' OR ({autofolders.BESIDE}))"
+        kinds = "" if free else f" AND kind IN ('status', '{autofolders.KIND}')"
         # a question of the user before a status round (it waits for the next poll, seconds)
         for row in conn.execute(f"SELECT * FROM chat_messages WHERE status = 'queued'{kinds}"
                                 " ORDER BY kind = 'status', id").fetchall():

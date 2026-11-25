@@ -82,38 +82,42 @@ class AutoFoldersTest(unittest.TestCase):
         self.assertIn("manual.txt", [f["name"] for f in job.files])
         self.assertIn("/files", job.prompt)
 
-    def busy_slots(self):
-        """All AI slots are taken by a running chat question of another user (the setting's default is one)."""
+    def test_a_plan_starts_although_all_slots_are_taken_and_takes_none(self):
+        self.connect(self.a)
+        self.connect(self.b)
+        chat.send(self.b.id, self.pb.id, "long question", now=NOW)
+        running = chat.claim_next(NOW)                     # the one slot of the default setting
+        with db.connect() as conn:
+            self.assertFalse(agents.slot_free(conn))
+        for contents, mode in ((False, "brief"), (True, "sort")):
+            autofolders.request(self.a.id, self.pa.id, contents=contents, now=NOW)
+            self.assertEqual(chat.claim_next(NOW).mode, mode)
+            self.assertEqual(autofolders.state(self.a.id, self.pa.id).status, "running")
+            autofolders.discard(self.a.id, self.pa.id)
+        autofolders.request(self.a.id, self.pa.id, now=NOW)
+        chat.claim_next(NOW)
+        chat.finish(running.chat_id, True, "done")
+        with db.connect() as conn:                         # the plan still runs and holds nobody up
+            self.assertTrue(agents.slot_free(conn))
+        chat.send(self.b.id, self.pb.id, "next question", now=NOW)
+        self.assertEqual(chat.claim_next(NOW).project_id, self.pb.id)
+
+    def test_a_chat_question_waits_for_a_slot_and_neither_fails_nor_loses_time(self):
+        self.connect(self.a)
         self.connect(self.b)
         chat.send(self.b.id, self.pb.id, "long question", now=NOW)
         running = chat.claim_next(NOW)
-        with db.connect() as conn:
-            self.assertFalse(agents.slot_free(conn))
-        return running
-
-    def busy_with_a_run(self):
-        original = agents.slot_free
-        agents.slot_free = lambda conn: False
-        self.addCleanup(setattr, agents, "slot_free", original)
-        return original
-
-    def test_waiting_for_a_slot_is_said_and_never_runs_out(self):
-        self.connect(self.a)
-        running = self.busy_slots()
-        autofolders.request(self.a.id, self.pa.id, contents=True, now=NOW)
+        waiting = chat.send(self.a.id, self.pa.id, "me too", now=NOW)
         later = NOW
-        for _ in range(8):                       # the runner keeps asking while the other answer goes on
+        for _ in range(8):                                 # the runner keeps asking while the other answer goes on
             later += 100
-            with db.connect() as conn:           # the other answer stays alive
+            with db.connect() as conn:                     # the other answer stays alive
                 conn.execute("UPDATE chat_messages SET started_at = ? WHERE id = ?", (later, running.chat_id))
             self.assertIsNone(chat.claim_next(later))
-        plan = autofolders.state(self.a.id, self.pa.id)
-        self.assertEqual((plan.status, plan.waiting), ("queued", True))
         chat.finish(running.chat_id, True, "done")
-        job = chat.claim_next(later + 5)         # the slot is free: it starts instead of failing
-        self.assertEqual(job.mode, "sort")
-        chat.claim_next(later + 60)              # and its time counts from the start, not from the request
-        self.assertEqual(autofolders.state(self.a.id, self.pa.id).status, "running")
+        self.assertEqual(chat.claim_next(later + 5).chat_id, waiting.id)   # it starts instead of failing
+        chat.claim_next(later + 60)                        # and its time counts from the start, not from the question
+        self.assertEqual(chat.list_messages(self.a.id, self.pa.id)[-1].status, "running")
 
     def test_a_running_plan_gets_longer_than_a_chat_answer_then_fails(self):
         self.connect(self.a)
