@@ -212,7 +212,7 @@ TIDY_DIALOG = """<dialog class="dialog tidy-dialog" id="file-tidy-dialog" %DATA%
   <div class="tidy-step" data-step="start">
     <div class="tidy-switch"><label class="check-line"><input type="checkbox" id="file-tidy-contents"><span>%t.tidy_contents%</span></label>%INFO%</div>
   </div>
-  <p class="tidy-step tidy-working muted" data-step="working" hidden>%t.tidy_working%<span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p>
+  <p class="tidy-step tidy-working muted" data-step="working" hidden><span id="file-tidy-working">%t.tidy_working%</span><span class="loading-dots" aria-hidden="true"><i></i><i></i><i></i></span></p>
   <div class="tidy-step" data-step="plan" hidden>
     <p class="muted tidy-note" id="file-tidy-note"></p>
     <p class="tidy-summary" id="file-tidy-summary"></p>
@@ -230,7 +230,8 @@ def _tidy_dialog(lang: str) -> str:
     keys = {"start": "tidy_start", "apply": "tidy_apply", "discard": "tidy_discard", "cancel": "cancel",
             "close-label": "files_close", "summary": "tidy_summary", "nothing": "tidy_nothing", "failed": "tidy_failed",
             "fail-auth": "chat_fail_auth", "fail-limit": "chat_fail_limit", "moved-tag": "tidy_moved_tag",
-            "new-tag": "tidy_new_tag", "done": "tidy_done", "err-net": "err_network"}
+            "new-tag": "tidy_new_tag", "done": "tidy_done", "err-net": "err_network", "working": "tidy_working",
+            "waiting": "tidy_waiting", "fail-long": "tidy_fail_long", "left-out": "tidy_left_out"}
     data = " ".join(f'data-{name}="{esc(i18n.t(lang, key, n="{n}", moved="{moved}", folders="{folders}"))}"'
                     for name, key in keys.items())
     return fill(TIDY_DIALOG, lang, DATA=data, INFO=ui.info_dot(i18n.t(lang, "tidy_contents"), i18n.t(lang, "tidy_contents_tip")))

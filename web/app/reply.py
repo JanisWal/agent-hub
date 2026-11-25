@@ -55,7 +55,7 @@ _STATUS = re.compile(r"<status(\s[^<>]*)?>(.*?)</status>", re.DOTALL)
 _DEVICE = re.compile(r"<device(\s[^<>]*)?>(.*?)</device>", re.DOTALL)
 _ICON = re.compile(r"<icon(\s[^<>]*)?>(.*?)</icon>", re.DOTALL)
 _MOVE = re.compile(r"<move(\s[^<>]*?)/?>(?:\s*</move>)?")
-MAX_MOVES = 500
+MAX_MOVES = 1500
 MAX_TARGET = 600
 MAX_DEVICE_ASKS = 3
 _OPTION = re.compile(r"<option(\s+recommended(?:=\"[^\"<>]*\")?)?\s*>(.*?)</option>", re.DOTALL)

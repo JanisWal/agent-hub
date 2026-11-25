@@ -6,7 +6,8 @@ import time
 import unittest
 from pathlib import Path
 
-from app import autofolders, chat, claude_link, db, files, i18n, managerpage, projects, reply, statusnote, users
+from app import (agents, autofolders, chat, claude_link, db, files, i18n, managerpage, projects, reply, serversettings,
+                 statusnote, users)
 from app.routes import files as file_routes
 
 NOW = int(time.time())
@@ -76,9 +77,86 @@ class AutoFoldersTest(unittest.TestCase):
         self.connect(self.a)
         self.assertEqual(autofolders.request(self.a.id, self.pa.id, contents=True), "queued")
         job = chat.claim_next(NOW)
-        self.assertEqual((job.mode, job.project_id), ("apart", self.pa.id))
+        self.assertEqual((job.mode, job.project_id), ("sort", self.pa.id))
+        self.assertEqual(job.limits["chat_seconds"], serversettings.sort_seconds() + 20)
         self.assertIn("manual.txt", [f["name"] for f in job.files])
         self.assertIn("/files", job.prompt)
+
+    def busy_slots(self):
+        """All AI slots are taken by a running chat question of another user (the setting's default is one)."""
+        self.connect(self.b)
+        chat.send(self.b.id, self.pb.id, "long question", now=NOW)
+        running = chat.claim_next(NOW)
+        with db.connect() as conn:
+            self.assertFalse(agents.slot_free(conn))
+        return running
+
+    def busy_with_a_run(self):
+        original = agents.slot_free
+        agents.slot_free = lambda conn: False
+        self.addCleanup(setattr, agents, "slot_free", original)
+        return original
+
+    def test_waiting_for_a_slot_is_said_and_never_runs_out(self):
+        self.connect(self.a)
+        running = self.busy_slots()
+        autofolders.request(self.a.id, self.pa.id, contents=True, now=NOW)
+        later = NOW
+        for _ in range(8):                       # the runner keeps asking while the other answer goes on
+            later += 100
+            with db.connect() as conn:           # the other answer stays alive
+                conn.execute("UPDATE chat_messages SET started_at = ? WHERE id = ?", (later, running.chat_id))
+            self.assertIsNone(chat.claim_next(later))
+        plan = autofolders.state(self.a.id, self.pa.id)
+        self.assertEqual((plan.status, plan.waiting), ("queued", True))
+        chat.finish(running.chat_id, True, "done")
+        job = chat.claim_next(later + 5)         # the slot is free: it starts instead of failing
+        self.assertEqual(job.mode, "sort")
+        chat.claim_next(later + 60)              # and its time counts from the start, not from the request
+        self.assertEqual(autofolders.state(self.a.id, self.pa.id).status, "running")
+
+    def test_a_running_plan_gets_longer_than_a_chat_answer_then_fails(self):
+        self.connect(self.a)
+        autofolders.request(self.a.id, self.pa.id, now=NOW)
+        chat.claim_next(NOW)
+        chat.claim_next(NOW + serversettings.chat_seconds() + 121)
+        self.assertEqual(autofolders.state(self.a.id, self.pa.id).status, "running")
+        chat.claim_next(NOW + serversettings.sort_seconds() + 121)
+        self.assertEqual(autofolders.state(self.a.id, self.pa.id).status, "failed")
+        self.assertLess(serversettings.sort_seconds() + 20, 3600)   # a ticket counts an hour
+
+    def test_a_plan_from_the_list_does_not_wait_for_an_agent_run(self):
+        self.connect(self.a)
+        self.busy_with_a_run()
+        autofolders.request(self.a.id, self.pa.id, contents=True, now=NOW)
+        self.assertIsNone(chat.claim_next(NOW))                       # with contents it waits
+        self.assertTrue(autofolders.state(self.a.id, self.pa.id).waiting)
+        autofolders.discard(self.a.id, self.pa.id)
+        autofolders.request(self.a.id, self.pa.id, now=NOW)
+        self.assertFalse(autofolders.state(self.a.id, self.pa.id).waiting)
+        self.assertEqual(chat.claim_next(NOW).mode, "brief")
+
+    def test_only_one_job_beside_a_chat_answer(self):
+        self.connect(self.a)
+        self.busy_slots()
+        autofolders.request(self.a.id, self.pa.id, now=NOW)
+        self.assertTrue(autofolders.state(self.a.id, self.pa.id).waiting)
+        self.assertIsNone(chat.claim_next(NOW))
+
+    def test_a_big_project_is_listed_by_path_with_all_folders_and_what_is_left_out_is_said(self):
+        original = autofolders.LIST_MAX
+        autofolders.LIST_MAX = 3
+        self.addCleanup(setattr, autofolders, "LIST_MAX", original)
+        with db.connect() as conn:
+            lines = autofolders.listing(conn, self.pa.id).splitlines()
+        self.assertEqual(len(lines), 4)
+        self.assertIn(f"{self.old.id} | Old/", "\n".join(lines))
+        self.assertIn(f"{self.kept.id} | Empty on purpose/", "\n".join(lines))
+        self.assertIn("2 more files are not listed", lines[-1])   # 5 rows may move, 3 are listed
+        self.connect(self.a)
+        autofolders.request(self.a.id, self.pa.id, now=NOW)
+        self.answer("nothing to do")
+        self.assertGreater(autofolders.state(self.a.id, self.pa.id).left_out, 0)
 
     def test_nothing_to_sort(self):
         self.connect(self.b)

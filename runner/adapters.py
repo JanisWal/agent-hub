@@ -60,6 +60,10 @@ class Claude:
     parse_run = parse_chat   # agent runs stream like the chat since 22.11.2026 (launcher.build_command)
 
 
+# The job of Vibe, Codex and the hub's loop for a mode of the chat (launcher.CHAT_MODES); "all" else.
+CHAT_JOBS = {"apart": "chat-apart", "brief": "chat-brief", "sort": "chat-sort"}
+
+
 class Mistral:
     provider = "mistral"
 
@@ -72,7 +76,7 @@ class Mistral:
     def chat_command(self, *, chat_id, user_id, model, ticket, mode, effort, files_dir=None, code_dir=None,
                      images=False, route=None, hub_tools=None, credential="plan"):
         return launcher.build_vibe_command(name=f"agent-chat-{int(chat_id)}", user_id=user_id, model=model,
-                                           ticket=ticket, job={"apart": "chat-apart", "brief": "chat-brief"}.get(mode, "chat-all"),
+                                           ticket=ticket, job=CHAT_JOBS.get(mode, "chat-all"),
                                            effort=effort, files_dir=files_dir, code_dir=code_dir, images=images,
                                            hub_tools=hub_tools)
 
@@ -116,7 +120,7 @@ class Custom:
                      images=False, route=None, hub_tools=None, credential="plan"):
         return launcher.build_hubloop_command(name=f"agent-chat-{int(chat_id)}", user_id=user_id,
                                               model=self._model(route), ticket=ticket,
-                                              job={"apart": "chat-apart", "brief": "chat-brief"}.get(mode, "chat-all"),
+                                              job=CHAT_JOBS.get(mode, "chat-all"),
                                               files_dir=files_dir, code_dir=code_dir)
 
     def run_command(self, *, run_id, user_id, model, ticket, net, effort, work_dir, files_dir=None, images=False,
@@ -181,7 +185,7 @@ class Codex:
                      images=False, route=None, hub_tools=None, credential="plan"):
         return launcher.build_codex_command(name=f"agent-chat-{int(chat_id)}", user_id=user_id, model=model,
                                             effort=effort, auth=self._auth(ticket, user_id, credential),
-                                            job={"apart": "chat-apart", "brief": "chat-brief"}.get(mode, "chat-all"),
+                                            job=CHAT_JOBS.get(mode, "chat-all"),
                                             files_dir=files_dir, code_dir=code_dir, key_ticket=ticket if credential == "api" else "")
 
     def run_command(self, *, run_id, user_id, model, ticket, net, effort, work_dir, files_dir=None, images=False,

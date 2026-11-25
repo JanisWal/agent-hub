@@ -1,6 +1,6 @@
 // Structure the folders automatically (Janis, 18.11.2026; web/app/autofolders.py): the circle in the enlarged file
 // tile opens a dialog with the switch "Include contents". "Get a proposal" asks the AI; while it works the dialog shows
-// three dots and asks the server every two seconds. Then it shows the new tree (moved rows and new folders marked)
+// three dots (saying whether it waits for other AI work or looks at the files) and asks the server every two seconds. Then it shows the new tree (moved rows and new folders marked)
 // with "Apply"; nothing moves before that. Closing the dialog keeps a job on its way; opening it again shows where it
 // stands. After "Apply" the file tile swaps its lists (files.js, event hub:files-changed). Needs core.js.
 (function () {
@@ -17,6 +17,7 @@
   var tree = document.getElementById("file-tidy-tree");
   var errorBox = document.getElementById("file-tidy-error");
   var goButton = document.getElementById("file-tidy-go");
+  var workingText = document.getElementById("file-tidy-working");
   var cancelButton = document.getElementById("file-tidy-cancel");
   var iconBox = document.getElementById("file-icons");
   var state = "none";
@@ -38,7 +39,10 @@
     }, function () { throw new Error(text.errNet); });
   }
 
-  function failureText(kind) { return kind === "auth" ? text.failAuth : kind === "limit" ? text.failLimit : text.failed; }
+  function failureText(kind, withContents) {
+    if (withContents && (kind === "timeout" || kind === "steps")) return text.failLong;
+    return kind === "auth" ? text.failAuth : kind === "limit" ? text.failLimit : text.failed;
+  }
 
   function drawTree(nodes) {
     tree.textContent = "";
@@ -70,6 +74,7 @@
     cancelButton.textContent = text.cancel;
     if (state === "queued" || state === "running") {
       show("working");
+      workingText.textContent = data.waiting ? text.waiting : text.working;
       goButton.hidden = true;
       cancelButton.textContent = text.closeLabel;
       contents.checked = !!data.contents;
@@ -78,7 +83,8 @@
       show("plan");
       note.textContent = data.note || "";
       note.hidden = !data.note;
-      summary.textContent = data.moved ? text.summary.replace("{moved}", data.moved).replace("{folders}", data.folders) : text.nothing;
+      summary.textContent = (data.moved ? text.summary.replace("{moved}", data.moved).replace("{folders}", data.folders) : text.nothing) +
+        (data.left_out ? " " + text.leftOut.replace("{n}", data.left_out) : "");
       drawTree(data.moved ? data.nodes : []);
       goButton.textContent = text.apply;
       goButton.hidden = !data.moved;
@@ -86,7 +92,7 @@
     } else {
       show("start");
       goButton.textContent = text.start;
-      say(state === "failed" ? failureText(data.failure) : "");
+      say(state === "failed" ? failureText(data.failure, data.contents) : "");
     }
   }
   function look() {

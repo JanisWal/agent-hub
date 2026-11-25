@@ -25,7 +25,8 @@ KEEP = 10                # messages shown per project
 MAX_STORED = 100         # messages kept per user, the oldest go first
 # "all": web and code together, code with the open internet; "apart": web search, code without internet.
 # Which one is the user's setting agents.net_in ("together"/"apart"). Old messages may still say "web".
-MODES = ("all", "apart")   # what a user may choose; "brief" (no tools) is only for status rounds and folder plans (statusnote.py, autofolders.py)
+MODES = ("all", "apart")   # what a user may choose; "brief" (no tools) and "sort" (reading only) are the hub's own
+                           # jobs: status rounds and plans for the folders (statusnote.py, autofolders.py)
 NET_TO_MODE = {"together": "all", "apart": "apart"}
 # Why a question failed, read from the reason the runner sent (Janis, 14.11.2026: show a short text, not what Claude
 # Code says). The reason stays in the answer column for looking into problems; the page only gets the kind.
@@ -81,12 +82,16 @@ def failure_kind(reason: str) -> str:
     return failures.kind(reason)
 
 def _drop_stale(conn: sqlite3.Connection, now: int) -> None:
-    """A question that got no answer in time fails. While all AI slots are taken (serversettings.ai_parallel), a
-    waiting question keeps waiting instead: only one that is being answered can run out."""
-    busy = not agents.slot_free(conn)
-    statuses = "'running'" if busy else "'queued', 'running'"
-    conn.execute(f"UPDATE chat_messages SET status = 'failed', answer = 'timeout'"
-                 f" WHERE status IN ({statuses}) AND created_at < ?", (now - serversettings.chat_seconds() - 120,))
+    """A question that got no answer in time fails. An answer's time counts from its start (a plan for the folders has
+    its own, longer one). While all AI slots are taken (serversettings.ai_parallel), the wait of a queued question
+    starts again: it neither fails while it waits nor the moment a slot gets free."""
+    if not agents.slot_free(conn):
+        conn.execute("UPDATE chat_messages SET created_at = ? WHERE status = 'queued'", (now,))
+    chat_start = now - serversettings.chat_seconds() - 120
+    conn.execute(
+        "UPDATE chat_messages SET status = 'failed', answer = 'timeout' WHERE (status = 'queued' AND created_at < ?)"
+        " OR (status = 'running' AND COALESCE(started_at, created_at) < CASE kind WHEN ? THEN ? ELSE ? END)",
+        (chat_start, autofolders.KIND, now - serversettings.sort_seconds() - 120, chat_start))
 
 
 def send(user_id: int, project_id: int, prompt: str, mode: str | None = None, now: int | None = None,
@@ -181,9 +186,10 @@ def claim_next(now: int | None = None) -> ChatJob | None:
         _drop_stale(conn, now)
         statusnote.scan(conn, now)   # the written status of projects that changed (statusnote.py), every minute or so
         # As many AI containers at once as the owner allows (agent runs included); a status round is small and runs
-        # beside them anyway (Janis, 22.11.2026: the status must not wait for a run of twenty minutes).
+        # beside them anyway (Janis, 22.11.2026: the status must not wait for a run of twenty minutes), and so does a
+        # plan for the folders from the list alone (autofolders.BESIDE).
         free = agents.slot_free(conn)
-        kinds = "" if free else " AND kind = 'status'"
+        kinds = "" if free else f" AND (kind = 'status' OR ({autofolders.BESIDE}))"
         # a question of the user before a status round (it waits for the next poll, seconds)
         for row in conn.execute(f"SELECT * FROM chat_messages WHERE status = 'queued'{kinds}"
                                 " ORDER BY kind = 'status', id").fetchall():
@@ -217,7 +223,9 @@ def claim_next(now: int | None = None) -> ChatJob | None:
                 return ChatJob(row["id"], row["user_id"], row["model"],
                                autofolders.prompt_for(conn, row["user_id"], row["project_id"], contents), row["mode"],
                                row["effort"], row["provider"], row["project_id"] if contents else 0, stored, links,
-                               contents and catalog.sees_images(row["model"]), route, extra, **extra_way)
+                               contents and catalog.sees_images(row["model"]), route, extra,
+                               limits=dict(serversettings.run_limits(), chat_seconds=serversettings.sort_seconds() + 20),
+                               **extra_way)
             stored, links = files.for_agents(conn, row["user_id"], row["project_id"])
             return ChatJob(row["id"], row["user_id"], row["model"], prompts.manager_chat(conn, row), row["mode"],
                            row["effort"], row["provider"], row["project_id"], stored, links,

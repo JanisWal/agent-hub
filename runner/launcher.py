@@ -33,12 +33,13 @@ MISTRAL_GATEWAY = "http://egress:3131"   # the same for Mistral (its key put in 
 CUSTOM_GATEWAY = "http://egress:3132"    # the user's own AI (any OpenAI-compatible API; address and key from the ticket)
 CHATGPT_GATEWAY = "http://egress:3133"   # ChatGPT through Codex (the real token and account put in by the proxy)
 CODEX_IMAGE = "agent-hub-codex"           # built from runner/Dockerfile.codex
-CODEX_JOBS = {"chat-all": 180, "chat-apart": 180, "chat-brief": 90, "run": 1050, "run-brief": 300, "models": 60}
+CODEX_JOBS = {"chat-all": 180, "chat-apart": 180, "chat-brief": 90, "chat-sort": 3000, "run": 1050, "run-brief": 300, "models": 60}
 LOGIN_SECONDS = 900                       # the one-time code of a ChatGPT sign-in lasts 15 minutes
 _REMOTE_MODEL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,99}")   # a model name at such an API (web/app/ai_link.py)
 # Mistral runs: limits per job (turns, seconds); the proxy follows the same switch as Claude.
 # "run-brief": a run that needs no tools (the reviewer of a small change, the manager's documentation; 20.11.2026).
-VIBE_JOBS = {"chat-all": (12, 180), "chat-apart": (10, 180), "chat-brief": (1, 90), "run": (60, 1050),
+# "chat-sort": a plan for the folders; the hub's time for the job ends it (limits chat_seconds), long before 3000.
+VIBE_JOBS = {"chat-all": (12, 180), "chat-apart": (10, 180), "chat-brief": (1, 90), "chat-sort": (60, 3000), "run": (60, 1050),
              "run-brief": (2, 300)}
 _NAME = re.compile(r"agent-(chat|run)-[0-9]+")
 _TICKET = re.compile(r"hubrun-[A-Za-z0-9_-]{43}")   # runner/tokens.py
@@ -56,6 +57,9 @@ CHAT_MODES = {
     # The written status of a project (web/app/statusnote.py, 17.11.2026): no tools at all, one turn, only Anthropic
     # reachable. It reads a short digest on stdin and answers one line; nothing else costs tokens.
     "brief": {"tools": (), "proxy": API_PROXY, "turns": 1},
+    # A plan for the folders with "include contents" (web/app/autofolders.py): only reading (READ_TOOLS on /files),
+    # no web and no shell, only Anthropic reachable; many steps, since it may open many single files.
+    "sort": {"tools": (), "proxy": API_PROXY, "turns": 60},
 }
 # Restart and shutdown of the Pi (owner's request, see web/app/power.py). The host is reached through the
 # Docker socket: a short-lived privileged container joins the host's namespaces and runs `systemctl`.
@@ -121,6 +125,7 @@ def _folder(value, name: str) -> str:
 
 
 READ_TOOLS = ("Read", "Glob", "Grep")   # to open the read-only /files and /code in the manager chat (16.11.2026)
+SORT_HUB_TOOLS = ("look", "list_files", "read_file", "grep")   # the hub's tools that only read (mode "sort")
 HUB_TOOL_NAMES = ("look", "list_files", "read_file", "grep", "write_file", "edit_file", "run", "fetch")   # hub_tools.TOOLS
 
 
@@ -299,7 +304,9 @@ def build_chat_command(*, chat_id: int, user_id: int, model: str, ticket: str, m
     _check_container(memory, image, network)
     spec = CHAT_MODES[mode]
     tools = spec["tools"] + (READ_TOOLS if files_dir or code_dir else ())   # reading the user's files and the code
-    mcp = _hub_mcp(hub_tools) if spec["tools"] else []                       # a brief job gets no tools at all
+    if mode == "sort":
+        hub_tools = [n for n in (hub_tools or ()) if n in SORT_HUB_TOOLS]
+    mcp = _hub_mcp(hub_tools) if mode != "brief" else []                     # a brief job gets no tools at all
     if mcp:
         tools += tuple(f"mcp__hub__{n}" for n in hub_tools if n in HUB_TOOL_NAMES)
     # Nothing of the run is kept: no saved login, no settings, so a changed configuration (a hook, say) can not
@@ -532,7 +539,7 @@ def build_vibe_command(*, name: str, user_id: int, model: str, ticket: str, job:
     if not isinstance(ticket, str) or not _TICKET.fullmatch(ticket):
         raise ValueError("bad ticket")
     _model_args(model, effort)                        # the same patterns as for Claude
-    proxy = ({"chat-all": WEB_PROXY, "chat-apart": API_PROXY, "chat-brief": API_PROXY, "run-brief": API_PROXY}.get(job)
+    proxy = ({"chat-all": WEB_PROXY, "chat-apart": API_PROXY, "chat-brief": API_PROXY, "chat-sort": API_PROXY, "run-brief": API_PROXY}.get(job)
              or RUN_PROXY.get(net))
     if proxy is None:
         raise ValueError("unknown net mode")
@@ -570,7 +577,7 @@ def build_hubloop_command(*, name: str, user_id: int, model: str, ticket: str, j
         raise ValueError("bad ticket")
     if not isinstance(model, str) or not _REMOTE_MODEL.fullmatch(model):
         raise ValueError("bad model")
-    proxy = ({"chat-all": WEB_PROXY, "chat-apart": API_PROXY, "chat-brief": API_PROXY, "run-brief": API_PROXY}.get(job)
+    proxy = ({"chat-all": WEB_PROXY, "chat-apart": API_PROXY, "chat-brief": API_PROXY, "chat-sort": API_PROXY, "run-brief": API_PROXY}.get(job)
              or RUN_PROXY.get(net))
     if proxy is None:
         raise ValueError("unknown net mode")
@@ -611,7 +618,7 @@ def build_codex_command(*, name: str, user_id: int, model: str, effort: str, aut
             raise ValueError("bad key ticket")
     elif not _codex_auth(auth):
         raise ValueError("bad auth")
-    proxy = ({"chat-all": WEB_PROXY, "chat-apart": API_PROXY, "chat-brief": API_PROXY, "run-brief": API_PROXY,
+    proxy = ({"chat-all": WEB_PROXY, "chat-apart": API_PROXY, "chat-brief": API_PROXY, "chat-sort": API_PROXY, "run-brief": API_PROXY,
               "models": API_PROXY}.get(job) or RUN_PROXY.get(net))
     if proxy is None:
         raise ValueError("unknown net mode")

@@ -556,8 +556,9 @@ class Runner:
             self.api.call("POST", f"/runner/chat/{chat_id}/finish", success="0", answer=problem, tokens_in=0,
                           tokens_out=0)
             return
-        files_dir, code_dir, root = (self._view(f"chat-{chat_id}", job, code=True) if job.get("project_id")
-                                     else (None, None, None))
+        # a plan for the folders ("sort") is about the files only: no snapshot of the code
+        files_dir, code_dir, root = (self._view(f"chat-{chat_id}", job, code=job.get("mode") != "sort")
+                                     if job.get("project_id") else (None, None, None))
         ticket = self.tickets.issue(secret, provider, **self._route(adapter, job))
         secret = None
         thoughts = Thoughts(self.api, chat_id, adapter, self.clock)
