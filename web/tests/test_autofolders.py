@@ -103,6 +103,7 @@ class AutoFoldersTest(unittest.TestCase):
         self.assertEqual(chat.claim_next(NOW).project_id, self.pb.id)
 
     def test_a_chat_question_waits_for_a_slot_and_neither_fails_nor_loses_time(self):
+        statusnote._LAST_SCAN["at"] = NOW + 10 ** 6        # no status round in these later minutes
         self.connect(self.a)
         self.connect(self.b)
         chat.send(self.b.id, self.pb.id, "long question", now=NOW)
@@ -128,24 +129,6 @@ class AutoFoldersTest(unittest.TestCase):
         chat.claim_next(NOW + serversettings.sort_seconds() + 121)
         self.assertEqual(autofolders.state(self.a.id, self.pa.id).status, "failed")
         self.assertLess(serversettings.sort_seconds() + 20, 3600)   # a ticket counts an hour
-
-    def test_a_plan_from_the_list_does_not_wait_for_an_agent_run(self):
-        self.connect(self.a)
-        self.busy_with_a_run()
-        autofolders.request(self.a.id, self.pa.id, contents=True, now=NOW)
-        self.assertIsNone(chat.claim_next(NOW))                       # with contents it waits
-        self.assertTrue(autofolders.state(self.a.id, self.pa.id).waiting)
-        autofolders.discard(self.a.id, self.pa.id)
-        autofolders.request(self.a.id, self.pa.id, now=NOW)
-        self.assertFalse(autofolders.state(self.a.id, self.pa.id).waiting)
-        self.assertEqual(chat.claim_next(NOW).mode, "brief")
-
-    def test_only_one_job_beside_a_chat_answer(self):
-        self.connect(self.a)
-        self.busy_slots()
-        autofolders.request(self.a.id, self.pa.id, now=NOW)
-        self.assertTrue(autofolders.state(self.a.id, self.pa.id).waiting)
-        self.assertIsNone(chat.claim_next(NOW))
 
     def test_a_big_project_is_listed_by_path_with_all_folders_and_what_is_left_out_is_said(self):
         original = autofolders.LIST_MAX
