@@ -174,7 +174,8 @@ class PickerTest(Base):
 
     def test_two_drop_downs_in_our_own_style(self):
         html = self.picker()
-        self.assertEqual(html.count('class="m-select has-select"'), 2)
+        self.assertEqual(html.count('class="m-select has-select"'), 3)              # model, level, strength (27.11.2026)
+        self.assertEqual(html.count('class="m-select has-select" hidden'), 1)       # Claude: the strength box is hidden
         self.assertIn('id="manager-model" data-setting="model"', html)
         self.assertIn('id="manager-effort" data-setting="effort"', html)
         self.assertIn('<option value="haiku" label="Haiku" data-ai="Claude" selected>Haiku · schnell</option>', html)
