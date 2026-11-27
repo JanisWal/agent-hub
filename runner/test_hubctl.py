@@ -102,6 +102,27 @@ class HubctlTest(unittest.TestCase):
         self.assertFalse(any(n.startswith("tasks/") or "half.py" in n for n in names))   # work in progress stays out
         self.assertEqual(list(self.paths.jobs.glob("backup*")), [])         # nothing unencrypted left behind
 
+    def test_files_that_are_packed_already_are_only_stored(self):
+        conn = sqlite3.connect(self.paths.data / "hub.db")
+        conn.execute("ALTER TABLE files ADD COLUMN project_id INTEGER")
+        conn.execute("ALTER TABLE files ADD COLUMN name TEXT")
+        conn.execute("UPDATE files SET project_id = 1, name = 'Urlaub.JPG'")
+        conn.execute("INSERT INTO files (id, is_folder, project_id, name) VALUES (6, 0, 1, 'notes.md')")
+        conn.commit()
+        conn.close()
+        (self.paths.data / "files" / "1" / "1").write_bytes(b"\xff\xd8 a photo")
+        (self.paths.data / "files" / "1" / "6").write_text("text " * 200)
+        (self.paths.data / "files" / "1" / "1.thumb").write_bytes(b"small picture")
+        out = Path(self.tmp.name) / "open.zip"
+        pyrage.decrypt_file(str(self.backup()), str(out), [self.secret])
+        with zipfile.ZipFile(out) as archive:
+            kinds = {info.filename: info.compress_type for info in archive.infolist()}
+            self.assertEqual(archive.read("files/1/1"), b"\xff\xd8 a photo")
+        self.assertEqual(kinds["files/1/1"], zipfile.ZIP_STORED)        # by the real name, any case
+        self.assertEqual(kinds["files/1/1.thumb"], zipfile.ZIP_STORED)
+        self.assertEqual(kinds["files/1/6"], zipfile.ZIP_DEFLATED)
+        self.assertEqual(kinds["database/hub.db"], zipfile.ZIP_DEFLATED)
+
     def test_no_key_no_backup(self):
         with self.assertRaises(hubctl.Failed) as failed:
             hubctl.make_backup(self.paths, "")

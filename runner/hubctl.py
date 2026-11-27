@@ -50,6 +50,12 @@ KEEP_BEFORE_DAYS = 7                               # the state before a put-back
 _VALUE = re.compile(r"[\x20-\x7e]{0,500}")         # one printable line, nothing that could add a second line to .env
 _STAMP = re.compile(r"\d{4}-\d{2}-\d{2}-\d{4}")
 CHUNK = 1 << 20
+# Files that are compressed already are only stored: packing them again costs the Pi minutes per gigabyte and saves
+# almost nothing (27.11.2026: 1.3 GB of uploads, mostly pictures and documents, took over ten minutes).
+PACKED = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".avif", ".mp4", ".mov", ".m4v", ".mkv", ".webm",
+          ".mp3", ".m4a", ".aac", ".ogg", ".opus", ".flac", ".zip", ".gz", ".tgz", ".bz2", ".xz", ".zst", ".7z",
+          ".rar", ".pdf", ".docx", ".xlsx", ".pptx", ".odt", ".ods", ".odp", ".epub", ".jar", ".apk", ".dmg",
+          ".thumb", ".preview"}   # the hub's own small pictures of a file (web/app/files.py)
 
 
 class Failed(Exception):
@@ -185,6 +191,18 @@ def hub_version(paths: Paths) -> str:
         return ""
 
 
+def _file_kinds(db_path: Path) -> dict[str, str]:
+    """"<project>/<number>" of every stored file -> the ending of its real name (".jpg"), from the database."""
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        return {f"{pid}/{fid}": os.path.splitext(name or "")[1] for fid, pid, name in
+                conn.execute("SELECT id, project_id, name FROM files WHERE is_folder = 0")}
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+
+
 def describe(db_path: Path) -> dict:
     """What a database holds, for the page before it is put back: counts, the owner, and the schema (table: columns),
     so the hub can refuse a backup of a newer version (a table or column it does not know)."""
@@ -232,18 +250,22 @@ def make_backup(paths: Paths, recipient: str, now: float | None = None) -> dict:
         src.close()
         listed = {}
         with zipfile.ZipFile(stage, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as archive:
-            def add(path: Path, arcname: str) -> None:
+            def add(path: Path, arcname: str, kind: str = "") -> None:
                 digest, size = hashlib.sha256(), 0
-                with open(path, "rb") as source, archive.open(arcname, "w", force_zip64=True) as target:
+                info = zipfile.ZipInfo(arcname, time.localtime(path.stat().st_mtime)[:6])
+                info.compress_type = zipfile.ZIP_STORED if kind.lower() in PACKED else zipfile.ZIP_DEFLATED
+                with open(path, "rb") as source, archive.open(info, "w", force_zip64=True) as target:
                     for block in iter(lambda: source.read(CHUNK), b""):
                         digest.update(block)
                         size += len(block)
                         target.write(block)
                 listed[arcname] = {"size": size, "sha256": digest.hexdigest()}
             add(db_copy, "database/hub.db")
+            kinds = _file_kinds(db_copy)   # stored files have only a number: their real name says what they are
             for folder, top in ((paths.data / "files", "files"), (paths.work / "repos", "repos"), (paths.claude, "logins")):
                 for path in _walk(folder):
-                    add(path, f"{top}/{path.relative_to(folder).as_posix()}")
+                    inner = path.relative_to(folder).as_posix()
+                    add(path, f"{top}/{inner}", (kinds.get(inner) if top == "files" else "") or path.suffix)
             env = read_env(paths.app / ".env")
             secrets = "".join(f"{key}={env[key]}\n" for key in SECRET_KEYS if env.get(key))
             archive.writestr("secrets.env", secrets)
