@@ -46,7 +46,9 @@ def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model
     """Two drop-downs in our own style, AI model and effort level, built from the list in catalog.py (Janis,
     14.11.2026). Used wherever a model is chosen: manager chat, regular checks, the roles. The level list holds every
     level of the provider; levels the chosen model does not have are hidden, and static/picker.js keeps that right
-    when the model changes (`data-levels`, `data-defaults`). `setting` adds data-setting for pages that save a change
+    when the model changes (`data-levels`, `data-defaults`). For an AI chosen by strength (catalog.by_strength) a third
+    box takes the place of the levels: weak, middle, strong (`data-strengths`), and picker.js shows only the models of
+    the chosen one. `setting` adds data-setting for pages that save a change
     at once (manager.js). Unknown hints show nothing, unknown levels show their name as it is.
     `providers`: whose models the list holds, in this order (the user's connected AIs, Claude first); the provider of
     the chosen model is always there. Each option carries its provider's name (data-ai) for "… is answering"."""
@@ -72,8 +74,13 @@ def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model
             return (names or {}).get(m.id) or ai_name(lang, "custom")
         return m.name
 
+    # An AI chosen by strength (catalog.by_strength): the right box offers weak, middle, strong and the list shows the
+    # models of that strength only, without a hint beside them (the box says it already).
+    by_strength = {prov.id for prov in shown if catalog.by_strength(prov.id)}
+    strengths = {m.id: catalog.strength_of(m) for prov, m in all_models if prov.id in by_strength}
+
     def model_text(prov: catalog.Provider, m: catalog.Model) -> str:
-        hint = texts.get(f"model_hint_{m.hint}", "") if m.hint else ""
+        hint = texts.get(f"model_hint_{m.hint}", "") if m.hint and prov.id not in by_strength else ""
         return esc(f"{model_name(prov, m)} · {hint}" if hint else model_name(prov, m))
 
     def effort_text(level: str) -> str:
@@ -91,13 +98,24 @@ def model_picker(lang: str, prefix: str, model: str, effort: str, *, label_model
     def attr(name: str) -> str:
         return f' data-setting="{name}"' if setting else ""
     chevron = icon("chevron_down")
+    # The strength box is always there, hidden unless the chosen model is chosen by strength: a picker keeps its three
+    # boxes when AgentHub.refreshPickers swaps contents after a change of the AI. No name and no data-setting: only the
+    # model is kept, its strength follows from it.
+    picked = strengths.get(model)
+    options = "".join(
+        f'<option value="{k}"{" selected" if k == picked else ""}{"" if k in strengths.values() else " hidden"}>'
+        f'{label("strength_" + k)}</option>' for k in catalog.STRENGTHS)
+    data_strengths = esc(json.dumps(strengths, separators=(",", ":")))
+    strength_box = (f'<label class="{css} has-select"{"" if picked else " hidden"}><select id="{prefix}-strength" '
+                    f'aria-label="{label("picker_strength")}" data-strengths="{data_strengths}">{options}</select>'
+                    f'{chevron}</label>')
     return (   # no title on the selects: its tip would cover the list
         f'<span class="model-picker" data-provider="{own}">'
         f'<label class="{css} has-select"><select name="model" id="{prefix}-model"{attr("model")} '
         f'aria-label="{label(label_model)}">{models}</select>{chevron}</label>'
-        f'<label class="{css} has-select"><select name="effort" id="{prefix}-effort"{attr("effort")} '
-        f'aria-label="{label(label_effort)}" data-levels="{data_levels}" data-defaults="{data_defaults}">{efforts}'
-        f'</select>{chevron}</label></span>'
+        f'<label class="{css} has-select"{" hidden" if picked else ""}><select name="effort" id="{prefix}-effort"'
+        f'{attr("effort")} aria-label="{label(label_effort)}" data-levels="{data_levels}" '
+        f'data-defaults="{data_defaults}">{efforts}</select>{chevron}</label>{strength_box}</span>'
     )
 
 # Claude has its own row with a real state, the AIs the runner keeps (ai_link.PROVIDERS: Mistral, ChatGPT, the own AI)

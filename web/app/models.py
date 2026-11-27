@@ -35,7 +35,8 @@ def _known(provider: str) -> dict:
 
 # Mistral (27.11.2026): its list names most models several times, as aliases that share the field "name"
 # ("mistral-medium-2604", "mistral-medium-3-5" and "mistral-vibe-cli-with-tools" are all "mistral-medium-latest"), and
-# its ids are no names for people. One id per model, a short name and a hint how strong it is.
+# its ids are no names for people. One id per model, a short name and how strong it is (strength): Mistral's models
+# have no levels of their own, so the picker offers weak, middle, strong instead (catalog.by_strength).
 _DATED = re.compile(r"-(\d{4})$")
 _WORDS = {"mistral": "Mistral", "ministral": "Ministral", "glm": "GLM", "deepseek": "DeepSeek"}
 
@@ -84,15 +85,24 @@ def _short_name(slug: str) -> str:
     return _name(" ".join(words), slug)
 
 
-def _mistral_hint(slug: str) -> str:
-    """How strong a Mistral model is, in the catalog's hints (shown as fast, balanced, thorough)."""
-    if re.search(r"ministral|small|flash|\d+b(-|$)", slug):
+_LIGHT = ("mini", "small", "flash", "lite", "nano", "tiny")   # a word that starts so: "ministral", "flash"
+_HEAVY = ("large", "pro", "max", "ultra")
+
+
+def strength(slug: str) -> str:
+    """How strong a model is, as the catalog's hint: 'fast' (weak), 'balanced' (middle) or 'thorough' (strong).
+    Only general marks in the id count, never a list of models (Janis, 27.11.2026: a new model sorts itself in, no
+    upkeep): a size in billions first (up to 15B weak, from 70B strong), then words; nothing known is the middle."""
+    words = re.split(r"[-_.]", slug.lower())
+    for word in words:
+        size = re.fullmatch(r"(\d+)b", word)
+        if size:
+            return "fast" if int(size.group(1)) <= 15 else "thorough" if int(size.group(1)) >= 70 else "balanced"
+    if any(word.startswith(_LIGHT) for word in words):
         return "fast"
-    if "medium" in slug:
-        return "balanced"
-    if re.search(r"large|glm|deepseek", slug):
+    if any(word.startswith(_HEAVY) for word in words):
         return "thorough"
-    return ""
+    return "balanced"
 
 
 def _distinct_names(entries: list) -> None:
@@ -128,9 +138,7 @@ def normalize(provider: str, raw: list) -> list[dict]:
             seed = known.get(slug, {})
             entry = {"id": slug, "name": seed.get("name") or _short_name(slug),
                      "efforts": seed.get("efforts", ["none"]), "default_effort": seed.get("default_effort", "none"),
-                     "images": bool((item.get("capabilities") or {}).get("vision"))}
-            if _mistral_hint(slug):
-                entry["hint"] = _mistral_hint(slug)
+                     "images": bool((item.get("capabilities") or {}).get("vision")), "hint": strength(slug)}
         else:   # claude: the family's short name (Claude Code takes "opus", "sonnet", ...): always its newest version
             match = _FAMILY.match(str(item.get("id") or ""))
             if not match:

@@ -289,11 +289,33 @@ def check(model: str, effort: str | None = None, provider_id: str | None = None)
 
 def resolve(model: str | None, effort: str | None, provider_id: str | None = None) -> tuple[str, str]:
     """A saved choice made valid again: a model that left the list becomes the default model (of `provider_id`, or of
-    the default provider), a level the model does not have becomes the model's default level. Nothing is stored."""
+    the default provider), a level the model does not have becomes the model's default level. An AI chosen by
+    strength (by_strength) always takes the model's default level: the picker offers none. Nothing is stored."""
     hit = find(model)
     if hit is not None and provider_id in (None, hit[0].id):
-        found = hit[1]
+        owner, found = hit
     else:
-        current = provider(provider_id or DEFAULT_PROVIDER)
-        found = current.model(current.default_model)
-    return found.id, (effort if effort in found.efforts else found.default_effort)
+        owner = provider(provider_id or DEFAULT_PROVIDER)
+        found = owner.model(owner.default_model)
+    if effort not in found.efforts or by_strength(owner.id):
+        return found.id, found.default_effort
+    return found.id, effort
+
+
+# Strength instead of levels (Janis, 27.11.2026): an AI whose models mostly have no levels of their own (Mistral) is
+# chosen by weak, middle, strong; the picker shows only the models of the chosen strength and no hint beside them.
+STRENGTHS = ("fast", "balanced", "thorough")   # the hints that stand for weak, middle, strong
+
+
+def by_strength(provider_id: str) -> bool:
+    """True when fewer than half of the provider's models have more than one level. Decided from the list itself, so
+    a new AI or new models need no setting. A further AI ("custom") is one model per place, never chosen so."""
+    if provider_id == "custom":
+        return False
+    found = provider(provider_id).models
+    return len(found) >= 2 and 2 * sum(len(m.efforts) > 1 for m in found) < len(found)
+
+
+def strength_of(model: Model) -> str:
+    """The strength a model stands under: its hint, 'deepest' counts as strong, no hint as the middle."""
+    return "thorough" if model.hint == "deepest" else model.hint if model.hint in STRENGTHS else "balanced"
