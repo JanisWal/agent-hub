@@ -18,7 +18,7 @@ import time
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 
-from .. import agents, ai_link, chat, claude_link, devices, exports, hostjobs, models, power, throttle, users
+from .. import agents, ai_link, chat, claude_link, devices, exports, hostjobs, models, throttle, users
 from ..deps import fail, ok
 
 TOKEN_HASH_ENV = "HUB_RUNNER_TOKEN_HASH"
@@ -194,13 +194,6 @@ def expired():
 @router.post("/wipes/{user_id}/done")
 def wipe_done(user_id: int):
     return ok() if claude_link.wiped(user_id) else fail(409)
-
-
-@router.post("/power/claim")
-def power_claim():
-    """What the owner asked for on the Pi (restart, shutdown; once), or null."""
-    job = power.claim_next()
-    return ok(id=None if job is None else job[0], action=None if job is None else job[1])
 
 
 @router.post("/wake/claim")

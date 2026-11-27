@@ -228,7 +228,7 @@ CREATE TABLE IF NOT EXISTS claude_wipes (
     user_id    INTEGER PRIMARY KEY,
     created_at INTEGER NOT NULL
 );
--- Restart or shutdown of the Pi, asked for by the owner and fetched once by the runner (power.py).
+-- Unused since 28.11.2026 (restart and stop are host jobs, hostjobs.py); was: restart or shutdown of the Pi.
 CREATE TABLE IF NOT EXISTS power_requests (
     id           INTEGER PRIMARY KEY,
     action       TEXT NOT NULL,

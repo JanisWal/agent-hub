@@ -43,7 +43,7 @@ SECRET_KEYS = ("HUB_TOKEN_KEY", "HUB_VAULT_IDENTITY", "HUB_VAULT_PUBLIC", "RESEN
 # What the set-up assistant and the administration may write into .env (action "settings").
 SETTING_KEYS = ("HUB_BASE_URL", "RESEND_API_KEY", "MAIL_FROM", "TUNNEL_TOKEN")
 TOP = ("manifest.json", "database/", "files/", "repos/", "logins/", "secrets.env")
-SERVICES = ("web", "runner", "egress", "broker")   # stopped while a backup is put back; the tunnel keeps running
+SERVICES = ("web", "runner", "egress", "broker")   # restarted or stopped; the gate (maintenance page) and the tunnel stay
 WEB_UID = 9000                                     # compose.yml: the web service owns the data folder
 KEEP_DAILY, KEEP_WEEKLY = 7, 4                     # as the old nightly backup (backup.sh)
 KEEP_BEFORE_DAYS = 7                               # the state before a put-back backup, for going back
@@ -508,11 +508,12 @@ def run(paths: Paths, job_id: int) -> int:
         elif action == "restore-apply":
             result = apply_restore(paths)
             return 0   # the result is in the new data (jobs/restore.json); this job's database moved aside
-        elif action == "restart":
-            # Only the hub's own containers, never the server (Janis, 27.11.2026: on a shared server or a VM the
-            # server must keep running). The answer comes first: the restart also restarts the web service.
+        elif action in ("restart", "stop"):
+            # Only the hub's own services, never the server (Janis, 27./28.11.2026: on a shared server or a VM the
+            # server keeps running); the gate shows the maintenance page meanwhile. The answer comes first: the web
+            # service that waits for it goes down too. After "stop" the hub starts again only on the server itself.
             write_result(paths, str(job_id), {"ok": True})
-            compose(paths, "restart")
+            compose(paths, action, *SERVICES)
             return 0
         elif action == "settings":
             values = data.get("values")

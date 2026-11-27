@@ -55,8 +55,6 @@ class FakeApi:
         self.calls.append((method, path, form))
         if path == "/runner/wake/claim":
             return {"ok": True, "mac": getattr(self, "wake", None)}
-        if path == "/runner/power/claim":
-            return {"ok": True, "id": 7 if self.power else None, "action": self.power}
         if path == "/runner/host/claim":
             job, self.host_job = getattr(self, "host_job", None), None
             return {"ok": True, "job": job}
@@ -116,15 +114,6 @@ class RunnerTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_power_requests_run_one_fixed_command(self):
-        ran = []
-        self.runner.run_power = lambda command: ran.append(command) or types.SimpleNamespace(returncode=0, stderr="")
-        self.runner.handle_power()
-        self.assertEqual(ran, [])                                               # nothing asked: nothing happens
-        self.api.power = "poweroff"
-        self.runner.handle_power()
-        self.assertEqual(ran, [launcher.build_power_command("poweroff")])
-
     def test_waking_sends_one_fixed_command_with_the_checked_mac(self):
         ran = []
         self.runner.run_power = lambda command: ran.append(command) or types.SimpleNamespace(returncode=0, stderr="")
@@ -173,25 +162,6 @@ class RunnerTest(unittest.TestCase):
         self.runner.handle_host()
         self.assertEqual(ran, [])
         self.assertEqual(len(self.api.posted("/runner/host/7/failed")), 1)
-
-    def test_restart_and_shutdown_report_nothing(self):
-        self.runner.run_power = lambda command: types.SimpleNamespace(returncode=0, stderr="")
-        for action in ("poweroff",):
-            self.api.power = action
-            self.runner.handle_power()
-        self.assertEqual(self.api.posted("/result"), [])
-
-    def test_unknown_power_actions_are_ignored(self):
-        ran = []
-        self.runner.run_power = lambda command: ran.append(command)
-        self.api.power = "format-everything"
-        self.runner.handle_power()
-        self.assertEqual(ran, [])
-
-    def test_a_failing_power_command_does_not_stop_the_runner(self):
-        self.runner.run_power = lambda command: types.SimpleNamespace(returncode=1, stderr="denied")
-        self.api.power = "poweroff"
-        self.runner.handle_power()   # reports on stderr, raises nothing
 
     def test_successful_sign_in(self):
         self.api.logins = [{"user_id": 2, "login_url": None}]

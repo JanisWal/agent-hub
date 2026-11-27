@@ -27,7 +27,33 @@ LOCK_SECONDS = 60 * 60       # how long an IP stays locked
 # every guess; then the header counts only on requests from the tunnel's container. Empty (the live Pi, whose port
 # is only open on the Pi itself): the header always counts, as before.
 TRUSTED_PROXY = os.environ.get("HUB_TRUSTED_PROXY", "").strip()
-_proxy_ip = {"ip": None, "at": 0.0}
+# The gate in front of the web service (28.11.2026, gate/nginx.conf): every request comes from it, so it names the real
+# peer (the tunnel or a visitor in the home network) in X-Hub-Peer, set by itself every time. Believed only from the gate.
+GATE = os.environ.get("HUB_GATE", "").strip()
+_found: dict[str, tuple[str | None, float]] = {}
+
+
+def _address_of(name: str) -> str | None:
+    """The address of a container name (cached a minute: a container made again gets a new one)."""
+    now = time.time()
+    cached = _found.get(name)
+    if cached is None or now - cached[1] > 60:
+        try:
+            cached = (socket.gethostbyname(name), now)
+        except OSError:
+            cached = (None, now)
+        _found[name] = cached
+    return cached[0]
+
+
+def peer(request: Request) -> str:
+    """Who opened the connection: behind the gate the peer it names, else the connection's own address."""
+    host = request.client.host if request.client else ""
+    if GATE and host and host == _address_of(GATE):
+        named = request.headers.get("x-hub-peer", "").strip()
+        if named:
+            return named
+    return host or "unknown"
 
 
 def via_proxy(request: Request) -> bool:
@@ -36,14 +62,7 @@ def via_proxy(request: Request) -> bool:
         return False
     if not TRUSTED_PROXY:
         return True
-    now = time.time()
-    if now - _proxy_ip["at"] > 60:
-        try:
-            _proxy_ip["ip"] = socket.gethostbyname(TRUSTED_PROXY)
-        except OSError:
-            _proxy_ip["ip"] = None
-        _proxy_ip["at"] = now
-    return bool(request.client) and request.client.host == _proxy_ip["ip"]
+    return peer(request) == _address_of(TRUSTED_PROXY)
 
 
 def client_ip(request: Request) -> str:
@@ -52,7 +71,7 @@ def client_ip(request: Request) -> str:
     forwarded = request.headers.get("cf-connecting-ip", "").strip()
     if forwarded and via_proxy(request):
         return forwarded
-    return request.client.host if request.client else "unknown"
+    return peer(request)
 
 
 def seconds_locked(ip: str, now: float | None = None) -> int:

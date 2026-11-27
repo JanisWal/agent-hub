@@ -20,21 +20,6 @@ def answer(text, **extra):
 
 
 class PowerCommandTest(unittest.TestCase):
-    def test_the_one_command(self):
-        for action in ("poweroff",):
-            cmd = L.build_power_command(action)
-            self.assertEqual(cmd[:2], ["docker", "run"])
-            self.assertEqual(cmd[-3:], ["systemctl", "--no-block", action])   # a fixed command, nothing else
-            self.assertIn("agent-hub-hub-runner", cmd)
-            self.assertIn("--pull=never", cmd)                                # never fetches an image at that moment
-            self.assertIn("--network=none", cmd)
-
-    def test_the_backup_is_no_power_command_any_more(self):
-        self.assertEqual(L.POWER_ACTIONS, ("poweroff",))   # the same as web/app/power.py
-        for gone in ("backup", "reboot"):   # restart: the hub's containers only (hubctl), never the server
-            with self.assertRaises(ValueError):
-                L.build_power_command(gone)
-
     PLACES = {"base": "/opt/agent-hub", "app": "/opt/agent-hub/app", "data": "/opt/agent-hub/data",
               "claude": "/opt/agent-hub/claude", "work": "/opt/agent-hub/work", "backups": "/mnt/usb/backups",
               "name": "agent-hub"}
@@ -63,10 +48,9 @@ class PowerCommandTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 L.build_hubctl_command(job, self.PLACES)
 
-    def test_nothing_else_is_accepted(self):
-        for bad in ("", "halt", "REBOOT", "reboot; id", "poweroff --force", None):
-            with self.assertRaises(ValueError):
-                L.build_power_command(bad)
+    def test_the_server_itself_is_never_switched_off_or_restarted(self):
+        self.assertFalse(hasattr(L, "build_power_command"))    # restart and stop are hubctl jobs (28.11.2026)
+        self.assertEqual(L.HUBCTL_ACTIONS[-2:], ("restart", "stop"))
 
     def test_an_agent_run_never_gets_these_rights(self):
         for flag in ("--privileged", "--pid=host", "nsenter"):

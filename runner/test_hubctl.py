@@ -296,10 +296,13 @@ class HubctlTest(unittest.TestCase):
         self.assertEqual(hubctl.run(self.paths, 4), 1)
         self.assertEqual(json.loads((self.paths.results / "4.json").read_text()), {"ok": False, "reason": "unknown"})
         self.assertEqual(hubctl.run(self.paths, 99), 1)                     # no payload: a clean failure
-        payload.write_text(json.dumps({"action": "restart", "payload": {}}))
-        self.calls.clear()
-        self.assertEqual(hubctl.run(self.paths, 4), 0)
-        self.assertEqual(self.calls, [("restart",)])                        # the hub's containers, nothing else
+        for action in ("restart", "stop"):
+            payload.write_text(json.dumps({"action": action, "payload": {}}))
+            self.calls.clear()
+            self.assertEqual(hubctl.run(self.paths, 4), 0)
+            self.assertEqual(self.calls, [(action, *hubctl.SERVICES)])     # the services behind the gate, nothing else
+        self.assertNotIn("gate", hubctl.SERVICES)
+        self.assertNotIn("tunnel", hubctl.SERVICES)
         self.assertEqual(json.loads((self.paths.results / "99.json").read_text())["reason"], "no_job")
 
 

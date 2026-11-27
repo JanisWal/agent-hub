@@ -10,7 +10,7 @@ Also: sign-ins of Claude (link and code between the hub and `claude setup-token`
 tokens.py), API keys of other AIs (Mistral: checked with the provider and kept encrypted, tokens.ProviderKeys), the
 manager chat and the agent runs (one container per question or run, Claude Code or Mistral Vibe, always with a
 ticket instead of the credential: adapters.py), the work folders of the tasks and merging approved work
-(workspace.py), restart and shutdown of the Pi, the fixed actions on the server (hubctl.py: backup, restore, settings), and deleting the saved credentials of users who
+(workspace.py), the fixed actions on the server (hubctl.py: backup, restore, settings, restarting and stopping the hub), and deleting the saved credentials of users who
 disconnected. Every chat answer and every agent run runs in a thread of its own, so the loop goes on with sign-ins
 and keys meanwhile. How many containers run at once the hub decides (the owner's setting "AI runs",
 serversettings.ai_parallel): it hands out no job while all slots are taken. The runner always asks, the hub never
@@ -910,29 +910,9 @@ class Runner:
                 continue
             self.api.call("POST", "/runner/cleanups/done", kind=kind, ref=ref)
 
-    # --- restart, shutdown or backup of the Pi, asked for by the owner (web/app/power.py)
+    # --- short fixed containers (hubctl, waking a device)
     def _run_power(self, command: list[str]):
         return subprocess.run(command, capture_output=True, text=True, timeout=POWER_TIMEOUT)
-
-    def handle_power(self) -> None:
-        job = self.api.call("POST", "/runner/power/claim")
-        if job.get("action"):   # in a thread: a backup takes minutes and must not stop sign-ins and chats
-            self._start(self.do_power, job)
-
-    def do_power(self, job: dict) -> None:
-        action = job.get("action")
-        try:
-            command = launcher.build_power_command(action)
-        except ValueError:
-            print(f"runner: ignored unknown power action {action!r}", file=sys.stderr, flush=True)
-            return
-        print(f"runner: {action} of the Pi on the owner's request", file=sys.stderr, flush=True)
-        try:
-            done = self.run_power(command)
-            if done.returncode != 0:
-                print(f"runner: {action} failed: {(done.stderr or '').strip()}", file=sys.stderr, flush=True)
-        except subprocess.TimeoutExpired:
-            print(f"runner: {action} timed out", file=sys.stderr, flush=True)
 
     # --- fixed actions on the server (web/app/hostjobs.py, runner/hubctl.py): the runner only starts the container;
     # the job's payload (it may hold a key) goes into a root-only file the container reads and deletes at once. The
@@ -993,7 +973,6 @@ class Runner:
 
     def step(self) -> None:
         self.handle_hello()
-        self.handle_power()
         self.handle_host()
         self.handle_wake()
         self.handle_wipes()

@@ -37,10 +37,8 @@ class SetupTest(unittest.TestCase):
     # --- before there is an owner
     def test_open_only_without_owner_not_through_the_tunnel_and_for_an_hour(self):
         self.assertTrue(setup.open_for(request()))
-        for home in ("10.0.0.5", "172.20.0.1", "127.0.0.1", "100.98.163.27", "fd00::5", "::ffff:192.168.1.9"):
-            self.assertTrue(setup.open_for(request(ip=home)), home)
-        for internet in ("93.184.216.34", "8.8.8.8", "2a00:1450:4001::1", "::ffff:8.8.8.8", "unknown"):
-            self.assertFalse(setup.open_for(request(ip=internet)), internet)   # a server with a public address
+        # Also from a public address for now (Janis, 28.11.2026; limiting it is noted for later, Merkliste 3v)
+        self.assertTrue(setup.open_for(request(ip="93.184.216.34")))
         self.assertFalse(setup.open_for(request(**{"cf-connecting-ip": "93.184.216.34"})))
         self.assertFalse(setup.open_for(request(), now=setup.STARTED + setup.WINDOW_SECONDS + 1))
         users.create_user("someone@example.com", "Own3r!pass12", role="owner")
@@ -57,8 +55,6 @@ class SetupTest(unittest.TestCase):
         with self.assertRaises(HTTPException) as refused:
             routes.setup_page(request(**{"cf-connecting-ip": "203.0.113.9"}))
         self.assertEqual(refused.exception.status_code, 404)
-        with self.assertRaises(HTTPException):
-            routes.setup_page(request(ip="93.184.216.34"))                     # straight from the internet
         with mock.patch.object(setup, "STARTED", time.time() - setup.WINDOW_SECONDS - 5):
             closed = routes.setup_page(request())
         self.assertEqual(closed.status_code, 403)
@@ -200,12 +196,27 @@ class ProxyTest(unittest.TestCase):
         fake = request(ip="192.168.1.50", **{"cf-connecting-ip": "203.0.113.1"})
         with mock.patch.object(throttle, "TRUSTED_PROXY", "tunnel"), \
                 mock.patch.object(throttle.socket, "gethostbyname", return_value="172.20.0.5"), \
-                mock.patch.dict(throttle._proxy_ip, {"ip": None, "at": 0.0}):
+                mock.patch.dict(throttle._found, clear=True):
             self.assertEqual(throttle.client_ip(fake), "192.168.1.50")
             real = request(ip="172.20.0.5", **{"cf-connecting-ip": "203.0.113.1"})
             self.assertEqual(throttle.client_ip(real), "203.0.113.1")
         with mock.patch.object(throttle, "TRUSTED_PROXY", ""):
             self.assertEqual(throttle.client_ip(fake), "203.0.113.1")        # the first hub: as before
+
+    def test_behind_the_gate_the_peer_it_names_counts_and_nobody_can_name_one_himself(self):
+        """28.11.2026: every request comes through the gate (gate/nginx.conf), which sets X-Hub-Peer itself."""
+        names = {"gate": "172.20.0.2", "tunnel": "172.21.0.3"}
+        with mock.patch.object(throttle, "GATE", "gate"), mock.patch.object(throttle, "TRUSTED_PROXY", "tunnel"), \
+                mock.patch.object(throttle.socket, "gethostbyname", side_effect=lambda n: names[n]), \
+                mock.patch.dict(throttle._found, clear=True):
+            home = request(ip="172.20.0.2", **{"x-hub-peer": "192.168.1.50"})
+            self.assertEqual(throttle.client_ip(home), "192.168.1.50")
+            tunnel = request(ip="172.20.0.2", **{"x-hub-peer": "172.21.0.3", "cf-connecting-ip": "203.0.113.1"})
+            self.assertEqual(throttle.client_ip(tunnel), "203.0.113.1")
+            faked = request(ip="172.20.0.2", **{"x-hub-peer": "192.168.1.50", "cf-connecting-ip": "203.0.113.1"})
+            self.assertEqual(throttle.client_ip(faked), "192.168.1.50")          # not from the tunnel: header ignored
+            direct = request(ip="172.20.0.9", **{"x-hub-peer": "1.2.3.4"})
+            self.assertEqual(throttle.client_ip(direct), "172.20.0.9")           # not the gate: its header counts not
 
     def test_the_cookie_is_secure_over_https_only_in_auto_mode(self):
         tunnel = request(ip="172.20.0.5", **{"cf-connecting-ip": "203.0.113.1", "x-forwarded-proto": "https"})

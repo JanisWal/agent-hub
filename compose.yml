@@ -12,10 +12,8 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     mem_limit: ${HUB_WEB_MEM:-256m}
-    ports:
-      # The first hub: only the Pi itself (the tunnel reaches it over the Docker network). A new install opens it in the
-      # home network (HUB_BIND=0.0.0.0) for the set-up assistant and for use at the server's address.
-      - "${HUB_BIND:-127.0.0.1}:${HUB_PORT:-8000}:8000"
+    # No port of its own (28.11.2026): every request comes through the gate below, which shows the maintenance page
+    # while this service restarts or is stopped.
     volumes:
       - ${HUB_DATA_HOST_DIR:-./data}:/data
       - ${HUB_BACKUP_HOST_DIR:-/opt/agent-hub/hub-backups}:/backups:ro   # listing and downloading backups (backups.py)
@@ -26,6 +24,7 @@ services:
       HUB_SECURE_COOKIE: "${HUB_SECURE_COOKIE:-1}"
       HUB_TRUSTED_PROXY: "${HUB_TRUSTED_PROXY:-}"   # the tunnel's name: only its forwarded headers count (throttle.py)
       HUB_TUNNEL_ON: "${TUNNEL_TOKEN:+1}"           # the set-up says whether a tunnel is set; the token stays out
+      HUB_GATE: "gate"                              # requests come through the gate; it names the real peer (throttle.py)
       # Mail (password reset). Values come from .env next to this file; empty = mail features off.
       RESEND_API_KEY: "${RESEND_API_KEY:-}"
       MAIL_FROM: "${MAIL_FROM:-}"
@@ -46,10 +45,9 @@ services:
       retries: 3
       start_period: 20s
     networks:
-      default: {}
+      default:
+        aliases: [hub-web]       # the gate passes everything here
       devices: {}                # only to reach the broker
-      web:
-        aliases: [agent-hub]     # the tunnel's route points to http://agent-hub:8000
 
   # The runner signs users in to Claude and starts one container per question or agent run through the
   # Docker socket. It is the only service with that socket, the only one with the key of the saved Claude tokens
@@ -134,6 +132,31 @@ services:
       - devices
     restart: unless-stopped
 
+  # The gate (28.11.2026, gate/nginx.conf): the one door of the hub, always running. It passes every request to the web
+  # service and shows the maintenance page (gate/maintenance.html) while that does not answer. Restart and stop
+  # (hubctl) touch only the services behind it. nginx's own user, no rights, read-only, its scratch in memory.
+  gate:
+    image: nginx:1.27.5-alpine
+    user: "101:101"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: ${HUB_GATE_MEM:-32m}
+    tmpfs: ["/tmp:size=16m"]
+    command: ["nginx", "-g", "daemon off;"]
+    ports:
+      # The first hub: only the Pi itself (the tunnel reaches the gate over the Docker network). A new install opens it
+      # in the home network (HUB_BIND=0.0.0.0) for the set-up assistant and for use at the server's address.
+      - "${HUB_BIND:-127.0.0.1}:${HUB_PORT:-8000}:8000"
+    volumes:
+      - ./gate/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./gate/maintenance.html:/etc/nginx/hub/maintenance.html:ro
+    networks:
+      default: {}
+      web:
+        aliases: [agent-hub]     # the tunnel's route points to http://agent-hub:8000
+    restart: unless-stopped
+
   # The Cloudflare tunnel of a new install (27.11.2026): it runs when .env has TUNNEL_TOKEN and COMPOSE_PROFILES=tunnel
   # (the set-up assistant writes both, runner/hubctl.py). The first hub keeps its own tunnel outside this file. Fixed
   # version (CLAUDE.md); the token comes from the environment, so it is not on the command line.
@@ -151,7 +174,7 @@ services:
       web:
         aliases: [tunnel]
     depends_on:
-      - web
+      - gate
     restart: unless-stopped
 
 # The tickets of running runs (runner/tokens.py): in memory only (tmpfs), never on the SD card or in a backup.

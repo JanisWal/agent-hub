@@ -12,9 +12,9 @@ from pathlib import Path
 
 from . import db
 
-ACTIONS = ("backup", "restore-check", "restore-apply", "settings", "restart")
+ACTIONS = ("backup", "restore-check", "restore-apply", "settings", "restart", "stop")
 FRESH_SECONDS = 600   # a job nobody fetched within this long is void (the runner was away)
-TIMEOUT = {"backup": 3 * 3600, "restore-check": 3600, "restore-apply": 1800, "settings": 600, "restart": 600}
+TIMEOUT = {"backup": 3 * 3600, "restore-check": 3600, "restore-apply": 1800, "settings": 600, "restart": 600, "stop": 600}
 
 
 def results_dir() -> Path:

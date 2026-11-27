@@ -1,9 +1,9 @@
-"""The system actions of owner and superadmin (restart, shut down; the backup is routes/backup.py) and server settings (upload); the page itself is
+"""The system actions of owner and superadmin (restart and stop the hub; the backup is routes/backup.py) and server settings (upload); the page itself is
 /admin, routes/admin.py."""
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import JSONResponse
 
-from .. import hostjobs, netaddresses, power, serversettings, systempage, sysstats, users
+from .. import hostjobs, netaddresses, serversettings, systempage, sysstats, users
 from ..deps import api_user, error, fail, ok, reauth
 
 router = APIRouter()
@@ -13,21 +13,21 @@ router = APIRouter()
 def power_action(
     request: Request, action: str = Form(""), confirm: str = Form(""), user: users.User = Depends(api_user)
 ):
-    """Restart or shut down (needs the password of the one who asks)."""
+    """Restart or stop the hub (needs the password of the one who asks). Only the hub's own containers, never the server
+    (Janis, 27./28.11.2026); the gate shows the maintenance page meanwhile (gate/)."""
     if not user.is_system_admin:
         return fail(403)
-    if action not in ("reboot", *power.ACTIONS):
+    if action not in POWER:
         return fail(400)
     denied = reauth(request, user, confirm)
     if denied:
         return denied
-    if action == "reboot":   # the hub's containers only, never the server (hubctl "restart", 27.11.2026)
-        return ok() if hostjobs.request("restart", {}, user.id) is not None else error(user.language, "err_power_busy", 409)
-    try:
-        started = power.request_action(user, action)
-    except PermissionError:
-        return fail(403)
-    return ok() if started else error(user.language, "err_power_busy", 409)
+    if hostjobs.request(POWER[action], {}, user.id) is None:
+        return error(user.language, "err_power_busy", 409)
+    return ok()
+
+
+POWER = {"reboot": "restart", "poweroff": "stop"}   # the buttons and their host jobs (hubctl)
 
 
 @router.get("/system/stats")

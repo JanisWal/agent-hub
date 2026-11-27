@@ -2,14 +2,12 @@
 
 Before there is an owner, `/setup` is open to anybody who reaches the server in the home network (Janis, 27.11.2026:
 no set-up code; whoever is in the network could claim it, but only for a short time). Three limits keep that window
-small: it closes for good as soon as an owner exists, it is only open from a private network and never through the
-tunnel (a request that carries `CF-Connecting-IP` came from the internet), and it is open only for WINDOW_SECONDS after
-the hub started (a restart of
+small: it closes for good as soon as an owner exists, it is never open through the tunnel (a request that carries
+`CF-Connecting-IP` came from the internet), and it is open only for WINDOW_SECONDS after the hub started (a restart of
 the server opens it again). After the owner is made, the rest of the assistant is the owner's (logged in): reaching the
 hub from outside, mail, backup, connecting an AI. Every optional step can be skipped; the owner can open it again later
 from the administration (`/setup?step=...`).
 """
-import ipaddress
 import os
 import time
 import urllib.request
@@ -29,26 +27,12 @@ def via_tunnel(request) -> bool:
     return bool(request.headers.get("cf-connecting-ip"))
 
 
-def from_home(request) -> bool:
-    """Did the request come from a private network (home network, the server itself, a VPN)? A server with a public
-    address (Janis, 27.11.2026: a VM with its own IPv4) has the hub's port open to the internet: there the set-up must
-    not be open to anybody who finds it."""
-    host = request.client.host if request.client else ""
-    try:
-        address = ipaddress.ip_address(host)
-    except ValueError:
-        return False
-    if getattr(address, "ipv4_mapped", None):
-        address = address.ipv4_mapped
-    return not address.is_global   # private, loopback, link-local, carrier-grade NAT (Tailscale), ...
-
-
 def open_for(request, now: float | None = None) -> bool:
-    """May this visitor use the set-up before there is an owner? Only from a private network, never through the
-    tunnel, only while there is no owner and only for WINDOW_SECONDS after the start."""
+    """May this visitor use the set-up before there is an owner? Never through the tunnel, only while there is no owner
+    and only for WINDOW_SECONDS after the start. Also from a public address (Janis, 28.11.2026: a server with its own
+    IPv4 is set up from outside for now; limiting it to private networks is noted for later, PROJEKT.md Merkliste 3v)."""
     now = time.time() if now is None else now
-    return (not via_tunnel(request) and from_home(request) and not users.owner_exists()
-            and now - STARTED < WINDOW_SECONDS)
+    return not via_tunnel(request) and not users.owner_exists() and now - STARTED < WINDOW_SECONDS
 
 
 def minutes_left(now: float | None = None) -> int:

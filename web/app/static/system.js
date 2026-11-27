@@ -59,7 +59,7 @@
             note.textContent = note.dataset["done" + action.charAt(0).toUpperCase() + action.slice(1)];
             note.hidden = false;
             root.querySelectorAll("[data-power]").forEach(function (button) { button.disabled = true; });
-            if (action === "reboot") back(0);   // only the hub restarts: the page comes back by itself
+            back(0);   // only the hub restarts or stops: the gate shows the maintenance page, then the page comes back
             return;
           }
           return response.json().then(function (data) { show(data.message); }, function () { show(""); });
