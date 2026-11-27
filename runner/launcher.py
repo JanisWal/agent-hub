@@ -57,8 +57,9 @@ CHAT_MODES = {
     # The written status of a project (web/app/statusnote.py, 17.11.2026): no tools at all, one turn, only Anthropic
     # reachable. It reads a short digest on stdin and answers one line; nothing else costs tokens.
     "brief": {"tools": (), "proxy": API_PROXY, "turns": 1},
-    # A plan for the folders with "include contents" (web/app/autofolders.py): only reading (READ_TOOLS on /files),
-    # no web and no shell, only Anthropic reachable; many steps, since it may open many single files.
+    # A plan for the folders with "include contents" (web/app/autofolders.py): Claude only reads (READ_TOOLS on /files
+    # and the hub's reading tools), no web and no shell, only Anthropic reachable; many steps, since it may open many
+    # single files. Vibe and Codex (chat-sort) keep their shell in the closed container, as in "apart", without the web.
     "sort": {"tools": (), "proxy": API_PROXY, "turns": 60},
 }
 # Restart and shutdown of the Pi (owner's request, see web/app/power.py). The host is reached through the

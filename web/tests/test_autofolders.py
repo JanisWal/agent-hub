@@ -102,6 +102,20 @@ class AutoFoldersTest(unittest.TestCase):
         chat.send(self.b.id, self.pb.id, "next question", now=NOW)
         self.assertEqual(chat.claim_next(NOW).project_id, self.pb.id)
 
+    def test_only_one_plan_runs_at_a_time_on_the_server(self):
+        self.connect(self.a)
+        self.connect(self.b)
+        files.create_text_file(self.b.id, self.pb.id, "loose.txt", "x")
+        autofolders.request(self.a.id, self.pa.id, now=NOW)
+        autofolders.request(self.b.id, self.pb.id, now=NOW)
+        first = chat.claim_next(NOW)
+        self.assertEqual(first.user_id, self.a.id)
+        self.assertIsNone(chat.claim_next(NOW))                 # the second plan waits for the first one
+        question = chat.send(self.a.id, self.pa.id, "a question", now=NOW)
+        self.assertEqual(chat.claim_next(NOW).chat_id, question.id)   # a chat question is not held up by the plan
+        chat.finish(first.chat_id, True, "nothing to do")
+        self.assertEqual(chat.claim_next(NOW).user_id, self.b.id)
+
     def test_a_chat_question_waits_for_a_slot_and_neither_fails_nor_loses_time(self):
         statusnote._LAST_SCAN["at"] = NOW + 10 ** 6        # no status round in these later minutes
         self.connect(self.a)

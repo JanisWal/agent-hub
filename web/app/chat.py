@@ -25,7 +25,7 @@ KEEP = 10                # messages shown per project
 MAX_STORED = 100         # messages kept per user, the oldest go first
 # "all": web and code together, code with the open internet; "apart": web search, code without internet.
 # Which one is the user's setting agents.net_in ("together"/"apart"). Old messages may still say "web".
-MODES = ("all", "apart")   # what a user may choose; "brief" (no tools) and "sort" (reading only) are the hub's own
+MODES = ("all", "apart")   # what a user may choose; "brief" (no tools) and "sort" (no web) are the hub's own
                            # jobs: status rounds and plans for the folders (statusnote.py, autofolders.py)
 NET_TO_MODE = {"together": "all", "apart": "apart"}
 # Why a question failed, read from the reason the runner sent (Janis, 14.11.2026: show a short text, not what Claude
@@ -190,6 +190,9 @@ def claim_next(now: int | None = None) -> ChatJob | None:
         # plan for the folders (Janis, 25.11.2026: the user waits in front of the dialog).
         free = agents.slot_free(conn)
         kinds = "" if free else f" AND kind IN ('status', '{autofolders.KIND}')"
+        # but only one plan at a time on the whole server: it may run for many minutes beside a run (memory of the Pi)
+        kinds += (f" AND NOT (kind = '{autofolders.KIND}' AND EXISTS (SELECT 1 FROM chat_messages r"
+                  f" WHERE r.status = 'running' AND r.kind = '{autofolders.KIND}'))")
         # a question of the user before a status round (it waits for the next poll, seconds)
         for row in conn.execute(f"SELECT * FROM chat_messages WHERE status = 'queued'{kinds}"
                                 " ORDER BY kind = 'status', id").fetchall():
