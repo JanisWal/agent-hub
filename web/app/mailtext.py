@@ -231,10 +231,11 @@ def send_link_mail(kind: str, user: User, token: str, seconds: int) -> bool:
     return mail.send_mail(user.email, subject, text, html)
 
 
-def send_test_mail(user: User) -> bool:
-    """A short mail to the owner that shows the mail settings work (set-up assistant); its button leads to the hub."""
+def send_test_mail(user: User) -> tuple[bool, str]:
+    """A short mail to the owner that shows the mail settings work (set-up assistant); its button leads to the hub.
+    (sent, reason): "no_address" without HUB_BASE_URL, else the reason of mail.send_mail_why."""
     base = mail.base_url()
     if not base:
-        return False
+        return False, "no_address"
     subject, text, html = build("test", user, base, 0)
-    return mail.send_mail(user.email, subject, text, html)
+    return mail.send_mail_why(user.email, subject, text, html)

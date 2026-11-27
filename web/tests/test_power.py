@@ -30,11 +30,11 @@ class PowerTest(unittest.TestCase):
     def test_only_the_owner_may_ask(self):
         for who in (self.admin, self.user):
             with self.assertRaises(PermissionError):
-                power.request_action(who, "reboot")
+                power.request_action(who, "poweroff")
         self.assertIsNone(power.claim_next())
 
     def test_unknown_actions_are_refused(self):
-        for action in ("", "halt", "reboot; rm -rf /", "REBOOT"):
+        for action in ("", "halt", "reboot", "poweroff; rm -rf /", "POWEROFF"):
             with self.assertRaises(ValueError):
                 power.request_action(self.owner, action)
         self.assertIsNone(power.claim_next())
@@ -46,9 +46,9 @@ class PowerTest(unittest.TestCase):
         self.assertIsNone(power.claim_next())
 
     def test_a_second_request_waits_for_the_first(self):
-        self.assertTrue(power.request_action(self.owner, "reboot"))
+        self.assertTrue(power.request_action(self.owner, "poweroff"))
         self.assertFalse(power.request_action(self.owner, "poweroff"))
-        self.assertEqual(power.claim_next()[1], "reboot")
+        self.assertEqual(power.claim_next()[1], "poweroff")
         self.assertTrue(power.request_action(self.owner, "poweroff"))   # the first one is taken, a new one may follow
         self.assertEqual(power.claim_next()[1], "poweroff")
 
@@ -57,8 +57,8 @@ class PowerTest(unittest.TestCase):
         later = time.time() + power.FRESH_SECONDS + 5
         with mock.patch.object(power.time, "time", return_value=later):
             self.assertIsNone(power.claim_next())
-            self.assertTrue(power.request_action(self.owner, "reboot"))   # the stale one does not block
-            self.assertEqual(power.claim_next()[1], "reboot")
+            self.assertTrue(power.request_action(self.owner, "poweroff"))   # the stale one does not block
+            self.assertEqual(power.claim_next()[1], "poweroff")
 
     def test_a_superadmin_may_ask_too(self):
         sup = users.get_by_id(users.create_user("super@example.com", "Sup3r!pass", role="superadmin").id)
@@ -71,19 +71,29 @@ class PowerTest(unittest.TestCase):
 
     # --- the routes
     def test_the_power_route(self):
-        answer = system.power_action(self.request(), "reboot", "Own3r!pass", self.owner)
+        answer = system.power_action(self.request(), "poweroff", "Own3r!pass", self.owner)
         self.assertEqual(answer, {"ok": True})
         claimed = runner.power_claim()
-        self.assertEqual((claimed["ok"], claimed["action"]), (True, "reboot"))
+        self.assertEqual((claimed["ok"], claimed["action"]), (True, "poweroff"))
         self.assertIsInstance(claimed["id"], int)
         self.assertEqual(runner.power_claim(), {"ok": True, "id": None, "action": None})
+
+    def test_restart_restarts_only_the_hubs_containers(self):
+        """Janis, 27.11.2026: on a shared server or a VM only the hub restarts, never the server."""
+        from app import hostjobs
+        self.assertEqual(system.power_action(self.request(), "reboot", "Own3r!pass", self.owner), {"ok": True})
+        self.assertIsNone(power.claim_next())                                # no command for the server
+        self.assertEqual(hostjobs.claim_next()["action"], "restart")
+        self.assertEqual(system.power_action(self.request(), "reboot", "Own3r!pass", self.owner).status_code, 409)
 
     def test_the_power_route_checks_who_what_and_the_password(self):
         self.assertEqual(system.power_action(self.request(), "reboot", "Adm1n!pass", self.admin).status_code, 403)
         self.assertEqual(system.power_action(self.request(), "halt", "Own3r!pass", self.owner).status_code, 400)
         self.assertEqual(system.power_action(self.request(), "reboot", "wrong", self.owner).status_code, 403)
         self.assertEqual(system.power_action(self.request(), "reboot", "", self.owner).status_code, 403)
+        from app import hostjobs
         self.assertIsNone(power.claim_next())   # nothing was asked
+        self.assertIsNone(hostjobs.claim_next())
 
     def test_a_backup_is_no_power_action_any_more(self):
         self.assertEqual(system.power_action(self.request(), "backup", "Own3r!pass", self.owner).status_code, 400)
@@ -91,7 +101,7 @@ class PowerTest(unittest.TestCase):
             power.request_action(self.owner, "backup")
 
     def test_a_second_request_gets_a_clear_answer(self):
-        system.power_action(self.request(), "reboot", "Own3r!pass", self.owner)
+        system.power_action(self.request(), "poweroff", "Own3r!pass", self.owner)
         again = system.power_action(self.request(), "poweroff", "Own3r!pass", self.owner)
         self.assertEqual(again.status_code, 409)
 

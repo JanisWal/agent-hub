@@ -1,5 +1,5 @@
-"""Fixed actions on the server itself (27.11.2026): backup, checking and putting back a backup, and the settings that live
-in `.env`. Runs as root in a short-lived container of the runner's image (launcher.build_hubctl_command), started by
+"""Fixed actions on the server itself (27.11.2026): backup, checking and putting back a backup, the settings that live
+in `.env`, and restarting the hub's containers. Runs as root in a short-lived container of the runner's image (launcher.build_hubctl_command), started by
 the runner for a job of the hub (web/app/hostjobs.py). Standard library plus pyrage (age encryption, as in the web
 service).
 
@@ -321,9 +321,10 @@ def _safe_name(name: str) -> bool:
             and any(name == top or (top.endswith("/") and name.startswith(top)) for top in TOP))
 
 
-def check_restore(paths: Paths, identity: str, upload: Path) -> dict:
+def check_restore(paths: Paths, identity: str, upload: Path, keep: bool = False) -> dict:
     """Open and check an uploaded backup; nothing of the running hub changes. Unpacked into the root-only job folder,
-    a summary for the page goes to `<data>/restore/summary.json` (no secrets in it)."""
+    a summary for the page goes to `<data>/restore/summary.json` (no secrets in it). `keep`: the file is one of the
+    server's own backups (put back from the list, 27.11.2026) and stays where it is."""
     import pyrage
     key = next((line.strip() for line in identity.splitlines() if line.strip().startswith("AGE-SECRET-KEY-")), "")
     try:
@@ -380,12 +381,13 @@ def check_restore(paths: Paths, identity: str, upload: Path) -> dict:
         (paths.staging / ".checked").write_text(json.dumps({"at": time.time()}))
     except BaseException as problem:
         shutil.rmtree(paths.staging, ignore_errors=True)
-        if str(problem) != "wrong_key":   # with the wrong key the same upload may be tried again with the right one
+        if str(problem) != "wrong_key" and not keep:   # with the wrong key the same upload may be tried again
             upload.unlink(missing_ok=True)
         raise
     finally:
         opened.unlink(missing_ok=True)
-    upload.unlink(missing_ok=True)
+    if not keep:
+        upload.unlink(missing_ok=True)
     folder = paths.data / "restore"
     folder.mkdir(parents=True, exist_ok=True)
     _give_web(folder)
@@ -496,10 +498,22 @@ def run(paths: Paths, job_id: int) -> int:
         if action == "backup":
             result = make_backup(paths, str(data.get("recipient", "")))
         elif action == "restore-check":
-            result = check_restore(paths, str(data.get("identity", "")), paths.data / "restore" / "upload.age")
+            source = str(data.get("source") or "")
+            if source:   # one of the server's own backups, by its name only
+                if not re.fullmatch(r"agent-hub-backup-\d{4}-\d{2}-\d{2}-\d{4}\.zip\.age", source):
+                    raise Failed("no_upload")
+                result = check_restore(paths, str(data.get("identity", "")), paths.backups / source, keep=True)
+            else:
+                result = check_restore(paths, str(data.get("identity", "")), paths.data / "restore" / "upload.age")
         elif action == "restore-apply":
             result = apply_restore(paths)
             return 0   # the result is in the new data (jobs/restore.json); this job's database moved aside
+        elif action == "restart":
+            # Only the hub's own containers, never the server (Janis, 27.11.2026: on a shared server or a VM the
+            # server must keep running). The answer comes first: the restart also restarts the web service.
+            write_result(paths, str(job_id), {"ok": True})
+            compose(paths, "restart")
+            return 0
         elif action == "settings":
             values = data.get("values")
             apply_settings(paths, values, lambda: write_result(paths, str(job_id), {"ok": True, "saved": sorted(values)}))

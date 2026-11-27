@@ -59,6 +59,7 @@
             note.textContent = note.dataset["done" + action.charAt(0).toUpperCase() + action.slice(1)];
             note.hidden = false;
             root.querySelectorAll("[data-power]").forEach(function (button) { button.disabled = true; });
+            if (action === "reboot") back(0);   // only the hub restarts: the page comes back by itself
             return;
           }
           return response.json().then(function (data) { show(data.message); }, function () { show(""); });
@@ -122,6 +123,14 @@
       remove.disabled = true;
       addrSend("/system/addresses/" + remove.dataset.addrRemove + "/remove");
     });
+  }
+
+  // After a restart of the hub: wait until it has gone down and answers again, then load the page anew.
+  function back(tries) {
+    setTimeout(function () {
+      fetch("/health", { credentials: "same-origin", cache: "no-store" })
+        .then(function (r) { if (r.ok && tries > 3) AgentHub.reload(); else back(tries + 1); }, function () { back(tries + 1); });
+    }, 3000);
   }
 
   var dialogs = { reboot: wire("reboot"), poweroff: wire("poweroff") };

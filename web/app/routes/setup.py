@@ -32,7 +32,7 @@ def setup_page(request: Request, step: str = ""):
         if step not in setup.OWNER_STEPS:
             step = "access"
         return setuppage.owner_page(user, step, _here(request))
-    if setup.via_tunnel(request):
+    if setup.via_tunnel(request) or not setup.from_home(request):
         raise HTTPException(404)   # never from the internet
     lang = _lang(request)
     if not setup.open_for(request):
@@ -83,25 +83,35 @@ def _owner(user: users.User):
 
 @router.post("/setup/settings")
 def save_settings(kind: str = Form(""), base_url: str = Form(""), tunnel_token: str = Form(""),
-                  resend_key: str = Form(""), mail_from: str = Form(""), user: users.User = Depends(api_user)):
-    """Reaching the hub (address, tunnel token) or mail (key, sender) into .env (a host job; the hub restarts).
-    Empty secret fields keep what is saved. 400 with `field` for a value that can not be right."""
+                  resend_key: str = Form(""), mail_from: str = Form(""), user: users.User = Depends(api_user),
+                  way: str = Form("")):
+    """Reaching the hub (way, address, tunnel token) or mail (key, sender) into .env (a host job; the hub restarts).
+    Empty secret fields keep what is saved. 400 with `field` for a value that can not be right.
+    Ways (27.11.2026): "home" (the server's address, http or https; a tunnel set before goes), "tunnel" (https and a
+    token, unless one is saved), "own" (an own https address behind an own proxy; a tunnel set before goes)."""
     denied = _owner(user)
     if denied:
         return denied
+    way = way if isinstance(way, str) else ""   # called directly (tests), a default is a Form object
     values = {}
     if kind == "access":
-        base_url = base_url.strip().rstrip("/")
-        # https (a domain through the tunnel) or http (the server's address in the home network, without a domain;
-        # 27.11.2026: mails need an address for their links, and a hub without a domain could not send any).
+        base_url, token = base_url.strip().rstrip("/"), tunnel_token.strip()
         if base_url and (not base_url.startswith(("https://", "http://")) or len(base_url) > 200
                          or any(c in base_url for c in " \"'<>")):
             return _bad("base_url")
+        if way in ("tunnel", "own") and not base_url.startswith("https://"):
+            return _bad("base_url")   # from the internet only encrypted
+        if way == "home" and not base_url:
+            return _bad("base_url")
+        if token and (len(token) < 40 or not token.isascii() or " " in token):
+            return _bad("tunnel_token")
+        if way == "tunnel" and not token and not setup.current()["tunnel"]:
+            return _bad("tunnel_token")
         values["HUB_BASE_URL"] = base_url
-        if tunnel_token.strip():
-            if len(tunnel_token.strip()) < 40 or not tunnel_token.strip().isascii() or " " in tunnel_token.strip():
-                return _bad("tunnel_token")
-            values["TUNNEL_TOKEN"] = tunnel_token.strip()
+        if token and way in ("", "tunnel"):
+            values["TUNNEL_TOKEN"] = token
+        if way in ("home", "own"):
+            values["TUNNEL_TOKEN"] = ""   # the tunnel stops
     elif kind == "mail":
         mail_from = mail_from.strip()
         if mail_from and ("@" not in mail_from or len(mail_from) > 200 or "\n" in mail_from):
@@ -149,8 +159,14 @@ def probe_mail(user: users.User = Depends(api_user)):
     denied = _owner(user)
     if denied:
         return denied
-    sent = mailtext.send_test_mail(user)
-    text = i18n.t(user.language, "setup_mail_sent" if sent else "setup_mail_failed", email=user.email)
+    sent, reason = mailtext.send_test_mail(user)
+    lang = user.language
+    if sent:
+        text = i18n.t(lang, "setup_mail_sent", email=user.email)
+    elif reason in ("no_address", "not_configured", "network"):
+        text = i18n.t(lang, f"setup_mail_{reason}")
+    else:   # what Resend said, e.g. that the domain is not verified yet
+        text = i18n.t(lang, "setup_mail_refused", reason=reason)
     return ok(found=sent, text=text)
 
 

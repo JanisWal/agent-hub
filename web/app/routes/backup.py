@@ -66,7 +66,7 @@ def backup_state(user: users.User = Depends(api_user)):
     denied = _system(user)
     if denied:
         return denied
-    return ok(job=backuppage.job_text(user.language), list=backuppage.list_rows(user.language))
+    return ok(job=backuppage.job_text(user.language), list=backuppage.list_rows(user.language, user.role == "owner"))
 
 
 @router.post("/backup/download")
@@ -119,14 +119,21 @@ async def upload(request: Request, offset: int = 0, total: int = 0, user: users.
 
 
 @router.post("/restore/check")
-def check(request: Request, key: str = Form(""), user: users.User | None = Depends(restorer)):
-    """Open the uploaded backup with the recovery key (a host job); nothing changes yet."""
+def check(request: Request, key: str = Form(""), user: users.User | None = Depends(restorer), source: str = Form("")):
+    """Open the uploaded backup, or one of the server's own backups (`source`, its name in the list; 27.11.2026),
+    with the recovery key (a host job); nothing changes yet."""
+    source = source if isinstance(source, str) else ""   # called directly (tests), a default is a Form object
     line = backups.key_line(key)
     if not line:
         return JSONResponse({"ok": False, "reason": "bad_key"}, status_code=400)
-    if not backups.uploaded():
+    payload = {"identity": line}
+    if source:
+        if user is None or not any(item["name"] == source for item in backups.listing()):
+            return JSONResponse({"ok": False, "reason": "no_upload"}, status_code=409)
+        payload["source"] = source
+    elif not backups.uploaded():
         return JSONResponse({"ok": False, "reason": "no_upload"}, status_code=409)
-    job = hostjobs.request("restore-check", {"identity": line}, user.id if user else None)
+    job = hostjobs.request("restore-check", payload, user.id if user else None)
     return ok(job=job) if job else JSONResponse({"ok": False, "reason": "busy"}, status_code=409)
 
 

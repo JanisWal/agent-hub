@@ -27,3 +27,22 @@
 @media (max-width: 520px) { .glass.setup { padding: calc(var(--space) * 3); } }
 /* `hidden` must win over the display of .actions and friends (the second row of buttons appears only after saving). */
 .setup [hidden] { display: none !important; }
+/* "Reachable": the three ways as rows to choose (radio inside), the chosen one with the accent edge; guides fold open. */
+.setup-ways { display: grid; gap: 8px; margin: 0 0 calc(var(--space) * 2); }
+.setup-way { display: grid; grid-template-columns: 22px 1fr; column-gap: 10px; align-items: start; margin: 0; padding: 12px 14px;
+  cursor: pointer; color: var(--text); background: var(--field); border: 1px solid var(--glass-border); border-radius: var(--radius-button);
+  transition: border-color 0.2s, box-shadow 0.2s; }
+.setup-way input { grid-row: span 2; width: 18px; height: 18px; min-height: 0; margin: 2px 0 0; padding: 0; accent-color: var(--accent); }
+.setup-way:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.setup-way-title { font-weight: 700; }
+.setup-way-text { grid-column: 2; margin-top: 2px; font-size: 0.86rem; color: var(--muted); }
+.setup-badge { margin-left: 8px; padding: 2px 8px; font-size: 0.72rem; font-weight: 700; color: var(--on-accent);
+  background: var(--accent); border-radius: 999px; vertical-align: 1px; }
+.setup-guide { margin: 0 0 calc(var(--space) * 2); padding: 10px 14px; background: color-mix(in srgb, var(--field) 60%, transparent);
+  border: 1px solid var(--glass-border); border-radius: var(--radius-button); }
+.setup-guide summary { cursor: pointer; font-weight: 600; color: var(--text); }
+.setup-guide ol { margin: 10px 0 2px; padding-left: 20px; font-size: 0.9rem; line-height: 1.45; color: var(--text); }
+.setup-guide li + li { margin-top: 6px; }
+.setup-guide li { -webkit-user-select: text; user-select: text; }
+.setup-back { display: block; margin: -8px 0 12px auto; width: max-content; }
+.setup-way-title, .setup-way-text, .setup-badge, .setup-guide summary { -webkit-user-select: none; user-select: none; }

@@ -73,7 +73,8 @@ NOW = """<div class="bk-now" data-backup-now data-url="/backup/now" data-state="
 </div>"""
 
 
-def list_rows(lang: str) -> str:
+def list_rows(lang: str, owner: bool = False) -> str:
+    """The backups with "download" and, for the owner, "restore" (put it back without downloading, 27.11.2026)."""
     found = backups.listing()
     if not found:
         return f'<li class="bk-empty muted">{esc(i18n.t(lang, "bk_list_empty"))}</li>'
@@ -83,7 +84,9 @@ def list_rows(lang: str) -> str:
         rows.append(f'<li class="bk-row"><span class="bk-when">{esc(day)} {esc(item["time"])}</span>'
                     f'<span class="bk-size">{esc(size_text(lang, item["size"]))}</span>'
                     f'<button class="link inline" type="button" data-backup-get="{esc(item["name"])}">'
-                    f'{esc(i18n.t(lang, "bk_download"))}</button></li>')
+                    f'{esc(i18n.t(lang, "bk_download"))}</button>'
+                    + (f'<button class="link inline" type="button" data-backup-restore="{esc(item["name"])}">'
+                       f'{esc(i18n.t(lang, "bk_restore"))}</button>' if owner else "") + '</li>')
     return "".join(rows)
 
 
@@ -186,7 +189,7 @@ def dialog(lang: str, owner: bool) -> str:
     """The whole backup in one dialog of the administration. The key and putting a backup back are the owner's; a
     superadmin sees the hour, "back up now" and the list."""
     return fill(DIALOG, lang, KEY=key_part(lang) if owner else "", HOUR=hour_field(lang),
-                NOW=now_part(lang), LIST=list_rows(lang),
+                NOW=now_part(lang), LIST=list_rows(lang, owner),
                 RESTORE=restore_part(lang, True) if owner else "")
 
 
