@@ -118,6 +118,38 @@ class ModelListTest(Base):
         self.assertFalse(models.save(self.a.id, "mistral", None))               # could not be asked: nothing changes
         self.assertEqual(catalog.provider("mistral").default_model, "mistral-small-2603")
 
+    def test_mistral_aliases_become_one_model_with_a_short_name_and_a_hint(self):
+        # the list Mistral gave on 26.11.2026: (id, the shared "name"); vibe-cli ids are Mistral Vibe's own
+        listed = [("deepseek-v4-1-flash-1017", "deepseek-v4-1-flash-1017"), ("glm-5-2", "glm-5-2"),
+                  ("zai-glm-5-2", "glm-5-2"), ("zai-glm-5-3", "zai-glm-5-3"), ("zai-glm-5", "zai-glm-5-3"),
+                  ("zai-glm-5-3-flash", "zai-glm-5-3-flash"), ("ministral-14b-2512", "ministral-14b-2512"),
+                  ("ministral-3b-2512", "ministral-3b-2512"), ("ministral-8b-2512", "ministral-8b-2512"),
+                  ("mistral-large-2512", "mistral-large-2512"), ("mistral-large-4", "mistral-large-4"),
+                  ("mistral-large-4-0", "mistral-large-4"), ("mistral-medium", "mistral-medium-latest"),
+                  ("mistral-medium-3-5", "mistral-medium-latest"), ("mistral-medium-3.5", "mistral-medium-latest"),
+                  ("mistral-medium-3", "mistral-medium-latest"), ("mistral-medium-2604", "mistral-medium-latest"),
+                  ("mistral-vibe-cli-with-tools", "mistral-medium-latest"), ("mistral-small-2603", "mistral-small-2603"),
+                  ("mistral-vibe-cli-fast", "mistral-small-2603")]
+        caps = {"completion_chat": True, "function_calling": True}
+        got = models.normalize("mistral", [{"id": i, "name": n, "capabilities": caps} for i, n in listed])
+        self.assertEqual([(m["id"], m["name"], m.get("hint", "")) for m in got], [
+            ("deepseek-v4-1-flash-1017", "DeepSeek V4.1 Flash", "fast"), ("glm-5-2", "GLM 5.2", "thorough"),
+            ("zai-glm-5-3", "GLM 5.3", "thorough"), ("zai-glm-5-3-flash", "GLM 5.3 Flash", "fast"),
+            ("ministral-14b-2512", "Ministral 14B", "fast"), ("ministral-3b-2512", "Ministral 3B", "fast"),
+            ("ministral-8b-2512", "Ministral 8B", "fast"), ("mistral-large-2512", "Mistral Large", "thorough"),
+            ("mistral-large-4", "Mistral Large 4", "thorough"), ("mistral-medium-2604", "Mistral Medium", "balanced"),
+            ("mistral-small-2603", "Mistral Small", "fast")])
+        self.assertEqual(got[8]["efforts"], ["low", "medium", "high"])       # the starting list's model keeps its levels
+        self.assertEqual(got[9]["efforts"], ["none"])                        # unknown levels: none to choose
+        for entry in got:                                                    # every entry fits the catalog's patterns
+            self.assertTrue(catalog._ID.fullmatch(entry["id"]) and catalog._NAME.fullmatch(entry["name"]))
+
+    def test_two_mistral_models_with_one_short_name_keep_their_dates(self):
+        caps = {"completion_chat": True, "function_calling": True}
+        got = models.normalize("mistral", [{"id": "mistral-medium-2604", "capabilities": caps},
+                                           {"id": "mistral-medium-2508", "capabilities": caps}])
+        self.assertEqual([m["name"] for m in got], ["Mistral Medium 2604", "Mistral Medium 2508"])
+
     def test_a_model_outside_his_list_can_not_be_asked(self):
         self.chatgpt(self.a)
         models.save(self.a.id, "chatgpt", self.CHATGPT[:1])

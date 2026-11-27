@@ -72,7 +72,7 @@ SEED = {
         "models": [
             {"id": "mistral-small-2603", "name": "Mistral Small", "hint": "fast", "efforts": ["none", "high"],
              "default_effort": "none", "images": True},
-            {"id": "mistral-large-4", "name": "Mistral Large", "hint": "thorough", "efforts": ["low", "medium", "high"],
+            {"id": "mistral-large-4", "name": "Mistral Large 4", "hint": "thorough", "efforts": ["low", "medium", "high"],
              "default_effort": "high", "images": True},
         ],
     },

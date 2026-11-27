@@ -179,7 +179,7 @@ class PageTest(Base):
         self.assertIn(i18n.t("de", "effort_none"), both)
         self.assertLess(both.index('value="fable"'), both.index('value="mistral-small-2603"'))   # Claude first
         chosen = ui.model_picker("de", "manager", "mistral-large-4", "low")           # chosen, not connected
-        self.assertIn('value="mistral-large-4" label="Mistral Large" data-ai="Mistral" selected', chosen)
+        self.assertIn('value="mistral-large-4" label="Mistral Large 4" data-ai="Mistral" selected', chosen)
 
     def test_the_chat_names_the_ai_of_the_chosen_model(self):
         agents.configure(self.a.id, "chef", model="mistral-large-4")
