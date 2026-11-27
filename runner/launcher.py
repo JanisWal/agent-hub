@@ -126,7 +126,8 @@ def build_hubctl_command(job_id: int, places: dict) -> list[str]:
     name = str(places.get("name", ""))
     if not _PROJECT.fullmatch(name):
         raise ValueError("bad project name")
-    mounts = ["-v", "/var/run/docker.sock:/var/run/docker.sock", "-v", f"{base}:{base}"]
+    # The server's clock zone: the backup's name carries the local time (27.11.2026: it said 21:45 at 22:45).
+    mounts = ["-v", "/var/run/docker.sock:/var/run/docker.sock", "-v", f"{base}:{base}", "-v", "/etc/localtime:/etc/localtime:ro"]
     if not (backups + "/").startswith(base.rstrip("/") + "/"):
         mounts += ["-v", f"{backups}:{backups}"]
     env = {"HUB_BASE_DIR": base, "HUB_APP_DIR": inside["app"], "HUB_DATA_DIR": inside["data"],

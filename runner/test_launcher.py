@@ -49,7 +49,8 @@ class PowerCommandTest(unittest.TestCase):
         self.assertIn("/mnt/usb/backups:/mnt/usb/backups", cmd)       # the backup folder lies outside: its own mount
         self.assertNotIn("--privileged", cmd)
         inside = dict(self.PLACES, backups="/opt/agent-hub/backups")
-        self.assertEqual(L.build_hubctl_command(1, inside).count("-v"), 2)   # socket and base only
+        self.assertEqual(L.build_hubctl_command(1, inside).count("-v"), 3)   # socket, base and the clock zone only
+        self.assertIn("/etc/localtime:/etc/localtime:ro", cmd)
 
     def test_the_hubctl_command_takes_no_odd_places(self):
         for key, bad in (("app", "/etc"), ("data", "/opt/agent-hub/../etc"), ("work", "relative"),
