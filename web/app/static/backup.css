@@ -15,7 +15,7 @@
 .bk-check input { width: 20px; height: 20px; min-height: 0; margin: 1px 0 0; padding: 0; accent-color: var(--accent); flex: 0 0 auto; }
 .bk-line { display: grid; grid-template-columns: 120px 1fr; gap: calc(var(--space) * 1.5); align-items: start; margin-bottom: calc(var(--space) * 2); }
 .bk-hour.setting { margin: 0; }
-.bk-hour .select-menu { max-height: 220px; }   /* 24 hours: a short list that scrolls inside the dialog */
+.bk-hour .select-menu { max-height: 200px; top: auto; bottom: calc(100% + 6px); transform-origin: bottom center; }   /* 24 hours: a short list, upwards (below, the dialog ends) */
 .bk-now button { width: 100%; min-height: 52px; }
 .bk-note { margin: var(--space) 0 0; font-size: 0.88rem; }
 .bk-list { margin: 0 0 var(--space); padding: 0; list-style: none; max-height: 240px; overflow-y: auto; }
