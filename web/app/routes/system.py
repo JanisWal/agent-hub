@@ -1,4 +1,4 @@
-"""The system actions of owner and superadmin (restart, shut down, manual backup) and server settings (upload); the page itself is
+"""The system actions of owner and superadmin (restart, shut down; the backup is routes/backup.py) and server settings (upload); the page itself is
 /admin, routes/admin.py."""
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import JSONResponse
@@ -13,15 +13,14 @@ router = APIRouter()
 def power_action(
     request: Request, action: str = Form(""), confirm: str = Form(""), user: users.User = Depends(api_user)
 ):
-    """Restart or shut down (needs the password of the one who asks), or start a backup (harmless: no password)."""
+    """Restart or shut down (needs the password of the one who asks)."""
     if not user.is_system_admin:
         return fail(403)
     if action not in power.ACTIONS:
         return fail(400)
-    if action != "backup":
-        denied = reauth(request, user, confirm)
-        if denied:
-            return denied
+    denied = reauth(request, user, confirm)
+    if denied:
+        return denied
     try:
         started = power.request_action(user, action)
     except PermissionError:
@@ -108,11 +107,3 @@ def address_remove(entry_id: int, user: users.User = Depends(api_user)):
         return denied
     netaddresses.remove(entry_id)
     return ok(list=systempage.address_list(user.language))
-
-
-@router.get("/system/backup")
-def backup_status(user: users.User = Depends(api_user)):
-    """How the latest manual backup is doing: none, running, ok or failed (the page asks until it is over)."""
-    if not user.is_system_admin:
-        return fail(403)
-    return ok(state=power.backup_state())

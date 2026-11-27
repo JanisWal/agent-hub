@@ -12,8 +12,24 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from . import i18n, throttle, users
 
 COOKIE_NAME = "session"
-# Set HUB_SECURE_COOKIE=1 in production (HTTPS via the Cloudflare tunnel).
-COOKIE_SECURE = os.environ.get("HUB_SECURE_COOKIE") == "1"
+# HUB_SECURE_COOKIE: "1" = the site is only served over HTTPS (the live Pi, behind the tunnel); "auto" (new installs,
+# 27.11.2026) = over HTTPS through the tunnel and over plain HTTP at the server's address in the home network: the
+# cookie is "secure" exactly when the request came over HTTPS; anything else = never (tests, a local instance).
+SECURE_MODE = os.environ.get("HUB_SECURE_COOKIE", "").strip()
+COOKIE_SECURE = SECURE_MODE == "1"
+
+
+def is_https(request) -> bool:
+    """Did this request come over HTTPS? Only Cloudflare (through the tunnel) says so, in X-Forwarded-Proto."""
+    if COOKIE_SECURE:
+        return True
+    if SECURE_MODE != "auto":
+        return False
+    return throttle.via_proxy(request) and request.headers.get("x-forwarded-proto", "").lower() == "https"
+
+
+def cookie_secure(request) -> bool:
+    return is_https(request)
 
 
 class LoginRequired(Exception):

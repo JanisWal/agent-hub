@@ -33,7 +33,7 @@ from . import i18n, mail
 from .layout import esc, fill
 from .users import User
 
-KINDS = ("reset", "invite")
+KINDS = ("reset", "invite", "test")   # test: the set-up checks that mail goes out (27.11.2026)
 
 # The base, written inline. Values from DESIGN.md, except the button (rule 4).
 LIGHT = {
@@ -228,4 +228,13 @@ def send_link_mail(kind: str, user: User, token: str, seconds: int) -> bool:
         mail.log.warning("mail not sent: HUB_BASE_URL is not set")
         return False
     subject, text, html = build(kind, user, f"{base}/reset/{token}", seconds)
+    return mail.send_mail(user.email, subject, text, html)
+
+
+def send_test_mail(user: User) -> bool:
+    """A short mail to the owner that shows the mail settings work (set-up assistant); its button leads to the hub."""
+    base = mail.base_url()
+    if not base:
+        return False
+    subject, text, html = build("test", user, base, 0)
     return mail.send_mail(user.email, subject, text, html)

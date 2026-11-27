@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
-from .. import board, checks, dashboard, files, i18n, memory, projectpage, projects, statusnote, ui, users
+from .. import board, checks, dashboard, files, i18n, memory, projectpage, projects, setup, statusnote, ui, users
 from ..deps import api_user, fail, ok, page_user, reauth, redirect
 
 router = APIRouter()
@@ -10,6 +10,9 @@ router = APIRouter()
 
 @router.get("/", response_class=HTMLResponse)
 def index(page: str = "1", user: users.User = Depends(page_user)):
+    from . import setup as setup_routes
+    if user.role == "owner" and setup_routes.started() and not setup.is_done():
+        return redirect("/setup")   # the assistant of a new hub is not finished yet (setup.py)
     pages = projects.layout(user.id)
     first_project = not user.had_project and not pages
     briefs = statusnote.for_dashboard(user.id, [p.id for page_ in pages for p in page_])

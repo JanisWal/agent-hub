@@ -1,7 +1,7 @@
 """HTML of the owner's system page."""
 from html import escape as esc
 
-from . import db, i18n, netaddresses, serversettings, sysstats, users
+from . import backuppage, db, i18n, netaddresses, serversettings, sysstats, users
 from .icons import icon
 from .layout import fill
 from .ui import info_dot
@@ -36,6 +36,7 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
   <div class="sys-list glass">
     %STATS%
     %BACKUP%
+    %SETUP%
     <div class="sys-row sys-upload" data-url="/system/upload">
       <span class="sys-name">%t.sys_upload%</span>
       <div class="sys-fields">%UPLOAD_FIELDS%</div>
@@ -53,8 +54,6 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
     %POWEROFF%
   </div>
   <p class="sys-note" id="sys-upload-note" role="status" hidden data-failed="%t.sys_upload_failed%"></p>
-  <p class="sys-note" id="sys-backup-note" role="status" hidden
-     data-running="%t.sys_backup_running%" data-ok="%t.sys_backup_ok%" data-failed="%t.sys_backup_failed%"></p>
   <p class="sys-note" id="sys-power-note" role="status" hidden
      data-done-reboot="%t.sys_reboot_done%" data-done-poweroff="%t.sys_poweroff_done%"></p>
 </section>
@@ -84,7 +83,8 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
     </div>
   </form>
 </dialog>
-%ADDRESS_DIALOG%"""
+%ADDRESS_DIALOG%
+%BACKUP_DIALOG%"""
 
 # Addresses in the server's network that further AIs may use (netaddresses.py, Janis 21.11.2026): a list and a form to
 # add one, in a dialog behind the row "Freigegebene Adressen" (system.js). Only the owner sees both.
@@ -225,7 +225,9 @@ def render(user: User) -> str:
     return fill(SYSTEM, lang, STATS=_stats(lang), UPLOAD_FIELDS=fields, ADDRESSES=row, ADDRESS_DIALOG=dialog, LIMITS=_limit_rows(lang),
                 UPLOAD_INFO=info_dot(t("sys_upload"), upload_info),
                 AI_FIELD=ai_field, AI_INFO=info_dot(t("sys_ai"), t("sys_ai_info")),
-                BACKUP=_action(lang, "sys_backup", "data-backup"),
+                BACKUP=_action(lang, "bk_open", "data-backup-open"),
+                BACKUP_DIALOG=backuppage.dialog(lang, user.role == "owner"),
+                SETUP=_action(lang, "setup_open", "data-setup-open", info=False) if user.role == "owner" else "",
                 SKINS=_action(lang, "sys_skins", "disabled", info=False),   # placeholder (Janis, 18.11.2026): comes later
                 REBOOT=_action(lang, "sys_reboot", 'data-power="reboot"'),
                 POWEROFF=_action(lang, "sys_poweroff", 'data-power="poweroff"'))

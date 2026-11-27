@@ -10,7 +10,7 @@ Also: sign-ins of Claude (link and code between the hub and `claude setup-token`
 tokens.py), API keys of other AIs (Mistral: checked with the provider and kept encrypted, tokens.ProviderKeys), the
 manager chat and the agent runs (one container per question or run, Claude Code or Mistral Vibe, always with a
 ticket instead of the credential: adapters.py), the work folders of the tasks and merging approved work
-(workspace.py), restart, shutdown and backup of the Pi, and deleting the saved credentials of users who
+(workspace.py), restart and shutdown of the Pi, the fixed actions on the server (hubctl.py: backup, restore, settings), and deleting the saved credentials of users who
 disconnected. Every chat answer and every agent run runs in a thread of its own, so the loop goes on with sign-ins
 and keys meanwhile. How many containers run at once the hub decides (the owner's setting "AI runs",
 serversettings.ai_parallel): it hands out no job while all slots are taken. The runner always asks, the hub never
@@ -39,7 +39,7 @@ from . import adapters, apikeys, codex, custom, launcher, login, mistral, models
 LOGIN_TIMEOUT_AFTER_CODE = 90   # seconds Claude Code gets to accept the code
 LINK_TIMEOUT = 30               # seconds until the sign-in prints its link
 THOUGHTS_EVERY = 1.5            # seconds between two reports of new thoughts of a chat answer
-POWER_TIMEOUT = 240             # seconds a manual backup may take (the nightly one needs a few seconds)
+POWER_TIMEOUT = 240             # seconds a power command or the start of a hubctl container may take
 # The answer when a saved credential is there but this server can not read it: the server's fault, nothing is deleted.
 UNREADABLE = "Server: the saved credential can not be read (HUB_TOKEN_KEY)."
 LATER = "Server: the AI's sign-in service could not be reached to renew the sign-in; nothing was deleted."
@@ -929,13 +929,50 @@ class Runner:
         print(f"runner: {action} of the Pi on the owner's request", file=sys.stderr, flush=True)
         try:
             done = self.run_power(command)
-            success, problem = done.returncode == 0, (done.stderr or "").strip()
+            if done.returncode != 0:
+                print(f"runner: {action} failed: {(done.stderr or '').strip()}", file=sys.stderr, flush=True)
         except subprocess.TimeoutExpired:
-            success, problem = False, "timeout"
-        if not success:
-            print(f"runner: {action} failed: {problem}", file=sys.stderr, flush=True)
-        if action == "backup" and job.get("id"):   # restart and shutdown end this very Pi: nothing to report
-            self.api.call("POST", f"/runner/power/{int(job['id'])}/result", success="1" if success else "0")
+            print(f"runner: {action} timed out", file=sys.stderr, flush=True)
+
+    # --- fixed actions on the server (web/app/hostjobs.py, runner/hubctl.py): the runner only starts the container;
+    # the job's payload (it may hold a key) goes into a root-only file the container reads and deletes at once. The
+    # container answers the hub itself (a file in the data folder), so a restart of the runner in between loses nothing.
+    def host_places(self) -> dict:
+        env = os.environ
+        return {"base": env.get("HUB_BASE_HOST_DIR", "/opt/agent-hub"),
+                "app": env.get("HUB_APP_HOST_DIR", "/opt/agent-hub/workspaces/agent-hub"),
+                "data": env.get("HUB_DATA_HOST_DIR", "/opt/agent-hub/workspaces/agent-hub/data"),
+                "claude": env.get("HUB_CLAUDE_DIR", "/opt/agent-hub/claude"),
+                "work": env.get("HUB_WORK_DIR", "/opt/agent-hub/work"),
+                "backups": env.get("HUB_BACKUP_HOST_DIR", "/opt/agent-hub/hub-backups"),
+                "name": env.get("HUB_NAME", "agent-hub")}
+
+    def handle_host(self) -> None:
+        job = self.api.call("POST", "/runner/host/claim").get("job")
+        if not job:
+            return
+        job_id, action = int(job.get("id", 0)), job.get("action")
+        started = False
+        try:
+            if action not in launcher.HUBCTL_ACTIONS:
+                raise ValueError("unknown action")
+            places = self.host_places()
+            command = launcher.build_hubctl_command(job_id, places)
+            folder = Path(places["work"]) / ".hubctl"
+            folder.mkdir(parents=True, exist_ok=True)
+            os.chmod(folder, 0o700)
+            payload = folder / f"{job_id}.json"
+            with os.fdopen(os.open(payload, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as out:
+                json.dump({"action": action, "payload": job.get("payload") or {}}, out)
+            done = self.run_power(command)
+            started = done.returncode == 0
+            if not started:
+                payload.unlink(missing_ok=True)
+                print(f"runner: hubctl {action} did not start: {(done.stderr or '').strip()[:300]}", file=sys.stderr, flush=True)
+        except (ValueError, OSError, subprocess.TimeoutExpired) as problem:
+            print(f"runner: hubctl {action} did not start: {type(problem).__name__}: {problem}", file=sys.stderr, flush=True)
+        if not started:
+            self.api.call("POST", f"/runner/host/{job_id}/failed")
 
     def handle_wake(self) -> None:
         """Switch a device on (Wake-on-LAN): the hub hands out each MAC once (web/app/devices.claim_wake)."""
@@ -957,6 +994,7 @@ class Runner:
     def step(self) -> None:
         self.handle_hello()
         self.handle_power()
+        self.handle_host()
         self.handle_wake()
         self.handle_wipes()
         self.handle_expired()

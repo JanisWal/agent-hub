@@ -6,14 +6,14 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .deps import COOKIE_SECURE, ApiLoginRequired, LoginRequired, PasswordChangeRequired, fail, redirect
-from .routes import (account, accounts, admin, ai, auth, board, chat, checks, claude, devices, exports, files, manager,
-                     memory, projects, resets, roles, runner, system, todos)
+from .deps import ApiLoginRequired, LoginRequired, PasswordChangeRequired, fail, is_https, redirect
+from .routes import (account, accounts, admin, ai, auth, backup, board, chat, checks, claude, devices, exports, files,
+                     manager, memory, projects, resets, roles, runner, setup, system, todos)
 
 # No /docs, /redoc or /openapi.json: the site is public, nobody needs the list of routes.
 app = FastAPI(title="Agent-Hub", docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=Path(__file__).parent / "static"), name="static")
-for router in (auth.router, resets.router, account.router, accounts.router, admin.router, projects.router, board.router, checks.router, devices.router, exports.router, files.router, chat.router, manager.router, memory.router, roles.router, todos.router, claude.router, ai.router, system.router, runner.router):
+for router in (auth.router, resets.router, account.router, accounts.router, admin.router, projects.router, board.router, checks.router, devices.router, exports.router, files.router, chat.router, manager.router, memory.router, roles.router, todos.router, claude.router, ai.router, system.router, runner.router, setup.router, backup.router):
     app.include_router(router)
 
 
@@ -64,7 +64,7 @@ async def safety_headers(request: Request, call_next):
     headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
     if not request.url.path.startswith("/static/"):
         headers.setdefault("Cache-Control", "no-store")  # pages hold personal data
-    if COOKIE_SECURE:  # we are served over HTTPS
+    if is_https(request):  # we are served over HTTPS (not over the server's address in the home network)
         headers.setdefault("Strict-Transport-Security", "max-age=31536000")
     return response
 

@@ -6,6 +6,8 @@ LOCK_SECONDS. Login and the password check before deleting a project share one c
 A correct password does not reset the counter: otherwise an attacker with an account of his
 own could log in between guesses. The counter simply runs out with the window.
 """
+import os
+import socket
 import time
 
 from fastapi import Request
@@ -20,11 +22,35 @@ LOCK_SECONDS = 60 * 60       # how long an IP stays locked
 # (each kind has its own counter).
 
 
+# The tunnel's host name (HUB_TRUSTED_PROXY, new installs: "tunnel", 27.11.2026). Where the hub's port is open in the
+# home network, anybody there could send CF-Connecting-IP himself and dodge the lock with a new made-up address for
+# every guess; then the header counts only on requests from the tunnel's container. Empty (the live Pi, whose port
+# is only open on the Pi itself): the header always counts, as before.
+TRUSTED_PROXY = os.environ.get("HUB_TRUSTED_PROXY", "").strip()
+_proxy_ip = {"ip": None, "at": 0.0}
+
+
+def via_proxy(request: Request) -> bool:
+    """Did this request come from the tunnel (so its forwarded headers may be believed)?"""
+    if not request.headers.get("cf-connecting-ip"):
+        return False
+    if not TRUSTED_PROXY:
+        return True
+    now = time.time()
+    if now - _proxy_ip["at"] > 60:
+        try:
+            _proxy_ip["ip"] = socket.gethostbyname(TRUSTED_PROXY)
+        except OSError:
+            _proxy_ip["ip"] = None
+        _proxy_ip["at"] = now
+    return bool(request.client) and request.client.host == _proxy_ip["ip"]
+
+
 def client_ip(request: Request) -> str:
     """The visitor's IP. Behind the Cloudflare tunnel the real address is in CF-Connecting-IP
-    (Cloudflare sets it itself; port 8000 is only reachable from the Pi and the tunnel)."""
+    (Cloudflare sets it itself; believed only from the tunnel, `via_proxy`)."""
     forwarded = request.headers.get("cf-connecting-ip", "").strip()
-    if forwarded:
+    if forwarded and via_proxy(request):
         return forwarded
     return request.client.host if request.client else "unknown"
 

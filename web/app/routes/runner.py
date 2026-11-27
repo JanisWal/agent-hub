@@ -14,10 +14,11 @@ import hashlib
 import json
 import hmac
 import os
+import time
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 
-from .. import agents, ai_link, chat, claude_link, devices, exports, models, power, throttle, users
+from .. import agents, ai_link, chat, claude_link, devices, exports, hostjobs, models, power, throttle, users
 from ..deps import fail, ok
 
 TOKEN_HASH_ENV = "HUB_RUNNER_TOKEN_HASH"
@@ -36,6 +37,10 @@ def runner_only(request: Request) -> None:
     if scheme.lower() != "bearer" or not token.strip() or not hmac.compare_digest(digest, expected):
         throttle.record_failure(key)
         raise HTTPException(status_code=401)
+    SEEN["at"] = time.time()
+
+
+SEEN = {"at": 0.0}   # when the runner last asked (the set-up assistant shows whether the services are up)
 
 
 router = APIRouter(prefix="/runner", dependencies=[Depends(runner_only)])
@@ -193,7 +198,7 @@ def wipe_done(user_id: int):
 
 @router.post("/power/claim")
 def power_claim():
-    """What the owner asked for on the Pi (restart, shutdown, backup; once), or null."""
+    """What the owner asked for on the Pi (restart, shutdown; once), or null."""
     job = power.claim_next()
     return ok(id=None if job is None else job[0], action=None if job is None else job[1])
 
@@ -204,10 +209,16 @@ def wake_claim():
     return ok(mac=devices.claim_wake())
 
 
-@router.post("/power/{request_id}/result")
-def power_result(request_id: int, success: str = Form("0")):
-    """How a manual backup ended."""
-    return ok() if power.finish(request_id, success == "1") else fail(409)
+@router.post("/host/claim")
+def host_claim():
+    """A job on the server (backup, putting a backup back, settings; hostjobs.py), once with its payload, or null."""
+    return ok(job=hostjobs.claim_next())
+
+
+@router.post("/host/{job_id}/failed")
+def host_failed(job_id: int):
+    """The runner could not start the container of a job."""
+    return ok() if hostjobs.failed_to_start(job_id) else fail(409)
 
 
 @router.post("/logins/{user_id}/expired")

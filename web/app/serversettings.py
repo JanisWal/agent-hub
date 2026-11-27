@@ -30,11 +30,12 @@ CHOICES = {
     "chat_minutes": (3, 5, 10, 20),                  # time of one chat answer
     "view_mb": (200, 500, 1000, 5000),               # the user's files copied for one job (runner/view.py)
     "agent_browser": (0, 1),                         # the agents' test browser (runner/hub_browser.js)
+    "backup_hour": tuple(range(24)),                 # the hour of the nightly backup, server time (backups.py, 27.11.2026)
 }
 AI_REST, EXPORT_MB = CHOICES["ai_rest"], CHOICES["export_mb"]
 DEFAULTS = {"upload_parallel": 6, "upload_request_mb": 32, "ai_parallel": 1, "ai_rest": 30, "export_mb": 25,
             "run_memory_mb": 480, "run_cpus": 2, "run_pids": 512, "run_silence_minutes": 15, "run_max_hours": 4, "test_minutes": 10, "chat_minutes": 3, "view_mb": 200,
-            "agent_browser": 1}
+            "agent_browser": 1, "backup_hour": 3}
 
 
 def _get(key: str) -> int:

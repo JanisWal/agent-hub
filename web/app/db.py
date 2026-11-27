@@ -345,6 +345,19 @@ CREATE TABLE IF NOT EXISTS ai_usage (
 );
 CREATE INDEX IF NOT EXISTS ai_usage_by_user ON ai_usage (user_id, created_at);
 CREATE INDEX IF NOT EXISTS ai_usage_by_project ON ai_usage (project_id, role);
+-- Jobs on the server itself (hostjobs.py, runner/hubctl.py, 27.11.2026): backup, putting a backup back, settings in
+-- .env. The payload may hold a key and is cleared when the runner takes the job; `detail` is the answer (no secrets).
+CREATE TABLE IF NOT EXISTS host_jobs (
+    id           INTEGER PRIMARY KEY,
+    action       TEXT NOT NULL,
+    payload      TEXT NOT NULL DEFAULT '{}',
+    requested_by INTEGER,
+    auto         INTEGER NOT NULL DEFAULT 0,
+    created_at   INTEGER NOT NULL,
+    taken_at     INTEGER,
+    result       TEXT,
+    detail       TEXT NOT NULL DEFAULT '{}'
+);
 CREATE TABLE IF NOT EXISTS server_settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -417,7 +430,7 @@ NEW_COLUMNS = {
     # the user (via 'user'); `blocks`: the task waits for the answer; `recommended`: the option he suggests (-1 none).
     "questions": {"via": "TEXT NOT NULL DEFAULT 'user'", "blocks": "INTEGER NOT NULL DEFAULT 0",
                   "recommended": "INTEGER NOT NULL DEFAULT -1", "answered_by": "TEXT NOT NULL DEFAULT ''"},
-    "power_requests": {"result": "TEXT"},                    # how a manual backup ended: 'ok' or 'failed' (power.py)
+    "power_requests": {"result": "TEXT"},                    # unused since 27.11.2026 (the backup is a host job now)
     "claude_connections": {"expires_at": "INTEGER"},         # when the user's Claude token runs out (claude_link.py)
     # The broker's side of a device (devices.py, 17.11.2026): login, the trusted host key and address, the system it
     # runs, what the AI may do, the found updates. `key_enc` holds the key or the password (`auth`), sealed by vault.py.

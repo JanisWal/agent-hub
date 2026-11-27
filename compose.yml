@@ -1,3 +1,8 @@
+# Every place, port and budget comes from .env (27.11.2026, deploy/steps/40-env.sh writes it for a new install); the
+# defaults are the values of the first hub (the Raspberry Pi at /opt/agent-hub/workspaces/agent-hub), so it runs
+# unchanged. The project's name keeps container and image names apart from other programs on the same Docker.
+name: ${HUB_NAME:-agent-hub}
+
 services:
   web:
     build: ./web
@@ -6,13 +11,21 @@ services:
     user: "9000:9000"
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    mem_limit: 256m
+    mem_limit: ${HUB_WEB_MEM:-256m}
     ports:
-      - "127.0.0.1:8000:8000"   # only the Pi itself; the tunnel reaches the hub over the Docker network
+      # The first hub: only the Pi itself (the tunnel reaches it over the Docker network). A new install opens it in the
+      # home network (HUB_BIND=0.0.0.0) for the set-up assistant and for use at the server's address.
+      - "${HUB_BIND:-127.0.0.1}:${HUB_PORT:-8000}:8000"
     volumes:
-      - ./data:/data
+      - ${HUB_DATA_HOST_DIR:-./data}:/data
+      - ${HUB_BACKUP_HOST_DIR:-/opt/agent-hub/hub-backups}:/backups:ro   # listing and downloading backups (backups.py)
+      - /etc/localtime:/etc/localtime:ro                                 # the server's clock zone (the nightly backup)
     environment:
-      HUB_SECURE_COOKIE: "1"     # the site is served over HTTPS by Cloudflare
+      # "1": only HTTPS (the first hub, behind Cloudflare); "auto": HTTPS through the tunnel and plain HTTP at the
+      # server's address in the home network (deps.is_https).
+      HUB_SECURE_COOKIE: "${HUB_SECURE_COOKIE:-1}"
+      HUB_TRUSTED_PROXY: "${HUB_TRUSTED_PROXY:-}"   # the tunnel's name: only its forwarded headers count (throttle.py)
+      HUB_TUNNEL_ON: "${TUNNEL_TOKEN:+1}"           # the set-up says whether a tunnel is set; the token stays out
       # Mail (password reset). Values come from .env next to this file; empty = mail features off.
       RESEND_API_KEY: "${RESEND_API_KEY:-}"
       MAIL_FROM: "${MAIL_FROM:-}"
@@ -56,12 +69,19 @@ services:
       HUB_TICKETS_DIR: /tickets
       HUB_WORK_DIR: "${HUB_WORK_HOST_DIR:-/opt/agent-hub/work}"   # the projects' code and the tasks' folders (runner/workspace.py)
       HUB_FILES_SOURCE: /hub-files   # the hub's file storage, read-only: copied into each job's /files (runner/view.py)
+      # The places runner/hubctl.py works in (backup, putting one back, settings in .env), host paths; app, data,
+      # claude and work lie inside the base folder.
+      HUB_NAME: "${HUB_NAME:-agent-hub}"
+      HUB_BASE_HOST_DIR: "${HUB_BASE_HOST_DIR:-/opt/agent-hub}"
+      HUB_APP_HOST_DIR: "${HUB_APP_HOST_DIR:-/opt/agent-hub/workspaces/agent-hub}"
+      HUB_DATA_HOST_DIR: "${HUB_DATA_HOST_DIR:-/opt/agent-hub/workspaces/agent-hub/data}"
+      HUB_BACKUP_HOST_DIR: "${HUB_BACKUP_HOST_DIR:-/opt/agent-hub/hub-backups}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - "${HUB_WORK_HOST_DIR:-/opt/agent-hub/work}:${HUB_WORK_HOST_DIR:-/opt/agent-hub/work}"
       - "${HUB_CLAUDE_HOST_DIR:-/opt/agent-hub/claude}:${HUB_CLAUDE_HOST_DIR:-/opt/agent-hub/claude}"
       - tickets:/tickets
-      - ./data/files:/hub-files:ro
+      - ${HUB_DATA_HOST_DIR:-./data}/files:/hub-files:ro
     networks:
       - default
     depends_on:
@@ -80,7 +100,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    mem_limit: 96m
+    mem_limit: ${HUB_EGRESS_MEM:-96m}
     environment:
       HUB_TICKETS_DIR: /tickets
     volumes:
@@ -106,12 +126,32 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
-    mem_limit: 128m
+    mem_limit: ${HUB_BROKER_MEM:-128m}
     environment:
       HUB_BROKER_TOKEN: "${HUB_BROKER_TOKEN:-}"
       HUB_VAULT_IDENTITY: "${HUB_VAULT_IDENTITY:-}"
     networks:
       - devices
+    restart: unless-stopped
+
+  # The Cloudflare tunnel of a new install (27.11.2026): it runs when .env has TUNNEL_TOKEN and COMPOSE_PROFILES=tunnel
+  # (the set-up assistant writes both, runner/hubctl.py). The first hub keeps its own tunnel outside this file. Fixed
+  # version (CLAUDE.md); the token comes from the environment, so it is not on the command line.
+  tunnel:
+    image: cloudflare/cloudflared:2026.10.7
+    profiles: [tunnel]
+    command: ["tunnel", "--no-autoupdate", "--protocol", "http2", "run"]
+    environment:
+      TUNNEL_TOKEN: "${TUNNEL_TOKEN:-}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    networks:
+      web:
+        aliases: [tunnel]
+    depends_on:
+      - web
     restart: unless-stopped
 
 # The tickets of running runs (runner/tokens.py): in memory only (tmpfs), never on the SD card or in a backup.
@@ -126,6 +166,7 @@ volumes:
 
 networks:
   web:
+    name: ${HUB_WEB_NETWORK:-web}   # made by the installer (deploy/steps/50-build.sh); shared with the tunnel
     external: true
   devices:                         # web <-> broker only; the broker's way to the devices (17.11.2026)
     name: agent-hub-devices
