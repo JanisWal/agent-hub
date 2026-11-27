@@ -61,7 +61,8 @@ MEMORY = (
     "<append>text</append></memory-edit>: the heading as it stands in the file (a new one is added), at most 3 blocks. "
     "Only a new file, or one that changes almost completely, comes whole: <memory file=\"NAME.md\">text</memory>. "
     "<memory file=\"ARCHIVE.md\">one line each: what was dropped or changed, and why</memory> is added to the history "
-    "under today's date. Leave all of it out when nothing changed."
+    "under today's date. Leave all of it out when nothing changed. Only these tags save memory: never write a memory "
+    "file with a tool, and never say it is saved without them."
 )
 FILES_OPEN = (
     "Files: /files (read-only) holds the project's files in their folders; INDEX.md lists them with their labels, "
@@ -197,9 +198,10 @@ ALLOWED = {
 }
 
 
-def tools_text(tools: dict, net: str) -> str:
+def tools_text(tools: dict, net: str, work: bool = False) -> str:
     """One sentence naming the tools there are (catalog.tools_of), "" when there are none. `net`: "all" (web and code
-    together: the shell has public internet), "apart" (the shell has none) or "brief" (no tools for this job)."""
+    together: the shell has public internet), "apart" (the shell has none) or "brief" (no tools for this job).
+    `work`: an agent run with its folder /work; only there the AI writes files (the chat saves memory by tags)."""
     if net == "brief":
         return BRIEF
     has = lambda tool: tools.get(tool, "none") != "none"
@@ -212,7 +214,7 @@ def tools_text(tools: dict, net: str) -> str:
         parts.append("a shell " + ("with the public internet (never the home network)" if net == "all"
                                    else "without internet"))
     if has("read"):
-        parts.append("reading files" + (" and writing them in /work" if has("write") else ""))
+        parts.append("reading files" + (" and writing them in /work" if has("write") and work else ""))
     if has("look"):
         parts.append("looking at images and PDFs")
     if not parts:
@@ -366,7 +368,7 @@ def run(conn: sqlite3.Connection, job, brief: bool = False) -> str:
     """The package of one agent run (agents.Job), from the data of the task's owner only."""
     tools = toolcheck.effective(job.provider)
     allowed = ", ".join(workflow.RESULTS.get(job.role, ()))
-    rules = [RUN, tools_text(tools, "brief" if brief else ("all" if job.net == "together" else "apart"))
+    rules = [RUN, tools_text(tools, "brief" if brief else ("all" if job.net == "together" else "apart"), work=True)
              + _blind(job.model)]
     if not brief and job.role != "chef":
         rules.append(RUN_FILES)

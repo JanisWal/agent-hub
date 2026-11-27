@@ -105,6 +105,10 @@ class PromptTest(unittest.TestCase):
         self.assertNotIn("reading web pages", prompts.tools_text(everything, "apart"))
         self.assertEqual(prompts.tools_text(everything, "brief"), prompts.BRIEF)
         self.assertEqual(prompts.tools_text({t: "none" for t in catalog.TOOLS}, "all"), prompts.BRIEF)
+        # the chat writes no files (27.11.2026): only a run is told about /work; memory goes by tags only
+        self.assertNotIn("writing", prompts.tools_text(everything, "all"))
+        self.assertIn("writing them in /work", prompts.tools_text(everything, "all", work=True))
+        self.assertIn("never write a memory file with a tool", prompts.MEMORY)
         self.assertEqual(catalog.tools_of("mistral")["look"], "hub")
         self.assertEqual(set(catalog.tools_of("nobody").values()), {"none"})
         with self.assertRaises(ValueError):
