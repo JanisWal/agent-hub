@@ -160,6 +160,7 @@ class BackupTest(unittest.TestCase):
         self.assertEqual(str(wrong.exception), "offset")
         with self.assertRaises(ValueError):
             backups.receive(3, b"defg", 6)                                       # more than said
+        self.assertEqual(backups.received(), 3)                              # where the page goes on after a lost answer
         self.assertEqual(backups.receive(3, b"def", 6), "done")
         self.assertTrue(backups.uploaded())
         self.assertEqual((backups.restore_dir() / "upload.age").read_bytes(), b"abcdef")

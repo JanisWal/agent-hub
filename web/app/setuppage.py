@@ -128,10 +128,11 @@ def _field(label: str, name: str, value: str = "", kind: str = "text", placehold
             f' autocomplete="off" spellcheck="false" maxlength="500">{hint_html}</label>')
 
 
-def access_content(lang: str) -> str:
+def access_content(lang: str, here: str = "") -> str:
     t = lambda key, **kw: i18n.t(lang, key, **kw)   # noqa: E731
     now = setup.current()
-    fields = (_field(t("setup_address"), "base_url", now["base_url"], "url", "https://hub.example.de")
+    fields = (_field(t("setup_address"), "base_url", now["base_url"] or here, "url", "https://hub.example.de",
+                     t("setup_address_hint"))
               + _field(t("setup_token"), "tunnel_token", "", "password", "eyJ…",
                        t("setup_token_kept") if now["tunnel"] else ""))
     again = f'<button type="button" data-probe-again>{esc(t("setup_probe_again"))}</button>'
@@ -152,11 +153,11 @@ def mail_content(lang: str) -> str:
                 EXTRA="", AGAIN=test)
 
 
-def owner_page(user: User, step: str) -> str:
+def owner_page(user: User, step: str, here: str = "") -> str:
     lang = user.language
     t = lambda key, **kw: i18n.t(lang, key, **kw)   # noqa: E731
     if step == "access":
-        body = _card(lang, step, "setup_access", t("setup_access_text"), access_content(lang), t("setup_access_info"))
+        body = _card(lang, step, "setup_access", t("setup_access_text"), access_content(lang, here), t("setup_access_info"))
     elif step == "mail":
         body = _card(lang, step, "setup_mail", t("setup_mail_text"), mail_content(lang), t("setup_mail_info"))
     elif step == "backup":

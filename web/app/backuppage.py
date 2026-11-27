@@ -90,7 +90,7 @@ def list_rows(lang: str) -> str:
 RESTORE = """<div class="restore" data-restore data-owner="%OWNER%" data-base="/restore"
      data-uploading="%t.rs_uploading%" data-failed="%t.setup_failed%" data-err-wrong_key="%t.rs_err_wrong_key%"
      data-err-bad_key="%t.rs_err_bad_key%" data-err-damaged="%t.rs_err_damaged%" data-err-size="%t.rs_err_size%"
-     data-err-apply="%t.rs_err_apply%" data-err-newer="%t.rs_newer%" data-de="%DE%">
+     data-err-apply="%t.rs_err_apply%" data-err-newer="%t.rs_newer%" data-err-busy="%t.bk_busy%" data-de="%DE%">
   <div data-step="pick">
     <p class="muted">%t.rs_text%</p>
     <input type="file" accept=".age" hidden data-restore-file>

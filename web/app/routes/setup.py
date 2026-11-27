@@ -31,7 +31,7 @@ def setup_page(request: Request, step: str = ""):
             raise HTTPException(404)
         if step not in setup.OWNER_STEPS:
             step = "access"
-        return setuppage.owner_page(user, step)
+        return setuppage.owner_page(user, step, _here(request))
     if setup.via_tunnel(request):
         raise HTTPException(404)   # never from the internet
     lang = _lang(request)
@@ -69,6 +69,14 @@ def make_owner(request: Request, email: str = Form(""), password: str = Form("")
     return response
 
 
+def _here(request: Request) -> str:
+    """The address this page was opened at, as a suggestion for the public address (never stored by itself)."""
+    if setup.via_tunnel(request):
+        return ""
+    host = request.headers.get("host", "")
+    return f"http://{host}" if host and all(c.isalnum() or c in ".:-[]" for c in host) else ""
+
+
 def _owner(user: users.User):
     return None if user.role == "owner" else fail(403)
 
@@ -84,7 +92,10 @@ def save_settings(kind: str = Form(""), base_url: str = Form(""), tunnel_token: 
     values = {}
     if kind == "access":
         base_url = base_url.strip().rstrip("/")
-        if base_url and (not base_url.startswith("https://") or len(base_url) > 200 or any(c in base_url for c in " \"'<>")):
+        # https (a domain through the tunnel) or http (the server's address in the home network, without a domain;
+        # 27.11.2026: mails need an address for their links, and a hub without a domain could not send any).
+        if base_url and (not base_url.startswith(("https://", "http://")) or len(base_url) > 200
+                         or any(c in base_url for c in " \"'<>")):
             return _bad("base_url")
         values["HUB_BASE_URL"] = base_url
         if tunnel_token.strip():

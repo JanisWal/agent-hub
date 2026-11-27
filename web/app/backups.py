@@ -176,6 +176,12 @@ def receive(offset: int, piece: bytes, total: int) -> str:
     return "more"
 
 
+def received() -> int:
+    """How many bytes of an upload the server has (the page goes on from there after a lost answer)."""
+    part = restore_dir() / "upload.part"
+    return part.stat().st_size if part.exists() else 0
+
+
 def uploaded() -> bool:
     return (restore_dir() / "upload.age").is_file()
 
