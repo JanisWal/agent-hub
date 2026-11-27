@@ -5,11 +5,12 @@ sees the new tree and only "Apply" moves anything. Labels stay as they are (file
 The flow: `request` queues a job of the kind 'structure' in chat_messages (like a status round, statusnote.py), on the
 model and level of the user's manager, with his usual fallback to his next AI. Normally the AI reads only the list of
 the project's files (number, path, kind, size) on stdin and gets no tools (mode 'brief'); with "include contents" it
-also gets the read-only /files of a chat (mode 'sort': reading tools only, no web, no code, more steps) and looks inside. It
+also gets the read-only /files of a chat (mode 'sort': no web, no code, more steps; Claude and the hub's loop only
+read, Vibe and Codex keep their shell in the closed container as in 'apart') and looks inside. It
 answers with lines <move id="12" to="Backgrounds/Dark"/> (reply.moves; to="" = the top). `save` keeps that answer as
 the plan. Like a status round the job does not wait for a free AI slot, and it takes none (agents.slot_free): it starts
-beside agent runs and chat answers and holds none of them up. It may take longer than a chat answer
-(serversettings.sort_seconds).
+beside agent runs and chat answers and holds none of them up; only one plan runs at a time on the whole server
+(chat.claim_next), the others wait. It may take longer than a chat answer (serversettings.sort_seconds).
 
 The plan is checked by the hub, never trusted: only finished rows of the user's own project, at most MAX_DEPTH
 folders, the memory files (label memory at the top) never move and no other memory file moves to the top (it would
