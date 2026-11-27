@@ -22,6 +22,7 @@
   var state = "none";
   var pollTimer = null;
   var busy = false;
+  var askedHere = false;   // a failure is shown only for a plan this dialog waited for, never for an old one
 
   function say(message) { errorBox.textContent = message || ""; errorBox.hidden = !message; }
   function show(step) { steps.forEach(function (el) { el.hidden = el.dataset.step !== step; }); }
@@ -39,7 +40,8 @@
   }
 
   function failureText(kind, withContents) {
-    if (withContents && (kind === "timeout" || kind === "steps")) return text.failLong;
+    if (kind === "timeout") return text.failTimeout;
+    if (withContents && kind === "steps") return text.failLong;
     return kind === "auth" ? text.failAuth : kind === "limit" ? text.failLimit : text.failed;
   }
 
@@ -72,6 +74,7 @@
     goButton.disabled = false;
     cancelButton.textContent = text.cancel;
     if (state === "queued" || state === "running") {
+      askedHere = true;
       show("working");
       goButton.hidden = true;
       cancelButton.textContent = text.closeLabel;
@@ -90,7 +93,8 @@
     } else {
       show("start");
       goButton.textContent = text.start;
-      say(state === "failed" ? failureText(data.failure, data.contents) : "");
+      say(state === "failed" && askedHere ? failureText(data.failure, data.contents) : "");
+      askedHere = false;
     }
   }
   function look() {
@@ -100,6 +104,7 @@
 
   openButton.addEventListener("click", function () {
     say("");
+    askedHere = false;
     show(state === "done" ? "plan" : state === "none" || state === "failed" ? "start" : "working");
     if (!dialog.open) dialog.showModal();
     look();
