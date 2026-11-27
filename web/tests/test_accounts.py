@@ -288,7 +288,7 @@ class AccountsTest(unittest.TestCase):
         self.assertNotIn("/admin", ui.settings_bar(self.user))                                 # normal users: no button at all
         for who in (self.owner, self.admin, self.user):
             bar = ui.settings_bar(who)
-            self.assertNotIn('<a class="link"', bar)                       # the password lives on the account page
+            self.assertNotIn('href="/password"', bar)                      # the password lives on the account page
             for old in ('href="/users"', 'href="/system"'):
                 self.assertNotIn(old, bar)
 
