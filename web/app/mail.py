@@ -36,9 +36,15 @@ def base_url() -> str:
 def send_mail(to: str, subject: str, text: str, html: str | None = None) -> bool:
     """Send a mail with a plain-text part and, if given, an HTML part. True on success; False
     (with a log line) if not configured or the service refused. Never raises, never logs the key."""
+    return send_mail_why(to, subject, text, html)[0]
+
+
+def send_mail_why(to: str, subject: str, text: str, html: str | None = None) -> tuple[bool, str]:
+    """`send_mail` with the reason when it fails, for the set-up's test mail (27.11.2026): "not_configured",
+    "network", or what Resend answered (its `message`, at most 200 characters; Resend never repeats the key)."""
     if not configured():
         log.warning("mail not sent: RESEND_API_KEY or MAIL_FROM is not set")
-        return False
+        return False, "not_configured"
     message = {"from": os.environ["MAIL_FROM"], "to": [to], "subject": subject, "text": text}
     if html:
         message["html"] = html
@@ -55,9 +61,15 @@ def send_mail(to: str, subject: str, text: str, html: str | None = None) -> bool
     )
     try:
         with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-            return 200 <= response.status < 300
+            return (True, "") if 200 <= response.status < 300 else (False, f"HTTP {response.status}")
     except urllib.error.HTTPError as problem:
-        log.warning("mail refused by Resend: HTTP %s %s", problem.code, problem.read(300).decode(errors="replace"))
+        body = problem.read(600).decode(errors="replace")
+        log.warning("mail refused by Resend: HTTP %s %s", problem.code, body[:300])
+        try:
+            said = str(json.loads(body).get("message", ""))
+        except (ValueError, AttributeError):
+            said = ""
+        return False, (f"HTTP {problem.code}: {said}" if said else f"HTTP {problem.code}")[:200]
     except (urllib.error.URLError, OSError) as problem:
         log.warning("mail not sent: %s", problem)
-    return False
+        return False, "network"

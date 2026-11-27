@@ -81,6 +81,12 @@
     var listError = section.querySelector("[data-download-error]");
     var wanted = "";
     list.addEventListener("click", function (event) {
+      var back = event.target.closest("[data-backup-restore]");
+      if (back) {   // put one of the server's own backups back: straight to the key (backup.js, restore part below)
+        var restore = document.querySelector("[data-restore]");
+        if (restore) restore.dispatchEvent(new CustomEvent("restore-from", { detail: back.getAttribute("data-backup-restore") }));
+        return;
+      }
       var get = event.target.closest("[data-backup-get]");
       if (!get) return;
       wanted = get.getAttribute("data-backup-get");
@@ -196,6 +202,13 @@
       send(0);
     });
 
+    var source = "";   // the name of one of the server's own backups, or "" for an uploaded file
+    root.addEventListener("restore-from", function (event) {
+      source = event.detail || "";
+      steps(root, "key");
+      stepError("key", "");
+      root.querySelector("[data-restore-key]").focus();
+    });
     var keyField = root.querySelector("[data-restore-key]");
     var keyFile = root.querySelector("[data-restore-keyfile]");
     root.querySelector("[data-restore-keypick]").addEventListener("click", function () { keyFile.click(); });
@@ -211,7 +224,7 @@
       getJson(base + "/state?job=" + job).then(function (data) {
         if (data.stage === "checking" && tries < 1200) { setTimeout(function () { waitCheck(job, tries + 1); }, 2000); return; }
         if (data.stage === "failed") {
-          if (data.upload && (data.reason === "wrong_key" || data.reason === "bad_key")) {
+          if ((data.upload || source) && (data.reason === "wrong_key" || data.reason === "bad_key")) {
             steps(root, "key");
             stepError("key", why(data.reason));
           } else fail(data.reason || "failed");
@@ -222,7 +235,7 @@
     }
     root.querySelector("[data-restore-check]").addEventListener("click", function () {
       stepError("key", "");
-      post(base + "/check", { key: keyField.value }).then(function (data) {
+      post(base + "/check", { key: keyField.value, source: source }).then(function (data) {
         if (!data.ok) { stepError("key", why(data.reason)); return; }
         keyField.value = "";
         steps(root, "checking");
@@ -261,7 +274,7 @@
     });
 
     root.querySelectorAll("[data-restore-cancel]").forEach(function (button) {
-      button.addEventListener("click", function () { post(base + "/cancel").then(function () { steps(root, "pick"); }); });
+      button.addEventListener("click", function () { source = ""; post(base + "/cancel").then(function () { steps(root, "pick"); }); });
     });
     root.querySelector("[data-restore-again]").addEventListener("click", function () {
       getJson(base + "/state").then(show, function () { steps(root, "pick"); });

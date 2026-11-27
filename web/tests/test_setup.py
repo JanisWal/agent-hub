@@ -37,6 +37,10 @@ class SetupTest(unittest.TestCase):
     # --- before there is an owner
     def test_open_only_without_owner_not_through_the_tunnel_and_for_an_hour(self):
         self.assertTrue(setup.open_for(request()))
+        for home in ("10.0.0.5", "172.20.0.1", "127.0.0.1", "100.98.163.27", "fd00::5", "::ffff:192.168.1.9"):
+            self.assertTrue(setup.open_for(request(ip=home)), home)
+        for internet in ("203.0.113.9", "8.8.8.8", "2a00:1450::1", "::ffff:8.8.8.8", "unknown"):
+            self.assertFalse(setup.open_for(request(ip=internet)), internet)   # a server with a public address
         self.assertFalse(setup.open_for(request(**{"cf-connecting-ip": "203.0.113.9"})))
         self.assertFalse(setup.open_for(request(), now=setup.STARTED + setup.WINDOW_SECONDS + 1))
         users.create_user("someone@example.com", "Own3r!pass12", role="owner")
@@ -53,6 +57,8 @@ class SetupTest(unittest.TestCase):
         with self.assertRaises(HTTPException) as refused:
             routes.setup_page(request(**{"cf-connecting-ip": "203.0.113.9"}))
         self.assertEqual(refused.exception.status_code, 404)
+        with self.assertRaises(HTTPException):
+            routes.setup_page(request(ip="203.0.113.9"))                       # straight from the internet
         with mock.patch.object(setup, "STARTED", time.time() - setup.WINDOW_SECONDS - 5):
             closed = routes.setup_page(request())
         self.assertEqual(closed.status_code, 403)
@@ -122,6 +128,45 @@ class SetupTest(unittest.TestCase):
         self.assertEqual(hostjobs.claim_next()["payload"], {"values": {"MAIL_FROM": "Agent-Hub <noreply@example.de>"}})
         admin = users.create_user("admin@example.com", "Adm1n!pass12", role="admin")
         self.assertEqual(routes.save_settings("access", "", "", "", "", admin).status_code, 403)
+
+    def test_the_three_ways_to_reach_the_hub(self):
+        self.make_owner()
+        owner = users.check_login("owner@example.com", "Own3r!pass12")
+        save = lambda way, base, token="": routes.save_settings("access", base, token, "", "", owner, way)   # noqa: E731
+        token = "eyJ" + "b" * 80
+        self.assertEqual(save("home", "").status_code, 400)                          # the address is needed
+        self.assertTrue(save("home", "http://192.168.1.20:8080")["ok"])
+        self.assertEqual(hostjobs.claim_next()["payload"]["values"],
+                         {"HUB_BASE_URL": "http://192.168.1.20:8080", "TUNNEL_TOKEN": ""})   # a tunnel set before stops
+        hostjobs.end_open("settings", "x")
+        self.assertEqual(save("tunnel", "http://hub.example.de", token).status_code, 400)   # from outside only https
+        self.assertEqual(save("tunnel", "https://hub.example.de").status_code, 400)          # no token saved yet
+        self.assertTrue(save("tunnel", "https://hub.example.de", token)["ok"])
+        self.assertEqual(hostjobs.claim_next()["payload"]["values"], {"HUB_BASE_URL": "https://hub.example.de",
+                                                                       "TUNNEL_TOKEN": token})
+        hostjobs.end_open("settings", "x")
+        self.assertEqual(save("own", "http://203.0.113.5:8080").status_code, 400)
+        self.assertTrue(save("own", "https://hub.example.de")["ok"])
+        self.assertEqual(hostjobs.claim_next()["payload"]["values"], {"HUB_BASE_URL": "https://hub.example.de",
+                                                                       "TUNNEL_TOKEN": ""})
+        html = routes.setup_page(request({deps.COOKIE_NAME: users.create_session(owner.id)}), "access")
+        for way in ("home", "tunnel", "own"):
+            self.assertIn(f'value="{way}"', html)
+        self.assertIn("setup-guide", html)
+        self.assertIn(i18n.t("de", "setup_later"), html)                              # a way out of the first set-up
+        setup.finish()
+        self.assertIn('href="/admin"', routes.setup_page(request({deps.COOKIE_NAME: users.create_session(owner.id)}), "mail"))
+
+    def test_the_test_mail_says_why_it_did_not_go_out(self):
+        self.make_owner()
+        owner = users.check_login("owner@example.com", "Own3r!pass12")
+        with mock.patch.object(routes.mailtext, "send_test_mail", return_value=(False, "no_address")):
+            self.assertEqual(routes.probe_mail(owner)["text"], i18n.t("de", "setup_mail_no_address"))
+        with mock.patch.object(routes.mailtext, "send_test_mail",
+                               return_value=(False, "HTTP 403: The example.de domain is not verified.")):
+            self.assertIn("is not verified", routes.probe_mail(owner)["text"])
+        with mock.patch.object(routes.mailtext, "send_test_mail", return_value=(True, "")):
+            self.assertTrue(routes.probe_mail(owner)["found"])
 
     def test_the_start_page_sends_the_owner_back_until_the_set_up_is_finished(self):
         self.make_owner()

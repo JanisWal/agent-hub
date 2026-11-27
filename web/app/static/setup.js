@@ -53,6 +53,25 @@
     return wait(3000).then(ask).then(function (state) { return wait(4000).then(healthy).then(function () { return state; }); });
   }
 
+  // "Reachable": three ways (home network, tunnel, own address). The chosen one shows its guide and fields, and the
+  // address field takes its example and format.
+  document.querySelectorAll('[data-setup-form="access"]').forEach(function (form) {
+    var address = form.querySelector("[data-address]");
+    var hint = address && address.parentNode.querySelector("[data-hint]");
+    var here = form.querySelector('input[name="here"]');
+    function choose(first) {
+      var picked = form.querySelector('input[name="way"]:checked');
+      if (!picked) return;
+      form.querySelectorAll("[data-way]").forEach(function (part) { part.hidden = part.getAttribute("data-way") !== picked.value; });
+      address.placeholder = picked.dataset.placeholder || "";
+      if (hint) hint.textContent = picked.dataset.hintText || "";
+      if (!first && picked.value === "home" && here && here.value && !/^http:/.test(address.value)) address.value = here.value;
+      if (!first && picked.value !== "home" && /^http:/.test(address.value)) address.value = "";
+    }
+    form.addEventListener("change", function (event) { if (event.target.name === "way") choose(false); });
+    choose(true);
+  });
+
   document.querySelectorAll("[data-setup-form]").forEach(function (form) {
     var error = form.querySelector("[data-error]");
     var note = form.querySelector("[data-probe-note]");

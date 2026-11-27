@@ -12,9 +12,9 @@ from pathlib import Path
 
 from . import db
 
-ACTIONS = ("backup", "restore-check", "restore-apply", "settings")
+ACTIONS = ("backup", "restore-check", "restore-apply", "settings", "restart")
 FRESH_SECONDS = 600   # a job nobody fetched within this long is void (the runner was away)
-TIMEOUT = {"backup": 3 * 3600, "restore-check": 3600, "restore-apply": 1800, "settings": 600}
+TIMEOUT = {"backup": 3 * 3600, "restore-check": 3600, "restore-apply": 1800, "settings": 600, "restart": 600}
 
 
 def results_dir() -> Path:
@@ -55,6 +55,7 @@ def busy(now: int | None = None) -> bool:
 
 
 def _end(conn, job_id: int, success: bool, detail: dict) -> None:
+    conn.execute("PRAGMA secure_delete = ON")
     conn.execute("UPDATE host_jobs SET result = ?, detail = ?, payload = '{}' WHERE id = ? AND result IS NULL",
                  ("ok" if success else "failed", json.dumps(detail), job_id))
 
@@ -72,6 +73,9 @@ def claim_next(now: int | None = None) -> dict | None:
         row = _open(conn, now)
         if row is None or row["taken_at"] is not None:
             return None
+        # The payload may hold a key: secure_delete makes SQLite overwrite the old text on disk instead of leaving it in
+        # a free page of the database file (27.11.2026).
+        conn.execute("PRAGMA secure_delete = ON")
         payload = conn.execute("SELECT payload FROM host_jobs WHERE id = ?", (row["id"],)).fetchone()[0]
         taken = conn.execute("UPDATE host_jobs SET taken_at = ?, payload = '{}' WHERE id = ? AND taken_at IS NULL",
                              (now, row["id"]))

@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import JSONResponse
 
-from .. import netaddresses, power, serversettings, systempage, sysstats, users
+from .. import hostjobs, netaddresses, power, serversettings, systempage, sysstats, users
 from ..deps import api_user, error, fail, ok, reauth
 
 router = APIRouter()
@@ -16,11 +16,13 @@ def power_action(
     """Restart or shut down (needs the password of the one who asks)."""
     if not user.is_system_admin:
         return fail(403)
-    if action not in power.ACTIONS:
+    if action not in ("reboot", *power.ACTIONS):
         return fail(400)
     denied = reauth(request, user, confirm)
     if denied:
         return denied
+    if action == "reboot":   # the hub's containers only, never the server (hubctl "restart", 27.11.2026)
+        return ok() if hostjobs.request("restart", {}, user.id) is not None else error(user.language, "err_power_busy", 409)
     try:
         started = power.request_action(user, action)
     except PermissionError:

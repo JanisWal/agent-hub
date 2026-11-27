@@ -121,9 +121,9 @@ class RunnerTest(unittest.TestCase):
         self.runner.run_power = lambda command: ran.append(command) or types.SimpleNamespace(returncode=0, stderr="")
         self.runner.handle_power()
         self.assertEqual(ran, [])                                               # nothing asked: nothing happens
-        self.api.power = "reboot"
+        self.api.power = "poweroff"
         self.runner.handle_power()
-        self.assertEqual(ran, [launcher.build_power_command("reboot")])
+        self.assertEqual(ran, [launcher.build_power_command("poweroff")])
 
     def test_waking_sends_one_fixed_command_with_the_checked_mac(self):
         ran = []
@@ -176,7 +176,7 @@ class RunnerTest(unittest.TestCase):
 
     def test_restart_and_shutdown_report_nothing(self):
         self.runner.run_power = lambda command: types.SimpleNamespace(returncode=0, stderr="")
-        for action in ("reboot", "poweroff"):
+        for action in ("poweroff",):
             self.api.power = action
             self.runner.handle_power()
         self.assertEqual(self.api.posted("/result"), [])

@@ -67,9 +67,8 @@ CHAT_MODES = {
 # Only these two fixed commands exist; nothing from the request reaches the command line but the choice.
 # The backup is a job of runner/hubctl.py since 27.11.2026 (build_hubctl_command), no systemd unit any more.
 POWER_COMMANDS = {
-    "reboot": ["systemctl", "--no-block", "reboot"],
     "poweroff": ["systemctl", "--no-block", "poweroff"],
-}
+}   # "restart" restarts only the hub's containers since 27.11.2026 (hubctl), never the server
 POWER_ACTIONS = tuple(POWER_COMMANDS)
 POWER_IMAGE = "agent-hub-hub-runner"   # the runner's own image (python:3.13-slim has nsenter), never pulled
 _BAD_PATH = re.compile(r"[,\s\x00=:]")   # would confuse --mount parsing or hide something
@@ -109,7 +108,7 @@ def build_power_command(action: str) -> list[str]:
 # .env. One detached container of the runner's image per job: root (the logins are root's), no network, the Docker
 # socket (it stops and starts the hub's services), the hub's base folder and the backup folder at their host paths.
 # Nothing from the job reaches the command line but its number; what it needs is in a root-only file (runner.py).
-HUBCTL_ACTIONS = ("backup", "restore-check", "restore-apply", "settings")
+HUBCTL_ACTIONS = ("backup", "restore-check", "restore-apply", "settings", "restart")
 _PROJECT = re.compile(r"[a-z0-9][a-z0-9_-]{0,30}")
 
 

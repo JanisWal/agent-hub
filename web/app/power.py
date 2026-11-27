@@ -10,7 +10,7 @@ import time
 from . import db
 from .users import User
 
-ACTIONS = ("reboot", "poweroff")
+ACTIONS = ("poweroff",)   # "reboot" restarts only the hub's containers since 27.11.2026 (hostjobs "restart")
 FRESH_SECONDS = 120
 
 

@@ -209,6 +209,18 @@ class BackupTest(unittest.TestCase):
         self.assertTrue(routes.apply(request(), "Own3r!pass", self.owner)["ok"])
         self.assertEqual(hostjobs.claim_next()["action"], "restore-apply")
 
+    def test_one_of_the_servers_own_backups_can_be_put_back_without_downloading(self):
+        name = "agent-hub-backup-2026-11-27-0315.zip.age"
+        (self.folder / name).write_bytes(b"sealed")
+        key = backups.key_line(backups.new_key())
+        self.assertEqual(routes.check(request(), key, self.owner, "agent-hub-backup-2026-01-01-0000.zip.age").status_code, 409)
+        self.assertEqual(routes.check(request(), key, self.owner, "../etc/passwd").status_code, 409)
+        job = routes.check(request(), key, self.owner, name)["job"]
+        claimed = hostjobs.claim_next()
+        self.assertEqual((claimed["id"], claimed["payload"]["source"]), (job, name))
+        self.assertIn('data-backup-restore="%s"' % name, routes.backup_state(self.owner)["list"])
+        self.assertNotIn("data-backup-restore", routes.backup_state(self.sup)["list"])   # putting back is the owner's
+
     def test_the_end_of_a_put_back_is_told_without_a_login_but_only_for_an_hour(self):
         self.assertEqual(routes.done(), {"ok": True, "done": None})
         folder = hostjobs.results_dir()

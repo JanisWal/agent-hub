@@ -172,6 +172,18 @@ class HubctlTest(unittest.TestCase):
         self.assertFalse(self.paths.staging.exists())
         self.assertEqual(oct((self.paths.claude / "1" / "token.enc").stat().st_mode & 0o777), oct(0o600))
 
+    def test_a_backup_of_the_list_is_checked_where_it_lies_and_stays(self):
+        path = self.backup()
+        self.paths.jobs.mkdir(parents=True, exist_ok=True)
+        (self.paths.jobs / "8.json").write_text(json.dumps({"action": "restore-check",
+                                                            "payload": {"identity": str(self.secret), "source": path.name}}))
+        self.assertEqual(hubctl.run(self.paths, 8), 0)
+        self.assertTrue(path.exists())                                       # the server's backup is not used up
+        self.assertTrue((self.paths.staging / ".checked").exists())
+        (self.paths.jobs / "9.json").write_text(json.dumps({"action": "restore-check",
+                                                            "payload": {"identity": str(self.secret), "source": "../app/.env"}}))
+        self.assertEqual(hubctl.run(self.paths, 9), 1)                       # only names of backups
+
     def test_the_wrong_key_changes_nothing_and_the_upload_may_be_tried_again(self):
         upload = self.upload(self.backup())
         with self.assertRaises(hubctl.Failed) as failed:
@@ -284,6 +296,10 @@ class HubctlTest(unittest.TestCase):
         self.assertEqual(hubctl.run(self.paths, 4), 1)
         self.assertEqual(json.loads((self.paths.results / "4.json").read_text()), {"ok": False, "reason": "unknown"})
         self.assertEqual(hubctl.run(self.paths, 99), 1)                     # no payload: a clean failure
+        payload.write_text(json.dumps({"action": "restart", "payload": {}}))
+        self.calls.clear()
+        self.assertEqual(hubctl.run(self.paths, 4), 0)
+        self.assertEqual(self.calls, [("restart",)])                        # the hub's containers, nothing else
         self.assertEqual(json.loads((self.paths.results / "99.json").read_text())["reason"], "no_job")
 
 
