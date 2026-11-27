@@ -27,7 +27,11 @@ HOME = Path(os.environ.get("HOME", "/home/vibe"))
 LEVELS = {"none": "off", "off": "off", "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max"}
 # Tools per job (always by --disabled-tools: with --enabled-tools Vibe hides its deferred web tools in headless runs).
 OFF_ALWAYS = ("ask_user_question", "powershell*", "git_bash*", "task")
-OFF_JOB = {"chat-all": (), "chat-apart": ("web_fetch",), "chat-brief": ("*",), "chat-sort": ("web_fetch",), "run": (),
+# The chat writes no files (27.11.2026): memory is saved only from the answer's tags (<memory-edit>); with Vibe's own
+# edit and write_file a model "updated" MEMORY.md in a read-only folder and told the user it was done.
+NO_WRITE = ("edit", "write_file")
+OFF_JOB = {"chat-all": NO_WRITE, "chat-apart": ("web_fetch", *NO_WRITE), "chat-brief": ("*",),
+           "chat-sort": ("web_fetch", *NO_WRITE), "run": (),
            "run-brief": ("*",)}   # brief: the status, a small review, the documentation: no tools
 
 
@@ -36,6 +40,10 @@ LOOK_HINT = ("Use it to look at images and PDFs (their pages as pictures); read 
 
 
 def config(model: str, level: str, images: bool = False, look: bool = True, tools: str = "look") -> str:
+    # No level ("off"): no `thinking` line, so Vibe sends no reasoning_effort and the model takes Mistral's own default.
+    # Writing "off" made Mistral refuse models that know no "none" (GLM 5.3: only low, high, max; 27.11.2026), and the
+    # hub knows the levels of only a few models (catalog.SEED).
+    thinking = f'thinking = "{level}"\n' if level != "off" else ""
     server = f'''
 [[mcp_servers]]
 name = "hub"
@@ -72,8 +80,7 @@ backend = "mistral"
 name = "{model}"
 provider = "mistral"
 alias = "hub"
-thinking = "{level}"
-supports_images = {"true" if images else "false"}
+{thinking}supports_images = {"true" if images else "false"}
 {server}'''
 
 

@@ -203,6 +203,9 @@ class ChatCommandTest(unittest.TestCase):
         job = adapters.CHAT_JOBS["sort"]
         self.assertEqual(hubloop.JOB_TOOLS[job], ("look", "list_files", "read_file", "grep"))
         self.assertIn(job, vibe_entry.OFF_JOB)
+        for chat in ("chat-all", "chat-apart", job):   # the chat writes no files: memory only by tags
+            self.assertTrue({"edit", "write_file"} <= set(vibe_entry.OFF_JOB[chat]))
+        self.assertEqual(vibe_entry.OFF_JOB["run"], ())
         self.assertIn(job, codex_entry.JOBS)
         self.assertIn(job, L.CODEX_JOBS)
         self.assertIn("web_search = false", codex_entry.config("m", "", job))
