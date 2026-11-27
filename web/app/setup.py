@@ -83,8 +83,8 @@ def checks(runner_seen: float, now: float | None = None) -> list[dict]:
 
 
 def reachable(base_url: str, timeout: float = 8.0) -> bool:
-    """Does the public address lead to this hub (through the tunnel)? Asks `<address>/health` once."""
-    if not base_url.startswith("https://"):
+    """Does the public address lead to this hub (through the tunnel, or the server's address)? Asks `<address>/health`."""
+    if not base_url.startswith(("https://", "http://")):
         return False
     try:
         with urllib.request.urlopen(base_url.rstrip("/") + "/health", timeout=timeout) as answer:

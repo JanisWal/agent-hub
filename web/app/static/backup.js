@@ -162,21 +162,35 @@
       pick.disabled = true;
       progress.hidden = false;
       AgentHub.hold(true);
-      var restarted = false;
+      var tries = 0;
+      function show(done) {
+        bar.style.transform = "scaleX(" + Math.min(1, done / file.size) + ")";
+        count.textContent = root.dataset.uploading.replace("{done}", mb(done)).replace("{total}", mb(file.size));
+      }
+      // One piece per request, with its own progress (a slow line still shows it moves). A piece that hangs is given
+      // up after a while and sent again; the server says how much it has, so nothing is sent twice (27.11.2026).
       function send(offset) {
-        var shown = Math.min(1, offset / file.size);
-        bar.style.transform = "scaleX(" + shown + ")";
-        count.textContent = root.dataset.uploading.replace("{done}", mb(offset)).replace("{total}", mb(file.size));
+        show(offset);
         var piece = file.slice(offset, offset + PIECE);
-        fetch(base + "/upload?offset=" + offset + "&total=" + file.size, { method: "POST", body: piece, credentials: "same-origin" })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            if (data.ok && data.state === "done") { finished(); steps(root, "key"); return; }
-            if (data.ok) { send(offset + piece.size); return; }
-            if (data.reason === "offset" && !restarted) { restarted = true; send(0); return; }
-            finished();
-            fail(data.reason === "size" ? "size" : "failed");
-          }, function () { finished(); fail("failed"); });
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", base + "/upload?offset=" + offset + "&total=" + file.size);
+        xhr.timeout = 300000;
+        xhr.upload.onprogress = function (event) { show(offset + event.loaded); };
+        xhr.onload = function () {
+          var data = {};
+          try { data = JSON.parse(xhr.responseText); } catch (e) {}
+          if (data.ok && data.state === "done") { finished(); steps(root, "key"); return; }
+          if (data.ok) { tries = 0; send(offset + piece.size); return; }
+          if (data.reason === "offset" && typeof data.have === "number" && tries < 3) { tries += 1; send(data.have); return; }
+          finished();
+          fail(data.reason === "size" || data.reason === "busy" ? data.reason : "failed");
+        };
+        xhr.onerror = xhr.ontimeout = function () {
+          if (tries < 3) { tries += 1; setTimeout(function () { send(offset); }, 3000); return; }
+          finished();
+          fail("failed");
+        };
+        xhr.send(piece);
       }
       function finished() { AgentHub.hold(false); pick.disabled = false; progress.hidden = true; fileInput.value = ""; }
       send(0);

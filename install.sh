@@ -11,6 +11,7 @@
 #
 # Optionen: --dir /opt/agent-hub (Zielordner), --port 8080 (Port im Heimnetz), --branch main, --source <Git-Adresse>.
 # Danach im Browser http://<IP des Servers>:<Port> öffnen; der Einrichtungsassistent übernimmt den Rest.
+# Entfernen: sudo bash <dir>/app/uninstall.sh
 #
 # Diese Datei ist nur der Einstieg: sie findet den Code und startet die Schritte dieser Version (deploy/steps/,
 # deploy/steps/run.sh). Eine neue Version ändert nur ihre Schritte; update.sh führt dieselben Schritte aus.

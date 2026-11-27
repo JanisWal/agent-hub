@@ -115,7 +115,7 @@ async def upload(request: Request, offset: int = 0, total: int = 0, user: users.
     try:
         return ok(state=backups.receive(offset, piece, total))
     except ValueError as problem:
-        return JSONResponse({"ok": False, "reason": str(problem)}, status_code=409)
+        return JSONResponse({"ok": False, "reason": str(problem), "have": backups.received()}, status_code=409)
 
 
 @router.post("/restore/check")

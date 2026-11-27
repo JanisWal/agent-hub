@@ -87,6 +87,8 @@ class SetupTest(unittest.TestCase):
         self.assertEqual(routes.setup_page(request()).headers["location"], "/login")
         owner = users.check_login("owner@example.com", "Own3r!pass12")
         cookies = {deps.COOKIE_NAME: users.create_session(owner.id)}
+        self.assertIn('value="http://192.168.1.20:8080"', routes.setup_page(request(cookies, host="192.168.1.20:8080"), "access"))
+        self.assertNotIn("evil", routes.setup_page(request(cookies, host='x"evil'), "access"))
         for step in setup.OWNER_STEPS:
             html = routes.setup_page(request(cookies), step)
             self.assertIn(f'data-step="{step}"', html, step)
@@ -106,12 +108,15 @@ class SetupTest(unittest.TestCase):
         job = hostjobs.claim_next()
         self.assertEqual(job["payload"], {"values": {"HUB_BASE_URL": "https://hub.example.de", "TUNNEL_TOKEN": token}})
         hostjobs.end_open("settings", "x")
-        for kind, values in (("access", ("http://hub.example.de", "", "", "")), ("access", ("https://a b", "", "", "")),
+        for kind, values in (("access", ("ftp://hub.example.de", "", "", "")), ("access", ("https://a b", "", "", "")),
                              ("access", ("", "short", "", "")), ("mail", ("", "", "sk-123", "")),
                              ("mail", ("", "", "", "no address")), ("mail", ("", "", "", "a@b.de\nBcc: x")),
                              ("nope", ("", "", "", ""))):
             self.assertEqual(routes.save_settings(kind, *values, owner).status_code, 400, (kind, values))
         self.assertIsNone(hostjobs.claim_next())
+        self.assertTrue(routes.save_settings("access", "http://192.168.1.20:8080", "", "", "", owner)["ok"])   # no domain
+        self.assertEqual(hostjobs.claim_next()["payload"], {"values": {"HUB_BASE_URL": "http://192.168.1.20:8080"}})
+        hostjobs.end_open("settings", "x")
         kept = routes.save_settings("mail", "", "", "", "Agent-Hub <noreply@example.de>", owner)
         self.assertTrue(kept["ok"])
         self.assertEqual(hostjobs.claim_next()["payload"], {"values": {"MAIL_FROM": "Agent-Hub <noreply@example.de>"}})
