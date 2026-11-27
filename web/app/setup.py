@@ -29,9 +29,6 @@ def via_tunnel(request) -> bool:
     return bool(request.headers.get("cf-connecting-ip"))
 
 
-_SHARED = ipaddress.ip_network("100.64.0.0/10")   # carrier-grade NAT, also Tailscale's addresses
-
-
 def from_home(request) -> bool:
     """Did the request come from a private network (home network, the server itself, a VPN)? A server with a public
     address (Janis, 27.11.2026: a VM with its own IPv4) has the hub's port open to the internet: there the set-up must
@@ -43,8 +40,7 @@ def from_home(request) -> bool:
         return False
     if getattr(address, "ipv4_mapped", None):
         address = address.ipv4_mapped
-    return address.is_private or address.is_loopback or address.is_link_local or (
-        address.version == 4 and address in _SHARED)
+    return not address.is_global   # private, loopback, link-local, carrier-grade NAT (Tailscale), ...
 
 
 def open_for(request, now: float | None = None) -> bool:

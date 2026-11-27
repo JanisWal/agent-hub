@@ -92,6 +92,7 @@ def save_settings(kind: str = Form(""), base_url: str = Form(""), tunnel_token: 
     denied = _owner(user)
     if denied:
         return denied
+    way = way if isinstance(way, str) else ""   # called directly (tests), a default is a Form object
     values = {}
     if kind == "access":
         base_url, token = base_url.strip().rstrip("/"), tunnel_token.strip()

@@ -122,6 +122,7 @@ async def upload(request: Request, offset: int = 0, total: int = 0, user: users.
 def check(request: Request, key: str = Form(""), user: users.User | None = Depends(restorer), source: str = Form("")):
     """Open the uploaded backup, or one of the server's own backups (`source`, its name in the list; 27.11.2026),
     with the recovery key (a host job); nothing changes yet."""
+    source = source if isinstance(source, str) else ""   # called directly (tests), a default is a Form object
     line = backups.key_line(key)
     if not line:
         return JSONResponse({"ok": False, "reason": "bad_key"}, status_code=400)

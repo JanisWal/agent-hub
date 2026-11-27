@@ -39,9 +39,9 @@ class SetupTest(unittest.TestCase):
         self.assertTrue(setup.open_for(request()))
         for home in ("10.0.0.5", "172.20.0.1", "127.0.0.1", "100.98.163.27", "fd00::5", "::ffff:192.168.1.9"):
             self.assertTrue(setup.open_for(request(ip=home)), home)
-        for internet in ("203.0.113.9", "8.8.8.8", "2a00:1450::1", "::ffff:8.8.8.8", "unknown"):
+        for internet in ("93.184.216.34", "8.8.8.8", "2a00:1450:4001::1", "::ffff:8.8.8.8", "unknown"):
             self.assertFalse(setup.open_for(request(ip=internet)), internet)   # a server with a public address
-        self.assertFalse(setup.open_for(request(**{"cf-connecting-ip": "203.0.113.9"})))
+        self.assertFalse(setup.open_for(request(**{"cf-connecting-ip": "93.184.216.34"})))
         self.assertFalse(setup.open_for(request(), now=setup.STARTED + setup.WINDOW_SECONDS + 1))
         users.create_user("someone@example.com", "Own3r!pass12", role="owner")
         self.assertFalse(setup.open_for(request()))
@@ -58,7 +58,7 @@ class SetupTest(unittest.TestCase):
             routes.setup_page(request(**{"cf-connecting-ip": "203.0.113.9"}))
         self.assertEqual(refused.exception.status_code, 404)
         with self.assertRaises(HTTPException):
-            routes.setup_page(request(ip="203.0.113.9"))                       # straight from the internet
+            routes.setup_page(request(ip="93.184.216.34"))                     # straight from the internet
         with mock.patch.object(setup, "STARTED", time.time() - setup.WINDOW_SECONDS - 5):
             closed = routes.setup_page(request())
         self.assertEqual(closed.status_code, 403)
