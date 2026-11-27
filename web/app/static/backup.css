@@ -1,0 +1,41 @@
+/* The backup (backuppage.py, 27.11.2026): the recovery key, the time and "back up now", the list, putting one back.
+   Used in the administration's dialog and in the set-up. Variables of app.css only. */
+.bk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: calc(var(--space) * 3); margin-top: var(--space); }
+.bk-restore { padding-left: calc(var(--space) * 3); border-left: 1px solid var(--glass-border); }
+@media (max-width: 700px) {
+  .bk-grid { grid-template-columns: 1fr; }
+  .bk-restore { padding-left: 0; padding-top: calc(var(--space) * 3); border-left: 0; border-top: 1px solid var(--glass-border); }
+}
+.bk-key { margin-bottom: calc(var(--space) * 2); }
+.bk-key [data-key-make] { width: 100%; }
+.bk-key-box { display: flex; align-items: center; gap: var(--space); margin: 0 0 var(--space); padding: 10px 12px;
+  background: var(--field); border: 1px solid var(--glass-border); border-radius: var(--radius-button); }
+.bk-key-box code { flex: 1; min-width: 0; font: 600 0.82rem/1.35 ui-monospace, "SF Mono", Menlo, monospace; overflow-wrap: anywhere; }
+.bk-check { display: flex; align-items: flex-start; gap: 10px; margin: calc(var(--space) * 1.5) 0 0; color: var(--text); }
+.bk-check input { width: 20px; height: 20px; min-height: 0; margin: 1px 0 0; padding: 0; accent-color: var(--accent); flex: 0 0 auto; }
+.bk-line { display: grid; grid-template-columns: 120px 1fr; gap: calc(var(--space) * 1.5); align-items: start; margin-bottom: calc(var(--space) * 2); }
+.bk-hour.setting { margin: 0; }
+.bk-now button { width: 100%; min-height: 52px; }
+.bk-note { margin: var(--space) 0 0; font-size: 0.88rem; }
+.bk-list { margin: 0 0 var(--space); padding: 0; list-style: none; max-height: 240px; overflow-y: auto; }
+.bk-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 12px; padding: 6px 4px;
+  border-bottom: 1px solid var(--glass-border); }
+.bk-row:last-child { border-bottom: 0; }
+.bk-when { font-variant-numeric: tabular-nums; }
+.bk-size { color: var(--muted); font-size: 0.86rem; font-variant-numeric: tabular-nums; }
+.bk-empty { padding: 6px 4px; }
+.bk-download { margin-top: var(--space); }
+.restore [data-restore-pick] { width: 100%; }
+.rs-progress { margin-top: calc(var(--space) * 2); }
+.rs-bar { height: 8px; border-radius: 4px; overflow: hidden; background: var(--field); }
+.rs-bar > i { display: block; height: 100%; background: var(--accent); transform: scaleX(0); transform-origin: left; transition: transform 0.3s ease-out; }
+@media (prefers-reduced-motion: reduce) { .rs-bar > i { transition: none; } }
+.rs-progress .muted { margin: var(--space) 0 0; font-size: 0.86rem; font-variant-numeric: tabular-nums; }
+.rs-key { min-height: 72px; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.85rem; }
+.rs-head { margin: 0 0 var(--space); font-size: 1rem; }
+.rs-facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0 0 calc(var(--space) * 2); }
+.rs-facts dt { color: var(--muted); }
+.rs-facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.rs-warn { font-size: 0.88rem; }
+.restore [hidden], .bk-key [hidden], #backup-dialog [hidden] { display: none !important; }
+.bk-when, .bk-size, .rs-facts dt { -webkit-user-select: none; user-select: none; }

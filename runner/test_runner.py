@@ -9,6 +9,7 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from runner import launcher, login, runner
@@ -56,6 +57,9 @@ class FakeApi:
             return {"ok": True, "mac": getattr(self, "wake", None)}
         if path == "/runner/power/claim":
             return {"ok": True, "id": 7 if self.power else None, "action": self.power}
+        if path == "/runner/host/claim":
+            job, self.host_job = getattr(self, "host_job", None), None
+            return {"ok": True, "job": job}
         if path == "/runner/chat/claim":
             return {"ok": True, "job": self.chat_job}
         if path == "/runner/logins":
@@ -133,21 +137,42 @@ class RunnerTest(unittest.TestCase):
         self.runner.handle_wake()
         self.assertEqual(len(ran), 1)                                          # a bad MAC is never sent
 
-    def test_a_backup_reports_how_it_ended(self):
-        for code, expected in ((0, "1"), (1, "0")):
-            self.api.calls.clear()
-            self.runner.run_power = lambda command, code=code: types.SimpleNamespace(returncode=code, stderr="")
-            self.api.power = "backup"
-            self.runner.handle_power()
-            self.assertEqual(self.api.posted("/7/result"), [{"success": expected}])
+    def test_a_host_job_starts_hubctl_with_its_payload_in_a_root_only_file(self):
+        work = Path(self.tmp.name) / "work"
+        ran = []
+        self.runner.run_power = lambda command: ran.append(command) or types.SimpleNamespace(returncode=0, stderr="")
+        self.api.host_job = {"id": 5, "action": "restore-check", "payload": {"identity": "AGE-SECRET-KEY-1X"}}
+        with mock.patch.dict(os.environ, {"HUB_WORK_DIR": str(work), "HUB_BASE_HOST_DIR": self.tmp.name,
+                                          "HUB_APP_HOST_DIR": self.tmp.name + "/app", "HUB_DATA_HOST_DIR": self.tmp.name + "/data",
+                                          "HUB_CLAUDE_DIR": self.tmp.name + "/claude", "HUB_BACKUP_HOST_DIR": self.tmp.name + "/b"}):
+            self.runner.handle_host()
+        self.assertEqual(len(ran), 1)
+        self.assertEqual(ran[0][-1], "5")
+        payload = work / ".hubctl" / "5.json"
+        self.assertEqual(json.loads(payload.read_text()), {"action": "restore-check", "payload": {"identity": "AGE-SECRET-KEY-1X"}})
+        self.assertEqual(payload.stat().st_mode & 0o777, 0o600)
+        self.assertEqual((work / ".hubctl").stat().st_mode & 0o777, 0o700)
+        self.assertEqual(self.api.posted("/failed"), [])                        # hubctl answers the hub itself
+        self.assertNotIn("AGE-SECRET-KEY-1X", " ".join(ran[0]))                  # never on a command line
 
-    def test_a_backup_that_takes_too_long_is_reported_as_failed(self):
-        def too_slow(command):
-            raise subprocess.TimeoutExpired(command, 240)
-        self.runner.run_power = too_slow
-        self.api.power = "backup"
-        self.runner.handle_power()
-        self.assertEqual(self.api.posted("/7/result"), [{"success": "0"}])
+    def test_a_host_job_that_does_not_start_is_reported_and_its_payload_goes(self):
+        work = Path(self.tmp.name) / "work"
+        self.runner.run_power = lambda command: types.SimpleNamespace(returncode=125, stderr="no such image")
+        self.api.host_job = {"id": 6, "action": "backup", "payload": {"recipient": "age1x"}}
+        with mock.patch.dict(os.environ, {"HUB_WORK_DIR": str(work), "HUB_BASE_HOST_DIR": self.tmp.name,
+                                          "HUB_APP_HOST_DIR": self.tmp.name + "/app", "HUB_DATA_HOST_DIR": self.tmp.name + "/data",
+                                          "HUB_CLAUDE_DIR": self.tmp.name + "/claude"}):
+            self.runner.handle_host()
+        self.assertEqual(len(self.api.posted("/runner/host/6/failed")), 1)
+        self.assertFalse((work / ".hubctl" / "6.json").exists())
+
+    def test_an_unknown_host_action_is_not_started(self):
+        ran = []
+        self.runner.run_power = lambda command: ran.append(command)
+        self.api.host_job = {"id": 7, "action": "rm -rf", "payload": {}}
+        self.runner.handle_host()
+        self.assertEqual(ran, [])
+        self.assertEqual(len(self.api.posted("/runner/host/7/failed")), 1)
 
     def test_restart_and_shutdown_report_nothing(self):
         self.runner.run_power = lambda command: types.SimpleNamespace(returncode=0, stderr="")

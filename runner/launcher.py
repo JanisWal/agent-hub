@@ -65,12 +65,10 @@ CHAT_MODES = {
 # Restart and shutdown of the Pi (owner's request, see web/app/power.py). The host is reached through the
 # Docker socket: a short-lived privileged container joins the host's namespaces and runs `systemctl`.
 # Only these two fixed commands exist; nothing from the request reaches the command line but the choice.
+# The backup is a job of runner/hubctl.py since 27.11.2026 (build_hubctl_command), no systemd unit any more.
 POWER_COMMANDS = {
     "reboot": ["systemctl", "--no-block", "reboot"],
     "poweroff": ["systemctl", "--no-block", "poweroff"],
-    # The unit made by deploy/setup-backup.sh. Without --no-block the command ends when the backup is done, and its
-    # exit code says how it went (the runner reports that to the hub).
-    "backup": ["systemctl", "start", "agent-hub-backup.service"],
 }
 POWER_ACTIONS = tuple(POWER_COMMANDS)
 POWER_IMAGE = "agent-hub-hub-runner"   # the runner's own image (python:3.13-slim has nsenter), never pulled
@@ -98,14 +96,47 @@ def build_wake_command(mac: str) -> list[str]:
 
 
 def build_power_command(action: str) -> list[str]:
-    """The `docker run` command that restarts or shuts down the Pi or starts its backup. ValueError for any other
-    action."""
+    """The `docker run` command that restarts or shuts down the Pi. ValueError for any other action."""
     if action not in POWER_COMMANDS:
         raise ValueError("unknown power action")
     return [
         "docker", "run", "--rm", "--pull=never", "--privileged", "--pid=host", "--network=none", POWER_IMAGE,
         "nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", *POWER_COMMANDS[action],
     ]
+
+
+# Fixed actions on the server (runner/hubctl.py, 27.11.2026): backup, checking and putting back a backup, settings in
+# .env. One detached container of the runner's image per job: root (the logins are root's), no network, the Docker
+# socket (it stops and starts the hub's services), the hub's base folder and the backup folder at their host paths.
+# Nothing from the job reaches the command line but its number; what it needs is in a root-only file (runner.py).
+HUBCTL_ACTIONS = ("backup", "restore-check", "restore-apply", "settings")
+_PROJECT = re.compile(r"[a-z0-9][a-z0-9_-]{0,30}")
+
+
+def build_hubctl_command(job_id: int, places: dict) -> list[str]:
+    """`docker run -d` for job `job_id` of hubctl. `places`: base, app, data, claude, work, backups (host paths; all but
+    the backup folder inside base) and name (the compose project). ValueError for anything else."""
+    job = _number(job_id, "job_id")
+    base = _folder(places.get("base", ""), "base")
+    inside = {key: _folder(places.get(key, ""), key) for key in ("app", "data", "claude", "work")}
+    for key, folder in inside.items():
+        if not (folder + "/").startswith(base.rstrip("/") + "/"):
+            raise ValueError(f"{key} must be inside the base folder")
+    backups = _folder(places.get("backups", ""), "backups")
+    name = str(places.get("name", ""))
+    if not _PROJECT.fullmatch(name):
+        raise ValueError("bad project name")
+    mounts = ["-v", "/var/run/docker.sock:/var/run/docker.sock", "-v", f"{base}:{base}"]
+    if not (backups + "/").startswith(base.rstrip("/") + "/"):
+        mounts += ["-v", f"{backups}:{backups}"]
+    env = {"HUB_BASE_DIR": base, "HUB_APP_DIR": inside["app"], "HUB_DATA_DIR": inside["data"],
+           "HUB_CLAUDE_DIR": inside["claude"], "HUB_WORK_DIR": inside["work"], "HUB_BACKUP_DIR": backups,
+           "HUB_NAME": name}
+    return ["docker", "run", "-d", "--rm", "--pull=never", "--name", f"{name}-hubctl-{job}", "--network=none",
+            "--memory", "384m", "--cap-drop", "ALL", "--cap-add", "CHOWN", "--cap-add", "DAC_OVERRIDE",
+            "--cap-add", "FOWNER", "--security-opt", "no-new-privileges", *mounts,
+            *[part for key, value in env.items() for part in ("-e", f"{key}={value}")],
+            POWER_IMAGE, "python", "-u", "-m", "runner.hubctl", str(job)]
 
 
 def run_uid(user_id: int) -> int:

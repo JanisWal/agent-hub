@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse
 
 from .. import i18n, throttle, ui, users
-from ..deps import COOKIE_NAME, COOKIE_SECURE, page_user, redirect
+from ..deps import COOKIE_NAME, cookie_secure, page_user, redirect
 
 router = APIRouter()
 
@@ -14,7 +14,9 @@ def _lang(request: Request) -> str:
 
 
 @router.get("/login", response_class=HTMLResponse)
-def login_form(request: Request) -> str:
+def login_form(request: Request):
+    if not users.owner_exists() and not request.headers.get("cf-connecting-ip"):
+        return redirect("/setup")   # a new hub: nobody to log in yet (setup.py)
     return ui.login_page(lang=_lang(request))
 
 
@@ -38,7 +40,7 @@ def login(request: Request, email: str = Form(""), password: str = Form("")):
         max_age=users.SESSION_SECONDS,
         httponly=True,
         samesite="lax",
-        secure=COOKIE_SECURE,
+        secure=cookie_secure(request),
     )
     return response
 

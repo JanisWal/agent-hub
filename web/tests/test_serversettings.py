@@ -63,7 +63,7 @@ class ServerSettingsTest(unittest.TestCase):
         self.assertEqual(html.count('class="info-dot"'), 6 + len(page.LIMIT_ROWS))
         self.assertNotIn("sys-hint", html)
         self.assertIn("Gleichzeitig: So viele Stücke", html)               # the upload "i" explains both choices
-        self.assertEqual(html.count("Backup erstellen<"), 1)               # the button, no title repeating it
+        self.assertEqual(html.count("data-backup-open>Backup<"), 1)        # the button, no title repeating it
         self.assertNotIn(" title=", html)                                  # explanations only as our own tips
         tile = managerpage._files_tile("de", [])
         self.assertIn('data-parallel="8"', tile)

@@ -1,0 +1,4 @@
+# The images of the AI runs (runner/launcher.py starts them; Compose does not build them): tag, Dockerfile, folder.
+agent-hub-agent runner/Dockerfile runner
+agent-hub-vibe runner/Dockerfile.vibe runner
+agent-hub-codex runner/Dockerfile.codex runner

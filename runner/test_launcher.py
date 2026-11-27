@@ -29,11 +29,37 @@ class PowerCommandTest(unittest.TestCase):
             self.assertIn("--pull=never", cmd)                                # never fetches an image at that moment
             self.assertIn("--network=none", cmd)
 
-    def test_the_backup_command_starts_the_unit_and_waits_for_it(self):
-        cmd = L.build_power_command("backup")
-        self.assertEqual(cmd[-3:], ["systemctl", "start", "agent-hub-backup.service"])
-        self.assertNotIn("--no-block", cmd)                                  # the exit code must tell how it went
-        self.assertEqual(L.POWER_ACTIONS, ("reboot", "poweroff", "backup"))  # the same three as web/app/power.py
+    def test_the_backup_is_no_power_command_any_more(self):
+        self.assertEqual(L.POWER_ACTIONS, ("reboot", "poweroff"))   # the same two as web/app/power.py
+        with self.assertRaises(ValueError):
+            L.build_power_command("backup")
+
+    PLACES = {"base": "/opt/agent-hub", "app": "/opt/agent-hub/app", "data": "/opt/agent-hub/data",
+              "claude": "/opt/agent-hub/claude", "work": "/opt/agent-hub/work", "backups": "/mnt/usb/backups",
+              "name": "agent-hub"}
+
+    def test_the_hubctl_command_is_fixed_and_detached(self):
+        cmd = L.build_hubctl_command(12, self.PLACES)
+        self.assertEqual(cmd[:4], ["docker", "run", "-d", "--rm"])
+        self.assertEqual(cmd[-6:], [L.POWER_IMAGE, "python", "-u", "-m", "runner.hubctl", "12"])
+        self.assertIn("--network=none", cmd)
+        self.assertIn("--pull=never", cmd)
+        self.assertIn("agent-hub-hubctl-12", cmd)
+        self.assertIn("/opt/agent-hub:/opt/agent-hub", cmd)           # the base folder, at its host path
+        self.assertIn("/mnt/usb/backups:/mnt/usb/backups", cmd)       # the backup folder lies outside: its own mount
+        self.assertNotIn("--privileged", cmd)
+        inside = dict(self.PLACES, backups="/opt/agent-hub/backups")
+        self.assertEqual(L.build_hubctl_command(1, inside).count("-v"), 2)   # socket and base only
+
+    def test_the_hubctl_command_takes_no_odd_places(self):
+        for key, bad in (("app", "/etc"), ("data", "/opt/agent-hub/../etc"), ("work", "relative"),
+                         ("backups", "/mnt/a b"), ("claude", "/opt/agent-hubx/claude"), ("name", "Agent Hub"),
+                         ("name", "-x")):
+            with self.assertRaises(ValueError, msg=(key, bad)):
+                L.build_hubctl_command(1, dict(self.PLACES, **{key: bad}))
+        for job in (0, -1, "1", None):
+            with self.assertRaises(ValueError):
+                L.build_hubctl_command(job, self.PLACES)
 
     def test_nothing_else_is_accepted(self):
         for bad in ("", "halt", "REBOOT", "reboot; id", "poweroff --force", None):

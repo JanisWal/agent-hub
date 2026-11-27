@@ -2,6 +2,12 @@
 
 Stand: 22.11.2026 abends (die Kette der Agenten neu gebaut); davor 21.11.2026 (ChatGPT, API-Schlüssel neben dem Abo, weitere KIs; davor 20.11.2026: Durchsicht des ganzen Systems und Umbau der KI-Pakete) · Zweck: Einstieg in einen neuen Chat. Quelle der Wahrheit: `PROJEKT.md` („Auf einen Blick“, Fahrplan in 11a), `PROTOKOLL.md` (alle Änderungen, neueste zuerst), `KONZEPT-AGENTEN.md` (9.2a Werkzeuge je KI, 9.3a Pakete je Rolle), `DESIGN.md`, `CLAUDE.md`. Die vorige Übergabe (bis 19.11.2026) liegt in `archiv/CHAT-ZUSAMMENFASSUNG-2026-11-19.md`.
 
+## 27.11.2026, abends: Installationsskript, Einrichtungsassistent, neues Backup (`backup-zip`)
+
+- **Gebaut:** `install.sh` (Einstieg) mit Schritten `deploy/steps/NN-*.sh`, `update.sh`; Assistent `/setup` (ohne Einrichtungscode: nur ohne Owner, nur im Heimnetz, 60 Minuten nach dem Start); Backup Format 1 `agent-hub-backup-….zip.age` (ZIP, age, Wiederherstellungsschlüssel), Aufträge `host_jobs` über `runner/hubctl.py`, Dialog „Backup“ in der Verwaltung (Schlüssel, Uhrzeit, Jetzt sichern, Liste, Herunterladen, Einspielen). Einzelheiten: PROJEKT.md Abschnitt 3 und 9, PROTOKOLL.md.
+- **Für Janis zum Testen:** in der Verwaltung „Backup“ öffnen, Schlüssel erstellen und sichern, „Jetzt sichern“, herunterladen; auf einem zweiten Gerät ZIP des Repos entpacken, `sudo bash install.sh`, im Browser „Backup einspielen“.
+- **Offen:** echte Installation auf frischer Hardware; Einspielen auf einem zweiten Server; das alte Stick-Backup erst entfernen, wenn das neue einmal echt eingespielt wurde; Anzeige „Hub“/„Gerät“ (Merkliste 3o); „Nach Updates suchen“ in der Oberfläche, VPN-Schritt, Wahl einer Festplatte für Backups (3s).
+
 ## In einem Satz
 
 Selbst gehostetes Verwaltungstool auf einem Raspberry Pi 4B, live unter `https://hub.janis-home.de`: Projekte, Board für Software, je Projekt ein Manager-Chat, Agentenkette (Programmierer, Tests, Prüfer, Freigabe, Doku), Dateiablage, Geräte über einen Vermittler. Repo `JanisWal/agent-hub` (privat), `main` = Produktiv.

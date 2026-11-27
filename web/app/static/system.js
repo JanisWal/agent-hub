@@ -1,4 +1,4 @@
-// System page (owner): restart or shut down the Pi, a manual backup, and how uploads are cut. Each power action has its
+// System page (owner): restart or shut down the Pi, the backup dialog, and how uploads are cut. Each power action has its
 // own dialog with the owner's password; on success the dialog closes and a note says what happens now (texts come from
 // the server).
 (function () {
@@ -68,43 +68,13 @@
     return dialog;
   }
 
-  // Manual backup: no dialog (it harms nothing). The button asks the hub to start it, then we ask every two
-  // seconds how it is going until it is over (the runner reports the result; the nightly backup is the same job).
-  var backupButton = root.querySelector("[data-backup]");
-  var backupNote = document.getElementById("sys-backup-note");
-
-  function backupShow(kind) {
-    backupNote.textContent = backupNote.dataset[kind];
-    backupNote.hidden = false;
-  }
-
-  function backupFinished(kind) {
-    backupShow(kind);
-    backupButton.disabled = false;
-  }
-
-  function backupPoll(tries) {
-    fetch("/system/backup")
-      .then(function (response) { return response.json(); })
-      .then(function (data) {
-        if (data.state === "running" && tries < 150) setTimeout(function () { backupPoll(tries + 1); }, 2000);
-        else backupFinished(data.state === "ok" ? "ok" : "failed");
-      })
-      .catch(function () { backupFinished("failed"); });
-  }
-
-  backupButton.addEventListener("click", function () {
-    backupButton.disabled = true;
-    backupShow("running");
-    var body = new FormData();
-    body.append("action", "backup");
-    fetch("/system/power", { method: "POST", body: body })
-      .then(function (response) {
-        if (!response.ok) { backupFinished("failed"); return; }
-        backupPoll(0);
-      })
-      .catch(function () { backupFinished("failed"); });
-  });
+  // The backup (backuppage.py, backup.js does the rest): one dialog with key, time, list and putting one back. The
+  // set-up assistant opens again from here (only the owner sees the row).
+  var backupDialog = document.getElementById("backup-dialog");
+  var backupOpen = root.querySelector("[data-backup-open]");
+  if (backupDialog && backupOpen) backupOpen.addEventListener("click", function () { backupDialog.showModal(); });
+  var setupOpen = root.querySelector("[data-setup-open]");
+  if (setupOpen) setupOpen.addEventListener("click", function () { location.href = "/setup?step=access"; });
 
   // Server settings (upload, AI runs at once): saved as soon as a choice changes (all values of the row together);
   // a failure says so below the list.

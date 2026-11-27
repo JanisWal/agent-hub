@@ -7,6 +7,7 @@ import os
 import tempfile
 import types
 import unittest
+import unittest.mock
 
 from fastapi import HTTPException
 
@@ -416,6 +417,28 @@ class IsolationTest(unittest.TestCase):
             self.assertNotIn(secret, text)
         with self.assertRaises(ValueError):
             chat.send(self.b.id, self.project.id, "Planted in A")                 # B can not ask in A's project
+
+    def test_b_cannot_back_up_put_back_or_set_up_the_server(self):
+        """The backup holds everybody's data: a normal user can not make, see, download or put one back (27.11.2026)."""
+        from app import backups, hostjobs, setup
+        from app.routes import backup as backup_routes, setup as setup_routes
+        req = types.SimpleNamespace(headers={}, client=types.SimpleNamespace(host="192.168.1.9"),
+                                    cookies={"session": users.create_session(self.b.id)})
+        before = snapshot()
+        self.assertEqual(backup_routes.make_key(req, "Bbbb!pass12", self.b).status_code, 403)
+        self.assertEqual(backup_routes.backup_now(self.b).status_code, 403)
+        self.assertEqual(backup_routes.backup_state(self.b).status_code, 403)
+        self.assertEqual(backup_routes.ask_download(req, "x", "Bbbb!pass12", self.b).status_code, 403)
+        self.assertEqual(setup_routes.save_settings("access", "https://x.example", "", "", "", self.b).status_code, 403)
+        self.assertEqual(setup_routes.job_state(1, self.b).status_code, 403)
+        with self.assertRaises(HTTPException):
+            backup_routes.download("x", self.b)
+        with unittest.mock.patch.object(setup, "open_for", return_value=False):
+            with self.assertRaises(HTTPException):
+                backup_routes.restorer(req)
+        self.assertFalse(hostjobs.busy())
+        self.assertEqual(backups.recipient(), "")
+        self.assertEqual(snapshot(), before)
 
     def test_b_deleting_the_own_account_never_touches_a(self):
         from app import users as accounts
