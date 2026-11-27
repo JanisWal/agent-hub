@@ -36,6 +36,10 @@ LOOK_HINT = ("Use it to look at images and PDFs (their pages as pictures); read 
 
 
 def config(model: str, level: str, images: bool = False, look: bool = True, tools: str = "look") -> str:
+    # No level ("off"): no `thinking` line, so Vibe sends no reasoning_effort and the model takes Mistral's own default.
+    # Writing "off" made Mistral refuse models that know no "none" (GLM 5.3: only low, high, max; 27.11.2026), and the
+    # hub knows the levels of only a few models (catalog.SEED).
+    thinking = f'thinking = "{level}"\n' if level != "off" else ""
     server = f'''
 [[mcp_servers]]
 name = "hub"
@@ -72,8 +76,7 @@ backend = "mistral"
 name = "{model}"
 provider = "mistral"
 alias = "hub"
-thinking = "{level}"
-supports_images = {"true" if images else "false"}
+{thinking}supports_images = {"true" if images else "false"}
 {server}'''
 
 

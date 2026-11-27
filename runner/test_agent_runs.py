@@ -86,8 +86,10 @@ class VibeCommandTest(unittest.TestCase):
     def test_the_entry_script(self):
         config = vibe_entry.config("mistral-small-2603", "off")
         for part in ('api_base = "http://egress:3131/v1"', "enable_telemetry = false", "enable_update_checks = false",
-                     'vibe_base_url = "http://egress:3131"', 'thinking = "off"', 'name = "mistral-small-2603"'):
+                     'vibe_base_url = "http://egress:3131"', 'name = "mistral-small-2603"'):
             self.assertIn(part, config)
+        self.assertNotIn("thinking", config)     # no level: Mistral's default, never "none" (GLM 5.3 refuses it)
+        self.assertEqual(__import__("tomllib").loads(vibe_entry.config("mistral-large-4", "high"))["models"][0]["thinking"], "high")
         stdout = json.dumps([{"type": "message", "role": "user", "content": [{"type": "text", "text": "Q"}]},
                              {"type": "message", "role": "assistant", "content": [{"type": "text", "text": "A1"}]},
                              {"type": "message", "role": "assistant", "content": [{"type": "text", "text": "Final"}]}])
