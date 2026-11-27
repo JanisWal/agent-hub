@@ -11,6 +11,7 @@ fi
 if [ "$MODE" = install ]; then
   install -d -m 755 "$APP"
   cp -a "$SRC/." "$APP/"
+  chown -R root:root "$APP" && chmod -R go-w,go+rX "$APP"   # whoever unpacked the ZIP does not own the hub's code
   note "Kopiert nach $APP"
 else
   # The first hub keeps its data inside the code folder (./data); swapping the folder would take the data away.
@@ -18,6 +19,7 @@ else
   rm -rf "$APP.new"
   install -d -m 755 "$APP.new"
   cp -a "$SRC/." "$APP.new/"
+  chown -R root:root "$APP.new" && chmod -R go-w,go+rX "$APP.new"
   cp -a "$APP/.env" "$APP.new/.env"
   rm -rf "$APP.old"
   mv "$APP" "$APP.old"
