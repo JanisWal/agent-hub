@@ -51,6 +51,7 @@ _FILLER = frozenset("der die das den dem des ein eine einen und oder mit ohne f�
                     "the a an and or with without for on in at to of by from is are be".split())
 _TASK = re.compile(r"<task(\s[^<>]*)?>(.*?)</task>", re.DOTALL)
 _EDIT = re.compile(r"<task-edit(\s[^<>]*)?>(.*?)</task-edit>", re.DOTALL)
+_OPENED = re.compile(r"<task(?:-edit)?(?=[\s>])")   # every opening of a task or task edit, readable or not
 _STATUS = re.compile(r"<status(\s[^<>]*)?>(.*?)</status>", re.DOTALL)
 _DEVICE = re.compile(r"<device(\s[^<>]*)?>(.*?)</device>", re.DOTALL)
 _ICON = re.compile(r"<icon(\s[^<>]*)?>(.*?)</icon>", re.DOTALL)
@@ -179,6 +180,14 @@ def parse(answer: str) -> Signals:
     text = _ENV.sub("", _EDIT.sub("", _STATUS.sub("", _TASK.sub("", _ASK.sub("", answer)))))
     text = _STUCK.sub("", _DECIDE.sub("", text)).strip()
     return Signals(text, asks, tasks, status, edits, envs, decided, stuck)
+
+
+def broken_tasks(answer: str) -> int:
+    """How many <task …> or <task-edit …> openings parse() could not read (no closing tag, no known kind, no title,
+    no item number). Small models write the opening in backticks and never close it (Mistral, 27.11.2026), or only
+    name the tag and claim the items exist. 0: everything named was readable."""
+    got = parse(answer)
+    return max(0, len(_OPENED.findall(answer)) - len(got.tasks) - len(got.edits))
 
 
 def _words(text: str) -> set[str]:

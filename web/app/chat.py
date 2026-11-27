@@ -310,12 +310,16 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
         parsed = memory.parse_answer(answer) if ok else None
         failed = (memory.edit_failures(memory.check_edits(row["user_id"], row["project_id"], parsed.edits))
                   if parsed is not None and parsed.edits else "")
-        if parsed is not None and (parsed.reads or failed) and row["rounds"] < memory.READ_ROUNDS:
-            # files it asked for, or edits that did not fit: the same question again, nothing of this answer is kept
+        broken = reply.broken_tasks(parsed.text) if parsed is not None else 0
+        reformat = broken and prompts.TASK_FORMAT_NOTE not in (row["extra"] or "")   # asked for the format once only
+        if parsed is not None and (parsed.reads or failed or reformat) and row["rounds"] < memory.READ_ROUNDS:
+            # files it asked for, edits that did not fit or board items it wrote unreadably: the same question again,
+            # nothing of this answer is kept
             asked = memory.contents(conn, row["user_id"], row["project_id"], parsed.reads) if parsed.reads else ""
             note = (f"<edit-failed-note>Nothing of your last answer was saved; these memory edits did not fit, "
                     f"answer again with them fixed:\n{failed}</edit-failed-note>") if failed else ""
-            extra = (row["extra"] + "\n\n" if row["extra"] else "") + "\n\n".join(x for x in (asked, note) if x)
+            formats = prompts.TASK_FORMAT_NOTE if reformat else ""
+            extra = (row["extra"] + "\n\n" if row["extra"] else "") + "\n\n".join(x for x in (asked, note, formats) if x)
             conn.execute(
                 "UPDATE chat_messages SET status = 'queued', extra = ?, rounds = rounds + 1,"
                 " tokens_in = tokens_in + ?, tokens_out = tokens_out + ?, created_at = ? WHERE id = ?",
@@ -363,7 +367,9 @@ def finish(chat_id: int, ok: bool, answer: str, tokens_in: int = 0, tokens_out: 
                                   source="manager", needs=task.needs)
             late = [e for e in edits if not board.edit_from_ai(conn, row["project_id"], e.item_id, e.kind, e.title, e.body)]
             notes = [("chat_edit_late", len(late))] if late else []
-            if notes:   # the programmer was faster, or items wait because the web was read: the user reads why
+            if broken:   # still unreadable after the last round: the user must not believe they are on the board
+                notes.append(("chat_tasks_unreadable", broken))
+            if notes:   # the programmer was faster, or items the AI wrote unreadably: the user reads why
                 lang = (conn.execute("SELECT language FROM users WHERE id = ?", (row["user_id"],)).fetchone() or {"language": "de"})["language"]
                 lang = lang if lang in ("de", "en") else "de"
                 note = "".join("\n\n" + i18n.t(lang, key, n=n) for key, n in notes)
