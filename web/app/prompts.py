@@ -102,6 +102,13 @@ FOUND = (
     "SHORT BULLET\">what, why, where</task>, and an idea for a new feature, <task kind=\"major\" title=\"SHORT BULLET\">"
     "what and why</task> (it waits for the user); at most 2. Never a task about this task, its polish or its tests."
 )
+# The manager named board items the hub could not read (reply.broken_tasks): the same question once more with this.
+TASK_FORMAT_NOTE = (
+    "<task-format-note>Nothing of your last answer was saved: it named board items, but none of them could be read. "
+    "Write each one exactly as <task kind=\"bug|minor|major\" title=\"SHORT BULLET\">CONTEXT</task>, with the closing "
+    "</task>, never inside backticks or bold, and never say an item is on the board unless you wrote it so."
+    "</task-format-note>"
+)
 ASK_RULE = (
     "A decision the task, the rules and the answers below do not settle: ask with <ask kind=\"choice\">QUESTION<option>"
     "ANSWER</option>...</ask> or <ask kind=\"text\">QUESTION</ask>. If your work depends on the answer, stop there and "

@@ -54,6 +54,19 @@ class TaskTest(unittest.TestCase):
     def test_tags_inside_attributes_do_not_parse(self):
         self.assertEqual(reply.parse('<task kind="bug" title="a<b>c">x</task>').tasks, [])
 
+    def test_unreadable_tasks_are_counted(self):
+        # what Mistral's small model wrote (27.11.2026): openings in backticks and bold, never closed
+        mistral = ('1. **`<task kind="major" title="GUI-Design planen">**\n   *Kontext:* modern.\n\n'
+                   '2. **`<task kind="minor" title="GUI-Tests">**\n   *Kontext:* alle Systeme.')
+        self.assertEqual(reply.broken_tasks(mistral), 2)
+        self.assertEqual(reply.broken_tasks("Die Punkte sind jetzt als `<task>`-Einträge sichtbar."), 1)  # only claimed
+        self.assertEqual(reply.broken_tasks('<task kind="epic" title="x">no</task><task kind="minor">no title</task>'), 2)
+        self.assertEqual(reply.broken_tasks('<task-edit id="x" title="t">no number</task-edit>'), 1)
+        good = '<task kind="bug" title="t">b</task> und <task-edit id="4" title="u"></task-edit>'
+        self.assertEqual(reply.broken_tasks(good), 0)
+        self.assertEqual(reply.broken_tasks(good + ' <task kind="minor" title="offen">kein Ende'), 1)
+        self.assertEqual(reply.broken_tasks("Kein Punkt, nur </task> und <tasks>."), 0)
+
 
 class StatusTest(unittest.TestCase):
     def test_the_last_valid_status_wins(self):

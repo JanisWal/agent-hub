@@ -64,6 +64,32 @@ class ManagerBoardTest(unittest.TestCase):
         self.assertEqual(items["Relais klickt doppelt"].status, "open")
         self.assertEqual(self.items(self.b, self.pb), {})                              # only the question's project
 
+    def test_unreadable_items_are_asked_for_once_and_then_named_to_the_user(self):
+        broken = 'Erledigt, die Punkte sind auf dem Board:\n**`<task kind="major" title="GUI planen">**\nModern.'
+        chat.send(self.a.id, self.pa.id, "Leg die GUI-Punkte an.")
+        job = chat.claim_next()
+        self.assertTrue(chat.finish(job.chat_id, True, broken))
+        again = chat.claim_next()                                       # the same question once more, with the rule
+        self.assertEqual(again.chat_id, job.chat_id)
+        self.assertIn("<task-format-note>", again.prompt)
+        self.assertEqual(chat.list_messages(self.a.id, self.pa.id)[-1].answer, "")   # nothing of it was kept
+        self.assertTrue(chat.finish(again.chat_id, True, broken))        # wrong again: no third time
+        self.assertIsNone(chat.claim_next())
+        message = chat.list_messages(self.a.id, self.pa.id)[-1]
+        self.assertEqual(message.status, "done")
+        self.assertIn("nicht aufs Board kamen", message.answer)        # the user is told
+        self.assertEqual(self.items(), {})
+
+    def test_readable_items_after_the_format_note_reach_the_board(self):
+        chat.send(self.a.id, self.pa.id, "Leg den Punkt an.")
+        job = chat.claim_next()
+        chat.finish(job.chat_id, True, 'Angelegt: `<task kind="minor" title="Runden">')
+        again = chat.claim_next()
+        self.assertTrue(chat.finish(again.chat_id, True, 'Angelegt.<task kind="minor" title="Runden">Eine Stelle.</task>'))
+        message = chat.list_messages(self.a.id, self.pa.id)[-1]
+        self.assertNotIn("nicht aufs Board", message.answer)
+        self.assertEqual(list(self.items()), ["Runden"])
+
     def test_a_credential_the_server_can_not_read_is_its_own_kind_of_failure(self):
         self.assertEqual(chat.failure_kind("Server: the saved credential can not be read (HUB_TOKEN_KEY)."), "server")
         self.assertEqual(chat.failure_kind("Not logged in: no saved credential. Please run /login"), "auth")
