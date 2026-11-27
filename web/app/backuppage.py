@@ -65,7 +65,7 @@ def hour_field(lang: str) -> str:
             f'{icon("chevron_down")}</label>')
 
 
-NOW = """<div class="bk-now" data-backup-now data-url="/backup/now" data-state="/backup/state"
+NOW = """<div class="bk-now" data-backup-now data-url="/backup/now" data-state="/backup/state" data-active="%ACTIVE%"
      data-running="%t.bk_running%" data-ok="%t.bk_ok%" data-failed="%t.bk_failed%" data-no-key="%t.bk_failed_no_key%"
      data-busy="%t.bk_busy%">
   <button class="sys-btn" type="button" data-backup-start>%t.bk_now%</button>
@@ -186,12 +186,13 @@ def dialog(lang: str, owner: bool) -> str:
     """The whole backup in one dialog of the administration. The key and putting a backup back are the owner's; a
     superadmin sees the hour, "back up now" and the list."""
     return fill(DIALOG, lang, KEY=key_part(lang) if owner else "", HOUR=hour_field(lang),
-                NOW=fill(NOW, lang), LIST=list_rows(lang),
+                NOW=now_part(lang), LIST=list_rows(lang),
                 RESTORE=restore_part(lang, True) if owner else "")
 
 
 def now_part(lang: str) -> str:
-    return fill(NOW, lang)
+    """ "Back up now"; a backup that runs already (also the nightly one) shows at once and is followed (backup.js)."""
+    return fill(NOW, lang, ACTIVE="1" if hostjobs.state(action="backup")["state"] in ("waiting", "running") else "")
 
 
 def job_text(lang: str) -> dict:

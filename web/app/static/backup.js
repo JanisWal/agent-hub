@@ -116,10 +116,14 @@
         say(note, data.job.text);
       }, function () { setTimeout(function () { poll(tries + 1); }, 5000); });
     }
-    start.addEventListener("click", function () {
+    function running() {
       start.disabled = true;
       say(note, box.dataset.running);
       note.appendChild(dots());
+    }
+    if (box.dataset.active === "1") { running(); poll(0); }   // already going (the nightly one, or from another tab)
+    start.addEventListener("click", function () {
+      running();
       post(box.dataset.url).then(function (data) {
         if (!data.ok) { start.disabled = false; say(note, data.message || box.dataset.failed); return; }
         poll(0);
