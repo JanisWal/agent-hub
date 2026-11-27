@@ -164,7 +164,16 @@ class ChatQueueTest(Base):
             chat.claim_next()
             chat.finish(m.id, True, "a")
         chat.send(self.b.id, self.pb.id, "of B")
-        self.assertEqual(chat.delete_all(self.a.id), 2)                 # both projects of A
+        # Every row of A goes: both questions and any status round a finished answer queued (kind 'status', its own
+        # clock; counting only the questions made this test fail since the status rounds, 27.11.2026).
+        with db.connect() as conn:
+            rows_of_a = conn.execute("SELECT COUNT(*) FROM chat_messages WHERE user_id = ?", (self.a.id,)).fetchone()[0]
+            questions = conn.execute("SELECT COUNT(*) FROM chat_messages WHERE user_id = ? AND kind = 'chat'",
+                                     (self.a.id,)).fetchone()[0]
+        self.assertEqual(questions, 2)                                     # both projects of A
+        self.assertEqual(chat.delete_all(self.a.id), rows_of_a)
+        with db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM chat_messages WHERE user_id = ?", (self.a.id,)).fetchone()[0], 0)
         self.assertEqual(chat.list_messages(self.a.id, self.pa.id), [])
         self.assertEqual([m.prompt for m in chat.list_messages(self.b.id, self.pb.id)], ["of B"])
         self.assertEqual(chat.delete_all(self.a.id), 0)                 # nothing left, nothing breaks
