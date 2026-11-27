@@ -27,7 +27,11 @@ HOME = Path(os.environ.get("HOME", "/home/vibe"))
 LEVELS = {"none": "off", "off": "off", "low": "low", "medium": "medium", "high": "high", "xhigh": "xhigh", "max": "max"}
 # Tools per job (always by --disabled-tools: with --enabled-tools Vibe hides its deferred web tools in headless runs).
 OFF_ALWAYS = ("ask_user_question", "powershell*", "git_bash*", "task")
-OFF_JOB = {"chat-all": (), "chat-apart": ("web_fetch",), "chat-brief": ("*",), "chat-sort": ("web_fetch",), "run": (),
+# The chat writes no files (27.11.2026): memory is saved only from the answer's tags (<memory-edit>); with Vibe's own
+# edit and write_file a model "updated" MEMORY.md in a read-only folder and told the user it was done.
+NO_WRITE = ("edit", "write_file")
+OFF_JOB = {"chat-all": NO_WRITE, "chat-apart": ("web_fetch", *NO_WRITE), "chat-brief": ("*",),
+           "chat-sort": ("web_fetch", *NO_WRITE), "run": (),
            "run-brief": ("*",)}   # brief: the status, a small review, the documentation: no tools
 
 
