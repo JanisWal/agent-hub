@@ -25,3 +25,5 @@
 .setup .bk-line { margin-top: calc(var(--space) * 2); }
 .setup-value, .setup-name, .setup-dots { -webkit-user-select: none; user-select: none; }
 @media (max-width: 520px) { .glass.setup { padding: calc(var(--space) * 3); } }
+/* `hidden` must win over the display of .actions and friends (the second row of buttons appears only after saving). */
+.setup [hidden] { display: none !important; }

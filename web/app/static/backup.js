@@ -35,6 +35,8 @@
     var made = null;
     make.addEventListener("click", function () {
       var password = box.querySelector("[data-key-password]");
+      var ask = box.querySelector("[data-key-ask]");
+      if (ask && ask.hidden) { ask.hidden = false; password.focus(); return; }   // replacing a key: the password first
       say(error, "");
       make.disabled = true;
       post(box.dataset.url, { confirm: password ? password.value : "" }).then(function (data) {

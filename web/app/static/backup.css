@@ -1,6 +1,6 @@
 /* The backup (backuppage.py, 27.11.2026): the recovery key, the time and "back up now", the list, putting one back.
    Used in the administration's dialog and in the set-up. Variables of app.css only. */
-.bk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: calc(var(--space) * 3); }
+.bk-grid { display: grid; grid-template-columns: 1fr 1fr; gap: calc(var(--space) * 3); margin-top: var(--space); }
 .bk-restore { padding-left: calc(var(--space) * 3); border-left: 1px solid var(--glass-border); }
 @media (max-width: 700px) {
   .bk-grid { grid-template-columns: 1fr; }
@@ -37,5 +37,5 @@
 .rs-facts dt { color: var(--muted); }
 .rs-facts dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .rs-warn { font-size: 0.88rem; }
-.restore [data-step][hidden], .bk-key [data-step][hidden] { display: none; }
+.restore [hidden], .bk-key [hidden], #backup-dialog [hidden] { display: none !important; }
 .bk-when, .bk-size, .rs-facts dt { -webkit-user-select: none; user-select: none; }

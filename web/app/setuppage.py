@@ -166,7 +166,7 @@ def owner_page(user: User, step: str) -> str:
         body = _card(lang, step, "setup_backup", t("setup_backup_text"), content)
     elif step == "ai":
         content = (f'<button class="primary setup-ai" type="button" data-open-drawer>{esc(t("setup_ai_open"))}</button>'
-                   + _go(lang, "", _next("ai")))
+                   f'<div class="actions"><button type="button" data-go="{_next("ai")}">{esc(t("setup_next"))}</button></div>')
         body = _card(lang, step, "setup_ai", t("setup_ai_text"), content)
     else:
         content = (f'<div class="actions"><button class="primary" type="button" data-setup-finish data-url="/setup/finish">'

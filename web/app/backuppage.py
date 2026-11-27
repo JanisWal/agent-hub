@@ -49,8 +49,8 @@ def key_part(lang: str, setup: bool = False) -> str:
     state = i18n.t(lang, "bk_key_made", date=_date(lang, made)) if made else i18n.t(lang, "bk_key_none")
     if made:
         state += " " + i18n.t(lang, "bk_key_replace_hint")
-    password = "" if not made else (
-        f'<label>{esc(i18n.t(lang, "your_password"))}<input type="password" name="confirm" '
+    password = "" if not made else (   # shown only after the first click on "new key" (backup.js)
+        f'<label hidden data-key-ask>{esc(i18n.t(lang, "your_password"))}<input type="password" name="confirm" '
         f'autocomplete="current-password" data-key-password></label>')
     return fill(KEY, lang, STATE=esc(state), PASSWORD=password, COPY=copy_button(lang),
                 BUTTON=esc(i18n.t(lang, "bk_key_replace" if made else "bk_key_create")),
