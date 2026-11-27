@@ -4,9 +4,26 @@ import tempfile
 import unittest
 
 from app import agents, ai_link, aichoice, catalog, chat, claude_link, db, models, projects, prompts, statusnote, toolcheck
-from app import ui, users
+from app import i18n, ui, users
 from app.routes import ai as ai_routes
 from app.routes import runner as runner_routes
+
+
+def mistral_list() -> list:
+    """The list Mistral gave on 26.11.2026 as GET /v1/models items: (id, the shared "name"); vibe-cli ids are Mistral
+    Vibe's own."""
+    listed = [("deepseek-v4-1-flash-1017", "deepseek-v4-1-flash-1017"), ("glm-5-2", "glm-5-2"),
+              ("zai-glm-5-2", "glm-5-2"), ("zai-glm-5-3", "zai-glm-5-3"), ("zai-glm-5", "zai-glm-5-3"),
+              ("zai-glm-5-3-flash", "zai-glm-5-3-flash"), ("ministral-14b-2512", "ministral-14b-2512"),
+              ("ministral-3b-2512", "ministral-3b-2512"), ("ministral-8b-2512", "ministral-8b-2512"),
+              ("mistral-large-2512", "mistral-large-2512"), ("mistral-large-4", "mistral-large-4"),
+              ("mistral-large-4-0", "mistral-large-4"), ("mistral-medium", "mistral-medium-latest"),
+              ("mistral-medium-3-5", "mistral-medium-latest"), ("mistral-medium-3.5", "mistral-medium-latest"),
+              ("mistral-medium-3", "mistral-medium-latest"), ("mistral-medium-2604", "mistral-medium-latest"),
+              ("mistral-vibe-cli-with-tools", "mistral-medium-latest"), ("mistral-small-2603", "mistral-small-2603"),
+              ("mistral-vibe-cli-fast", "mistral-small-2603")]
+    caps = {"completion_chat": True, "function_calling": True}
+    return [{"id": i, "name": n, "capabilities": caps} for i, n in listed]
 
 
 class Base(unittest.TestCase):
@@ -118,11 +135,69 @@ class ModelListTest(Base):
         self.assertFalse(models.save(self.a.id, "mistral", None))               # could not be asked: nothing changes
         self.assertEqual(catalog.provider("mistral").default_model, "mistral-small-2603")
 
+    def test_mistral_aliases_become_one_model_with_a_short_name_and_a_hint(self):
+        got = models.normalize("mistral", mistral_list())
+        self.assertEqual([(m["id"], m["name"], m.get("hint", "")) for m in got], [
+            ("deepseek-v4-1-flash-1017", "DeepSeek V4.1 Flash", "fast"), ("glm-5-2", "GLM 5.2", "balanced"),
+            ("zai-glm-5-3", "GLM 5.3", "balanced"), ("zai-glm-5-3-flash", "GLM 5.3 Flash", "fast"),
+            ("ministral-14b-2512", "Ministral 14B", "fast"), ("ministral-3b-2512", "Ministral 3B", "fast"),
+            ("ministral-8b-2512", "Ministral 8B", "fast"), ("mistral-large-2512", "Mistral Large", "thorough"),
+            ("mistral-large-4", "Mistral Large 4", "thorough"), ("mistral-medium-2604", "Mistral Medium", "balanced"),
+            ("mistral-small-2603", "Mistral Small", "fast")])
+        self.assertEqual(got[8]["efforts"], ["low", "medium", "high"])       # the starting list's model keeps its levels
+        self.assertEqual(got[9]["efforts"], ["none"])                        # unknown levels: none to choose
+        for entry in got:                                                    # every entry fits the catalog's patterns
+            self.assertTrue(catalog._ID.fullmatch(entry["id"]) and catalog._NAME.fullmatch(entry["name"]))
+
+    def test_two_mistral_models_with_one_short_name_keep_their_dates(self):
+        caps = {"completion_chat": True, "function_calling": True}
+        got = models.normalize("mistral", [{"id": "mistral-medium-2604", "capabilities": caps},
+                                           {"id": "mistral-medium-2508", "capabilities": caps}])
+        self.assertEqual([m["name"] for m in got], ["Mistral Medium 2604", "Mistral Medium 2508"])
+
     def test_a_model_outside_his_list_can_not_be_asked(self):
         self.chatgpt(self.a)
         models.save(self.a.id, "chatgpt", self.CHATGPT[:1])
         with self.assertRaisesRegex(ValueError, "mode"):
             chat.send(self.a.id, self.pa.id, "Hallo", model="gpt-6-luna")
+
+
+class StrengthTest(Base):
+    """Weak, middle, strong instead of levels for an AI whose models have none (Janis, 27.11.2026)."""
+
+    def test_the_strength_comes_from_general_marks_only(self):
+        cases = {"mistral-tiny-2701": "fast", "magistral-medium-2609": "balanced", "glm-6-flash": "fast",
+                 "qwen-3-72b": "thorough", "llama-4-8b": "fast", "model-32b": "balanced", "mistral-large-5": "thorough",
+                 "gemini-3-pro": "thorough", "ministral-14b-2512": "fast", "something-new": "balanced"}
+        self.assertEqual({slug: models.strength(slug) for slug in cases}, cases)   # "gemini" is no "mini"
+
+    def test_an_ai_is_chosen_by_strength_when_its_models_have_no_levels(self):
+        self.assertFalse(catalog.by_strength("mistral"))              # the starting list: both models have levels
+        for other in ("claude", "chatgpt", "custom"):
+            self.assertFalse(catalog.by_strength(other))
+        models.save(self.a.id, "mistral", mistral_list())
+        self.assertTrue(catalog.by_strength("mistral"))               # 2 of 11 with levels
+        self.assertEqual(catalog.resolve("mistral-small-2603", "high"), ("mistral-small-2603", "none"))  # its default
+        self.assertEqual(catalog.resolve("mistral-large-4", "low"), ("mistral-large-4", "high"))
+        self.assertEqual(catalog.resolve("opus", "low"), ("opus", "low"))          # Claude keeps the chosen level
+
+    def test_the_picker_offers_strengths_for_mistral_and_levels_for_claude(self):
+        models.save(self.a.id, "mistral", mistral_list())
+        mistral = ui.model_picker("de", "x", "ministral-14b-2512", "none", providers=("claude", "mistral"))
+        self.assertIn('<label class="m-select has-select"><select id="x-strength"', mistral)   # shown
+        self.assertIn('<label class="m-select has-select" hidden><select name="effort"', mistral)
+        self.assertIn('<option value="fast" selected>Schwach</option>', mistral)
+        self.assertIn(">Ministral 14B</option>", mistral)                  # no hint beside a model chosen by strength
+        self.assertIn(">Sonnet · ausgewogen</option>", mistral)           # Claude keeps its hint
+        self.assertIn("&quot;ministral-14b-2512&quot;:&quot;fast&quot;", mistral)
+        self.assertNotIn("&quot;sonnet&quot;", mistral[mistral.index('id="x-strength"'):])   # only Mistral's models
+        claude = ui.model_picker("de", "x", "sonnet", "high", providers=("claude", "mistral"))
+        self.assertIn('<label class="m-select has-select" hidden><select id="x-strength"', claude)
+        self.assertIn('<label class="m-select has-select"><select name="effort"', claude)
+        alone = ui.model_picker("de", "x", "sonnet", "high")               # no AI by strength: every strength hidden
+        self.assertIn('<option value="fast" hidden>Schwach</option>', alone)
+        for key in ("strength_fast", "strength_balanced", "strength_thorough", "picker_strength"):
+            self.assertIn(key, i18n.STRINGS["en"])
 
 
 class ToolCheckTest(Base):

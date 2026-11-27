@@ -19,7 +19,7 @@ FETCHABLE = ("claude", "mistral", "chatgpt")    # the own AI has one model, the 
 CHECK_EVERY = 86400                              # a list is asked for again after this long
 RETRY_AFTER = 3600                               # ... or after a failed try
 MAX_PER_USER = 24
-_SKIP = re.compile(r"embed|moderation|ocr|voxtral|codestral|transcri|tts|audio|realtime|auto-review", re.I)
+_SKIP = re.compile(r"embed|moderation|ocr|voxtral|codestral|transcri|tts|audio|realtime|auto-review|vibe-cli", re.I)
 _FAMILY = re.compile(r"claude-([a-z]+)-")
 
 
@@ -33,10 +33,94 @@ def _known(provider: str) -> dict:
     return {m["id"]: m for m in catalog.SEED[provider]["models"]}
 
 
+# Mistral (27.11.2026): its list names most models several times, as aliases that share the field "name"
+# ("mistral-medium-2604", "mistral-medium-3-5" and "mistral-vibe-cli-with-tools" are all "mistral-medium-latest"), and
+# its ids are no names for people. One id per model, a short name and how strong it is (strength): Mistral's models
+# have no levels of their own, so the picker offers weak, middle, strong instead (catalog.by_strength).
+_DATED = re.compile(r"-(\d{4})$")
+_WORDS = {"mistral": "Mistral", "ministral": "Ministral", "glm": "GLM", "deepseek": "DeepSeek"}
+
+
+def _mistral_usable(item: dict) -> bool:
+    slug, caps = str(item.get("id") or ""), item.get("capabilities") or {}
+    return bool(caps.get("completion_chat") and caps.get("function_calling") and not item.get("deprecation")
+                and not slug.endswith("-latest") and not _SKIP.search(slug))
+
+
+def _mistral_unique(raw: list, known: dict) -> list:
+    """One item per model, in the order of the list: of the ids that share a "name", the starting list's (it knows
+    the levels), else the one equal to the name, else one with a date (an exact version), else the first."""
+    groups: dict[str, list] = {}
+    for item in raw:
+        if isinstance(item, dict) and _mistral_usable(item):
+            groups.setdefault(str(item.get("name") or item.get("id")), []).append(item)
+
+    def rank(key: str, item: dict) -> int:
+        slug = str(item.get("id"))
+        return 0 if slug in known else 1 if slug == key else 2 if _DATED.search(slug) else 3
+    return [min(items, key=lambda item: rank(key, item)) for key, items in groups.items()]
+
+
+def _short_name(slug: str) -> str:
+    """'ministral-14b-2512' -> 'Ministral 14B', 'zai-glm-5-3' -> 'GLM 5.3', 'deepseek-v4-1-flash-1017' ->
+    'DeepSeek V4.1 Flash', 'mistral-medium-3.5' -> 'Mistral Medium 3.5'."""
+    words: list[str] = []
+    numeric = False                       # the last word is a version: a number after it continues it ("5-3": 5.3)
+    for part in _DATED.sub("", slug).removeprefix("zai-").split("-"):
+        if not part:
+            continue
+        if re.fullmatch(r"\d+(\.\d+)?", part) and numeric:
+            words[-1] += "." + part
+        elif re.fullmatch(r"\d+b", part):
+            words.append(part.upper())
+            numeric = False
+            continue
+        elif re.fullmatch(r"v?\d+(\.\d+)?", part):
+            words.append(part.upper())
+        else:
+            words.append(_WORDS.get(part, part.capitalize()))
+            numeric = False
+            continue
+        numeric = True
+    return _name(" ".join(words), slug)
+
+
+_LIGHT = ("mini", "small", "flash", "lite", "nano", "tiny")   # a word that starts so: "ministral", "flash"
+_HEAVY = ("large", "pro", "max", "ultra")
+
+
+def strength(slug: str) -> str:
+    """How strong a model is, as the catalog's hint: 'fast' (weak), 'balanced' (middle) or 'thorough' (strong).
+    Only general marks in the id count, never a list of models (Janis, 27.11.2026: a new model sorts itself in, no
+    upkeep): a size in billions first (up to 15B weak, from 70B strong), then words; nothing known is the middle."""
+    words = re.split(r"[-_.]", slug.lower())
+    for word in words:
+        size = re.fullmatch(r"(\d+)b", word)
+        if size:
+            return "fast" if int(size.group(1)) <= 15 else "thorough" if int(size.group(1)) >= 70 else "balanced"
+    if any(word.startswith(_LIGHT) for word in words):
+        return "fast"
+    if any(word.startswith(_HEAVY) for word in words):
+        return "thorough"
+    return "balanced"
+
+
+def _distinct_names(entries: list) -> None:
+    """Two models with the same short name ('Mistral Medium' of 2508 and of 2604): the dated one keeps its date."""
+    names = [e["name"] for e in entries]
+    for entry in entries:
+        dated = _DATED.search(entry["id"])
+        if names.count(entry["name"]) > 1 and dated:
+            entry["name"] = _name(f"{entry['name']} {dated.group(1)}", entry["id"])
+
+
 def normalize(provider: str, raw: list) -> list[dict]:
     """The models of one user's list in the catalog's form (catalog.parse), newest first, at most MAX_PER_USER."""
     known, found = _known(provider), []
-    for item in raw if isinstance(raw, list) else []:
+    raw = raw if isinstance(raw, list) else []
+    if provider == "mistral":
+        raw = _mistral_unique(raw, known)
+    for item in raw:
         if not isinstance(item, dict):
             continue
         if provider == "chatgpt":
@@ -49,16 +133,12 @@ def normalize(provider: str, raw: list) -> list[dict]:
             images = "image" in (item.get("input_modalities") or [])
             entry = {"id": slug, "name": _name(item.get("display_name"), slug), "efforts": efforts,
                      "default_effort": default, "images": images}
-        elif provider == "mistral":
+        elif provider == "mistral":   # already usable and one per model (_mistral_unique)
             slug = str(item.get("id") or "")
-            caps = item.get("capabilities") or {}
-            if (not caps.get("completion_chat") or not caps.get("function_calling") or item.get("deprecation")
-                    or slug.endswith("-latest") or _SKIP.search(slug)):
-                continue
             seed = known.get(slug, {})
-            entry = {"id": slug, "name": _name(item.get("name") or seed.get("name"), slug),
+            entry = {"id": slug, "name": seed.get("name") or _short_name(slug),
                      "efforts": seed.get("efforts", ["none"]), "default_effort": seed.get("default_effort", "none"),
-                     "images": bool(caps.get("vision"))}
+                     "images": bool((item.get("capabilities") or {}).get("vision")), "hint": strength(slug)}
         else:   # claude: the family's short name (Claude Code takes "opus", "sonnet", ...): always its newest version
             match = _FAMILY.match(str(item.get("id") or ""))
             if not match:
@@ -72,6 +152,8 @@ def normalize(provider: str, raw: list) -> list[dict]:
             entry["hint"] = seed["hint"]
         if catalog._ID.fullmatch(entry["id"]) and entry["id"] not in {f["id"] for f in found}:
             found.append(entry)
+    if provider == "mistral":
+        _distinct_names(found)
     return found[:MAX_PER_USER]
 
 
