@@ -153,10 +153,33 @@ class ChatCommandTest(unittest.TestCase):
                 L.build_wake_command(bad)
 
     def test_only_the_manager_modes_exist(self):
-        self.assertEqual(tuple(L.CHAT_MODES), ("all", "apart", "brief"))     # the old single modes are gone
+        self.assertEqual(tuple(L.CHAT_MODES), ("all", "apart", "brief", "sort"))   # the old single modes are gone
         for old in ("plain", "web", "code", "everything"):
             with self.assertRaises(ValueError):
                 L.build_chat_command(chat_id=5, user_id=2, model="haiku", ticket=TICKET, mode=old)
+
+    def test_sorting_files_only_reads_without_web_and_has_many_steps(self):
+        cmd = L.build_chat_command(chat_id=6, user_id=2, model="sonnet", ticket=TICKET, mode="sort",
+                                   files_dir="/opt/agent-hub/work/views/p1-f1/files",
+                                   hub_tools=["look", "run", "fetch", "write_file"])
+        self.assertEqual(cmd[cmd.index("--tools") + 1], "Read,Glob,Grep")
+        self.assertEqual(cmd[cmd.index("--allowedTools") + 1], "Read Glob Grep mcp__hub__look")
+        self.assertIn('"HUB_TOOLS":"look"', cmd[cmd.index("--mcp-config") + 1])
+        self.assertIn("HTTPS_PROXY=http://egress:3129", cmd)
+        self.assertEqual(cmd[cmd.index("--max-turns") + 1], "60")
+        vibe = L.build_vibe_command(name="agent-chat-8", user_id=2, model="mistral-small-2603", ticket=TICKET,
+                                    job="chat-sort", effort="none")
+        self.assertIn("HUB_TURNS=60", vibe)
+        self.assertIn("HTTPS_PROXY=http://egress:3129", vibe)
+        loop = L.build_hubloop_command(name="agent-chat-8", user_id=2, model="m", ticket=TICKET, job="chat-sort")
+        self.assertIn("HUB_JOB=chat-sort", loop)
+        from runner import adapters, codex_entry, hubloop, vibe_entry
+        job = adapters.CHAT_JOBS["sort"]
+        self.assertEqual(hubloop.JOB_TOOLS[job], ("look", "list_files", "read_file", "grep"))
+        self.assertIn(job, vibe_entry.OFF_JOB)
+        self.assertIn(job, codex_entry.JOBS)
+        self.assertIn(job, L.CODEX_JOBS)
+        self.assertIn("web_search = false", codex_entry.config("m", "", job))
 
     def test_the_manager_chat_has_the_open_internet_but_never_the_home_network(self):
         cmd = L.build_chat_command(chat_id=6, user_id=2, model="sonnet", ticket=TICKET, mode="all")

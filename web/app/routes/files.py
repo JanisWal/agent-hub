@@ -122,7 +122,8 @@ def structure_state(project_id: int, user: users.User = Depends(api_user)):
     nodes = [{"depth": n.depth, "name": n.name, "kind": n.kind, "label": n.label, "moved": n.moved, "new": n.new}
              for n in plan.nodes]
     return ok(status=plan.status, contents=plan.contents, note=plan.note, moved=plan.moved, folders=plan.folders,
-              failure=chat.failure_kind(plan.answer) if plan.status == "failed" else "", nodes=nodes)
+              failure=chat.failure_kind(plan.answer) if plan.status == "failed" else "", nodes=nodes,
+              left_out=plan.left_out)
 
 
 @router.post("/projects/{project_id}/files/structure/apply")

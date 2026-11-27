@@ -12,7 +12,7 @@ and sends the results back, until the model answers without a tool call, or the 
   address and key of the user's AI (runner/tokens.py, runner/egress.py). The run never sees either.
 
 Environment (checked values only, launcher.build_hubloop_command): HUB_GATEWAY, HUB_KEY (the ticket), HUB_MODEL (the
-model name at the user's AI), HUB_JOB (chat-all, chat-apart, chat-brief, run, run-brief), HUB_TURNS, HUB_SECONDS,
+model name at the user's AI), HUB_JOB (chat-all, chat-apart, chat-brief, chat-sort, run, run-brief), HUB_TURNS, HUB_SECONDS,
 HUB_IMAGES. Output like runner/vibe_entry.py: lines {"thought": ...} while it runs, then ONE
 last line {"ok", "text", "tokens_in", "tokens_out", "outcome", "error"}.
 """
@@ -32,6 +32,7 @@ JOB_TOOLS = {
     "chat-all": ("look", "list_files", "read_file", "grep", "run", "fetch"),
     "chat-apart": ("look", "list_files", "read_file", "grep", "run"),
     "chat-brief": (),
+    "chat-sort": ("look", "list_files", "read_file", "grep"),
     "run": ("look", "list_files", "read_file", "grep", "write_file", "edit_file", "run", "fetch"),
     "run-brief": (),
 }

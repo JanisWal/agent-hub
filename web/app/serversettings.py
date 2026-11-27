@@ -75,6 +75,12 @@ def chat_seconds() -> int:
     return get("chat_minutes") * 60
 
 
+def sort_seconds() -> int:
+    """The time of a plan for the folders (autofolders.py): it goes through all files of a project, so three times a
+    chat answer; below the hour a run's ticket counts (runner/tokens.TICKET_AGE)."""
+    return min(chat_seconds() * 3, 3000)
+
+
 def run_limits() -> dict:
     """What every job tells the runner about the container it starts (checked there again, runner/launcher.py): an
     agent run ends after `silence_seconds` without output or after `max_seconds` of work (a paused run's time does

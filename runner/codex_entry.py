@@ -18,7 +18,7 @@ from pathlib import Path
 
 GATEWAY = os.environ.get("HUB_GATEWAY", "http://egress:3133")
 HOME = Path(os.environ.get("HOME", "/home/codex"))
-JOBS = ("chat-all", "chat-apart", "chat-brief", "run", "run-brief", "models")
+JOBS = ("chat-all", "chat-apart", "chat-brief", "chat-sort", "run", "run-brief", "models")
 LEVELS = ("low", "medium", "high", "xhigh", "max", "none", "minimal")
 FEATURES_OFF = ("plugins", "apps", "remote_plugin", "plugin_discovery_prefetch", "browser_use", "browser_use_external",
                 "in_app_browser", "computer_use", "in_app_updates", "daemon_auto_start")
@@ -46,7 +46,7 @@ def config(model: str, effort: str, job: str, api: bool = False) -> str:
         *(f"{name} = false" for name in FEATURES_OFF),
         "",
         "[tools]",
-        f"web_search = {'false' if brief else 'true'}",
+        f"web_search = {'false' if brief or job == 'chat-sort' else 'true'}",
         "",
         # The ChatGPT sign-in, but plain requests to our gateway instead of a WebSocket (it passes one request on); with
         # the user's API key (HUB_KEY: its ticket) the OpenAI API behind the same gateway

@@ -230,7 +230,8 @@ def _tidy_dialog(lang: str) -> str:
     keys = {"start": "tidy_start", "apply": "tidy_apply", "discard": "tidy_discard", "cancel": "cancel",
             "close-label": "files_close", "summary": "tidy_summary", "nothing": "tidy_nothing", "failed": "tidy_failed",
             "fail-auth": "chat_fail_auth", "fail-limit": "chat_fail_limit", "moved-tag": "tidy_moved_tag",
-            "new-tag": "tidy_new_tag", "done": "tidy_done", "err-net": "err_network"}
+            "new-tag": "tidy_new_tag", "done": "tidy_done", "err-net": "err_network",
+            "fail-long": "tidy_fail_long", "fail-timeout": "tidy_fail_timeout", "left-out": "tidy_left_out"}
     data = " ".join(f'data-{name}="{esc(i18n.t(lang, key, n="{n}", moved="{moved}", folders="{folders}"))}"'
                     for name, key in keys.items())
     return fill(TIDY_DIALOG, lang, DATA=data, INFO=ui.info_dot(i18n.t(lang, "tidy_contents"), i18n.t(lang, "tidy_contents_tip")))
