@@ -440,6 +440,17 @@ class IsolationTest(unittest.TestCase):
         self.assertEqual(backups.recipient(), "")
         self.assertEqual(snapshot(), before)
 
+    def test_b_cannot_update_the_server(self):
+        """The update replaces the code of the whole server: only the owner (28.11.2026)."""
+        from app import hostjobs
+        from app.routes import update as update_routes
+        req = types.SimpleNamespace(headers={}, client=types.SimpleNamespace(host="192.168.1.9"))
+        with unittest.mock.patch.dict(os.environ, {"HUB_SOURCE": "https://github.com/x/y.git"}):
+            self.assertEqual(update_routes.state(self.b).status_code, 403)
+            self.assertEqual(update_routes.check(self.b).status_code, 403)
+            self.assertEqual(update_routes.start(req, "Bbbb!pass12", self.b).status_code, 403)
+        self.assertFalse(hostjobs.busy())
+
     def test_b_deleting_the_own_account_never_touches_a(self):
         from app import users as accounts
         token = accounts.create_session(self.a.id)

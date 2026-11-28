@@ -1,10 +1,10 @@
 """HTML of the owner's system page."""
 from html import escape as esc
 
-from . import backuppage, db, i18n, netaddresses, serversettings, sysstats, users
+from . import backuppage, db, i18n, netaddresses, serversettings, sysstats, updates, users
 from .icons import icon
 from .layout import fill
-from .ui import info_dot
+from .ui import copy_button, info_dot
 from .users import User
 
 
@@ -35,6 +35,7 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
   <header class="sys-head"><h2>%t.system_title%</h2></header>
   <div class="sys-list glass">
     %STATS%
+    %UPDATE%
     %BACKUP%
     %SETUP%
     <div class="sys-row sys-upload" data-url="/system/upload">
@@ -56,6 +57,7 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
   <p class="sys-note" id="sys-upload-note" role="status" hidden data-failed="%t.sys_upload_failed%"></p>
   <p class="sys-note" id="sys-power-note" role="status" hidden
      data-done-reboot="%t.sys_reboot_done%" data-done-poweroff="%t.sys_poweroff_done%"></p>
+  %UPDATE_LOG%
 </section>
 <dialog class="dialog" id="power-reboot-dialog">
   <form novalidate data-url="/system/power" data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
@@ -84,7 +86,8 @@ SYSTEM = """<section class="sys-wrap" data-network="%t.err_network%">
   </form>
 </dialog>
 %ADDRESS_DIALOG%
-%BACKUP_DIALOG%"""
+%BACKUP_DIALOG%
+%UPDATE_DIALOG%"""
 
 # Addresses in the server's network that further AIs may use (netaddresses.py, Janis 21.11.2026): a list and a form to
 # add one, in a dialog behind the row "Freigegebene Adressen" (system.js). Only the owner sees both.
@@ -210,6 +213,42 @@ def _addresses(user: User) -> tuple[str, str]:
     return _action(lang, "sys_addresses", "data-addresses"), dialog
 
 
+# The version and the update (updates.py, routes/update.py, 28.11.2026): one row, filled by system.js from
+# /update/state; the password in a dialog like the restart; the end of the log after a failed update, to copy.
+UPDATE_ROW = """<div class="sys-row sys-update" id="sys-update" data-url="/update/state">
+      <span class="sys-name">%t.upd_name%</span>
+      <span class="sys-update-text" data-update-text></span>
+      <button type="button" class="sys-btn" data-update-check>%t.upd_check%</button>
+      <button type="button" class="sys-btn" data-update-start hidden>%t.upd_start%</button>
+      %INFO%
+    </div>"""
+UPDATE_LOG = """<div class="sys-note sys-update-fail" id="sys-update-fail" hidden>
+    <p data-update-failed></p>
+    <div class="copy-box sys-update-log" data-update-log-box hidden><pre data-copy-text data-update-log></pre>%COPY%</div>
+  </div>"""
+UPDATE_DIALOG = """<dialog class="dialog" id="update-dialog">
+  <form novalidate data-url="/update/start" data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
+    <h2>%t.upd_title%</h2>
+    <p class="muted">%t.upd_text%</p>
+    <label>%t.your_password%<input type="password" name="confirm" required autocomplete="current-password"></label>
+    <p class="error" role="alert" data-error hidden></p>
+    <div class="actions">
+      <button type="button" data-close autofocus>%t.cancel%</button>
+      <button class="primary" type="submit">%t.upd_do%</button>
+    </div>
+  </form>
+</dialog>"""
+
+
+def _update(user: User) -> tuple[str, str, str]:
+    """Row, failure note and dialog of the update: only the owner and only a hub that knows its source."""
+    if user.role != "owner" or not updates.allowed():
+        return "", "", ""
+    lang = user.language
+    return (fill(UPDATE_ROW, lang, INFO=info_dot(i18n.t(lang, "upd_name"), i18n.t(lang, "upd_info"))),
+            fill(UPDATE_LOG, lang, COPY=copy_button(lang)), fill(UPDATE_DIALOG, lang))
+
+
 def render(user: User) -> str:
     """The system block with its dialogs (a part of /admin, only for the owner; adminpage.py checks that)."""
     lang = user.language
@@ -222,9 +261,11 @@ def render(user: User) -> str:
     ai_field = _upload_field(lang, "value", "sys_upload_parallel", serversettings.AI_PARALLEL,
                              serversettings.ai_parallel(), "", t("sys_ai_unlimited"))
     row, dialog = _addresses(user)
+    update_row, update_log, update_dialog = _update(user)
     return fill(SYSTEM, lang, STATS=_stats(lang), UPLOAD_FIELDS=fields, ADDRESSES=row, ADDRESS_DIALOG=dialog, LIMITS=_limit_rows(lang),
                 UPLOAD_INFO=info_dot(t("sys_upload"), upload_info),
                 AI_FIELD=ai_field, AI_INFO=info_dot(t("sys_ai"), t("sys_ai_info")),
+                UPDATE=update_row, UPDATE_LOG=update_log, UPDATE_DIALOG=update_dialog,
                 BACKUP=_action(lang, "bk_open", "data-backup-open"),
                 BACKUP_DIALOG=backuppage.dialog(lang, user.role == "owner"),
                 SETUP=_action(lang, "setup_open", "data-setup-open", info=False) if user.role == "owner" else "",

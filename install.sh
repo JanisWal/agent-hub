@@ -48,4 +48,5 @@ else
     || { echo "Der Code ließ sich nicht laden. Ist das Repo privat? Dann den Code als ZIP holen (siehe oben)." >&2; exit 1; }
 fi
 
-MODE=install HUB_DIR=$HUB_DIR HUB_PORT=$HUB_PORT SRC=$SRC bash "$SRC/deploy/steps/run.sh"
+# Where later updates come from: the same source and branch (deploy/steps/45-env.sh; empty = the default).
+HUB_SOURCE=$SOURCE HUB_BRANCH=$BRANCH MODE=install HUB_DIR=$HUB_DIR HUB_PORT=$HUB_PORT SRC=$SRC bash "$SRC/deploy/steps/run.sh"

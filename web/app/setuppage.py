@@ -61,6 +61,7 @@ def check_page(lang: str, runner_seen: float) -> str:
                     f'<span class="setup-value">{esc(value)}</span></li>')
     content = (f'<ul class="setup-checks">{"".join(rows)}</ul>'
                f'<p class="muted setup-window">{esc(t("setup_window", minutes=setup.minutes_left()))}</p>'
+               + _guide(lang, "setup_check_g", 5) +
                f'<div class="actions"><button type="button" data-go="/setup?step=restore">{esc(t("setup_restore"))}</button>'
                f'<button class="primary" type="button" data-go="/setup?step=account">{esc(t("setup_new"))}</button></div>')
     body = _card(lang, "check", "setup_welcome", t("setup_welcome_text"), content)
@@ -74,6 +75,7 @@ ACCOUNT = """<form method="post" action="/setup/owner" novalidate data-msg-requi
   <label>%t.setup_password_again%<input type="password" name="password2" required autocomplete="new-password" placeholder="••••••••"></label>
   <label class="setting has-select setup-lang"><span class="setting-label">%t.language%</span>
     <select name="language"><option value="de"%DE%>Deutsch</option><option value="en"%EN%>English</option></select>%CHEVRON%</label>
+  %GUIDE%
   <div class="actions">
     <button type="button" data-go="/setup">%t.back%</button>
     <button class="primary" type="submit">%t.setup_create%</button>
@@ -84,13 +86,14 @@ ACCOUNT = """<form method="post" action="/setup/owner" novalidate data-msg-requi
 def account_page(lang: str, error_key: str = "", email: str = "") -> str:
     error = f'<p class="error" role="alert">{esc(i18n.t(lang, error_key))}</p>' if error_key else ""
     content = fill(ACCOUNT, lang, ERROR=error, EMAIL=esc(email), CHEVRON=icon("chevron_down"),
+                   GUIDE=_guide(lang, "setup_account_g", 3),
                    DE=" selected" if lang == "de" else "", EN=" selected" if lang == "en" else "")
     body = _card(lang, "account", "setup_account", i18n.t(lang, "setup_account_text"), content)
     return page(i18n.t(lang, "setup_title"), body, lang, styles=("setup.css",), scripts=("setup.js",))
 
 
 def restore_page(lang: str) -> str:
-    content = (backuppage.restore_part(lang, owner=False)
+    content = (_guide(lang, "setup_restore_g", 4) + backuppage.restore_part(lang, owner=False)
                + f'<div class="actions"><button type="button" data-go="/setup">{esc(i18n.t(lang, "back"))}</button></div>')
     body = _card(lang, "restore", "rs_title", "", content)
     return page(i18n.t(lang, "setup_title"), body, lang, styles=("setup.css", "backup.css"),
@@ -129,10 +132,11 @@ def _field(label: str, name: str, value: str = "", kind: str = "text", placehold
             f' autocomplete="off" spellcheck="false" maxlength="500"{extra}>{hint_html}</label>')
 
 
-def _guide(lang: str, prefix: str, steps: int) -> str:
-    """A step-by-step guide that folds open (Janis, 27.11.2026: the formats and the way there right in the step)."""
+def _guide(lang: str, prefix: str, steps: int, summary: str = "setup_guide") -> str:
+    """A step-by-step guide that folds open (Janis, 27.11.2026: the formats and the way there right in the step;
+    28.11.2026: every step has one, together they cover everything from the first page to running the hub)."""
     items = "".join(f"<li>{esc(i18n.t(lang, f'{prefix}_{n}'))}</li>" for n in range(1, steps + 1))
-    return (f'<details class="setup-guide"><summary>{esc(i18n.t(lang, "setup_guide"))}</summary>'
+    return (f'<details class="setup-guide"><summary>{esc(i18n.t(lang, summary))}</summary>'
             f'<ol>{items}</ol></details>')
 
 
@@ -163,7 +167,8 @@ def access_content(lang: str, here: str = "") -> str:
     address = now["base_url"] or (here if way == "home" else "")
     token_hint = t("setup_token_kept") if now["tunnel"] else t("setup_token_hint")
     fields = (f'<div class="setup-ways" role="radiogroup">{"".join(rows)}</div>'
-              f'<div data-way="tunnel" hidden>{_guide(lang, "setup_tunnel", 5)}</div>'
+              f'<div data-way="home" hidden>{_guide(lang, "setup_home_g", 2)}</div>'
+              f'<div data-way="tunnel" hidden>{_guide(lang, "setup_tunnel", 7)}</div>'
               f'<div data-way="own" hidden>{_guide(lang, "setup_own", 4)}</div>'
               + _field(t("setup_address"), "base_url", address, "url", "", t(f"setup_{way}_hint"), ' data-address')
               + f'<div data-way="tunnel" hidden>'
@@ -177,7 +182,7 @@ def access_content(lang: str, here: str = "") -> str:
 def mail_content(lang: str) -> str:
     t = lambda key, **kw: i18n.t(lang, key, **kw)   # noqa: E731
     now = setup.current()
-    fields = (_guide(lang, "setup_mail", 6)
+    fields = (_guide(lang, "setup_mail", 7)
               + _field(t("setup_mail_key"), "resend_key", "", "password", "re_…",
                        t("setup_token_kept") if now["mail_key"] else t("setup_mail_key_hint"))
               + _field(t("setup_mail_from"), "mail_from", now["mail_from"], "text", t("setup_mail_from_hint"),
@@ -198,16 +203,18 @@ def owner_page(user: User, step: str, here: str = "") -> str:
     elif step == "mail":
         body = _card(lang, step, "setup_mail", t("setup_mail_text"), mail_content(lang))
     elif step == "backup":
-        content = (backuppage.key_part(lang, setup=True)
+        content = (_guide(lang, "setup_backup_g", 4) + backuppage.key_part(lang, setup=True)
                    + f'<div class="bk-line">{backuppage.hour_field(lang)}{backuppage.now_part(lang)}</div>'
                    + _go(lang, _next("backup"), _next("backup"), skip=True))
         body = _card(lang, step, "setup_backup", t("setup_backup_text"), content)
     elif step == "ai":
-        content = (f'<button class="primary setup-ai" type="button" data-open-drawer>{esc(t("setup_ai_open"))}</button>'
+        content = (_guide(lang, "setup_ai_g", 5) +
+                   f'<button class="primary setup-ai" type="button" data-open-drawer>{esc(t("setup_ai_open"))}</button>'
                    f'<div class="actions"><button type="button" data-go="{_next("ai")}">{esc(t("setup_next"))}</button></div>')
         body = _card(lang, step, "setup_ai", t("setup_ai_text"), content)
     else:
-        content = (f'<div class="actions"><button class="primary" type="button" data-setup-finish data-url="/setup/finish">'
+        content = (_guide(lang, "setup_done_g", 5, "setup_guide_next") +
+                   f'<div class="actions"><button class="primary" type="button" data-setup-finish data-url="/setup/finish">'
                    f'{esc(t("setup_finish"))}</button></div>')
         body = _card(lang, "done", "setup_done", t("setup_done_text"), content)
     # A way out (Janis, 27.11.2026): opened again from the administration it leads back there; during the first set-up

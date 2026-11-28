@@ -11,11 +11,12 @@ for _ in $(seq 1 60); do
   sleep 2
 done
 [ "${ok:-0}" = 1 ] || die "Der Hub antwortet nicht. Nachsehen mit: docker compose --project-directory $APP logs web"
-ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+ip=$(hostname -I 2>/dev/null | awk '{print $1}' || true)   # an update runs in a container (hubctl)
 if [ "$MODE" = install ]; then
   say "Fertig"
   note "Öffne im Browser:  http://${ip:-<IP des Servers>}:$port"
-  note "Die Einrichtung ist eine Stunde lang offen (danach den Server neu starten)."
+  note "Der Assistent dort führt durch alles Weitere; jeder Schritt hat eine Anleitung zum Aufklappen."
+  note "Die Einrichtung ist eine Stunde lang offen (danach den Server neu starten: sudo reboot)."
 else
   say "Aktualisiert"
 fi
