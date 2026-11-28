@@ -20,11 +20,14 @@ COOKIE_SECURE = SECURE_MODE == "1"
 
 
 def is_https(request) -> bool:
-    """Did this request come over HTTPS? Only Cloudflare (through the tunnel) says so, in X-Forwarded-Proto."""
+    """Did this request come over HTTPS? Cloudflare through the tunnel says so in X-Forwarded-Proto; the gate's HTTPS
+    door (a server with its own public IP, 28.11.2026) in X-Hub-Https."""
     if COOKIE_SECURE:
         return True
     if SECURE_MODE != "auto":
         return False
+    if throttle.gate_https(request):
+        return True
     return throttle.via_proxy(request) and request.headers.get("x-forwarded-proto", "").lower() == "https"
 
 

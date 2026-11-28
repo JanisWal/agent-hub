@@ -24,6 +24,7 @@ services:
       HUB_SECURE_COOKIE: "${HUB_SECURE_COOKIE:-1}"
       HUB_TRUSTED_PROXY: "${HUB_TRUSTED_PROXY:-}"   # the tunnel's name: only its forwarded headers count (throttle.py)
       HUB_TUNNEL_ON: "${TUNNEL_TOKEN:+1}"           # the set-up says whether a tunnel is set; the token stays out
+      HUB_TLS_PORT: "${HUB_TLS_PORT:-}"             # the gate's HTTPS door is on (set-up, a server with its own IP)
       HUB_GATE: "gate"                              # requests come through the gate; it names the real peer (throttle.py)
       # Where updates come from (web/app/updates.py); empty = no updates from the page (the first hub, from its clone).
       HUB_SOURCE: "${HUB_SOURCE:-}"
@@ -151,9 +152,15 @@ services:
       # The first hub: only the Pi itself (the tunnel reaches the gate over the Docker network). A new install opens it
       # in the home network (HUB_BIND=0.0.0.0) for the set-up assistant and for use at the server's address.
       - "${HUB_BIND:-127.0.0.1}:${HUB_PORT:-8000}:8000"
+      # The HTTPS door (gate/tls.conf, 28.11.2026): set by the set-up for a server with its own public IP; while it is
+      # off, an unused random port on the server itself (nothing listens behind it).
+      - "${HUB_TLS_BIND:-127.0.0.1}:${HUB_TLS_PORT:-}:8443"
     volumes:
       - ./gate/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./gate/hub.conf:/etc/nginx/hub/hub.conf:ro
+      - ./gate/tls.conf:/etc/nginx/hub/tls.conf:ro
       - ./gate/maintenance.html:/etc/nginx/hub/maintenance.html:ro
+      - ${HUB_TLS_HOST_DIR:-./gate/tls-off}:/etc/nginx/tls:ro   # certificate, key and enable.on (runner/hubctl.py)
     networks:
       default: {}
       web:

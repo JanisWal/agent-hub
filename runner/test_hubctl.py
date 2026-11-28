@@ -425,5 +425,88 @@ class UpdateTest(unittest.TestCase):
         self.assertLessEqual(len(answer["log"]), hubctl.LOG_LINES)
 
 
+def make_pair() -> tuple[str, str]:
+    """A throwaway certificate and its key in PEM, as Cloudflare's origin certificate comes."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.x509.oid import NameOID
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "hub2.example.de")])
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cert = (x509.CertificateBuilder().subject_name(name).issuer_name(name).public_key(key.public_key())
+            .serial_number(x509.random_serial_number()).not_valid_before(now)
+            .not_valid_after(now + datetime.timedelta(days=30)).sign(key, hashes.SHA256()))
+    return (cert.public_bytes(serialization.Encoding.PEM).decode(),
+            key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
+                              serialization.NoEncryption()).decode())
+
+
+class TlsTest(unittest.TestCase):
+    """The gate's HTTPS door for a server with its own public IP (28.11.2026)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name)
+        env = {"HUB_BASE_DIR": str(base), "HUB_APP_DIR": str(base / "app"), "HUB_DATA_DIR": str(base / "data"),
+               "HUB_CLAUDE_DIR": str(base / "claude"), "HUB_WORK_DIR": str(base / "work"),
+               "HUB_BACKUP_DIR": str(base / "backups"), "HUB_NAME": "agent-hub"}
+        self.paths = hubctl.Paths(env)
+        for folder in ("app", "data", "work"):
+            (base / folder).mkdir()
+        (self.paths.app / ".env").write_text("HUB_PORT=8080\n")
+        self.calls, self.asked = [], []
+        for patcher in (mock.patch.object(hubctl, "compose", side_effect=lambda paths, *args: self.calls.append(args)),
+                        mock.patch.object(hubctl, "port_free", side_effect=lambda port: self.asked.append(port) or port != 443)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.cert, self.key = make_pair()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_a_pair_goes_in_place_for_the_gate_only(self):
+        changes = hubctl.apply_tls(self.paths, {"cert": self.cert, "key": self.key, "port": 8443})
+        folder = self.paths.base / "tls"
+        self.assertEqual(changes, {"HUB_TLS_HOST_DIR": str(folder), "HUB_TLS_BIND": "0.0.0.0", "HUB_TLS_PORT": "8443"})
+        self.assertEqual((folder / "key.pem").read_text(), self.key)
+        self.assertEqual(os.stat(folder / "key.pem").st_mode & 0o777, 0o600)
+        self.assertEqual(os.stat(folder / "key.pem").st_uid, hubctl.GATE_UID)
+        self.assertEqual((folder / "enable.on").read_text(), "include /etc/nginx/hub/tls.conf;\n")
+        self.assertEqual(self.asked, [8443])
+        self.assertFalse((self.paths.jobs / "tls-check").exists())       # the trial copy of the key is gone
+
+    def test_no_pair_no_change(self):
+        _, other_key = make_pair()
+        for tls in ({"cert": self.cert, "key": other_key, "port": 443}, {"cert": "x", "key": self.key, "port": 443},
+                    {"cert": self.cert, "key": self.key.replace("PRIVATE", "PUBLIC"), "port": 443}):
+            with self.assertRaisesRegex(hubctl.Failed, "bad_cert"):
+                hubctl.apply_tls(self.paths, tls)
+        for port in (0, 70000, "x"):
+            with self.assertRaisesRegex(hubctl.Failed, "bad_value"):
+                hubctl.apply_tls(self.paths, {"cert": self.cert, "key": self.key, "port": port})
+        self.assertFalse((self.paths.base / "tls").exists())
+
+    def test_a_port_in_use_is_refused_and_the_own_port_is_not_asked_again(self):
+        with self.assertRaisesRegex(hubctl.Failed, "port_taken"):
+            hubctl.apply_tls(self.paths, {"cert": self.cert, "key": self.key, "port": 443})
+        (self.paths.app / ".env").write_text("HUB_TLS_PORT=443\n")      # the gate holds it already: a new certificate
+        self.asked.clear()
+        hubctl.apply_tls(self.paths, {"cert": self.cert, "key": self.key, "port": 443})
+        self.assertEqual(self.asked, [])
+
+    def test_settings_switch_the_door_and_off_removes_it(self):
+        hubctl.apply_settings(self.paths, {}, tls={"cert": self.cert, "key": self.key, "port": 8443})
+        env = hubctl.read_env(self.paths.app / ".env")
+        self.assertEqual((env["HUB_TLS_PORT"], env["HUB_TLS_BIND"]), ("8443", "0.0.0.0"))
+        self.assertIn(("up", "-d", "--no-build", "--force-recreate", "gate"), self.calls)
+        hubctl.apply_settings(self.paths, {"HUB_BASE_URL": "https://hub2.example.de"}, tls="off")
+        env = hubctl.read_env(self.paths.app / ".env")
+        self.assertNotIn("HUB_TLS_PORT", env)
+        self.assertFalse((self.paths.base / "tls").exists())
+        with self.assertRaisesRegex(hubctl.Failed, "bad_value"):
+            hubctl.apply_settings(self.paths, {})
+
+
 if __name__ == "__main__":
     unittest.main()

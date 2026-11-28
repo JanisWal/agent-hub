@@ -1,0 +1,1 @@
+Empty on purpose: the gate's TLS folder while HTTPS is off (compose.yml, gate/tls.conf).

@@ -26,6 +26,7 @@ import os
 import re
 import shutil
 import sqlite3
+import ssl
 import subprocess
 import sys
 import time
@@ -460,14 +461,80 @@ def apply_restore(paths: Paths, now: float | None = None) -> dict:
     return {"before": before.name}
 
 
+# --- HTTPS at the gate ----------------------------------------------------------------------------------------------
+# A server with its own public IP behind Cloudflare's proxy (28.11.2026, gate/tls.conf): the owner pastes Cloudflare's
+# origin certificate and key; they go to <base>/tls (outside the code folder, so an update keeps them), readable only
+# by the gate's user. The gate's HTTPS door opens on the chosen port of the server.
+GATE_UID = 101                       # nginx's user in the gate (compose.yml)
+GATE_IMAGE = "nginx:1.27.5-alpine"   # also checks whether a port is free (it is on the server already)
+_PEM_CERT = re.compile(r"-----BEGIN CERTIFICATE-----[A-Za-z0-9+/=\s]+-----END CERTIFICATE-----\s*")
+_PEM_KEY = re.compile(r"-----BEGIN (RSA |EC )?PRIVATE KEY-----[A-Za-z0-9+/=\s]+-----END (RSA |EC )?PRIVATE KEY-----\s*")
+TLS_OFF = {"HUB_TLS_HOST_DIR": None, "HUB_TLS_BIND": None, "HUB_TLS_PORT": None}
+
+
+def port_free(port: int) -> bool:
+    """Can the server's port be taken? A container of the gate's image tries it and ends at once."""
+    done = subprocess.run(["docker", "run", "--rm", "--pull=never", "-p", f"0.0.0.0:{port}:8443", "--entrypoint", "true",
+                           GATE_IMAGE], capture_output=True, text=True, timeout=120)
+    return done.returncode == 0
+
+
+def apply_tls(paths: Paths, tls) -> dict:
+    """Put the certificate in place (or with "off" remove it); the changes for .env. Failed("bad_cert") when certificate
+    and key are not a pair, Failed("port_taken") when the port is in use on the server."""
+    folder = paths.base / "tls"
+    if tls == "off":
+        shutil.rmtree(folder, ignore_errors=True)
+        return dict(TLS_OFF)
+    if not isinstance(tls, dict):
+        raise Failed("bad_value")
+    cert, key = str(tls.get("cert", "")).replace("\r", ""), str(tls.get("key", "")).replace("\r", "")
+    try:
+        port = int(tls.get("port", 0))
+    except (TypeError, ValueError):
+        raise Failed("bad_value")
+    if not 1 <= port <= 65535 or not _PEM_CERT.fullmatch(cert) or not _PEM_KEY.fullmatch(key):
+        raise Failed("bad_cert" if 1 <= port <= 65535 else "bad_value")
+    paths.jobs.mkdir(parents=True, exist_ok=True)
+    trial = paths.jobs / "tls-check"
+    shutil.rmtree(trial, ignore_errors=True)
+    trial.mkdir(mode=0o700)
+    try:
+        (trial / "cert.pem").write_text(cert)
+        (trial / "key.pem").write_text(key)
+        try:
+            ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(trial / "cert.pem", trial / "key.pem")
+        except (ssl.SSLError, ValueError):
+            raise Failed("bad_cert")
+    finally:
+        shutil.rmtree(trial, ignore_errors=True)
+    env = read_env(paths.app / ".env")
+    if env.get("HUB_TLS_PORT") != str(port) and not port_free(port):
+        raise Failed("port_taken")
+    folder.mkdir(mode=0o750, exist_ok=True)
+    os.chown(folder, GATE_UID, GATE_UID)
+    for name, text, mode in (("cert.pem", cert, 0o644), ("key.pem", key, 0o600),
+                             ("enable.on", "include /etc/nginx/hub/tls.conf;\n", 0o644)):
+        target = folder / name
+        fresh = target.with_name(name + ".new")
+        fresh.write_text(text)
+        os.chmod(fresh, mode)
+        os.chown(fresh, GATE_UID, GATE_UID)
+        os.replace(fresh, target)
+    return {"HUB_TLS_HOST_DIR": str(folder), "HUB_TLS_BIND": "0.0.0.0", "HUB_TLS_PORT": str(port)}
+
+
 # --- settings in .env ----------------------------------------------------------------------------------------------
-def apply_settings(paths: Paths, values: dict, saved=lambda: None) -> dict:
+def apply_settings(paths: Paths, values: dict, saved=lambda: None, tls=None) -> dict:
     """Write the allowed keys into .env and restart what reads them. An empty value removes the key. The tunnel runs
-    (profile "tunnel") exactly when a token is set. `saved` is called between writing and restarting: the restart also
-    restarts the web service that waits for the answer."""
-    if not isinstance(values, dict) or not values or any(key not in SETTING_KEYS for key in values):
+    (profile "tunnel") exactly when a token is set. `tls`: a certificate for the gate's HTTPS door, "off", or None
+    (unchanged). `saved` is called between writing and restarting: the restart also restarts the web service that waits
+    for the answer."""
+    if not isinstance(values, dict) or not (values or tls) or any(key not in SETTING_KEYS for key in values):
         raise Failed("bad_value")
     changes = {key: (str(value).strip() or None) for key, value in values.items()}
+    if tls is not None:
+        changes.update(apply_tls(paths, tls))
     merge_env(paths.app / ".env", changes)
     env = read_env(paths.app / ".env")
     profiles = [p for p in env.get("COMPOSE_PROFILES", "").split(",") if p and p != "tunnel"]
@@ -478,6 +545,8 @@ def apply_settings(paths: Paths, values: dict, saved=lambda: None) -> dict:
     if not env.get("TUNNEL_TOKEN"):
         compose(paths, "rm", "-sf", "tunnel")
     compose(paths, "up", "-d", "--no-build")
+    if tls is not None:
+        compose(paths, "up", "-d", "--no-build", "--force-recreate", "gate")   # a new certificate on the same port too
     return {"saved": sorted(values)}
 
 
@@ -605,8 +674,9 @@ def run(paths: Paths, job_id: int) -> int:
                                                   "log": _tail(paths.results / "update.log")})
                 return 1
         elif action == "settings":
-            values = data.get("values")
-            apply_settings(paths, values, lambda: write_result(paths, str(job_id), {"ok": True, "saved": sorted(values)}))
+            values = data.get("values") or {}
+            apply_settings(paths, values, lambda: write_result(paths, str(job_id), {"ok": True, "saved": sorted(values)}),
+                           tls=data.get("tls"))
             return 0
         else:
             raise Failed("unknown")

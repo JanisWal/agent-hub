@@ -1,6 +1,7 @@
 """The set-up assistant (setup.py, setuppage.py, routes/setup.py): open only before there is an owner, only in the home
 network and only for an hour; the owner's steps write .env through a host job; the start page sends the owner back only
 on a hub that was set up with the assistant."""
+import json
 import os
 import re
 import urllib.error
@@ -143,9 +144,7 @@ class SetupTest(unittest.TestCase):
                                                                        "TUNNEL_TOKEN": token})
         hostjobs.end_open("settings", "x")
         self.assertEqual(save("own", "http://203.0.113.5:8080").status_code, 400)
-        self.assertTrue(save("own", "https://hub.example.de")["ok"])
-        self.assertEqual(hostjobs.claim_next()["payload"]["values"], {"HUB_BASE_URL": "https://hub.example.de",
-                                                                       "TUNNEL_TOKEN": ""})
+        self.assertEqual(save("own", "https://hub.example.de").status_code, 400)   # the certificate comes with it (OwnAddressTest)
         html = routes.setup_page(request({deps.COOKIE_NAME: users.create_session(owner.id)}), "access")
         for way in ("home", "tunnel", "own"):
             self.assertIn(f'value="{way}"', html)
@@ -267,6 +266,75 @@ class _Answer:
 
     def read(self, size=-1):
         return self.body[:size] if size > 0 else self.body
+
+
+CERT = "-----BEGIN CERTIFICATE-----\n" + "A" * 300 + "\n-----END CERTIFICATE-----"
+KEY = "-----BEGIN PRIVATE KEY-----\n" + "B" * 300 + "\n-----END PRIVATE KEY-----"
+
+
+class OwnAddressTest(unittest.TestCase):
+    """The way "own" with the gate's HTTPS door (28.11.2026): Cloudflare's origin certificate, its key and the port."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        db.DB_PATH = os.path.join(self.tmp.name, "test.db")
+        self.owner = users.get_by_id(users.create_user("owner@example.com", "Own3r!pass", role="owner").id)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def save(self, **fields):
+        args = dict(kind="access", base_url="https://hub2.example.de", tunnel_token="", resend_key="", mail_from="",
+                    user=self.owner, way="own", tls_cert="", tls_key="", tls_port="")
+        args.update(fields)
+        return routes.save_settings(**args)
+
+    def payload(self):
+        job = hostjobs.claim_next()
+        hostjobs.end_open("settings", "x")
+        return job["payload"]
+
+    def field(self, answer):
+        return json.loads(answer.body)["field"]
+
+    def test_the_certificate_goes_to_the_server_with_its_port(self):
+        self.assertTrue(self.save(tls_cert=CERT + "\r\n", tls_key=KEY, tls_port="8443")["ok"])
+        sent = self.payload()
+        self.assertEqual(sent["tls"], {"cert": CERT + "\n", "key": KEY + "\n", "port": 8443})
+        self.assertEqual(sent["values"]["TUNNEL_TOKEN"], "")              # a tunnel set before stops
+        self.assertTrue(self.save(tls_cert=CERT, tls_key=KEY)["ok"])
+        self.assertEqual(self.payload()["tls"]["port"], 443)              # 443 when nothing is said
+
+    def test_what_can_not_be_right_is_refused(self):
+        self.assertEqual(self.field(self.save()), "tls_cert")              # the first time it is needed
+        self.assertEqual(self.field(self.save(tls_cert=CERT)), "tls_key")
+        self.assertEqual(self.field(self.save(tls_cert="hello", tls_key=KEY)), "tls_cert")
+        for port in ("0", "70000", "44a", "-1"):
+            self.assertEqual(self.field(self.save(tls_cert=CERT, tls_key=KEY, tls_port=port)), "tls_port", port)
+        self.assertIsNone(hostjobs.claim_next())
+
+    def test_saved_once_it_is_kept_and_other_ways_switch_it_off(self):
+        with mock.patch.dict(os.environ, {"HUB_TLS_PORT": "443"}):
+            self.assertTrue(self.save()["ok"])
+            self.assertNotIn("tls", self.payload())                       # kept as it is
+            self.assertEqual(self.field(self.save(tls_port="8443")), "tls_cert")   # a new port needs it again
+            self.assertTrue(self.save(way="home", base_url="http://192.168.1.20:8080")["ok"])
+            self.assertEqual(self.payload()["tls"], "off")
+            page = setuppage.access_content("de")
+            self.assertIn('name="tls_cert"', page)
+            self.assertIn(i18n.t("de", "setup_tls_kept"), page)
+
+    def test_only_the_gate_says_https(self):
+        gate = types.SimpleNamespace(client=types.SimpleNamespace(host="10.0.0.5"), headers={"x-hub-https": "1"})
+        other = types.SimpleNamespace(client=types.SimpleNamespace(host="203.0.113.9"), headers={"x-hub-https": "1"})
+        with mock.patch.object(throttle, "GATE", "gate"), mock.patch.object(throttle, "_address_of", return_value="10.0.0.5"), \
+                mock.patch.object(deps, "SECURE_MODE", "auto"), mock.patch.object(deps, "COOKIE_SECURE", False):
+            self.assertTrue(throttle.gate_https(gate))
+            self.assertTrue(deps.is_https(gate))
+            self.assertFalse(throttle.gate_https(other))                  # a visitor can not claim it
+            self.assertFalse(deps.is_https(other))
+            gate.headers = {}
+            self.assertFalse(deps.is_https(gate))
 
 
 if __name__ == "__main__":

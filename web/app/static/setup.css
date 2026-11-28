@@ -46,3 +46,7 @@
 .setup-guide li { -webkit-user-select: text; user-select: text; }
 .setup-back { display: block; margin: -8px 0 12px auto; width: max-content; }
 .setup-way-title, .setup-way-text, .setup-badge, .setup-guide summary { -webkit-user-select: none; user-select: none; }
+
+/* Cloudflare's origin certificate and key (way "own", 28.11.2026): pasted PEM text, monospace, a few lines high. */
+.setup-pem { min-height: 96px; font: 0.8rem/1.4 ui-monospace, "SF Mono", Menlo, monospace; resize: vertical; }
+@media (pointer: coarse) { .setup-pem { font-size: max(16px, 1rem); } }

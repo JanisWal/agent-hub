@@ -108,4 +108,5 @@ def probe(base_url: str, timeout: float = 8.0) -> tuple[str, int]:
 def current() -> dict:
     """What is set already, for the steps (never a secret itself, only whether it is there)."""
     return {"base_url": os.environ.get("HUB_BASE_URL", "").strip(), "tunnel": bool(os.environ.get("HUB_TUNNEL_ON")),
-            "mail_from": os.environ.get("MAIL_FROM", "").strip(), "mail_key": bool(os.environ.get("RESEND_API_KEY"))}
+            "mail_from": os.environ.get("MAIL_FROM", "").strip(), "mail_key": bool(os.environ.get("RESEND_API_KEY")),
+            "tls_port": os.environ.get("HUB_TLS_PORT", "").strip()}
