@@ -1,6 +1,13 @@
 # Agent-Hub – Übergabe an einen neuen Chat
 
-Stand: 22.11.2026 abends (die Kette der Agenten neu gebaut); davor 21.11.2026 (ChatGPT, API-Schlüssel neben dem Abo, weitere KIs; davor 20.11.2026: Durchsicht des ganzen Systems und Umbau der KI-Pakete) · Zweck: Einstieg in einen neuen Chat. Quelle der Wahrheit: `PROJEKT.md` („Auf einen Blick“, Fahrplan in 11a), `PROTOKOLL.md` (alle Änderungen, neueste zuerst), `KONZEPT-AGENTEN.md` (9.2a Werkzeuge je KI, 9.3a Pakete je Rolle), `DESIGN.md`, `CLAUDE.md`. Die vorige Übergabe (bis 19.11.2026) liegt in `archiv/CHAT-ZUSAMMENFASSUNG-2026-11-19.md`.
+Stand: 28.11.2026 (gate und Update-Knopf); davor 22.11.2026 abends (die Kette der Agenten neu gebaut); davor 21.11.2026 (ChatGPT, API-Schlüssel neben dem Abo, weitere KIs; davor 20.11.2026: Durchsicht des ganzen Systems und Umbau der KI-Pakete) · Zweck: Einstieg in einen neuen Chat. Quelle der Wahrheit: `PROJEKT.md` („Auf einen Blick“, Fahrplan in 11a), `PROTOKOLL.md` (alle Änderungen, neueste zuerst), `KONZEPT-AGENTEN.md` (9.2a Werkzeuge je KI, 9.3a Pakete je Rolle), `DESIGN.md`, `CLAUDE.md`. Die vorige Übergabe (bis 19.11.2026) liegt in `archiv/CHAT-ZUSAMMENFASSUNG-2026-11-19.md`.
+
+## 28.11.2026: gate, Wartungsseite und Update-Knopf (`gate`, `update-button`)
+
+- **Gebaut:** Dienst `gate` (nginx) vor dem Hub mit Wartungsseite; „Neu starten“ und „Anhalten“ betreffen nur die Container dahinter. Zeile „Version“ in Verwaltung › System mit „Nach Updates suchen“ und „Aktualisieren“ (hubctl `update`, Rückfall auf die alte Version, Protokoll zum Kopieren).
+- **Wichtig für jeden Chat:** Vorerst ist **jeder Commit auf `main` ein Update** für Janis' VM (Claude hat keinen Zugriff auf die VM). Nur Fertiges nach `main`. Später Releases, Glocke, Schalter für automatisch (PROJEKT.md Merkliste 3w).
+- **Für Janis:** einmal auf der VM `git clone --depth 1 https://github.com/JanisWal/agent-hub.git /tmp/hub-neu` und `sudo bash /tmp/hub-neu/update.sh`; danach kommen neue Versionen per Knopf. Scheitert ein Update, das Protokoll unter der Zeile kopieren und Claude geben.
+- **Offen:** ein echtes Update auf der VM ist noch nicht gelaufen.
 
 ## 27.11.2026, abends: Installationsskript, Einrichtungsassistent, neues Backup (`backup-zip`)
 
