@@ -32,6 +32,35 @@
   }
   function wait(ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); }
 
+  // The guides (setuppage._guide, 28.11.2026): the hub's own arrow turns, the body glides open and shut with the spring
+  // (motion.js), interruptible. On a wide screen the guides beside the step start open.
+  var wide = window.matchMedia("(min-width: 960px)");
+  function glide(body, open) {
+    var from = body.hidden ? 0 : body.getBoundingClientRect().height;
+    body.hidden = false;
+    var to = open ? body.scrollHeight : 0;
+    if (body._spring) body._spring.stop();
+    var end = function () { body.style.height = ""; body.style.overflow = ""; if (!open) body.hidden = true; };
+    if (!window.Motion || Motion.reduced()) { end(); return; }
+    body.style.overflow = "hidden";
+    body.style.height = from + "px";
+    var spring = Motion.spring(from, Motion.MOVE, function (v) {
+      body.style.height = Math.max(0, v) + "px";
+      if (!spring.active && v === to) end();
+    }, 0.5);
+    body._spring = spring;
+    spring.to(to);
+  }
+  card.querySelectorAll(".setup-guide").forEach(function (guide) {
+    var head = guide.querySelector(".setup-guide-head"), body = guide.querySelector(".setup-guide-body");
+    if (wide.matches && guide.hasAttribute("data-wide-open")) { head.setAttribute("aria-expanded", "true"); body.hidden = false; }
+    head.addEventListener("click", function () {
+      var open = head.getAttribute("aria-expanded") !== "true";
+      head.setAttribute("aria-expanded", open ? "true" : "false");
+      glide(body, open);
+    });
+  });
+
   // After saving, the hub writes .env and restarts. Ask for the job until it says how it went (requests fail while the
   // hub is down), then until /health answers again.
   function settled(job) {
@@ -63,13 +92,21 @@
     function choose(first) {
       var picked = form.querySelector('input[name="way"]:checked');
       if (!picked) return;
-      form.querySelectorAll("[data-way]").forEach(function (part) { part.hidden = part.getAttribute("data-way") !== picked.value; });
+      card.querySelectorAll("[data-way]").forEach(function (part) { part.hidden = part.getAttribute("data-way") !== picked.value; });
       address.placeholder = picked.dataset.placeholder || "";
       if (hint) hint.textContent = picked.dataset.hintText || "";
       if (!first && picked.value === "home" && here && here.value && !/^http:/.test(address.value)) address.value = here.value;
       if (!first && picked.value !== "home" && /^http:/.test(address.value)) address.value = "";
     }
     form.addEventListener("change", function (event) { if (event.target.name === "way") choose(false); });
+    // The scheme is fixed by the way (Janis, 28.11.2026): "hub2.domain.de" gets its https:// (at home http://) as soon as
+    // the field is left, so it can not be wrong.
+    address.addEventListener("blur", function () {
+      var value = address.value.trim();
+      if (!value || /^[a-z]+:\/\//i.test(value)) return;
+      var picked = form.querySelector('input[name="way"]:checked');
+      address.value = (picked && picked.value === "home" ? "http://" : "https://") + value.replace(/^\/+/, "");
+    });
     choose(true);
   });
 
@@ -83,18 +120,25 @@
       if (busy) el.appendChild(dots());
       el.hidden = !text;
     }
-    function probe() {
+    // Right after saving the gate may still be starting with its new door: a failed check is tried again a few times
+    // before it is shown (`tries`).
+    function probe(tries) {
+      tries = typeof tries === "number" ? tries : 1;
       say(note, form.dataset.probing, true);
       return fetch(form.dataset.probe, { method: "POST", credentials: "same-origin" })
         .then(function (r) { return r.json(); })
         .then(function (data) {
+          if (!data.found && tries > 1) return wait(5000).then(function () { return probe(tries - 1); });
           say(note, data.text || card.dataset.failed);
           note.dataset.found = data.found ? "1" : "0";
           after.hidden = false;
-        }, function () { say(note, card.dataset.failed); after.hidden = false; });
+        }, function () {
+          if (tries > 1) return wait(5000).then(function () { return probe(tries - 1); });
+          say(note, card.dataset.failed); after.hidden = false;
+        });
     }
     var again = form.querySelector("[data-probe-again]");
-    if (again) again.addEventListener("click", probe);
+    if (again) again.addEventListener("click", function () { probe(1); });
 
     form.addEventListener("submit", function (event) {
       event.preventDefault();
@@ -109,10 +153,12 @@
             save.disabled = false;
             var field = data.field && form.querySelector('[name="' + data.field + '"]');
             if (field) { field.closest("label").classList.add("has-error"); field.focus(); }
-            say(error, card.dataset.failed);
+            say(error, data.message || card.dataset.failed);   // what is wrong with the field, when the server says it
             return;
           }
-          form.querySelectorAll('input[type="password"], textarea').forEach(function (input) { input.value = ""; });
+          // Keys typed into password fields go; pasted certificate text stays until the page is left (Janis, 28.11.2026:
+          // a second try must not need it again).
+          form.querySelectorAll('input[type="password"]').forEach(function (input) { input.value = ""; });
           say(note, form.dataset.restarting, true);
           return settled(data.job).then(function (state) {
             save.disabled = false;
@@ -124,7 +170,7 @@
               return;
             }
             // The address is checked by itself; a test mail only when the owner asks for it.
-            if (form.getAttribute("data-setup-form") === "access") return probe();
+            if (form.getAttribute("data-setup-form") === "access") return probe(4);
             say(note, "");
             after.hidden = false;
           });

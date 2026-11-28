@@ -10,6 +10,7 @@ import io
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import tempfile
@@ -494,6 +495,16 @@ class TlsTest(unittest.TestCase):
         self.asked.clear()
         hubctl.apply_tls(self.paths, {"cert": self.cert, "key": self.key, "port": 443})
         self.assertEqual(self.asked, [])
+
+    def test_a_new_port_keeps_the_saved_pair(self):
+        hubctl.apply_tls(self.paths, {"cert": self.cert, "key": self.key, "port": 8443})
+        (self.paths.app / ".env").write_text("HUB_TLS_PORT=8443\n")
+        changes = hubctl.apply_tls(self.paths, {"port": 9443, "keep": True})
+        self.assertEqual(changes["HUB_TLS_PORT"], "9443")
+        self.assertEqual((self.paths.base / "tls" / "cert.pem").read_text(), self.cert)
+        shutil.rmtree(self.paths.base / "tls")
+        with self.assertRaisesRegex(hubctl.Failed, "bad_cert"):              # nothing saved to keep
+            hubctl.apply_tls(self.paths, {"port": 9443, "keep": True})
 
     def test_settings_switch_the_door_and_off_removes_it(self):
         hubctl.apply_settings(self.paths, {}, tls={"cert": self.cert, "key": self.key, "port": 8443})

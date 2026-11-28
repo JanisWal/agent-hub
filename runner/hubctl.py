@@ -488,6 +488,11 @@ def apply_tls(paths: Paths, tls) -> dict:
         return dict(TLS_OFF)
     if not isinstance(tls, dict):
         raise Failed("bad_value")
+    if tls.get("keep"):   # only the port changes: the saved pair stays (it is never sent back to the page)
+        try:
+            tls = {**tls, "cert": (folder / "cert.pem").read_text(), "key": (folder / "key.pem").read_text()}
+        except OSError:
+            raise Failed("bad_cert")
     cert, key = str(tls.get("cert", "")).replace("\r", ""), str(tls.get("key", "")).replace("\r", "")
     try:
         port = int(tls.get("port", 0))

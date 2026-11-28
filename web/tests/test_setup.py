@@ -317,12 +317,36 @@ class OwnAddressTest(unittest.TestCase):
         with mock.patch.dict(os.environ, {"HUB_TLS_PORT": "443"}):
             self.assertTrue(self.save()["ok"])
             self.assertNotIn("tls", self.payload())                       # kept as it is
-            self.assertEqual(self.field(self.save(tls_port="8443")), "tls_cert")   # a new port needs it again
+            self.assertTrue(self.save(tls_port="8443")["ok"])
+            self.assertEqual(self.payload()["tls"], {"port": 8443, "keep": True})   # the saved pair moves along
             self.assertTrue(self.save(way="home", base_url="http://192.168.1.20:8080")["ok"])
             self.assertEqual(self.payload()["tls"], "off")
             page = setuppage.access_content("de")
             self.assertIn('name="tls_cert"', page)
             self.assertIn(i18n.t("de", "setup_tls_kept"), page)
+
+    def test_a_wrong_field_says_what_is_wrong(self):
+        answer = self.save(tls_cert="hello", tls_key=KEY)
+        self.assertEqual(json.loads(answer.body)["message"], i18n.t("de", "setup_bad_tls_cert"))
+
+    def test_the_sender_in_both_forms_and_bare_brackets_go(self):
+        """Resend takes "a@b.de" and "Name <a@b.de>"; "<a@b.de>" alone it refused with 422 (28.11.2026)."""
+        for given, saved in (("noreply@example.de", "noreply@example.de"),
+                             ("Agent-Hub <noreply@example.de>", "Agent-Hub <noreply@example.de>"),
+                             ("<noreply@example.de>", "noreply@example.de"), ("  ", "")):
+            self.assertEqual(routes._sender(given), saved, given)
+        for bad in ("noreply", "a@b", "Hub <a@b.de", "<a@b.de> Hub", "x <y> <a@b.de>", "a b@c.de"):
+            self.assertIsNone(routes._sender(bad), bad)
+        answer = routes.save_settings(kind="mail", base_url="", tunnel_token="", resend_key="", mail_from="noreply",
+                                      user=self.owner)
+        self.assertEqual(json.loads(answer.body)["field"], "mail_from")
+
+    def test_the_guides_sit_beside_the_step_with_the_hubs_arrow(self):
+        html = setuppage.owner_page(self.owner, "access")
+        self.assertIn('class="setup-aside"', html)
+        self.assertIn('class="setup-guide-head"', html)
+        self.assertNotIn("<details", html)                                  # no browser triangle
+        self.assertIn('class="setup-radio"', html)
 
     def test_only_the_gate_says_https(self):
         gate = types.SimpleNamespace(client=types.SimpleNamespace(host="10.0.0.5"), headers={"x-hub-https": "1"})

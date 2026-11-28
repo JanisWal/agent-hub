@@ -95,7 +95,9 @@ def probe(base_url: str, timeout: float = 8.0) -> tuple[str, int]:
     if not base_url.startswith(("https://", "http://")):
         return "net", 0
     try:
-        with urllib.request.urlopen(base_url.rstrip("/") + "/health", timeout=timeout) as answer:
+        # An own name: Cloudflare's browser check answers Python's default one with 403 (28.11.2026, hub2).
+        asked = urllib.request.Request(base_url.rstrip("/") + "/health", headers={"User-Agent": "agent-hub-setup"})
+        with urllib.request.urlopen(asked, timeout=timeout) as answer:
             return ("", 200) if answer.status == 200 and b'"ok"' in answer.read(200) else ("other", answer.status)
     except urllib.error.HTTPError as failed:
         if failed.code in (521, 522, 523):
