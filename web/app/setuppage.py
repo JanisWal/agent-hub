@@ -8,11 +8,13 @@ from .layout import fill, page
 from .ui import info_dot, logged_in_page
 from .users import User
 
-CARD = """<section class="glass setup" data-setup data-step="%STEP%" data-failed="%t.setup_failed%">
+# Wide screens (Janis, 28.11.2026): the step on the left, its guide open on the right, little scrolling; a phone shows
+# the guide folded above the step. The aside comes first in the page so a narrow screen puts it on top (setup.css).
+CARD = """<section class="glass setup%WIDE%" data-setup data-step="%STEP%" data-failed="%t.setup_failed%">
   <ol class="setup-dots" aria-label="%t.setup_steps%">%DOTS%</ol>
   <h1>%TITLE%</h1>
   <p class="subtitle">%TEXT%%INFO%</p>
-  %CONTENT%
+  <div class="setup-body">%ASIDE%<div class="setup-main">%CONTENT%</div></div>
 </section>"""
 
 
@@ -22,10 +24,11 @@ def _dots(step: str) -> str:
     return "".join(f'<li class="{"done" if i < at else "now" if i == at else ""}"></li>' for i in range(len(shown)))
 
 
-def _card(lang: str, step: str, title_key: str, text: str, content: str, info: str = "") -> str:
+def _card(lang: str, step: str, title_key: str, text: str, content: str, info: str = "", aside: str = "") -> str:
     dot = info_dot(i18n.t(lang, title_key), info) if info else ""
+    side = f'<aside class="setup-aside">{aside}</aside>' if aside else ""
     return fill(CARD, lang, STEP=step, DOTS=_dots(step), TITLE=esc(i18n.t(lang, title_key)), TEXT=esc(text),
-                INFO=dot, CONTENT=content)
+                INFO=dot, CONTENT=content, ASIDE=side, WIDE=" wide" if aside else "")
 
 
 def _go(lang: str, back: str, next_url: str, next_key: str = "setup_next", skip: bool = False) -> str:
@@ -61,11 +64,11 @@ def check_page(lang: str, runner_seen: float) -> str:
                     f'<span class="setup-value">{esc(value)}</span></li>')
     content = (f'<ul class="setup-checks">{"".join(rows)}</ul>'
                f'<p class="muted setup-window">{esc(t("setup_window", minutes=setup.minutes_left()))}</p>'
-               + _guide(lang, "setup_check_g", 5) +
+               +
                f'<div class="actions"><button type="button" data-go="/setup?step=restore">{esc(t("setup_restore"))}</button>'
                f'<button class="primary" type="button" data-go="/setup?step=account">{esc(t("setup_new"))}</button></div>')
-    body = _card(lang, "check", "setup_welcome", t("setup_welcome_text"), content)
-    return page(t("setup_title"), body, lang, styles=("setup.css",), scripts=("setup.js",))
+    body = _card(lang, "check", "setup_welcome", t("setup_welcome_text"), content, aside=_guide(lang, "setup_check_g", 5))
+    return page(t("setup_title"), body, lang, styles=("setup.css",), scripts=("motion.js", "setup.js"))
 
 
 ACCOUNT = """<form method="post" action="/setup/owner" novalidate data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%">
@@ -75,7 +78,6 @@ ACCOUNT = """<form method="post" action="/setup/owner" novalidate data-msg-requi
   <label>%t.setup_password_again%<input type="password" name="password2" required autocomplete="new-password" placeholder="••••••••"></label>
   <label class="setting has-select setup-lang"><span class="setting-label">%t.language%</span>
     <select name="language"><option value="de"%DE%>Deutsch</option><option value="en"%EN%>English</option></select>%CHEVRON%</label>
-  %GUIDE%
   <div class="actions">
     <button type="button" data-go="/setup">%t.back%</button>
     <button class="primary" type="submit">%t.setup_create%</button>
@@ -86,16 +88,17 @@ ACCOUNT = """<form method="post" action="/setup/owner" novalidate data-msg-requi
 def account_page(lang: str, error_key: str = "", email: str = "") -> str:
     error = f'<p class="error" role="alert">{esc(i18n.t(lang, error_key))}</p>' if error_key else ""
     content = fill(ACCOUNT, lang, ERROR=error, EMAIL=esc(email), CHEVRON=icon("chevron_down"),
-                   GUIDE=_guide(lang, "setup_account_g", 3),
+
                    DE=" selected" if lang == "de" else "", EN=" selected" if lang == "en" else "")
-    body = _card(lang, "account", "setup_account", i18n.t(lang, "setup_account_text"), content)
-    return page(i18n.t(lang, "setup_title"), body, lang, styles=("setup.css",), scripts=("setup.js",))
+    body = _card(lang, "account", "setup_account", i18n.t(lang, "setup_account_text"), content,
+                 aside=_guide(lang, "setup_account_g", 3))
+    return page(i18n.t(lang, "setup_title"), body, lang, styles=("setup.css",), scripts=("motion.js", "setup.js"))
 
 
 def restore_page(lang: str) -> str:
-    content = (_guide(lang, "setup_restore_g", 4) + backuppage.restore_part(lang, owner=False)
+    content = (backuppage.restore_part(lang, owner=False)
                + f'<div class="actions"><button type="button" data-go="/setup">{esc(i18n.t(lang, "back"))}</button></div>')
-    body = _card(lang, "restore", "rs_title", "", content)
+    body = _card(lang, "restore", "rs_title", "", content, aside=_guide(lang, "setup_restore_g", 4))
     return page(i18n.t(lang, "setup_title"), body, lang, styles=("setup.css", "backup.css"),
                 scripts=("motion.js", "backup.js", "setup.js"))
 
@@ -133,12 +136,15 @@ def _field(label: str, name: str, value: str = "", kind: str = "text", placehold
             f' autocomplete="off" spellcheck="false" maxlength="500"{extra}>{hint_html}</label>')
 
 
-def _guide(lang: str, prefix: str, steps: int, summary: str = "setup_guide") -> str:
+def _guide(lang: str, prefix: str, steps: int, summary: str = "setup_guide", wide_open: bool = True) -> str:
     """A step-by-step guide that folds open (Janis, 27.11.2026: the formats and the way there right in the step;
-    28.11.2026: every step has one, together they cover everything from the first page to running the hub)."""
+    28.11.2026: every step has one, together they cover everything from the first page to running the hub). The
+    hub's own arrow and the spring (setup.js), no browser triangle; on a wide screen it starts open (`wide_open`)."""
     items = "".join(f"<li>{esc(i18n.t(lang, f'{prefix}_{n}'))}</li>" for n in range(1, steps + 1))
-    return (f'<details class="setup-guide"><summary>{esc(i18n.t(lang, summary))}</summary>'
-            f'<ol>{items}</ol></details>')
+    return (f'<div class="setup-guide"{" data-wide-open" if wide_open else ""}>'
+            f'<button type="button" class="setup-guide-head" aria-expanded="false">'
+            f'<span>{esc(i18n.t(lang, summary))}</span>{icon("chevron_down")}</button>'
+            f'<div class="setup-guide-body" hidden><ol>{items}</ol></div></div>')
 
 
 WAYS = ("home", "tunnel", "own")
@@ -153,9 +159,10 @@ def current_way() -> str:
 
 
 def _area(label: str, name: str, placeholder: str, hint: str) -> str:
-    return (f'<label>{esc(label)}<textarea name="{name}" rows="4" placeholder="{esc(placeholder)}" autocomplete="off"'
-            f' spellcheck="false" maxlength="20000" class="setup-pem"></textarea>'
-            f'<span class="setup-hint">{esc(hint)}</span></label>')
+    """A field for pasted PEM text: the name as its heading, a calm terminal-like box (setup.css), the hint below."""
+    return (f'<label class="setup-pem-field"><span class="setup-pem-name">{esc(label)}</span>'
+            f'<textarea name="{name}" rows="6" placeholder="{esc(placeholder)}" autocomplete="off" spellcheck="false"'
+            f' maxlength="20000" class="setup-pem"></textarea><span class="setup-hint">{esc(hint)}</span></label>')
 
 
 def _tls_fields(lang: str, saved_port: str) -> str:
@@ -163,9 +170,10 @@ def _tls_fields(lang: str, saved_port: str) -> str:
     Neither is ever shown again; empty keeps what is saved."""
     t = lambda key, **kw: i18n.t(lang, key, **kw)   # noqa: E731
     kept = t("setup_tls_kept") if saved_port else ""
-    return (_area(t("setup_tls_cert"), "tls_cert", "-----BEGIN CERTIFICATE-----", kept or t("setup_tls_cert_hint"))
+    return ('<div class="setup-pems">'
+            + _area(t("setup_tls_cert"), "tls_cert", "-----BEGIN CERTIFICATE-----", kept or t("setup_tls_cert_hint"))
             + _area(t("setup_tls_key"), "tls_key", "-----BEGIN PRIVATE KEY-----", kept or t("setup_tls_key_hint"))
-            + _field(t("setup_tls_port"), "tls_port", saved_port or "443", "text", "443", t("setup_tls_port_hint"),
+            + '</div>' + _field(t("setup_tls_port"), "tls_port", saved_port or "443", "text", "443", t("setup_tls_port_hint"),
                      ' inputmode="numeric" maxlength="5"'))
 
 
@@ -177,7 +185,8 @@ def access_content(lang: str, here: str = "") -> str:
     rows = []
     for name in WAYS:
         badge = f'<span class="setup-badge">{esc(t("setup_way_best"))}</span>' if name == "tunnel" else ""
-        rows.append(f'<label class="setup-way"><input type="radio" name="way" value="{name}"'
+        rows.append(f'<label class="setup-way"><span class="setup-radio" aria-hidden="true"></span>'
+                    f'<input type="radio" name="way" value="{name}"'
                     f'{" checked" if name == way else ""} data-hint-text="{esc(t(f"setup_{name}_hint"))}"'
                     f' data-placeholder="{"https://hub.deine-domain.de" if lang == "de" and name != "home" else "https://hub.your-domain.com" if name != "home" else esc(here or "http://192.168.1.20:8080")}">'
                     f'<span class="setup-way-title">{esc(t(f"setup_way_{name}"))}{badge}</span>'
@@ -185,12 +194,10 @@ def access_content(lang: str, here: str = "") -> str:
     address = now["base_url"] or (here if way == "home" else "")
     token_hint = t("setup_token_kept") if now["tunnel"] else t("setup_token_hint")
     fields = (f'<div class="setup-ways" role="radiogroup">{"".join(rows)}</div>'
-              f'<div data-way="home" hidden>{_guide(lang, "setup_home_g", 2)}</div>'
-              f'<div data-way="tunnel" hidden>{_guide(lang, "setup_tunnel", 7)}</div>'
-              f'<div data-way="own" hidden>{_guide(lang, "setup_own", 6) + _guide(lang, "setup_expert", 3, "setup_expert")}</div>'
               + _field(t("setup_address"), "base_url", address, "url", "", t(f"setup_{way}_hint"), ' data-address')
               + f'<div data-way="tunnel" hidden>'
-              + _field(t("setup_token"), "tunnel_token", "", "password", "eyJ…", token_hint) + '</div>'
+              + _field(t("setup_token"), "tunnel_token", "", "password",
+                       t("setup_saved_placeholder") if now["tunnel"] else "eyJ…", token_hint) + '</div>'
               + f'<div data-way="own" hidden>{_tls_fields(lang, now["tls_port"])}</div>'
               + f'<input type="hidden" name="here" value="{esc(here)}">')
     again = f'<button type="button" data-probe-again>{esc(t("setup_probe_again"))}</button>'
@@ -198,11 +205,19 @@ def access_content(lang: str, here: str = "") -> str:
                 PROBING=esc(t("setup_probe_wait")), CONFIGURED="1" if now["base_url"] else "", EXTRA="", AGAIN=again)
 
 
+def access_guides(lang: str) -> str:
+    """The guide of each way; only the chosen one shows (setup.js)."""
+    return (f'<div data-way="home" hidden>{_guide(lang, "setup_home_g", 2)}</div>'
+            f'<div data-way="tunnel" hidden>{_guide(lang, "setup_tunnel", 7)}</div>'
+            f'<div data-way="own" hidden>{_guide(lang, "setup_own", 6)}'
+            f'{_guide(lang, "setup_expert", 3, "setup_expert", wide_open=False)}</div>')
+
+
 def mail_content(lang: str) -> str:
     t = lambda key, **kw: i18n.t(lang, key, **kw)   # noqa: E731
     now = setup.current()
-    fields = (_guide(lang, "setup_mail", 7)
-              + _field(t("setup_mail_key"), "resend_key", "", "password", "re_…",
+    fields = (_field(t("setup_mail_key"), "resend_key", "", "password",
+                     t("setup_saved_placeholder") if now["mail_key"] else "re_…",
                        t("setup_token_kept") if now["mail_key"] else t("setup_mail_key_hint"))
               + _field(t("setup_mail_from"), "mail_from", now["mail_from"], "text", t("setup_mail_from_hint"),
                        t("setup_mail_from_format")))
@@ -218,24 +233,25 @@ def owner_page(user: User, step: str, here: str = "") -> str:
     lang = user.language
     t = lambda key, **kw: i18n.t(lang, key, **kw)   # noqa: E731
     if step == "access":
-        body = _card(lang, step, "setup_access", t("setup_access_text"), access_content(lang, here))
+        body = _card(lang, step, "setup_access", t("setup_access_text"), access_content(lang, here),
+                     aside=access_guides(lang))
     elif step == "mail":
-        body = _card(lang, step, "setup_mail", t("setup_mail_text"), mail_content(lang))
+        body = _card(lang, step, "setup_mail", t("setup_mail_text"), mail_content(lang),
+                     aside=_guide(lang, "setup_mail", 7))
     elif step == "backup":
-        content = (_guide(lang, "setup_backup_g", 4) + backuppage.key_part(lang, setup=True)
+        content = (backuppage.key_part(lang, setup=True)
                    + f'<div class="bk-line">{backuppage.hour_field(lang)}{backuppage.now_part(lang)}</div>'
                    + _go(lang, _next("backup"), _next("backup"), skip=True))
-        body = _card(lang, step, "setup_backup", t("setup_backup_text"), content)
+        body = _card(lang, step, "setup_backup", t("setup_backup_text"), content, aside=_guide(lang, "setup_backup_g", 4))
     elif step == "ai":
-        content = (_guide(lang, "setup_ai_g", 5) +
-                   f'<button class="primary setup-ai" type="button" data-open-drawer>{esc(t("setup_ai_open"))}</button>'
+        content = (f'<button class="primary setup-ai" type="button" data-open-drawer>{esc(t("setup_ai_open"))}</button>'
                    f'<div class="actions"><button type="button" data-go="{_next("ai")}">{esc(t("setup_next"))}</button></div>')
-        body = _card(lang, step, "setup_ai", t("setup_ai_text"), content)
+        body = _card(lang, step, "setup_ai", t("setup_ai_text"), content, aside=_guide(lang, "setup_ai_g", 5))
     else:
-        content = (_guide(lang, "setup_done_g", 5, "setup_guide_next") +
-                   f'<div class="actions"><button class="primary" type="button" data-setup-finish data-url="/setup/finish">'
+        content = (f'<div class="actions"><button class="primary" type="button" data-setup-finish data-url="/setup/finish">'
                    f'{esc(t("setup_finish"))}</button></div>')
-        body = _card(lang, "done", "setup_done", t("setup_done_text"), content)
+        body = _card(lang, "done", "setup_done", t("setup_done_text"), content,
+                     aside=_guide(lang, "setup_done_g", 5, "setup_guide_next"))
     # A way out (Janis, 27.11.2026): opened again from the administration it leads back there; during the first set-up
     # it finishes the assistant for now (everything can be set later).
     back = (f'<a class="link setup-back" href="/admin">{esc(t("setup_back"))}</a>' if setup.is_done() else

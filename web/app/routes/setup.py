@@ -105,15 +105,15 @@ def save_settings(kind: str = Form(""), base_url: str = Form(""), tunnel_token: 
         base_url, token = base_url.strip().rstrip("/"), tunnel_token.strip()
         if base_url and (not base_url.startswith(("https://", "http://")) or len(base_url) > 200
                          or any(c in base_url for c in " \"'<>")):
-            return _bad("base_url")
+            return _bad("base_url", user.language)
         if way in ("tunnel", "own") and not base_url.startswith("https://"):
-            return _bad("base_url")   # from the internet only encrypted
+            return _bad("base_url", user.language)   # from the internet only encrypted
         if way == "home" and not base_url:
-            return _bad("base_url")
+            return _bad("base_url", user.language)
         if token and (len(token) < 40 or not token.isascii() or " " in token):
-            return _bad("tunnel_token")
+            return _bad("tunnel_token", user.language)
         if way == "tunnel" and not token and not setup.current()["tunnel"]:
-            return _bad("tunnel_token")
+            return _bad("tunnel_token", user.language)
         values["HUB_BASE_URL"] = base_url
         if token and way in ("", "tunnel"):
             values["TUNNEL_TOKEN"] = token
@@ -124,25 +124,25 @@ def save_settings(kind: str = Form(""), base_url: str = Form(""), tunnel_token: 
             cert, key = tls_cert.replace("\r", "").strip(), tls_key.replace("\r", "").strip()
             port = tls_port.strip() or saved_tls or "443"
             if not port.isdigit() or not 1 <= int(port) <= 65535:
-                return _bad("tls_port")
+                return _bad("tls_port", user.language)
             if cert or key or not saved_tls:
                 if not _PEM_CERT.fullmatch(cert):
-                    return _bad("tls_cert")
+                    return _bad("tls_cert", user.language)
                 if not _PEM_KEY.fullmatch(key):
-                    return _bad("tls_key")
+                    return _bad("tls_key", user.language)
                 tls = {"cert": cert + "\n", "key": key + "\n", "port": int(port)}
             elif port != saved_tls:
-                return _bad("tls_cert")   # a new port needs the certificate again (it is never read back)
+                tls = {"port": int(port), "keep": True}   # the saved pair moves to the new port
         elif saved_tls and way in ("home", "tunnel"):
             tls = "off"
     elif kind == "mail":
-        mail_from = mail_from.strip()
-        if mail_from and ("@" not in mail_from or len(mail_from) > 200 or "\n" in mail_from):
-            return _bad("mail_from")
+        mail_from = _sender(mail_from)
+        if mail_from is None:
+            return _bad("mail_from", user.language)
         values["MAIL_FROM"] = mail_from
         if resend_key.strip():
             if not resend_key.strip().startswith("re_") or len(resend_key.strip()) > 200:
-                return _bad("resend_key")
+                return _bad("resend_key", user.language)
             values["RESEND_API_KEY"] = resend_key.strip()
     else:
         return fail(400)
@@ -153,9 +153,31 @@ def save_settings(kind: str = Form(""), base_url: str = Form(""), tunnel_token: 
     return ok(job=job)
 
 
-def _bad(field: str):
+_ADDRESS = re.compile(r"[^\s<>@\"]+@[^\s<>@\"]+\.[A-Za-z]{2,}")
+
+
+def _sender(text: str) -> str | None:
+    """The sender of the mails as Resend takes it: "name@domain" or "Name <name@domain>"; "" stays empty. A bare
+    "<name@domain>" loses its brackets (28.11.2026: Resend refused it with 422). None when it can not be right."""
+    text = text.strip()
+    if not text:
+        return ""
+    if len(text) > 200 or "\n" in text:
+        return None
+    if text.startswith("<") and text.endswith(">"):
+        text = text[1:-1].strip()
+    if _ADDRESS.fullmatch(text):
+        return text
+    name, sep, rest = text.rpartition("<")
+    if sep and name.strip() and rest.endswith(">") and _ADDRESS.fullmatch(rest[:-1].strip()) and "<" not in name:
+        return f"{name.strip()} <{rest[:-1].strip()}>"
+    return None
+
+
+def _bad(field: str, lang: str = "de"):
+    """400 with the field and what is wrong with it, in the owner's language."""
     from fastapi.responses import JSONResponse
-    return JSONResponse({"ok": False, "field": field}, status_code=400)
+    return JSONResponse({"ok": False, "field": field, "message": i18n.t(lang, f"setup_bad_{field}")}, status_code=400)
 
 
 @router.get("/setup/job/{job_id}")
