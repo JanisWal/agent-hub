@@ -44,6 +44,7 @@
 /* Version and update (28.11.2026): name | the state in words | the one button that fits (search or update) | "i". */
 .sys-update-text { grid-column: 2; min-width: 0; color: var(--muted); }
 .sys-update .sys-btn { grid-column: 3; min-height: 40px; }
+.sys-update [hidden], .sys-update-fail[hidden], .sys-update-fail [hidden] { display: none !important; }   /* the button's display would beat hidden */
 .sys-update-fail p { margin: 0; }
 .sys-update-log { margin-top: var(--space); }
 .sys-update-log pre { margin: 0; max-height: 240px; overflow: auto; font: 0.8rem/1.45 ui-monospace, "SF Mono", Menlo, monospace; font-weight: 400; white-space: pre-wrap; }
