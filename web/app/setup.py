@@ -10,6 +10,7 @@ from the administration (`/setup?step=...`).
 """
 import os
 import time
+import urllib.error
 import urllib.request
 
 from . import db, sysstats, users
@@ -84,15 +85,24 @@ def checks(runner_seen: float, now: float | None = None) -> list[dict]:
     return rows
 
 
-def reachable(base_url: str, timeout: float = 8.0) -> bool:
-    """Does the public address lead to this hub (through the tunnel, or the server's address)? Asks `<address>/health`."""
+def probe(base_url: str, timeout: float = 8.0) -> tuple[str, int]:
+    """Does the public address lead to this hub? Asks `<address>/health`. ("", 200) when it does, else a reason and
+    the HTTP status (28.11.2026: the owner saw only "not reachable" while Cloudflare said 521):
+    "origin"  Cloudflare answers but reaches no web server at the server (521, 522, 523): proxied record, nothing on 443
+    "tunnel"  Cloudflare finds no running tunnel for the name (530; 1033 in the page)
+    "other"   something answers, but not this hub
+    "net"     no answer at all (no DNS record, wrong name, firewall)"""
     if not base_url.startswith(("https://", "http://")):
-        return False
+        return "net", 0
     try:
         with urllib.request.urlopen(base_url.rstrip("/") + "/health", timeout=timeout) as answer:
-            return answer.status == 200 and b'"ok"' in answer.read(200)
+            return ("", 200) if answer.status == 200 and b'"ok"' in answer.read(200) else ("other", answer.status)
+    except urllib.error.HTTPError as failed:
+        if failed.code in (521, 522, 523):
+            return "origin", failed.code
+        return ("tunnel" if failed.code == 530 else "other"), failed.code
     except Exception:
-        return False
+        return "net", 0
 
 
 def current() -> dict:

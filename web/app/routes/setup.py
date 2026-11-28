@@ -149,9 +149,9 @@ def probe_access(user: users.User = Depends(api_user)):
     if denied:
         return denied
     address = setup.current()["base_url"]
-    found = setup.reachable(address)
-    text = i18n.t(user.language, "setup_reachable" if found else "setup_not_reachable", address=address)
-    return ok(found=found, text=text)
+    reason, code = setup.probe(address)
+    text = i18n.t(user.language, f"setup_probe_{reason}" if reason else "setup_reachable", address=address, code=code)
+    return ok(found=not reason, text=text)
 
 
 @router.post("/setup/probe/mail")

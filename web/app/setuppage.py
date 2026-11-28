@@ -169,7 +169,7 @@ def access_content(lang: str, here: str = "") -> str:
     fields = (f'<div class="setup-ways" role="radiogroup">{"".join(rows)}</div>'
               f'<div data-way="home" hidden>{_guide(lang, "setup_home_g", 2)}</div>'
               f'<div data-way="tunnel" hidden>{_guide(lang, "setup_tunnel", 7)}</div>'
-              f'<div data-way="own" hidden>{_guide(lang, "setup_own", 4)}</div>'
+              f'<div data-way="own" hidden>{_guide(lang, "setup_own", 5)}</div>'
               + _field(t("setup_address"), "base_url", address, "url", "", t(f"setup_{way}_hint"), ' data-address')
               + f'<div data-way="tunnel" hidden>'
               + _field(t("setup_token"), "tunnel_token", "", "password", "eyJ…", token_hint) + '</div>'
