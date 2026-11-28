@@ -144,9 +144,7 @@ class SetupTest(unittest.TestCase):
                                                                        "TUNNEL_TOKEN": token})
         hostjobs.end_open("settings", "x")
         self.assertEqual(save("own", "http://203.0.113.5:8080").status_code, 400)
-        self.assertTrue(save("own", "https://hub.example.de")["ok"])
-        self.assertEqual(hostjobs.claim_next()["payload"]["values"], {"HUB_BASE_URL": "https://hub.example.de",
-                                                                       "TUNNEL_TOKEN": ""})
+        self.assertEqual(save("own", "https://hub.example.de").status_code, 400)   # the certificate comes with it (OwnAddressTest)
         html = routes.setup_page(request({deps.COOKIE_NAME: users.create_session(owner.id)}), "access")
         for way in ("home", "tunnel", "own"):
             self.assertIn(f'value="{way}"', html)
