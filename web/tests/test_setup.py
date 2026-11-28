@@ -3,6 +3,7 @@ network and only for an hour; the owner's steps write .env through a host job; t
 on a hub that was set up with the assistant."""
 import os
 import re
+import urllib.error
 import tempfile
 import time
 import types
@@ -227,6 +228,45 @@ class ProxyTest(unittest.TestCase):
             self.assertFalse(deps.cookie_secure(home))
         with mock.patch.object(deps, "COOKIE_SECURE", True):
             self.assertTrue(deps.cookie_secure(home))
+
+
+class ProbeTest(unittest.TestCase):
+    """Why the public address does not lead to the hub (28.11.2026: a proxied A record gave Cloudflare's 521 and the
+    page said only "not reachable")."""
+
+    def answer(self, outcome):
+        def opener(url, timeout):
+            if isinstance(outcome, int):
+                raise urllib.error.HTTPError(url, outcome, "x", {}, None)
+            if outcome == "net":
+                raise urllib.error.URLError("no such host")
+            return _Answer(outcome)
+        return mock.patch("urllib.request.urlopen", opener)
+
+    def test_each_failure_has_its_reason(self):
+        cases = {b'{"status":"ok"}': ("", 200), 521: ("origin", 521), 522: ("origin", 522), 530: ("tunnel", 530),
+                 404: ("other", 404), b"<html>other site</html>": ("other", 200), "net": ("net", 0)}
+        for outcome, expected in cases.items():
+            with self.answer(outcome):
+                self.assertEqual(setup.probe("https://hub2.example.de"), expected, outcome)
+        self.assertEqual(setup.probe("hub2.example.de"), ("net", 0))
+        for reason in ("origin", "tunnel", "other", "net"):
+            for lang in ("de", "en"):
+                self.assertTrue(i18n.t(lang, f"setup_probe_{reason}", address="x", code=521))
+
+
+class _Answer:
+    def __init__(self, body):
+        self.status, self.body = 200, body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self, size=-1):
+        return self.body[:size] if size > 0 else self.body
 
 
 if __name__ == "__main__":
