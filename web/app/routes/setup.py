@@ -32,8 +32,8 @@ def setup_page(request: Request, step: str = ""):
         if step not in setup.OWNER_STEPS:
             step = "access"
         return setuppage.owner_page(user, step, _here(request))
-    if setup.via_tunnel(request) or not setup.from_home(request):
-        raise HTTPException(404)   # never from the internet
+    if setup.via_tunnel(request):
+        raise HTTPException(404)   # never through the tunnel
     lang = _lang(request)
     if not setup.open_for(request):
         return HTMLResponse(setuppage.closed_page(lang), status_code=403)

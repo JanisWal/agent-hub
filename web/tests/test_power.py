@@ -1,15 +1,14 @@
-"""Restart and shutdown of the Pi: who may ask, what the runner gets, what the page and routes do."""
+"""Restart and stop of the hub (28.11.2026): only the hub's own containers, never the server; who may ask, the job the
+runner gets, what the page and routes do."""
 import os
 import tempfile
-import time
 import types
 import unittest
-from unittest import mock
 
 from fastapi import HTTPException
 
-from app import adminpage, db, i18n, power, systempage, users
-from app.routes import admin as admin_routes, runner, system
+from app import adminpage, db, hostjobs, i18n, systempage, users
+from app.routes import admin as admin_routes, system
 
 
 class PowerTest(unittest.TestCase):
@@ -26,84 +25,34 @@ class PowerTest(unittest.TestCase):
     def request(self):
         return types.SimpleNamespace(headers={}, client=types.SimpleNamespace(host="203.0.113.7"))
 
-    # --- the data module
-    def test_only_the_owner_may_ask(self):
-        for who in (self.admin, self.user):
-            with self.assertRaises(PermissionError):
-                power.request_action(who, "poweroff")
-        self.assertIsNone(power.claim_next())
+    def test_restart_and_stop_touch_only_the_hubs_containers(self):
+        """Janis, 27./28.11.2026: on a shared server or a VM the server keeps running; the gate shows the maintenance
+        page meanwhile."""
+        for action, job in (("reboot", "restart"), ("poweroff", "stop")):
+            self.assertEqual(system.power_action(self.request(), action, "Own3r!pass", self.owner), {"ok": True})
+            claimed = hostjobs.claim_next()
+            self.assertEqual((claimed["action"], claimed["payload"]), (job, {}))
+            hostjobs.end_open(job, "x")
 
-    def test_unknown_actions_are_refused(self):
-        for action in ("", "halt", "reboot", "poweroff; rm -rf /", "POWEROFF"):
-            with self.assertRaises(ValueError):
-                power.request_action(self.owner, action)
-        self.assertIsNone(power.claim_next())
+    def test_one_at_a_time(self):
+        self.assertEqual(system.power_action(self.request(), "reboot", "Own3r!pass", self.owner), {"ok": True})
+        self.assertEqual(system.power_action(self.request(), "poweroff", "Own3r!pass", self.owner).status_code, 409)
 
-    def test_a_request_is_handed_out_once(self):
-        self.assertTrue(power.request_action(self.owner, "poweroff"))
-        job = power.claim_next()
-        self.assertEqual(job[1], "poweroff")
-        self.assertIsNone(power.claim_next())
-
-    def test_a_second_request_waits_for_the_first(self):
-        self.assertTrue(power.request_action(self.owner, "poweroff"))
-        self.assertFalse(power.request_action(self.owner, "poweroff"))
-        self.assertEqual(power.claim_next()[1], "poweroff")
-        self.assertTrue(power.request_action(self.owner, "poweroff"))   # the first one is taken, a new one may follow
-        self.assertEqual(power.claim_next()[1], "poweroff")
-
-    def test_an_old_request_is_dropped_instead_of_firing_later(self):
-        self.assertTrue(power.request_action(self.owner, "poweroff"))
-        later = time.time() + power.FRESH_SECONDS + 5
-        with mock.patch.object(power.time, "time", return_value=later):
-            self.assertIsNone(power.claim_next())
-            self.assertTrue(power.request_action(self.owner, "poweroff"))   # the stale one does not block
-            self.assertEqual(power.claim_next()[1], "poweroff")
+    def test_who_what_and_the_password(self):
+        self.assertEqual(system.power_action(self.request(), "reboot", "Adm1n!pass", self.admin).status_code, 403)
+        self.assertEqual(system.power_action(self.request(), "reboot", "Start1234", self.user).status_code, 403)
+        for bad in ("halt", "backup", "restart", "reboot; rm -rf /", ""):
+            self.assertEqual(system.power_action(self.request(), bad, "Own3r!pass", self.owner).status_code, 400, bad)
+        self.assertEqual(system.power_action(self.request(), "reboot", "wrong", self.owner).status_code, 403)
+        self.assertEqual(system.power_action(self.request(), "reboot", "", self.owner).status_code, 403)
+        self.assertIsNone(hostjobs.claim_next())   # nothing was asked
 
     def test_a_superadmin_may_ask_too(self):
         sup = users.get_by_id(users.create_user("super@example.com", "Sup3r!pass", role="superadmin").id)
-        for action in power.ACTIONS:
-            self.assertTrue(power.request_action(sup, action) or power.claim_next())
-            power.claim_next()
         self.assertEqual(system.power_action(self.request(), "reboot", "wrong", sup).status_code, 403)   # password still asked
+        self.assertEqual(system.power_action(self.request(), "reboot", "Sup3r!pass", sup), {"ok": True})
         self.assertIn("data-power", adminpage.render(sup, users.list_users(sup)))
         self.assertEqual(admin_routes.system_old_address(sup).status_code, 303)
-
-    # --- the routes
-    def test_the_power_route(self):
-        answer = system.power_action(self.request(), "poweroff", "Own3r!pass", self.owner)
-        self.assertEqual(answer, {"ok": True})
-        claimed = runner.power_claim()
-        self.assertEqual((claimed["ok"], claimed["action"]), (True, "poweroff"))
-        self.assertIsInstance(claimed["id"], int)
-        self.assertEqual(runner.power_claim(), {"ok": True, "id": None, "action": None})
-
-    def test_restart_restarts_only_the_hubs_containers(self):
-        """Janis, 27.11.2026: on a shared server or a VM only the hub restarts, never the server."""
-        from app import hostjobs
-        self.assertEqual(system.power_action(self.request(), "reboot", "Own3r!pass", self.owner), {"ok": True})
-        self.assertIsNone(power.claim_next())                                # no command for the server
-        self.assertEqual(hostjobs.claim_next()["action"], "restart")
-        self.assertEqual(system.power_action(self.request(), "reboot", "Own3r!pass", self.owner).status_code, 409)
-
-    def test_the_power_route_checks_who_what_and_the_password(self):
-        self.assertEqual(system.power_action(self.request(), "reboot", "Adm1n!pass", self.admin).status_code, 403)
-        self.assertEqual(system.power_action(self.request(), "halt", "Own3r!pass", self.owner).status_code, 400)
-        self.assertEqual(system.power_action(self.request(), "reboot", "wrong", self.owner).status_code, 403)
-        self.assertEqual(system.power_action(self.request(), "reboot", "", self.owner).status_code, 403)
-        from app import hostjobs
-        self.assertIsNone(power.claim_next())   # nothing was asked
-        self.assertIsNone(hostjobs.claim_next())
-
-    def test_a_backup_is_no_power_action_any_more(self):
-        self.assertEqual(system.power_action(self.request(), "backup", "Own3r!pass", self.owner).status_code, 400)
-        with self.assertRaises(ValueError):
-            power.request_action(self.owner, "backup")
-
-    def test_a_second_request_gets_a_clear_answer(self):
-        system.power_action(self.request(), "poweroff", "Own3r!pass", self.owner)
-        again = system.power_action(self.request(), "poweroff", "Own3r!pass", self.owner)
-        self.assertEqual(again.status_code, 409)
 
     # --- the page and the menu
     def test_the_old_address_leads_to_the_administration_page_for_the_owner_only(self):

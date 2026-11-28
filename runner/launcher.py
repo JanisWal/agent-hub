@@ -62,14 +62,7 @@ CHAT_MODES = {
     # single files. Vibe and Codex (chat-sort) keep their shell in the closed container, as in "apart", without the web.
     "sort": {"tools": (), "proxy": API_PROXY, "turns": 60},
 }
-# Restart and shutdown of the Pi (owner's request, see web/app/power.py). The host is reached through the
-# Docker socket: a short-lived privileged container joins the host's namespaces and runs `systemctl`.
-# Only these two fixed commands exist; nothing from the request reaches the command line but the choice.
-# The backup is a job of runner/hubctl.py since 27.11.2026 (build_hubctl_command), no systemd unit any more.
-POWER_COMMANDS = {
-    "poweroff": ["systemctl", "--no-block", "poweroff"],
-}   # "restart" restarts only the hub's containers since 27.11.2026 (hubctl), never the server
-POWER_ACTIONS = tuple(POWER_COMMANDS)
+# The runner's own image (python:3.13-slim), never pulled: the short containers of waking a device and of hubctl.
 POWER_IMAGE = "agent-hub-hub-runner"   # the runner's own image (python:3.13-slim has nsenter), never pulled
 _BAD_PATH = re.compile(r"[,\s\x00=:]")   # would confuse --mount parsing or hide something
 _MARKER = re.compile(r"^RESULT:\s*([a-z_]+)\s*\.?$")
@@ -94,21 +87,11 @@ def build_wake_command(mac: str) -> list[str]:
             "python", "-c", WAKE_SCRIPT, mac]
 
 
-def build_power_command(action: str) -> list[str]:
-    """The `docker run` command that restarts or shuts down the Pi. ValueError for any other action."""
-    if action not in POWER_COMMANDS:
-        raise ValueError("unknown power action")
-    return [
-        "docker", "run", "--rm", "--pull=never", "--privileged", "--pid=host", "--network=none", POWER_IMAGE,
-        "nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", *POWER_COMMANDS[action],
-    ]
-
-
 # Fixed actions on the server (runner/hubctl.py, 27.11.2026): backup, checking and putting back a backup, settings in
 # .env. One detached container of the runner's image per job: root (the logins are root's), no network, the Docker
 # socket (it stops and starts the hub's services), the hub's base folder and the backup folder at their host paths.
 # Nothing from the job reaches the command line but its number; what it needs is in a root-only file (runner.py).
-HUBCTL_ACTIONS = ("backup", "restore-check", "restore-apply", "settings", "restart")
+HUBCTL_ACTIONS = ("backup", "restore-check", "restore-apply", "settings", "restart", "stop")
 _PROJECT = re.compile(r"[a-z0-9][a-z0-9_-]{0,30}")
 
 

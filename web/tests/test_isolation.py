@@ -11,7 +11,7 @@ import unittest.mock
 
 from fastapi import HTTPException
 
-from app import agents, board, checks, dashboard, db, devices, status, files, memory, power, projectpage, projects, resets, throttle, todos, ui, users
+from app import agents, board, checks, dashboard, db, devices, status, files, memory, projectpage, projects, resets, throttle, todos, ui, users
 from app.routes import board as board_routes, checks as check_routes, todos as todo_routes, files as file_routes, projects as project_routes, resets as reset_routes
 
 
@@ -527,13 +527,15 @@ class IsolationTest(unittest.TestCase):
                 call()
         self.assertIsNotNone(users.check_login("a@example.com", "Aaaa!pass12"))
 
-    def test_nobody_but_the_owner_restarts_or_shuts_down_the_pi(self):
+    def test_nobody_but_the_owner_restarts_or_stops_the_hub(self):
+        from app import hostjobs
+        from app.routes import system as system_routes
+        req = types.SimpleNamespace(headers={}, client=types.SimpleNamespace(host="192.168.1.9"))
         admin = users.create_user("admin@example.com", "Adm1n!pass", role="admin")
-        for who in (self.a, self.b, admin):
-            for action in power.ACTIONS:
-                with self.assertRaises(PermissionError):
-                    power.request_action(who, action)
-        self.assertIsNone(power.claim_next())
+        for who, password in ((self.a, "Aaaa!pass12"), (self.b, "Bbbb!pass12"), (admin, "Adm1n!pass")):
+            for action in ("reboot", "poweroff"):
+                self.assertEqual(system_routes.power_action(req, action, password, who).status_code, 403)
+        self.assertIsNone(hostjobs.claim_next())
 
     def test_profile_and_password_only_change_the_own_account(self):
         users.set_profile(self.b.id, "Bee", "en")
