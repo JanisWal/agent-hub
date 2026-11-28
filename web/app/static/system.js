@@ -1,4 +1,4 @@
-// System page (owner): restart or shut down the Pi, the backup dialog, and how uploads are cut. Each power action has its
+// System page (owner): restart or stop the hub, the update, the backup dialog, and how uploads are cut. Each power action has its
 // own dialog with the owner's password; on success the dialog closes and a note says what happens now (texts come from
 // the server).
 (function () {
@@ -131,6 +131,57 @@
       fetch("/health", { credentials: "same-origin", cache: "no-store" })
         .then(function (r) { if (r.ok && tries > 3) AgentHub.reload(); else back(tries + 1); }, function () { back(tries + 1); });
     }, 3000);
+  }
+
+  // The version and the update (routes/update.py, only the owner). The row asks the server what to show; while an update
+  // runs it asks every few seconds (requests fail while the hub restarts: the gate answers with the maintenance page),
+  // and the page loads anew once the update has ended well. A failed update shows its log to copy.
+  var update = document.getElementById("sys-update");
+  if (update) {
+    var updText = update.querySelector("[data-update-text]");
+    var updCheck = update.querySelector("[data-update-check]");
+    var updStart = update.querySelector("[data-update-start]");
+    var updFail = document.getElementById("sys-update-fail");
+    var updDialog = document.getElementById("update-dialog");
+    var updForm = updDialog.querySelector("form");
+    var updError = updDialog.querySelector("[data-error]");
+    var updWatching = false;
+    var updShow = function (data) {
+      updText.textContent = data.text;
+      updStart.hidden = !data.available;
+      updCheck.hidden = data.available;
+      updCheck.disabled = updStart.disabled = data.running;
+      updFail.hidden = !data.failed;
+      updFail.querySelector("[data-update-failed]").textContent = data.failed;
+      updFail.querySelector("[data-update-log]").textContent = data.log;
+      updFail.querySelector("[data-update-log-box]").hidden = !data.log;
+      if (data.running) updWatching = true;
+      else if (updWatching) AgentHub.reload();   // the update has ended: the page of the new (or old) version
+    };
+    var updAsk = function (url, post) {
+      return fetch(url, { method: post ? "POST" : "GET", credentials: "same-origin", cache: "no-store" })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (data) { if (data && data.ok) updShow(data); }, function () {});
+    };
+    updAsk(update.dataset.url);
+    AgentHub.live({ every: 5000, when: function () { return updWatching; }, run: function () { return updAsk(update.dataset.url); } });
+    updCheck.addEventListener("click", function () {
+      updCheck.disabled = true;
+      updAsk("/update/check", true).then(function () { updCheck.disabled = false; });
+    });
+    updStart.addEventListener("click", function () { updDialog.showModal(); });
+    updDialog.addEventListener("close", function () { updForm.reset(); AgentHub.clear(updForm); updError.hidden = true; });
+    updForm.addEventListener("submit", function (event) {
+      event.preventDefault();
+      if (!AgentHub.validate(updForm)) return;
+      updError.hidden = true;
+      fetch(updForm.dataset.url, { method: "POST", body: new FormData(updForm) })
+        .then(function (response) {
+          if (response.ok) { updDialog.close(); return updAsk(update.dataset.url); }
+          return response.json().then(function (data) { updError.textContent = data.message || root.dataset.network; updError.hidden = false; });
+        })
+        .catch(function () { updError.textContent = root.dataset.network; updError.hidden = false; });
+    });
   }
 
   var dialogs = { reboot: wire("reboot"), poweroff: wire("poweroff") };

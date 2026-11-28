@@ -1,4 +1,5 @@
-"""Jobs on the server itself (27.11.2026): backup, checking and putting back a backup, settings in .env.
+"""Jobs on the server itself (27.11.2026): backup, checking and putting back a backup, settings in .env, restart
+and stop, the update (28.11.2026).
 
 The web service may not touch the host. A job is written down here; the runner fetches it once (`claim_next`) and
 starts a container of runner/hubctl.py that does it. That container answers with a file `<data>/jobs/<id>.json`
@@ -12,9 +13,10 @@ from pathlib import Path
 
 from . import db
 
-ACTIONS = ("backup", "restore-check", "restore-apply", "settings", "restart", "stop")
+ACTIONS = ("backup", "restore-check", "restore-apply", "settings", "restart", "stop", "update")
 FRESH_SECONDS = 600   # a job nobody fetched within this long is void (the runner was away)
-TIMEOUT = {"backup": 3 * 3600, "restore-check": 3600, "restore-apply": 1800, "settings": 600, "restart": 600, "stop": 600}
+TIMEOUT = {"backup": 3 * 3600, "restore-check": 3600, "restore-apply": 1800, "settings": 600, "restart": 600, "stop": 600,
+           "update": 2 * 3600}   # an update builds the images: on a Raspberry Pi up to an hour
 
 
 def results_dir() -> Path:

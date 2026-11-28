@@ -1,5 +1,5 @@
 """Fixed actions on the server itself (27.11.2026): backup, checking and putting back a backup, the settings that live
-in `.env`, and restarting the hub's containers. Runs as root in a short-lived container of the runner's image (launcher.build_hubctl_command), started by
+in `.env`, restarting the hub's containers, and updating the hub to the newest version of its source (28.11.2026). Runs as root in a short-lived container of the runner's image (launcher.build_hubctl_command), started by
 the runner for a job of the hub (web/app/hostjobs.py). Standard library plus pyrage (age encryption, as in the web
 service).
 
@@ -481,6 +481,88 @@ def apply_settings(paths: Paths, values: dict, saved=lambda: None) -> dict:
     return {"saved": sorted(values)}
 
 
+# --- update --------------------------------------------------------------------------------------------------------
+# Only from a public Git address over https (from .env, written by the installer; never from the page) and a plain
+# branch name.
+_SOURCE = re.compile(r"https://[A-Za-z0-9.-]+(:\d+)?/[A-Za-z0-9._~/-]+")
+_BRANCH = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,99}")
+LOG_LINES = 40   # the end of the steps' output goes back with a failure: the owner can pass it on
+
+
+def installed_version(paths: Paths, app: Path | None = None) -> str:
+    """The commit the installed code is at (deploy/steps/30-code.sh writes web/app/VERSION), or ""."""
+    try:
+        return (app or paths.app).joinpath("web", "app", "VERSION").read_text().split()[0][:40]
+    except (OSError, IndexError):
+        return ""
+
+
+def _steps(paths: Paths, source: Path, log: Path, timeout: int) -> int:
+    """Run the steps of the version in `source` as an update of this hub (deploy/steps/run.sh), output into `log`."""
+    env = {**os.environ, "MODE": "update", "HUB_DIR": str(paths.base), "SRC": str(source)}
+    with open(log, "a") as out:
+        try:
+            return subprocess.run(["bash", str(source / "deploy" / "steps" / "run.sh")], env=env, stdout=out,
+                                  stderr=subprocess.STDOUT, timeout=timeout).returncode
+        except subprocess.TimeoutExpired:
+            out.write("\nhubctl: Zeit abgelaufen\n")
+            return 124
+
+
+def _tail(log: Path) -> list[str]:
+    try:
+        return [line[:300] for line in log.read_text(errors="replace").splitlines()[-LOG_LINES:]]
+    except OSError:
+        return []
+
+
+def update(paths: Paths, timeout: int = 6000) -> dict:
+    """Fetch the newest state of the hub's source (HUB_SOURCE, HUB_BRANCH in .env) and run its own steps as an update,
+    as `update.sh` would: save the database, swap the code (the old one stays as app.old), add new settings, build,
+    start. The gate shows the maintenance page while the services restart. When a step fails after the code was
+    swapped, the old code goes back in place and its own steps build and start it again. Only for a hub installed with
+    install.sh (its data lies outside the code folder)."""
+    env = read_env(paths.app / ".env")
+    source, branch = env.get("HUB_SOURCE", ""), env.get("HUB_BRANCH", "") or "main"
+    if not env.get("HUB_DATA_HOST_DIR") or not _SOURCE.fullmatch(source) or not _BRANCH.fullmatch(branch):
+        raise Failed("no_source")
+    paths.results.mkdir(parents=True, exist_ok=True)
+    log = paths.results / "update.log"
+    log.write_text("")
+    _give_web(log)
+    fresh = paths.base / "update-src"
+    shutil.rmtree(fresh, ignore_errors=True)
+    try:
+        fetched = subprocess.run(["git", "clone", "--quiet", "--depth", "1", "--branch", branch, "--", source, str(fresh)],
+                                 capture_output=True, text=True, timeout=600)
+    except subprocess.TimeoutExpired:
+        raise Failed("download")
+    if fetched.returncode != 0:
+        log.write_text((fetched.stderr or "")[-2000:])
+        raise Failed("download")
+    commit = subprocess.run(["git", "-C", str(fresh), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    before = installed_version(paths)
+    if commit and commit == before:
+        shutil.rmtree(fresh, ignore_errors=True)
+        return {"commit": commit, "same": True}
+    old = paths.app.with_name(paths.app.name + ".old")
+    code = _steps(paths, fresh, log, timeout)
+    shutil.rmtree(fresh, ignore_errors=True)
+    if code == 0:
+        return {"commit": commit, "before": before}
+    if installed_version(paths) == commit and commit and old.is_dir():
+        # The new code is in place but did not come up: back to the old one, built and started by its own steps.
+        failed = paths.app.with_name(paths.app.name + ".failed")
+        shutil.rmtree(failed, ignore_errors=True)
+        os.rename(paths.app, failed)
+        os.rename(old, paths.app)
+        with open(log, "a") as out:
+            out.write("\n== Zurück zur vorigen Version\n")
+        back = _steps(paths, paths.app, log, timeout)
+        raise Failed("rolled_back" if back == 0 else "rollback_failed")
+    raise Failed("steps")
+
+
 # --- one job -------------------------------------------------------------------------------------------------------
 def run(paths: Paths, job_id: int) -> int:
     """Do the job `<work>/.hubctl/<id>.json` (written by the runner, deleted here at once: it may hold a key) and leave
@@ -515,6 +597,13 @@ def run(paths: Paths, job_id: int) -> int:
             write_result(paths, str(job_id), {"ok": True})
             compose(paths, action, *SERVICES)
             return 0
+        elif action == "update":
+            try:
+                result = update(paths)
+            except Failed as problem:
+                write_result(paths, str(job_id), {"ok": False, "reason": str(problem),
+                                                  "log": _tail(paths.results / "update.log")})
+                return 1
         elif action == "settings":
             values = data.get("values")
             apply_settings(paths, values, lambda: write_result(paths, str(job_id), {"ok": True, "saved": sorted(values)}))

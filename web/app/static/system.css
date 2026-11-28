@@ -41,6 +41,12 @@
   background: var(--field);
   font-weight: 600;
 }
+/* Version and update (28.11.2026): name | the state in words | the one button that fits (search or update) | "i". */
+.sys-update-text { grid-column: 2; min-width: 0; color: var(--muted); }
+.sys-update .sys-btn { grid-column: 3; min-height: 40px; }
+.sys-update-fail p { margin: 0; }
+.sys-update-log { margin-top: var(--space); }
+.sys-update-log pre { margin: 0; max-height: 240px; overflow: auto; font: 0.8rem/1.45 ui-monospace, "SF Mono", Menlo, monospace; font-weight: 400; white-space: pre-wrap; }
 /* Narrow (the block, not only the window: beside the user list it is narrow too, 21.11.2026, since the rows of the
    server limits came): the name gets its own line with the "i" at the right, the choices take the full line below it
    (two equal halves in every row, so they still line up). */
@@ -48,6 +54,8 @@
   .sys-list { grid-template-columns: 1fr auto; }
   .sys-name { grid-column: 1; }
   .sys-fields { grid-column: 1 / -1; grid-row: 2; grid-template-columns: 1fr 1fr; }
+  .sys-update-text { grid-column: 1 / -1; grid-row: 2; }
+  .sys-update .sys-btn { grid-column: 1 / -1; grid-row: 3; }
 }
 @media (pointer: coarse) { .sys-field select { font-size: max(16px, 1rem); } }   /* no zoom while typing (app.css) */
 

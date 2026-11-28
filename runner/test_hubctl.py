@@ -1,4 +1,5 @@
-"""The fixed actions on the server (runner/hubctl.py): backup, checking and putting back a backup, settings in .env.
+"""The fixed actions on the server (runner/hubctl.py): backup, checking and putting back a backup, settings in .env,
+the update.
 Real files and real age encryption in throwaway folders; Docker Compose is replaced by a recorder.
 
     docker run --rm -v "$PWD/runner:/app/runner" agent-hub-hub-runner python -m unittest runner.test_hubctl
@@ -8,7 +9,9 @@ import hashlib
 import io
 import json
 import os
+import re
 import sqlite3
+import subprocess
 import tempfile
 import unittest
 import zipfile
@@ -304,6 +307,122 @@ class HubctlTest(unittest.TestCase):
         self.assertNotIn("gate", hubctl.SERVICES)
         self.assertNotIn("tunnel", hubctl.SERVICES)
         self.assertEqual(json.loads((self.paths.results / "99.json").read_text())["reason"], "no_job")
+
+
+# A stand-in for deploy/steps/run.sh: as 30-code.sh it moves the code to app.old, puts the new one in place and writes
+# web/app/VERSION; it fails when the new version carries a file FAIL. Run with the old code itself, it only notes that.
+STEPS = """set -e
+APP=$HUB_DIR/app
+if [ "$SRC" = "$APP" ]; then echo old-steps >> "$HUB_DIR/ran"; exit 0; fi
+mv "$APP" "$APP.old"; mkdir -p "$APP/web/app"; cp "$APP.old/.env" "$APP/.env"; cp -r "$SRC/deploy" "$APP/"
+git -C "$SRC" log -1 --format='%H %cs' > "$APP/web/app/VERSION"
+echo new-steps >> "$HUB_DIR/ran"
+echo "== Images bauen"
+[ ! -f "$SRC/FAIL" ]
+"""
+GIT = ["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "-c", "init.defaultBranch=main"]
+
+
+class UpdateTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        base = Path(self.tmp.name)
+        self.base = base
+        self.env = {"HUB_BASE_DIR": str(base), "HUB_APP_DIR": str(base / "app"), "HUB_DATA_DIR": str(base / "data"),
+                    "HUB_CLAUDE_DIR": str(base / "claude"), "HUB_WORK_DIR": str(base / "work"),
+                    "HUB_BACKUP_DIR": str(base / "backups"), "HUB_NAME": "agent-hub"}
+        self.paths = hubctl.Paths(self.env)
+        self.source = base / "source"
+        (self.source / "deploy" / "steps").mkdir(parents=True)
+        (self.source / "deploy" / "steps" / "run.sh").write_text(STEPS)
+        self.commit = self.save("first")
+        app = self.paths.app
+        (app / "web" / "app").mkdir(parents=True)
+        (app / "deploy" / "steps").mkdir(parents=True)
+        (app / "deploy" / "steps" / "run.sh").write_text(STEPS)
+        (app / "web" / "app" / "VERSION").write_text("a" * 40 + " 2026-11-01\n")
+        (app / ".env").write_text(f"HUB_DATA_HOST_DIR={base}/data\nHUB_SOURCE={self.source}\nHUB_BRANCH=main\n")
+        self.paths.data.mkdir()
+        # The real check wants https; the throwaway source is a folder.
+        self.real_source = hubctl._SOURCE
+        patcher = mock.patch.object(hubctl, "_SOURCE", re.compile(re.escape(str(self.source))))
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def save(self, text: str) -> str:
+        if not (self.source / ".git").exists():
+            subprocess.run([*GIT, "init", "-q", str(self.source)], check=True)
+        (self.source / "note.txt").write_text(text)
+        subprocess.run([*GIT, "-C", str(self.source), "add", "-A"], check=True)
+        subprocess.run([*GIT, "-C", str(self.source), "commit", "-qm", text], check=True)
+        return subprocess.run(["git", "-C", str(self.source), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+
+    def ran(self) -> list[str]:
+        path = self.base / "ran"
+        return path.read_text().split() if path.exists() else []
+
+    def test_the_newest_version_is_put_in_place_by_its_own_steps(self):
+        result = hubctl.update(self.paths)
+        self.assertEqual(result, {"commit": self.commit, "before": "a" * 40})
+        self.assertEqual(hubctl.installed_version(self.paths), self.commit)
+        self.assertTrue((self.base / "app.old").is_dir())
+        self.assertEqual(self.ran(), ["new-steps"])
+        self.assertFalse((self.base / "update-src").exists())      # the fetched copy goes
+        self.assertIn("Images bauen", (self.paths.results / "update.log").read_text())
+
+    def test_nothing_new_nothing_done(self):
+        hubctl.update(self.paths)
+        self.assertEqual(hubctl.update(self.paths), {"commit": self.commit, "same": True})
+        self.assertEqual(self.ran(), ["new-steps"])
+
+    def test_a_version_that_does_not_come_up_goes_back_to_the_old_one(self):
+        (self.source / "FAIL").write_text("")
+        self.save("broken")
+        with self.assertRaisesRegex(hubctl.Failed, "rolled_back"):
+            hubctl.update(self.paths)
+        self.assertEqual(hubctl.installed_version(self.paths), "a" * 40)   # the old code is back in place
+        self.assertTrue((self.base / "app.failed").is_dir())               # the new one stays aside to look at
+        self.assertEqual(self.ran(), ["new-steps", "old-steps"])           # the old code was built and started again
+        self.assertIn("Zurück zur vorigen Version", (self.paths.results / "update.log").read_text())
+
+    def test_a_failure_before_the_swap_leaves_the_code_alone(self):
+        broken = self.source / "deploy" / "steps" / "run.sh"
+        broken.write_text("echo Voraussetzungen; exit 1\n")
+        self.save("check fails")
+        with self.assertRaisesRegex(hubctl.Failed, "steps"):
+            hubctl.update(self.paths)
+        self.assertEqual(hubctl.installed_version(self.paths), "a" * 40)
+        self.assertEqual(self.ran(), [])
+
+    def test_only_a_hub_with_its_data_outside_and_a_plain_source(self):
+        env = self.paths.app / ".env"
+        env.write_text(f"HUB_SOURCE={self.source}\n")                    # the first hub: data in the code folder
+        with self.assertRaisesRegex(hubctl.Failed, "no_source"):
+            hubctl.update(self.paths)
+        bad = [("http://github.com/x/y.git", "main"), ("https://github.com/x/y.git --upload-pack=sh", "main"),
+               ("file:///etc", "main"), ("-uhttps://x/y", "main"), ("git@github.com:x/y.git", "main"), ("", "main"),
+               ("https://github.com/x/y.git", "-b"), ("https://github.com/x/y.git", "main; rm"),
+               ("https://github.com/x/y.git", "../x")]
+        with mock.patch.object(hubctl, "_SOURCE", self.real_source):
+            for source, branch in bad:
+                env.write_text(f"HUB_DATA_HOST_DIR=/d\nHUB_SOURCE={source}\nHUB_BRANCH={branch}\n")
+                with self.assertRaisesRegex(hubctl.Failed, "no_source", msg=(source, branch)):
+                    hubctl.update(self.paths)
+        self.assertEqual(self.ran(), [])
+
+    def test_the_job_answers_with_the_end_of_the_log_when_it_fails(self):
+        (self.source / "FAIL").write_text("")
+        self.save("broken")
+        self.paths.jobs.mkdir(parents=True)
+        (self.paths.jobs / "7.json").write_text(json.dumps({"action": "update", "payload": {}}))
+        self.assertEqual(hubctl.run(self.paths, 7), 1)
+        answer = json.loads((self.paths.results / "7.json").read_text())
+        self.assertEqual((answer["ok"], answer["reason"]), (False, "rolled_back"))
+        self.assertIn("== Images bauen", answer["log"])
+        self.assertLessEqual(len(answer["log"]), hubctl.LOG_LINES)
 
 
 if __name__ == "__main__":

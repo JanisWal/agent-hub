@@ -25,6 +25,9 @@ services:
       HUB_TRUSTED_PROXY: "${HUB_TRUSTED_PROXY:-}"   # the tunnel's name: only its forwarded headers count (throttle.py)
       HUB_TUNNEL_ON: "${TUNNEL_TOKEN:+1}"           # the set-up says whether a tunnel is set; the token stays out
       HUB_GATE: "gate"                              # requests come through the gate; it names the real peer (throttle.py)
+      # Where updates come from (web/app/updates.py); empty = no updates from the page (the first hub, from its clone).
+      HUB_SOURCE: "${HUB_SOURCE:-}"
+      HUB_BRANCH: "${HUB_BRANCH:-main}"
       # Mail (password reset). Values come from .env next to this file; empty = mail features off.
       RESEND_API_KEY: "${RESEND_API_KEY:-}"
       MAIL_FROM: "${MAIL_FROM:-}"

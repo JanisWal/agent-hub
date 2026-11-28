@@ -38,6 +38,14 @@ class PowerCommandTest(unittest.TestCase):
         self.assertEqual(L.build_hubctl_command(1, inside).count("-v"), 3)   # socket, base and the clock zone only
         self.assertIn("/etc/localtime:/etc/localtime:ro", cmd)
 
+    def test_only_the_update_gets_a_network(self):
+        """It fetches the new code (28.11.2026); every other job stays without a network."""
+        self.assertIn("--network=bridge", L.build_hubctl_command(3, self.PLACES, "update"))
+        for action in ("backup", "restore-apply", "settings", "restart", ""):
+            cmd = L.build_hubctl_command(3, self.PLACES, action)
+            self.assertIn("--network=none", cmd)
+            self.assertNotIn("--network=bridge", cmd)
+
     def test_the_hubctl_command_takes_no_odd_places(self):
         for key, bad in (("app", "/etc"), ("data", "/opt/agent-hub/../etc"), ("work", "relative"),
                          ("backups", "/mnt/a b"), ("claude", "/opt/agent-hubx/claude"), ("name", "Agent Hub"),

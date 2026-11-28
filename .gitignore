@@ -4,3 +4,4 @@ backups/
 workspaces/
 __pycache__/
 *.pyc
+web/app/VERSION

@@ -937,7 +937,7 @@ class Runner:
             if action not in launcher.HUBCTL_ACTIONS:
                 raise ValueError("unknown action")
             places = self.host_places()
-            command = launcher.build_hubctl_command(job_id, places)
+            command = launcher.build_hubctl_command(job_id, places, action)
             folder = Path(places["work"]) / ".hubctl"
             folder.mkdir(parents=True, exist_ok=True)
             os.chmod(folder, 0o700)

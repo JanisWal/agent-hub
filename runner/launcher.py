@@ -91,13 +91,14 @@ def build_wake_command(mac: str) -> list[str]:
 # .env. One detached container of the runner's image per job: root (the logins are root's), no network, the Docker
 # socket (it stops and starts the hub's services), the hub's base folder and the backup folder at their host paths.
 # Nothing from the job reaches the command line but its number; what it needs is in a root-only file (runner.py).
-HUBCTL_ACTIONS = ("backup", "restore-check", "restore-apply", "settings", "restart", "stop")
+HUBCTL_ACTIONS = ("backup", "restore-check", "restore-apply", "settings", "restart", "stop", "update")
 _PROJECT = re.compile(r"[a-z0-9][a-z0-9_-]{0,30}")
 
 
-def build_hubctl_command(job_id: int, places: dict) -> list[str]:
+def build_hubctl_command(job_id: int, places: dict, action: str = "") -> list[str]:
     """`docker run -d` for job `job_id` of hubctl. `places`: base, app, data, claude, work, backups (host paths; all but
-    the backup folder inside base) and name (the compose project). ValueError for anything else."""
+    the backup folder inside base) and name (the compose project). ValueError for anything else. Without a network,
+    except for "update": it fetches the new code (the images are built by the Docker daemon)."""
     job = _number(job_id, "job_id")
     base = _folder(places.get("base", ""), "base")
     inside = {key: _folder(places.get(key, ""), key) for key in ("app", "data", "claude", "work")}
@@ -115,7 +116,8 @@ def build_hubctl_command(job_id: int, places: dict) -> list[str]:
     env = {"HUB_BASE_DIR": base, "HUB_APP_DIR": inside["app"], "HUB_DATA_DIR": inside["data"],
            "HUB_CLAUDE_DIR": inside["claude"], "HUB_WORK_DIR": inside["work"], "HUB_BACKUP_DIR": backups,
            "HUB_NAME": name}
-    return ["docker", "run", "-d", "--rm", "--pull=never", "--name", f"{name}-hubctl-{job}", "--network=none",
+    return ["docker", "run", "-d", "--rm", "--pull=never", "--name", f"{name}-hubctl-{job}",
+            "--network=bridge" if action == "update" else "--network=none",
             "--memory", "384m", "--cap-drop", "ALL", "--cap-add", "CHOWN", "--cap-add", "DAC_OVERRIDE",
             "--cap-add", "FOWNER", "--security-opt", "no-new-privileges", *mounts,
             *[part for key, value in env.items() for part in ("-e", f"{key}={value}")],
