@@ -56,6 +56,13 @@ def peer(request: Request) -> str:
     return host or "unknown"
 
 
+def gate_https(request: Request) -> bool:
+    """Did the request come through the gate's HTTPS door (gate/tls.conf)? Only the gate sets X-Hub-Https; at its
+    other door it removes what a visitor sent."""
+    host = request.client.host if request.client else ""
+    return bool(GATE and host and host == _address_of(GATE) and request.headers.get("x-hub-https") == "1")
+
+
 def via_proxy(request: Request) -> bool:
     """Did this request come from the tunnel (so its forwarded headers may be believed)?"""
     if not request.headers.get("cf-connecting-ip"):

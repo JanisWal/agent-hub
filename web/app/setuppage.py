@@ -109,7 +109,8 @@ def closed_page(lang: str) -> str:
 # --- the owner's steps ---------------------------------------------------------------------------------------------
 SETTINGS = """<form class="setup-form" novalidate data-setup-form="%KIND%" data-url="/setup/settings"
       data-probe="/setup/probe/%KIND%" data-restarting="%t.setup_restarting%" data-probing="%PROBING%"
-      data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%" data-configured="%CONFIGURED%">
+      data-msg-required="%t.msg_required%" data-msg-email="%t.msg_email%" data-configured="%CONFIGURED%"
+      data-reason-bad-cert="%t.setup_reason_bad_cert%" data-reason-port-taken="%t.setup_reason_port_taken%">
   %FIELDS%
   <p class="error" role="alert" data-error hidden></p>
   <p class="muted setup-probe" role="status" data-probe-note hidden></p>
@@ -151,6 +152,23 @@ def current_way() -> str:
     return "own" if now["base_url"].startswith("https://") else "home"
 
 
+def _area(label: str, name: str, placeholder: str, hint: str) -> str:
+    return (f'<label>{esc(label)}<textarea name="{name}" rows="4" placeholder="{esc(placeholder)}" autocomplete="off"'
+            f' spellcheck="false" maxlength="20000" class="setup-pem"></textarea>'
+            f'<span class="setup-hint">{esc(hint)}</span></label>')
+
+
+def _tls_fields(lang: str, saved_port: str) -> str:
+    """The way "own" (28.11.2026): Cloudflare's origin certificate and key for the gate's HTTPS door, and its port.
+    Neither is ever shown again; empty keeps what is saved."""
+    t = lambda key, **kw: i18n.t(lang, key, **kw)   # noqa: E731
+    kept = t("setup_tls_kept") if saved_port else ""
+    return (_area(t("setup_tls_cert"), "tls_cert", "-----BEGIN CERTIFICATE-----", kept or t("setup_tls_cert_hint"))
+            + _area(t("setup_tls_key"), "tls_key", "-----BEGIN PRIVATE KEY-----", kept or t("setup_tls_key_hint"))
+            + _field(t("setup_tls_port"), "tls_port", saved_port or "443", "text", "443", t("setup_tls_port_hint"),
+                     ' inputmode="numeric" maxlength="5"'))
+
+
 def access_content(lang: str, here: str = "") -> str:
     """Three ways (Janis, 27.11.2026): home network only (skip-able, the server's address), the Cloudflare tunnel as the
     recommended way, or an own public address (a server with a public IP and an own certificate)."""
@@ -169,10 +187,11 @@ def access_content(lang: str, here: str = "") -> str:
     fields = (f'<div class="setup-ways" role="radiogroup">{"".join(rows)}</div>'
               f'<div data-way="home" hidden>{_guide(lang, "setup_home_g", 2)}</div>'
               f'<div data-way="tunnel" hidden>{_guide(lang, "setup_tunnel", 7)}</div>'
-              f'<div data-way="own" hidden>{_guide(lang, "setup_own", 5)}</div>'
+              f'<div data-way="own" hidden>{_guide(lang, "setup_own", 6) + _guide(lang, "setup_expert", 3, "setup_expert")}</div>'
               + _field(t("setup_address"), "base_url", address, "url", "", t(f"setup_{way}_hint"), ' data-address')
               + f'<div data-way="tunnel" hidden>'
               + _field(t("setup_token"), "tunnel_token", "", "password", "eyJ…", token_hint) + '</div>'
+              + f'<div data-way="own" hidden>{_tls_fields(lang, now["tls_port"])}</div>'
               + f'<input type="hidden" name="here" value="{esc(here)}">')
     again = f'<button type="button" data-probe-again>{esc(t("setup_probe_again"))}</button>'
     return fill(SETTINGS, lang, KIND="access", FIELDS=fields, SKIP=_next("access"), NEXT=_next("access"),

@@ -41,7 +41,8 @@
       return fetch("/setup/job/" + job, { credentials: "same-origin" })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-          if (data.state === "ok" || data.state === "failed") return data.state;
+          if (data.state === "ok") return "ok";
+          if (data.state === "failed") return "failed:" + (data.reason || "");
           if (tries > 200) return "failed";
           return wait(2000).then(ask);
         }, function () { return tries > 200 ? "failed" : wait(2000).then(ask); });
@@ -111,11 +112,17 @@
             say(error, card.dataset.failed);
             return;
           }
-          form.querySelectorAll('input[type="password"]').forEach(function (input) { input.value = ""; });
+          form.querySelectorAll('input[type="password"], textarea').forEach(function (input) { input.value = ""; });
           say(note, form.dataset.restarting, true);
           return settled(data.job).then(function (state) {
             save.disabled = false;
-            if (state !== "ok") { say(note, ""); say(error, card.dataset.failed); return; }
+            if (state !== "ok") {
+              // A reason hubctl named (certificate, port) has its own text on the form; anything else the general one.
+              var reason = state.indexOf("failed:") === 0 ? state.slice(7).replace(/_/g, "-") : "";
+              say(note, "");
+              say(error, (reason && form.getAttribute("data-reason-" + reason)) || card.dataset.failed);
+              return;
+            }
             // The address is checked by itself; a test mail only when the owner asks for it.
             if (form.getAttribute("data-setup-form") === "access") return probe();
             say(note, "");
